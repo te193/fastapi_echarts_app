@@ -43,3 +43,6 @@ Thumbs.db
 
 # Local config overrides (if you add secrets here)
 .env
+
+# Claude Code local settings
+.claude/
