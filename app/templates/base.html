@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ title }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}?v=20260508e">
+</head>
+<body data-page="{{ page }}">
+  <div class="app-shell">
+    <aside class="side-nav">
+      <div class="side-nav-brand">
+        <span class="side-nav-brand-mark">产品</span>
+        <strong>产品结构看板</strong>
+      </div>
+      <nav class="side-nav-links">
+        <a class="side-nav-link {% if page == 'dashboard' %}active{% endif %}" href="/" title="结构概览">
+          <span class="side-nav-icon">总</span>
+          <span class="side-nav-label">总览</span>
+          <span class="side-nav-full-label">结构概览</span>
+        </a>
+        <a class="side-nav-link {% if page == 'layers' %}active{% endif %}" href="/layers" title="分层分布">
+          <span class="side-nav-icon">层</span>
+          <span class="side-nav-label">分层</span>
+          <span class="side-nav-full-label">分层分布</span>
+        </a>
+        <a class="side-nav-link {% if page == 'matrix' %}active{% endif %}" href="/matrix" title="交叉矩阵">
+          <span class="side-nav-icon">矩</span>
+          <span class="side-nav-label">矩阵</span>
+          <span class="side-nav-full-label">交叉矩阵</span>
+        </a>
+        <a class="side-nav-link {% if page == 'detail' %}active{% endif %}" href="/detail" title="产品明细">
+          <span class="side-nav-icon">明</span>
+          <span class="side-nav-label">明细</span>
+          <span class="side-nav-full-label">产品明细</span>
+        </a>
+      </nav>
+    </aside>
+
+    <main class="main-content">
+      <div class="page-shell">
+        {% block content %}{% endblock %}
+      </div>
+    </main>
+  </div>
+
+  {% block overlay %}{% endblock %}
+
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+  <script src="{{ url_for('static', path='js/common.js') }}?v=20260508e"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

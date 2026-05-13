@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+
+{% block content %}
+<header class="hero hero-compact">
+  <h1>产品数据明细页</h1>
+</header>
+
+<section class="panel filters-panel">
+  <div class="panel-head compact">
+    <div>
+      <p class="section-kicker">明细筛选</p>
+      <h2>当前条件下的产品清单</h2>
+    </div>
+    <button id="clearFiltersBtn" class="ghost-button" type="button">重置为全部</button>
+  </div>
+
+  <div class="filters-grid">
+    <label class="filter-control">
+      <span>观察周期</span>
+      <div id="periodQuickButtons" class="period-quick-buttons" role="group" aria-label="快速选择观察周期">
+        <button class="period-quick-button" type="button" data-period="7">7天</button>
+        <button class="period-quick-button" type="button" data-period="14">14天</button>
+        <button class="period-quick-button" type="button" data-period="30">30天</button>
+        <button class="period-quick-button" type="button" data-period="90">90天</button>
+        <button class="period-quick-button" type="button" data-period="last_month">上月</button>
+      </div>
+      <!-- Date range picker kept for later.
+      <div class="date-range-inputs date-range-inputs-split">
+        <input id="startDateInput" class="date-range-split-input" type="text" placeholder="开始日期" readonly>
+        <span class="date-range-split-separator">~</span>
+        <input id="endDateInput" class="date-range-split-input" type="text" placeholder="结束日期" readonly>
+      </div>
+      -->
+    </label>
+    <label class="filter-control">
+      <span>站点</span>
+      <select id="siteSelect"></select>
+    </label>
+    <label class="filter-control">
+      <span>店铺</span>
+      <select id="storeSelect"></select>
+    </label>
+    <label class="filter-control">
+      <span>是否超限价</span>
+      <select id="overLimitSelect"></select>
+    </label>
+    <label class="filter-control">
+      <span>日销分层</span>
+      <select id="dailySalesBandSelect"></select>
+    </label>
+    <label class="filter-control">
+      <span>订单毛利率分层</span>
+      <select id="marginBandSelect"></select>
+    </label>
+    <label class="filter-control">
+      <span>关键词</span>
+      <input id="keywordInput" type="search" placeholder="搜索 MSKU / 国家 / 店铺">
+    </label>
+  </div>
+
+  <div class="toolbar-row">
+    <div class="active-filters">
+      <span class="toolbar-label">当前条件</span>
+      <div id="activeFilterChips" class="chip-list"></div>
+    </div>
+  </div>
+</section>
+
+<section class="panel table-section">
+  <div class="panel-head">
+    <div>
+      <p class="section-kicker">产品明细</p>
+      <h2>产品数据明细表</h2>
+    </div>
+    <div class="table-actions">
+      <button id="exportRawCsvBtn" class="ghost-button" type="button">导出全部字段</button>
+      <span id="tableCountText"></span>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table class="sku-table">
+      <thead>
+        <tr>
+          <th>国家</th>
+          <th>店铺</th>
+          <th>MSKU</th>
+          <th>日销</th>
+          <th>日销分层</th>
+          <th>订单毛利率</th>
+          <th>毛利率分层</th>
+          <th>近 7 天销量</th>
+          <th>近 30 天销量</th>
+          <th>30 天销售额</th>
+          <th>售价</th>
+          <th>限价</th>
+          <th>价差</th>
+          <th>超限价</th>
+          <th>FBA 可售</th>
+          <th>库存周转天数</th>
+        </tr>
+      </thead>
+      <tbody id="skuTableBody"></tbody>
+    </table>
+  </div>
+
+  <div class="pagination-bar">
+    <div id="paginationInfo" class="pagination-info"></div>
+    <div class="pagination-controls">
+      <button id="prevPageBtn" class="ghost-button" type="button">上一页</button>
+      <div id="paginationNumbers" class="pagination-numbers"></div>
+      <button id="nextPageBtn" class="ghost-button" type="button">下一页</button>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block overlay %}
+<div id="drawerMask" class="drawer-mask hidden"></div>
+<aside id="detailDrawer" class="detail-drawer hidden" aria-hidden="true">
+  <div class="drawer-head">
+    <div>
+      <p class="section-kicker">产品详情</p>
+      <h2 id="drawerTitle">未选择 SKU</h2>
+    </div>
+    <button id="closeDrawerBtn" class="icon-button" type="button" aria-label="关闭详情">×</button>
+  </div>
+  <div id="drawerContent" class="drawer-content"></div>
+</aside>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', path='js/detail.js') }}?v=20260508e"></script>
+{% endblock %}

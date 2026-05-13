@@ -1,0 +1,1290 @@
+from __future__ import annotations
+
+import base64
+import math
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
+from decimal import Decimal
+from typing import Any
+
+import pymysql
+
+import config as cfg
+from etl.dashboard_daily_update import (
+    DELETE_PERIOD_SNAPSHOT_SQL,
+    INSERT_PERIOD_SNAPSHOT_SQL,
+    PERIOD_PRESET_TABLES,
+    SchemaConfig,
+    period_delete_sql,
+    period_insert_sql,
+    render_sql,
+)
+
+
+DAILY_SALES_BANDS = ["日销 0", "日销 <1", "日销 1-5", "日销 >5"]
+MARGIN_BANDS = ["毛利率 >35%", "毛利率 25-35%", "毛利率 15-25%", "毛利率 10-15%", "毛利率 0-10%", "毛利率 <0%"]
+UNKNOWN_TEXT = "未维护"
+SALES_GOAL = 135000000
+SALES_GOAL_BUFFER = 1.01
+MARGIN_GOAL = 0.20
+DEFAULT_DASHBOARD_DAYS = cfg.DASHBOARD_DEFAULT_PERIOD_DAYS
+MATRIX_ALL_VALUE = "__ALL__"
+MATRIX_PERIOD_TABLE = "etl_datasync.dashboard_product_matrix_period_snapshot"
+
+
+@dataclass(frozen=True)
+class PeriodWindow:
+    start_date: date
+    end_date: date
+    snapshot_date: date
+    period_table: str = "etl_datasync.dashboard_product_period_snapshot"
+    period_code: str = "custom"
+
+    @property
+    def days(self) -> int:
+        return (self.end_date - self.start_date).days + 1
+
+
+def parse_day(value: str | None) -> date | None:
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def format_day(value: date) -> str:
+    return value.strftime("%Y-%m-%d")
+
+
+def to_float(value: Any) -> float:
+    if value is None:
+        return 0.0
+    if isinstance(value, Decimal):
+        return float(value)
+    return float(value)
+
+
+def to_int(value: Any) -> int:
+    return int(round(to_float(value)))
+
+
+def format_percent(value: float, digits: int = 1) -> str:
+    return f"{value * 100:.{digits}f}%"
+
+
+def days_in_year(current: date) -> int:
+    return (date(current.year + 1, 1, 1) - date(current.year, 1, 1)).days
+
+
+def day_of_year(current: date) -> int:
+    return (current - date(current.year, 1, 1)).days + 1
+
+
+def iter_days(start: date, end: date) -> list[date]:
+    count = (end - start).days + 1
+    return [start + timedelta(days=index) for index in range(max(count, 0))]
+
+
+def encode_item_id(snapshot_date: date, period_start: date, period_end: date, item_key: str) -> str:
+    raw = "\x1f".join([format_day(snapshot_date), format_day(period_start), format_day(period_end), item_key])
+    return base64.urlsafe_b64encode(raw.encode("utf-8")).decode("ascii").rstrip("=")
+
+
+def decode_item_id(value: str) -> tuple[date, date, date, str] | None:
+    try:
+        padding = "=" * (-len(value) % 4)
+        raw = base64.urlsafe_b64decode((value + padding).encode("ascii")).decode("utf-8")
+        snapshot_raw, start_raw, end_raw, item_key = raw.split("\x1f", 3)
+        snapshot_date = parse_day(snapshot_raw)
+        period_start = parse_day(start_raw)
+        period_end = parse_day(end_raw)
+        if not snapshot_date or not period_start or not period_end:
+            return None
+        return snapshot_date, period_start, period_end, item_key
+    except Exception:
+        return None
+
+
+class DashboardDbService:
+    def __init__(self) -> None:
+        self.host = cfg.DASHBOARD_DB_HOST
+        self.port = cfg.DASHBOARD_DB_PORT
+        self.user = cfg.DASHBOARD_DB_USER
+        self.password = cfg.DASHBOARD_DB_PASSWORD
+        self.database = cfg.DASHBOARD_DB_NAME
+        self.charset = cfg.DASHBOARD_DB_CHARSET
+        self.schemas = SchemaConfig(
+            target_schema=cfg.DASHBOARD_TARGET_SCHEMA,
+            etl_source_schema=cfg.DASHBOARD_ETL_SOURCE_SCHEMA,
+            dwd_source_schema=cfg.DASHBOARD_DWD_SOURCE_SCHEMA,
+            pricing_source_schema=cfg.DASHBOARD_PRICING_SOURCE_SCHEMA,
+        )
+        self._meta_cache: dict[str, Any] | None = None
+        self._meta_cache_at: datetime | None = None
+
+    def connect(self, autocommit: bool = False):
+        return pymysql.connect(
+            host=self.host,
+            port=self.port,
+            user=self.user,
+            password=self.password,
+            database=self.database,
+            charset=self.charset,
+            cursorclass=pymysql.cursors.DictCursor,
+            autocommit=autocommit,
+        )
+
+    def get_meta(self) -> dict[str, Any]:
+        if self._meta_cache and self._meta_cache_at:
+            if (datetime.now() - self._meta_cache_at).total_seconds() < 300:
+                return dict(self._meta_cache)
+
+        with self.connect(autocommit=True) as conn:
+            bounds = self._get_daily_bounds(conn)
+            snapshot_date = self._get_latest_snapshot_date(conn)
+            sites = self._fetch_distinct(conn, "country")
+            stores = self._fetch_distinct(conn, "seller_name_new")
+
+        start_date, end_date = self._default_range(bounds)
+        payload = {
+            "default_start_date": format_day(start_date),
+            "default_end_date": format_day(end_date),
+            "history_days": (end_date - start_date).days + 1,
+            "latest_snapshot_date": format_day(snapshot_date),
+            "daily_sales_bands": DAILY_SALES_BANDS,
+            "margin_bands": MARGIN_BANDS,
+            "sites": sites,
+            "stores": stores,
+            "data_source": "local_mysql",
+        }
+        self._meta_cache = payload
+        self._meta_cache_at = datetime.now()
+        return dict(payload)
+
+    def get_dashboard_payload(self, filters: dict[str, Any]) -> dict[str, Any]:
+        with self.connect() as conn:
+            window = self._resolve_window(conn, filters)
+            self._ensure_period_snapshot(conn, window)
+            stats = self._fetch_dashboard_stats(conn, window, filters)
+            daily_sales_chart = self._fetch_band_counts(conn, window, filters, "daily_sales_band", DAILY_SALES_BANDS)
+            margin_chart = self._fetch_band_counts(conn, window, filters, "margin_band", MARGIN_BANDS)
+            matrix = self._fetch_matrix_counts(conn, window, filters)
+            series = self._fetch_kpi_series(conn, window, filters)
+
+        return {
+            "meta": self.get_meta(),
+            "goal_overview": self._build_goal_overview_from_stats(stats),
+            "summary_hint": self._build_summary_from_stats(stats, matrix),
+            "kpis": self._build_kpis_from_stats(stats, series),
+            "daily_sales_chart": daily_sales_chart,
+            "margin_chart": margin_chart,
+            "matrix": matrix,
+        }
+
+    def get_detail_payload(self, filters: dict[str, Any], page: int, page_size: int) -> dict[str, Any]:
+        with self.connect() as conn:
+            window = self._resolve_window(conn, filters)
+            self._ensure_period_snapshot(conn, window)
+            total = self._count_period_items(conn, window, filters)
+            total_pages = max(1, math.ceil(total / page_size))
+            safe_page = min(max(page, 1), total_pages)
+            rows = self._fetch_period_items(
+                conn,
+                window,
+                filters,
+                limit=page_size,
+                offset=(safe_page - 1) * page_size,
+            )
+
+        return {
+            "meta": self.get_meta(),
+            "rows": rows,
+            "total": total,
+            "page": safe_page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "summary_hint": f"当前筛选共 {total} 个 SKU",
+        }
+
+    def get_detail_export_payload(self, filters: dict[str, Any]) -> dict[str, Any]:
+        with self.connect() as conn:
+            window = self._resolve_window(conn, filters)
+            self._ensure_period_snapshot(conn, window)
+            columns, rows = self._fetch_period_export_rows(conn, window, filters)
+
+        return {
+            "columns": columns,
+            "rows": rows,
+            "start_date": format_day(window.start_date),
+            "end_date": format_day(window.end_date),
+        }
+
+    def get_detail_record(self, item_id: str, trend_days: int) -> dict[str, Any]:
+        decoded = decode_item_id(item_id)
+        if decoded is None:
+            return {"error": "not_found"}
+        snapshot_date, period_start, period_end, item_key = decoded
+
+        with self.connect(autocommit=True) as conn:
+            bounds = self._get_daily_bounds(conn)
+            period_table = self._render_period_table(
+                self._preset_table_for_range(bounds["max_date"], period_start, period_end)
+            )
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    select *
+                    from {period_table}
+                    where snapshot_date = %(snapshot_date)s
+                      and period_start = %(period_start)s
+                      and period_end = %(period_end)s
+                      and item_key = %(item_key)s
+                      and filter_flag = 1
+                    limit 1
+                    """,
+                    {
+                        "snapshot_date": snapshot_date,
+                        "period_start": period_start,
+                        "period_end": period_end,
+                        "item_key": item_key,
+                    },
+                )
+                row = cursor.fetchone()
+            if not row:
+                return {"error": "not_found"}
+            item = self._row_to_item(row)
+            trend = self._fetch_item_trend(conn, row, period_end, trend_days)
+
+        return {
+            "item": {
+                "id": item["id"],
+                "title": f'{item["msku"]} / {item["store"]} / {item["country"]}',
+                "site": item["site"],
+                "country": item["country"],
+                "store": item["store"],
+                "sku": item["sku"],
+                "msku": item["msku"],
+                "asin": item["asin"],
+                "brand": item["brand"],
+                "category": item["category"],
+                "stat_period": item["stat_period"],
+                "current_revenue": item["scoped_revenue"],
+                "current_daily_sales": item["daily_sales"],
+                "current_margin": item["order_gross_margin"],
+                "current_price": item["current_price"],
+                "fba_sellable_inventory": item["fba_sellable_inventory"],
+                "stock_days": item["stock_days"],
+            },
+            "trend": trend,
+        }
+
+    def _get_daily_bounds(self, conn) -> dict[str, Any]:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                select min(dt_date) as min_date, max(dt_date) as max_date
+                from dashboard_product_performance_daily
+                """
+            )
+            row = cursor.fetchone() or {}
+        today = date.today()
+        return {
+            "min_date": row.get("min_date") or today,
+            "max_date": row.get("max_date") or today,
+        }
+
+    def _default_range(self, bounds: dict[str, Any]) -> tuple[date, date]:
+        end_date = bounds["max_date"]
+        start_date = max(bounds["min_date"], end_date - timedelta(days=DEFAULT_DASHBOARD_DAYS - 1))
+        return start_date, end_date
+
+    def _get_latest_snapshot_date(self, conn) -> date:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                select min(latest_date) as snapshot_date
+                from (
+                    select max(snapshot_date) as latest_date from dashboard_restock_daily_snapshot
+                    union all
+                    select max(snapshot_date) as latest_date from dashboard_inventory_daily_snapshot
+                    union all
+                    select max(snapshot_date) as latest_date from dashboard_listing_price_daily_snapshot
+                    union all
+                    select max(snapshot_date) as latest_date from dashboard_limit_price_daily_snapshot
+                ) s
+                where latest_date is not null
+                """
+            )
+            row = cursor.fetchone() or {}
+        return row.get("snapshot_date") or date.today()
+
+    def _fetch_distinct(self, conn, column: str) -> list[str]:
+        if column not in {"country", "country_category", "seller_name_new"}:
+            return []
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    select distinct {column} as value
+                    from dashboard_product_period_90d_snapshot
+                    where {column} is not null
+                      and {column} <> ''
+                      and filter_flag = 1
+                    order by {column}
+                    """
+                )
+                values = [row["value"] for row in cursor.fetchall()]
+                if values:
+                    return values
+        except pymysql.MySQLError:
+            pass
+
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                select distinct {column} as value
+                from dashboard_product_performance_daily
+                where {column} is not null and {column} <> ''
+                order by {column}
+                """
+            )
+            return [row["value"] for row in cursor.fetchall()]
+
+    def _resolve_window(self, conn, filters: dict[str, Any]) -> PeriodWindow:
+        bounds = self._get_daily_bounds(conn)
+        default_start, default_end = self._default_range(bounds)
+        start_date = parse_day(filters.get("start_date")) or default_start
+        end_date = parse_day(filters.get("end_date")) or default_end
+        start_date = max(bounds["min_date"], start_date)
+        end_date = min(bounds["max_date"], end_date)
+        if start_date > end_date:
+            start_date, end_date = default_start, default_end
+        period_table = self._preset_table_for_range(bounds["max_date"], start_date, end_date)
+        period_code = {table: name for name, table in PERIOD_PRESET_TABLES.items()}.get(period_table, "custom")
+        return PeriodWindow(
+            start_date=start_date,
+            end_date=end_date,
+            snapshot_date=self._get_latest_snapshot_date(conn),
+            period_table=period_table,
+            period_code=period_code,
+        )
+
+    def _preset_table_for_range(self, biz_date: date, start_date: date, end_date: date) -> str:
+        month_start = date(biz_date.year, biz_date.month, 1)
+        last_month_end = month_start - timedelta(days=1)
+        last_month_start = date(last_month_end.year, last_month_end.month, 1)
+        presets = {
+            "last_7_days": (biz_date - timedelta(days=6), biz_date),
+            "last_14_days": (biz_date - timedelta(days=13), biz_date),
+            "last_30_days": (biz_date - timedelta(days=29), biz_date),
+            "last_90_days": (biz_date - timedelta(days=89), biz_date),
+            "last_month": (last_month_start, last_month_end),
+        }
+        for name, (preset_start, preset_end) in presets.items():
+            if start_date == preset_start and end_date == preset_end:
+                return PERIOD_PRESET_TABLES[name]
+        return "etl_datasync.dashboard_product_period_snapshot"
+
+    def _render_period_table(self, table_name: str) -> str:
+        allowed_tables = set(PERIOD_PRESET_TABLES.values()) | {"etl_datasync.dashboard_product_period_snapshot"}
+        if table_name not in allowed_tables:
+            raise RuntimeError(f"Unexpected period table: {table_name}")
+        return render_sql(table_name, self.schemas)
+
+    def _ensure_period_snapshot(self, conn, window: PeriodWindow) -> None:
+        params = {
+            "snapshot_date": window.snapshot_date,
+            "period_start": window.start_date,
+            "period_end": window.end_date,
+        }
+        period_table = self._render_period_table(window.period_table)
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                select count(*) as total
+                from {period_table}
+                where snapshot_date = %(snapshot_date)s
+                  and period_start = %(period_start)s
+                  and period_end = %(period_end)s
+                """,
+                params,
+            )
+            exists = to_int((cursor.fetchone() or {}).get("total")) > 0
+            if exists:
+                return
+
+            if window.period_table == "etl_datasync.dashboard_product_period_snapshot":
+                delete_sql = DELETE_PERIOD_SNAPSHOT_SQL
+                insert_sql = INSERT_PERIOD_SNAPSHOT_SQL
+            else:
+                delete_sql = period_delete_sql(window.period_table)
+                insert_sql = period_insert_sql(window.period_table)
+            cursor.execute(render_sql(delete_sql, self.schemas), params)
+            cursor.execute(render_sql(insert_sql, self.schemas), params)
+        conn.commit()
+
+    def _base_period_params(self, window: PeriodWindow) -> dict[str, Any]:
+        return {
+            "snapshot_date": window.snapshot_date,
+            "period_start": window.start_date,
+            "period_end": window.end_date,
+        }
+
+    def _filter_clause(self, filters: dict[str, Any], alias: str = "p") -> tuple[str, dict[str, Any]]:
+        clauses = [f"{alias}.filter_flag = 1"]
+        params: dict[str, Any] = {}
+
+        if filters.get("site", "all") != "all":
+            clauses.append(f"{alias}.country = %(site)s")
+            params["site"] = filters["site"]
+        if filters.get("store", "all") != "all":
+            clauses.append(f"{alias}.seller_name_new = %(store)s")
+            params["store"] = filters["store"]
+        if filters.get("over_limit") == "yes":
+            clauses.append(f"{alias}.over_limit_flag = 1")
+        elif filters.get("over_limit") == "no":
+            clauses.append(f"{alias}.over_limit_flag = 0")
+        if filters.get("daily_sales_band", "all") != "all":
+            clauses.append(f"{alias}.daily_sales_band = %(daily_sales_band)s")
+            params["daily_sales_band"] = filters["daily_sales_band"]
+        if filters.get("margin_band", "all") != "all":
+            clauses.append(f"{alias}.margin_band = %(margin_band)s")
+            params["margin_band"] = filters["margin_band"]
+        keyword = str(filters.get("keyword") or "").strip()
+        if keyword:
+            params["keyword"] = f"%{keyword}%"
+            clauses.append(
+                "("
+                f"{alias}.seller_sku_adj like %(keyword)s "
+                f"or coalesce({alias}.local_sku, '') like %(keyword)s "
+                f"or coalesce({alias}.seller_name, '') like %(keyword)s "
+                f"or {alias}.country like %(keyword)s"
+                ")"
+            )
+
+        return " and ".join(clauses), params
+
+    def _period_where(self, window: PeriodWindow, filters: dict[str, Any], alias: str = "p") -> tuple[str, dict[str, Any]]:
+        clause, filter_params = self._filter_clause(filters, alias)
+        params = self._base_period_params(window)
+        params.update(filter_params)
+        where_sql = (
+            f"{alias}.snapshot_date = %(snapshot_date)s "
+            f"and {alias}.period_start = %(period_start)s "
+            f"and {alias}.period_end = %(period_end)s "
+            f"and {clause}"
+        )
+        return where_sql, params
+
+    def _fetch_dashboard_stats(self, conn, window: PeriodWindow, filters: dict[str, Any]) -> dict[str, float]:
+        where_sql, params = self._period_where(window, filters)
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                select
+                    count(*) as sku_count,
+                    sum(case when p.over_limit_flag = 1 then 1 else 0 end) as over_limit_count,
+                    sum(p.sales_qty) as sales_qty,
+                    sum(p.sales_amount) as sales_amount,
+                    sum(p.sales_amount_ex_tax) as sales_amount_ex_tax,
+                    sum(p.order_gross_profit) as order_gross_profit,
+                    sum(p.ad_spend) as ad_spend,
+                    sum(p.ad_sales) as ad_sales
+                from {self._render_period_table(window.period_table)} p
+                where {where_sql}
+                """,
+                params,
+            )
+            row = cursor.fetchone() or {}
+            cursor.execute(
+                f"""
+                select
+                    sum(x.fba_total_inventory) as fba_total_inventory,
+                    sum(x.fba_sellable_inventory) as fba_sellable_inventory,
+                    sum(x.actual_in_transit) as actual_in_transit,
+                    sum(x.unsellable_inventory) as unsellable_inventory
+                from (
+                    select
+                        p.seller_name_new,
+                        p.seller_sku_adj,
+                        p.country_category,
+                        max(p.fba_total_inventory) as fba_total_inventory,
+                        max(p.fba_sellable_inventory) as fba_sellable_inventory,
+                        max(p.actual_in_transit) as actual_in_transit,
+                        max(p.unsellable_inventory) as unsellable_inventory
+                    from {self._render_period_table(window.period_table)} p
+                    where {where_sql}
+                    group by
+                        p.seller_name_new,
+                        p.seller_sku_adj,
+                        p.country_category
+                ) x
+                """,
+                params,
+            )
+            inventory_row = cursor.fetchone() or {}
+
+        stat_days = max(window.days, 1)
+        sales_amount = to_float(row.get("sales_amount"))
+        sales_amount_ex_tax = to_float(row.get("sales_amount_ex_tax"))
+        order_gross_profit = to_float(row.get("order_gross_profit"))
+        ad_spend = to_float(row.get("ad_spend"))
+        ad_sales = to_float(row.get("ad_sales"))
+        return {
+            "sku_count": to_int(row.get("sku_count")),
+            "over_limit_count": to_int(row.get("over_limit_count")),
+            "sales_qty": to_float(row.get("sales_qty")),
+            "sales_amount": sales_amount,
+            "order_gross_margin": round(order_gross_profit / sales_amount_ex_tax, 4) if sales_amount_ex_tax else 0,
+            "avg_daily_sales": round(to_float(row.get("sales_qty")) / stat_days, 2),
+            "fba_total_inventory": to_float(inventory_row.get("fba_total_inventory")),
+            "fba_sellable_inventory": to_float(inventory_row.get("fba_sellable_inventory")),
+            "actual_in_transit": to_float(inventory_row.get("actual_in_transit")),
+            "unsellable_inventory": to_float(inventory_row.get("unsellable_inventory")),
+            "ad_spend": ad_spend,
+            "ad_sales": ad_sales,
+            "acos": round(ad_spend / ad_sales, 4) if ad_sales else 0,
+            "tacos": round(ad_spend / sales_amount, 4) if sales_amount else 0,
+        }
+
+    def _fetch_band_counts(
+        self,
+        conn,
+        window: PeriodWindow,
+        filters: dict[str, Any],
+        column: str,
+        bands: list[str],
+    ) -> dict[str, Any]:
+        if column not in {"daily_sales_band", "margin_band"}:
+            raise RuntimeError(f"Unexpected band column: {column}")
+        where_sql, params = self._period_where(window, filters)
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                select
+                    p.{column} as band,
+                    count(*) as value,
+                    sum(case when p.over_limit_flag = 1 then 1 else 0 end) as over_limit
+                from {self._render_period_table(window.period_table)} p
+                where {where_sql}
+                group by p.{column}
+                """,
+                params,
+            )
+            by_band = {row["band"]: row for row in cursor.fetchall()}
+
+        return {
+            "items": [
+                {
+                    "name": band,
+                    "value": to_int((by_band.get(band) or {}).get("value")),
+                    "over_limit": to_int((by_band.get(band) or {}).get("over_limit")),
+                }
+                for band in bands
+            ]
+        }
+
+    def _fetch_matrix_counts(self, conn, window: PeriodWindow, filters: dict[str, Any]) -> dict[str, Any]:
+        if not str(filters.get("keyword") or "").strip() and window.period_code != "custom":
+            try:
+                matrix = self._fetch_matrix_counts_from_summary(conn, window, filters)
+                if matrix is not None:
+                    return matrix
+            except pymysql.MySQLError:
+                pass
+        return self._fetch_matrix_counts_from_period(conn, window, filters)
+
+    def _fetch_matrix_counts_from_summary(self, conn, window: PeriodWindow, filters: dict[str, Any]) -> dict[str, Any] | None:
+        base_clauses = [
+            "m.snapshot_date = %(snapshot_date)s",
+            "m.period_code = %(period_code)s",
+            "m.country = %(country)s",
+            "m.seller_name_new = %(seller_name_new)s",
+            "m.over_limit_scope = %(over_limit_scope)s",
+        ]
+        base_params: dict[str, Any] = {
+            "snapshot_date": window.snapshot_date,
+            "period_code": window.period_code,
+            "country": filters.get("site") if filters.get("site", "all") != "all" else MATRIX_ALL_VALUE,
+            "seller_name_new": filters.get("store") if filters.get("store", "all") != "all" else MATRIX_ALL_VALUE,
+            "over_limit_scope": filters.get("over_limit") if filters.get("over_limit") in {"yes", "no"} else "all",
+        }
+        if filters.get("daily_sales_band", "all") != "all":
+            base_clauses.append("m.daily_sales_band = %(daily_sales_band)s")
+            base_params["daily_sales_band"] = filters["daily_sales_band"]
+        if filters.get("margin_band", "all") != "all":
+            base_clauses.append("m.margin_band = %(margin_band)s")
+            base_params["margin_band"] = filters["margin_band"]
+
+        current_counts = self._fetch_matrix_summary_raw_counts(
+            conn,
+            base_clauses,
+            base_params,
+            window.start_date,
+            window.end_date,
+        )
+        if not current_counts:
+            return None
+        previous_start, previous_end = self._previous_period_range(window)
+        bounds = self._get_daily_bounds(conn)
+        previous_counts = None
+        if previous_start >= bounds["min_date"] and previous_end <= bounds["max_date"]:
+            previous_counts = self._fetch_matrix_summary_raw_counts(
+                conn,
+                base_clauses,
+                base_params,
+                previous_start,
+                previous_end,
+            )
+        return self._build_matrix_from_raw_counts(current_counts, previous_counts)
+
+    def _fetch_matrix_summary_raw_counts(
+        self,
+        conn,
+        base_clauses: list[str],
+        base_params: dict[str, Any],
+        period_start: date,
+        period_end: date,
+    ) -> dict[tuple[str, str], int]:
+        clauses = list(base_clauses)
+        clauses.extend(
+            [
+                "m.period_start = %(period_start)s",
+                "m.period_end = %(period_end)s",
+            ]
+        )
+        params = dict(base_params)
+        params.update({"period_start": period_start, "period_end": period_end})
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                select
+                    m.margin_band,
+                    m.daily_sales_band,
+                    sum(m.sku_count) as count_value
+                from {render_sql(MATRIX_PERIOD_TABLE, self.schemas)} m
+                where {" and ".join(clauses)}
+                group by m.margin_band, m.daily_sales_band
+                """,
+                params,
+            )
+            rows = cursor.fetchall()
+        return {
+            (row["margin_band"], row["daily_sales_band"]): to_int(row.get("count_value"))
+            for row in rows
+        }
+
+    def _previous_period_range(self, window: PeriodWindow) -> tuple[date, date]:
+        previous_end = window.start_date - timedelta(days=1)
+        if window.period_code == "last_month":
+            previous_start = date(previous_end.year, previous_end.month, 1)
+        else:
+            days = (window.end_date - window.start_date).days + 1
+            previous_start = previous_end - timedelta(days=days - 1)
+        return previous_start, previous_end
+
+    def _fetch_matrix_counts_from_period(self, conn, window: PeriodWindow, filters: dict[str, Any]) -> dict[str, Any]:
+        where_sql, params = self._period_where(window, filters)
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                select
+                    p.margin_band,
+                    p.daily_sales_band,
+                    count(*) as count_value
+                from {self._render_period_table(window.period_table)} p
+                where {where_sql}
+                group by p.margin_band, p.daily_sales_band
+                """,
+                params,
+            )
+            raw_counts = {
+                (row["margin_band"], row["daily_sales_band"]): to_int(row.get("count_value"))
+                for row in cursor.fetchall()
+            }
+
+        return self._build_matrix_from_raw_counts(raw_counts)
+
+    def _build_matrix_from_raw_counts(
+        self,
+        raw_counts: dict[tuple[str, str], int],
+        previous_counts: dict[tuple[str, str], int] | None = None,
+    ) -> dict[str, Any]:
+        total = max(sum(raw_counts.values()), 1)
+        previous_total = max(sum((previous_counts or {}).values()), 1)
+        has_previous = previous_counts is not None
+        cells = []
+        for margin in MARGIN_BANDS:
+            for sales in DAILY_SALES_BANDS:
+                count = raw_counts.get((margin, sales), 0)
+                previous_count = (previous_counts or {}).get((margin, sales), 0)
+                count_delta = count - previous_count if has_previous else None
+                count_change_ratio = (
+                    round(count_delta / previous_count, 4)
+                    if has_previous and previous_count
+                    else (1 if has_previous and count > 0 else 0 if has_previous else None)
+                )
+                previous_ratio = round(previous_count / previous_total, 4) if has_previous else None
+                cells.append(
+                    {
+                        "margin_band": margin,
+                        "daily_sales_band": sales,
+                        "count": count,
+                        "ratio": round(count / total, 4),
+                        "previous_count": previous_count if has_previous else None,
+                        "count_delta": count_delta,
+                        "count_change_ratio": count_change_ratio,
+                        "previous_ratio": previous_ratio,
+                        "ratio_delta": round((count / total) - previous_ratio, 4) if has_previous else None,
+                    }
+                )
+        return {
+            "margin_bands": MARGIN_BANDS,
+            "daily_sales_bands": DAILY_SALES_BANDS,
+            "cells": cells,
+        }
+
+    def _fetch_period_items(
+        self,
+        conn,
+        window: PeriodWindow,
+        filters: dict[str, Any],
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        where_sql, params = self._period_where(window, filters)
+        limit_sql = ""
+        if limit is not None:
+            params["limit"] = limit
+            params["offset"] = offset
+            limit_sql = "limit %(limit)s offset %(offset)s"
+
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                select p.*
+                from {self._render_period_table(window.period_table)} p
+                where {where_sql}
+                order by p.sales_amount desc, p.daily_sales desc, p.seller_sku_adj
+                {limit_sql}
+                """,
+                params,
+            )
+            rows = [self._row_to_item(row) for row in cursor.fetchall()]
+            self._enrich_recent_sales_metrics(conn, window.end_date, rows)
+            return rows
+
+    def _fetch_period_export_rows(
+        self,
+        conn,
+        window: PeriodWindow,
+        filters: dict[str, Any],
+    ) -> tuple[list[str], list[dict[str, Any]]]:
+        where_sql, params = self._period_where(window, filters)
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                select p.*
+                from {self._render_period_table(window.period_table)} p
+                where {where_sql}
+                order by p.sales_amount desc, p.daily_sales desc, p.seller_sku_adj
+                """,
+                params,
+            )
+            columns = [column[0] for column in cursor.description or ()]
+            rows = cursor.fetchall()
+        return columns, rows
+
+    def _enrich_recent_sales_metrics(self, conn, period_end: date, items: list[dict[str, Any]]) -> None:
+        item_keys = [item["item_key"] for item in items if item.get("item_key")]
+        if not item_keys:
+            return
+
+        params: dict[str, Any] = {
+            "recent_7_start": period_end - timedelta(days=6),
+            "recent_30_start": period_end - timedelta(days=29),
+            "period_end": period_end,
+        }
+        placeholders = []
+        for index, item_key in enumerate(item_keys):
+            key = f"item_key_{index}"
+            params[key] = item_key
+            placeholders.append(f"%({key})s")
+
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                select
+                    item_key,
+                    sum(case when dt_date between %(recent_7_start)s and %(period_end)s then sales_qty else 0 end) as sales_7d,
+                    sum(case when dt_date between %(recent_30_start)s and %(period_end)s then sales_qty else 0 end) as sales_30d,
+                    sum(case when dt_date between %(recent_30_start)s and %(period_end)s then sales_amount else 0 end) as revenue_30d
+                from dashboard_product_performance_daily
+                where dt_date between %(recent_30_start)s and %(period_end)s
+                  and item_key in ({", ".join(placeholders)})
+                group by item_key
+                """,
+                params,
+            )
+            metrics_by_key = {row["item_key"]: row for row in cursor.fetchall()}
+
+        for item in items:
+            metrics = metrics_by_key.get(item.get("item_key"))
+            if not metrics:
+                item["sales_7d"] = 0
+                item["sales_30d"] = 0
+                item["revenue_30d"] = 0
+                continue
+            item["sales_7d"] = round(to_float(metrics.get("sales_7d")))
+            item["sales_30d"] = round(to_float(metrics.get("sales_30d")))
+            item["revenue_30d"] = round(to_float(metrics.get("revenue_30d")), 2)
+
+    def _count_period_items(self, conn, window: PeriodWindow, filters: dict[str, Any]) -> int:
+        where_sql, params = self._period_where(window, filters)
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                select count(*) as total
+                from {self._render_period_table(window.period_table)} p
+                where {where_sql}
+                """,
+                params,
+            )
+            return to_int((cursor.fetchone() or {}).get("total"))
+
+    def _row_to_item(self, row: dict[str, Any]) -> dict[str, Any]:
+        stat_days = max(to_int(row.get("stat_days")), 1)
+        sales_qty = to_float(row.get("sales_qty"))
+        sales_amount = to_float(row.get("sales_amount"))
+        daily_sales = to_float(row.get("daily_sales"))
+        current_price = to_float(row.get("current_price"))
+        limit_price = to_float(row.get("limit_price"))
+        period_start = row["period_start"]
+        period_end = row["period_end"]
+        snapshot_date = row["snapshot_date"]
+        item_key = row["item_key"]
+
+        return {
+            "id": encode_item_id(snapshot_date, period_start, period_end, item_key),
+            "item_key": item_key,
+            "site": row.get("country") or "",
+            "country": row.get("country") or "",
+            "store": row.get("seller_name_new") or "",
+            "sku": row.get("seller_sku_adj") or "",
+            "msku": row.get("seller_sku_adj") or "",
+            "asin": row.get("local_sku") or "",
+            "product_name": f"{row.get('seller_sku_adj') or ''} / {row.get('country') or ''}",
+            "brand": UNKNOWN_TEXT,
+            "category": row.get("country") or row.get("country_category") or "",
+            "current_price": current_price,
+            "limit_price": limit_price,
+            "price_gap": round(current_price - limit_price, 2) if limit_price else 0,
+            "over_limit": bool(row.get("over_limit_flag")),
+            "fba_sellable_inventory": to_int(row.get("fba_sellable_inventory")),
+            "actual_in_transit": to_int(row.get("actual_in_transit")),
+            "unsellable_inventory": to_int(row.get("unsellable_inventory")),
+            "stock_days": to_int(row.get("local_stock_sellable_days")),
+            "rating": 0,
+            "review_count": 0,
+            "scoped_sales": round(sales_qty),
+            "scoped_revenue": round(sales_amount, 2),
+            "daily_sales": round(daily_sales, 2),
+            "daily_sales_band": row.get("daily_sales_band") or "日销 0",
+            "order_gross_margin": round(to_float(row.get("order_gross_margin")), 4),
+            "margin_band": row.get("margin_band") or "毛利率 <0%",
+            "sales_7d": round(daily_sales * min(7, stat_days)),
+            "sales_30d": round(daily_sales * min(30, stat_days)),
+            "revenue_30d": round((sales_amount / stat_days) * min(30, stat_days), 2),
+            "ad_spend": round(to_float(row.get("ad_spend")), 2),
+            "ad_sales": round(to_float(row.get("ad_sales")), 2),
+            "acos": round(to_float(row.get("acos")), 4),
+            "tacos": round(to_float(row.get("tacos")), 4),
+            "ctr": round(to_float(row.get("ctr")), 4),
+            "stat_period": f"{format_day(period_start)} ~ {format_day(period_end)}",
+        }
+
+    def _fetch_kpi_series(self, conn, window: PeriodWindow, filters: dict[str, Any]) -> dict[str, list[float]]:
+        trend_end = window.end_date
+        trend_start = max(window.start_date, trend_end - timedelta(days=6))
+        labels = iter_days(trend_start, trend_end)
+        empty = {
+            "active_sku": [0 for _ in labels],
+            "revenue": [0.0 for _ in labels],
+            "daily_sales": [0.0 for _ in labels],
+            "margin": [0.0 for _ in labels],
+            "ad_spend": [0.0 for _ in labels],
+            "ad_sales": [0.0 for _ in labels],
+            "acos": [0.0 for _ in labels],
+            "tacos": [0.0 for _ in labels],
+        }
+        if not labels:
+            return empty
+
+        where_sql, params = self._period_where(window, filters, alias="p")
+        params.update({"trend_start": trend_start, "trend_end": trend_end})
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                select
+                    d.dt_date,
+                    count(distinct case when d.sales_qty > 0 then d.item_key end) as active_sku,
+                    sum(d.sales_qty) as sales_qty,
+                    sum(d.sales_amount) as sales_amount,
+                    sum(d.order_gross_profit) as order_gross_profit,
+                    sum(d.sales_amount_ex_tax) as sales_amount_ex_tax,
+                    sum(d.ad_spend) as ad_spend,
+                    sum(d.ad_sales) as ad_sales
+                from {self._render_period_table(window.period_table)} p
+                join dashboard_product_performance_daily d
+                  on d.dt_date between %(trend_start)s and %(trend_end)s
+                 and d.item_key = p.item_key
+                where {where_sql}
+                group by d.dt_date
+                """,
+                params,
+            )
+            by_date = {row["dt_date"]: row for row in cursor.fetchall()}
+
+        revenue = []
+        daily_sales = []
+        margin = []
+        ad_spend = []
+        ad_sales = []
+        active_sku = []
+        for day in labels:
+            row = by_date.get(day, {})
+            day_revenue = to_float(row.get("sales_amount"))
+            day_units = to_float(row.get("sales_qty"))
+            day_ad_spend = to_float(row.get("ad_spend"))
+            day_ad_sales = to_float(row.get("ad_sales"))
+            revenue.append(round(day_revenue, 2))
+            daily_sales.append(round(day_units, 2))
+            margin.append(round(to_float(row.get("order_gross_profit")) / to_float(row.get("sales_amount_ex_tax")), 4) if to_float(row.get("sales_amount_ex_tax")) else 0)
+            ad_spend.append(round(day_ad_spend, 2))
+            ad_sales.append(round(day_ad_sales, 2))
+            active_sku.append(to_int(row.get("active_sku")))
+
+        empty.update(
+            {
+                "active_sku": active_sku,
+                "revenue": revenue,
+                "daily_sales": daily_sales,
+                "margin": margin,
+                "ad_spend": ad_spend,
+                "ad_sales": ad_sales,
+                "acos": [round(spend / sale, 4) if sale else 0 for spend, sale in zip(ad_spend, ad_sales)],
+                "tacos": [round(spend / sale, 4) if sale else 0 for spend, sale in zip(ad_spend, revenue)],
+            }
+        )
+        return empty
+
+    def _fetch_item_trend(self, conn, row: dict[str, Any], period_end: date, trend_days: int) -> dict[str, Any]:
+        days = max(7, min(30, trend_days))
+        trend_start = period_end - timedelta(days=days - 1)
+        labels = iter_days(trend_start, period_end)
+        params = {
+            "trend_start": trend_start,
+            "trend_end": period_end,
+            "item_key": row.get("item_key"),
+        }
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                select dt_date, sum(sales_amount) as sales_amount
+                from dashboard_product_performance_daily
+                where dt_date between %(trend_start)s and %(trend_end)s
+                  and item_key = %(item_key)s
+                group by dt_date
+                """,
+                params,
+            )
+            by_date = {item["dt_date"]: to_float(item.get("sales_amount")) for item in cursor.fetchall()}
+
+        values = [round(by_date.get(day, 0.0), 2) for day in labels]
+        total_revenue = round(sum(values), 2)
+        average_revenue = round(total_revenue / max(days, 1), 2)
+        first_value = values[0] if values else 0
+        latest_value = values[-1] if values else 0
+        change_ratio = ((latest_value - first_value) / first_value) if first_value else (1 if latest_value > 0 else 0)
+        return {
+            "days": days,
+            "labels": [format_day(day) for day in labels],
+            "values": values,
+            "total_revenue": total_revenue,
+            "average_revenue": average_revenue,
+            "latest_revenue": latest_value,
+            "change_ratio": round(change_ratio, 4),
+        }
+
+    def _build_summary_from_stats(self, stats: dict[str, float], matrix: dict[str, Any]) -> str:
+        combo = 0
+        for cell in matrix.get("cells", []):
+            if cell.get("margin_band") == "毛利率 >35%" and cell.get("daily_sales_band") == "日销 <1":
+                combo = int(cell.get("count") or 0)
+                break
+        return (
+            f"当前筛选共 {int(stats['sku_count'])} 个 SKU，"
+            f"其中“毛利率 >35% 且日销 <1”有 {combo} 个，"
+            f"超限价 {int(stats['over_limit_count'])} 个。"
+        )
+
+    def _build_goal_overview_from_stats(self, stats: dict[str, float]) -> dict[str, Any]:
+        current_revenue = round(stats["sales_amount"], 2)
+        current_margin = round(stats["order_gross_margin"], 4)
+        today = date.today()
+        year_days = days_in_year(today)
+        current_day = day_of_year(today)
+        target_by_today = round(SALES_GOAL / year_days * SALES_GOAL_BUFFER * current_day, 2)
+        return {
+            "sales_goal": {
+                "title": "销售额目标",
+                "current_value": current_revenue,
+                "target_value": SALES_GOAL,
+                "ratio": round(current_revenue / SALES_GOAL, 4) if SALES_GOAL else 0,
+                "detail_text": "当前筛选周期销售额 / 年度目标",
+                "delta_text": f"距离目标还差 {SALES_GOAL - current_revenue:,.2f}",
+            },
+            "current_goal": {
+                "title": "当前目标情况",
+                "current_value": current_revenue,
+                "target_value": target_by_today,
+                "ratio": round(current_revenue / target_by_today, 4) if target_by_today else 0,
+                "detail_text": f"{format_day(today)} / 1.35 亿 / {year_days} * 1.01 * 第 {current_day} 天",
+                "delta_text": f"距离今日进度差 {target_by_today - current_revenue:,.2f}",
+            },
+            "margin_goal": {
+                "title": "毛利率目标",
+                "current_value": current_margin,
+                "target_value": MARGIN_GOAL,
+                "ratio": round(current_margin / MARGIN_GOAL, 4) if MARGIN_GOAL else 0,
+                "detail_text": "当前筛选周期订单毛利率 / 目标值",
+                "delta_text": f"距离目标差 {(MARGIN_GOAL - current_margin) * 100:.1f} 个百分点",
+            },
+        }
+
+    def _build_kpis_from_stats(self, stats: dict[str, float], series: dict[str, list[float]]) -> list[dict[str, Any]]:
+        revenue = round(stats["sales_amount"], 2)
+        avg_daily_sales = round(stats["avg_daily_sales"], 2)
+        avg_margin = round(stats["order_gross_margin"], 4)
+        sellable = round(stats["fba_sellable_inventory"])
+        in_transit = round(stats["actual_in_transit"])
+        unsellable = round(stats["unsellable_inventory"])
+        total_inventory = max(round(stats["fba_total_inventory"]), 1)
+        ad_spend = round(stats["ad_spend"], 2)
+        ad_sales = round(stats["ad_sales"], 2)
+        acos = round(stats["acos"], 4)
+        tacos = round(stats["tacos"], 4)
+        trend_size = max(len(series.get("revenue", [])), 2)
+        sellable_series = [sellable for _ in range(trend_size)]
+        in_transit_series = [in_transit for _ in range(trend_size)]
+        unsellable_series = [unsellable for _ in range(trend_size)]
+
+        return [
+            self._kpi("active_sku", "在售产品数", stats["sku_count"], "number", "结构", "当前筛选下的产品数", self._ratio_text(stats["sku_count"], max(stats["sku_count"], 1)), "positive", "#1769e0", series["active_sku"]),
+            self._kpi("revenue", "区间销售额", revenue, "currency", "规模", "当前区间累计销售额", self._slope_text(series["revenue"]), self._slope_tone(series["revenue"]), "#18a17d", series["revenue"]),
+            self._kpi("avg_daily_sales", "平均日销", avg_daily_sales, "number", "日销", "当前周期总销量 / 周期天数", self._daily_sales_hint(avg_daily_sales), self._daily_sales_tone(avg_daily_sales), "#4b86df", series["daily_sales"]),
+            self._kpi("avg_margin", "平均订单毛利率", avg_margin, "percent", "毛利", "当前周期订单毛利率", self._margin_hint(avg_margin), self._margin_tone(avg_margin), "#cf4f5f", series["margin"]),
+            self._kpi("fba_sellable", "FBA 可售", sellable, "number", "库存", "当前筛选下 FBA 可售库存", "占总库存 " + format_percent(sellable / total_inventory), "positive", "#4b86df", sellable_series),
+            self._kpi("actual_in_transit", "实际在途", in_transit, "number", "补货", "当前筛选下实际在途", "占总库存 " + format_percent(in_transit / total_inventory), "warning", "#18a17d", in_transit_series),
+            self._kpi("unsellable", "不可售库存", unsellable, "number", "风险库存", "当前筛选下不可售库存", "占总库存 " + format_percent(unsellable / total_inventory), "negative", "#cf4f5f", unsellable_series),
+            self._kpi("ad_spend", "广告花费", ad_spend, "currency", "广告", "当前区间广告花费", self._slope_text(series["ad_spend"]), self._slope_tone(series["ad_spend"]), "#d97706", series["ad_spend"]),
+            self._kpi("acos", "ACOS", acos, "percent", "投放效率", "广告花费 / 广告销售额", self._slope_text(series["acos"]), self._slope_tone(series["acos"]), "#cf4f5f", series["acos"]),
+            self._kpi("tacos", "TACOS", tacos, "percent", "营收占比", "广告花费 / 总销售额", self._slope_text(series["tacos"]), self._slope_tone(series["tacos"]), "#4b86df", series["tacos"]),
+        ]
+
+    def _build_summary(self, items: list[dict[str, Any]]) -> str:
+        combo = len([item for item in items if item["margin_band"] == "毛利率 >35%" and item["daily_sales_band"] == "日销 <1"])
+        over_limit = len([item for item in items if item["over_limit"]])
+        return f"当前筛选共 {len(items)} 个 SKU，其中“毛利率 >35% 且日销 <1”有 {combo} 个，超限价 {over_limit} 个。"
+
+    def _build_goal_overview(self, items: list[dict[str, Any]]) -> dict[str, Any]:
+        current_revenue = round(sum(item["scoped_revenue"] for item in items), 2)
+        weighted_margin = self._weighted_margin(items)
+        today = date.today()
+        year_days = days_in_year(today)
+        current_day = day_of_year(today)
+        target_by_today = round(SALES_GOAL / year_days * SALES_GOAL_BUFFER * current_day, 2)
+        return {
+            "sales_goal": {
+                "title": "销售额目标",
+                "current_value": current_revenue,
+                "target_value": SALES_GOAL,
+                "ratio": round(current_revenue / SALES_GOAL, 4) if SALES_GOAL else 0,
+                "detail_text": "当前筛选周期销售额 / 年度目标",
+                "delta_text": f"距离目标还差 {SALES_GOAL - current_revenue:,.2f}",
+            },
+            "current_goal": {
+                "title": "当前目标情况",
+                "current_value": current_revenue,
+                "target_value": target_by_today,
+                "ratio": round(current_revenue / target_by_today, 4) if target_by_today else 0,
+                "detail_text": f"{format_day(today)} / 1.35 亿 / {year_days} * 1.01 * 第 {current_day} 天",
+                "delta_text": f"距离今日进度差 {target_by_today - current_revenue:,.2f}",
+            },
+            "margin_goal": {
+                "title": "毛利率目标",
+                "current_value": weighted_margin,
+                "target_value": MARGIN_GOAL,
+                "ratio": round(weighted_margin / MARGIN_GOAL, 4) if MARGIN_GOAL else 0,
+                "detail_text": "当前筛选周期订单毛利率 / 目标值",
+                "delta_text": f"距离目标差 {(MARGIN_GOAL - weighted_margin) * 100:.1f} 个百分点",
+            },
+        }
+
+    def _build_kpis(self, items: list[dict[str, Any]], series: dict[str, list[float]]) -> list[dict[str, Any]]:
+        revenue = round(sum(item["scoped_revenue"] for item in items), 2)
+        avg_daily_sales = round(sum(item["daily_sales"] for item in items) / max(len(items), 1), 2)
+        avg_margin = self._weighted_margin(items)
+        sellable = sum(item["fba_sellable_inventory"] for item in items)
+        in_transit = sum(item["actual_in_transit"] for item in items)
+        unsellable = sum(item["unsellable_inventory"] for item in items)
+        ad_spend = round(sum(item["ad_spend"] for item in items), 2)
+        ad_sales = round(sum(item["ad_sales"] for item in items), 2)
+        acos = round(ad_spend / ad_sales, 4) if ad_sales else 0
+        tacos = round(ad_spend / revenue, 4) if revenue else 0
+        total_inventory = max(sellable + in_transit + unsellable, 1)
+        sellable_series = [sellable for _ in series["revenue"]]
+        in_transit_series = [in_transit for _ in series["revenue"]]
+        unsellable_series = [unsellable for _ in series["revenue"]]
+
+        return [
+            self._kpi("active_sku", "在售产品数", len(items), "number", "结构", "当前筛选下的产品数", self._ratio_text(len(items), max(len(items), 1)), "positive", "#1769e0", series["active_sku"]),
+            self._kpi("revenue", "区间销售额", revenue, "currency", "规模", "当前区间累计销售额", self._slope_text(series["revenue"]), self._slope_tone(series["revenue"]), "#18a17d", series["revenue"]),
+            self._kpi("avg_daily_sales", "平均日销", avg_daily_sales, "number", "日销", "当前样本平均日销", self._daily_sales_hint(avg_daily_sales), self._daily_sales_tone(avg_daily_sales), "#4b86df", series["daily_sales"]),
+            self._kpi("avg_margin", "平均订单毛利率", avg_margin, "percent", "毛利", "当前样本订单毛利率", self._margin_hint(avg_margin), self._margin_tone(avg_margin), "#cf4f5f", series["margin"]),
+            self._kpi("fba_sellable", "FBA 可售", sellable, "number", "库存", "当前筛选下 FBA 可售库存", "可售占比 " + format_percent(sellable / total_inventory), "positive", "#4b86df", sellable_series),
+            self._kpi("actual_in_transit", "实际在途", in_transit, "number", "补货", "当前筛选下实际在途", self._ratio_text(in_transit, total_inventory), "warning", "#18a17d", in_transit_series),
+            self._kpi("unsellable", "不可售库存", unsellable, "number", "风险库存", "当前筛选下不可售库存", self._ratio_text(unsellable, total_inventory), "negative", "#cf4f5f", unsellable_series),
+            self._kpi("ad_spend", "广告花费", ad_spend, "currency", "广告", "当前区间广告花费", self._slope_text(series["ad_spend"]), self._slope_tone(series["ad_spend"]), "#d97706", series["ad_spend"]),
+            self._kpi("acos", "ACOS", acos, "percent", "投放效率", "广告花费 / 广告销售额", self._slope_text(series["acos"]), self._slope_tone(series["acos"]), "#cf4f5f", series["acos"]),
+            self._kpi("tacos", "TACOS", tacos, "percent", "营收占比", "广告花费 / 总销售额", self._slope_text(series["tacos"]), self._slope_tone(series["tacos"]), "#4b86df", series["tacos"]),
+        ]
+
+    def _kpi(
+        self,
+        key: str,
+        label: str,
+        value: float,
+        value_type: str,
+        mini_label: str,
+        description: str,
+        delta_text: str,
+        delta_tone: str,
+        color: str,
+        series: list[float],
+    ) -> dict[str, Any]:
+        return {
+            "key": key,
+            "label": label,
+            "value": value,
+            "type": value_type,
+            "mini_label": mini_label,
+            "description": description,
+            "delta_text": delta_text,
+            "delta_tone": delta_tone,
+            "color": color,
+            "series": series or [0],
+        }
+
+    def _build_band_chart(self, items: list[dict[str, Any]], bands: list[str], key: str) -> dict[str, Any]:
+        counts = []
+        for band in bands:
+            band_items = [item for item in items if item[key] == band]
+            counts.append(
+                {
+                    "name": band,
+                    "value": len(band_items),
+                    "over_limit": len([item for item in band_items if item["over_limit"]]),
+                }
+            )
+        return {"items": counts}
+
+    def _build_matrix(self, items: list[dict[str, Any]]) -> dict[str, Any]:
+        total = max(len(items), 1)
+        cells = []
+        for margin in MARGIN_BANDS:
+            for sales in DAILY_SALES_BANDS:
+                count = len([item for item in items if item["margin_band"] == margin and item["daily_sales_band"] == sales])
+                cells.append(
+                    {
+                        "margin_band": margin,
+                        "daily_sales_band": sales,
+                        "count": count,
+                        "ratio": round(count / total, 4),
+                    }
+                )
+        return {
+            "margin_bands": MARGIN_BANDS,
+            "daily_sales_bands": DAILY_SALES_BANDS,
+            "cells": cells,
+        }
+
+    def _weighted_margin(self, items: list[dict[str, Any]]) -> float:
+        gross_profit = sum(item["scoped_revenue"] * item["order_gross_margin"] for item in items)
+        revenue = sum(item["scoped_revenue"] for item in items)
+        return round(gross_profit / revenue, 4) if revenue else 0
+
+    def _ratio_text(self, value: float, total: float) -> str:
+        return "占比 " + format_percent(value / total if total else 0)
+
+    def _daily_sales_hint(self, value: float) -> str:
+        if value > 5:
+            return "整体偏高"
+        if value >= 1:
+            return "集中在 1-5"
+        if value > 0:
+            return "整体偏慢"
+        return "基本无动销"
+
+    def _daily_sales_tone(self, value: float) -> str:
+        if value > 5:
+            return "positive"
+        if value >= 1:
+            return "warning"
+        return "negative"
+
+    def _margin_hint(self, value: float) -> str:
+        if value > 0.35:
+            return "整体毛利高"
+        if value >= 0.25:
+            return "毛利结构稳"
+        if value >= 0.15:
+            return "毛利中位"
+        if value >= 0.10:
+            return "毛利偏低"
+        if value >= 0:
+            return "毛利较低"
+        return "存在负毛利"
+
+    def _margin_tone(self, value: float) -> str:
+        if value >= 0.25:
+            return "positive"
+        if value >= 0.10:
+            return "warning"
+        return "negative"
+
+    def _slope_text(self, series: list[float]) -> str:
+        if len(series) < 2:
+            return "走势平稳"
+        half = max(1, len(series) // 2)
+        first = sum(series[:half]) / half
+        second = sum(series[half:]) / max(len(series[half:]), 1)
+        ratio = ((second - first) / first) if first else 0
+        if ratio >= 0.06:
+            return "后半段抬升"
+        if ratio <= -0.06:
+            return "后半段承压"
+        return "走势平稳"
+
+    def _slope_tone(self, series: list[float]) -> str:
+        label = self._slope_text(series)
+        if label == "后半段抬升":
+            return "positive"
+        if label == "后半段承压":
+            return "negative"
+        return "warning"
+
+
+dashboard_service = DashboardDbService()
