@@ -1,0 +1,278 @@
+{% extends "base.html" %}
+
+{% block content %}
+<header class="hero hero-compact">
+  <div>
+    <p class="hero-eyebrow">调价效果复盘</p>
+    <h1 id="pageTitle">4.20 降价前后 14 天追踪</h1>
+  </div>
+  <div class="hero-meta">
+    <div class="hero-stat">
+      <span class="label">涉及 SKU</span>
+      <strong id="statSkuCount">—</strong>
+    </div>
+    <div class="hero-stat">
+      <span class="label">国家站点</span>
+      <strong id="statCountryCount">—</strong>
+    </div>
+  </div>
+</header>
+
+<!-- Collapsible daily adjustment calendar -->
+<section class="panel" style="margin-bottom: 18px;">
+  <div class="calendar-fold-header">
+    <div>
+      <span class="section-kicker">调价日历</span>
+      <span id="calendarSummary" class="calendar-summary"></span>
+    </div>
+    <button id="calendarToggleBtn" class="ghost-button" type="button">展开</button>
+  </div>
+  <div id="calendarBody" class="calendar-fold-body" style="display:none;">
+    <div class="calendar-legend">
+      <span class="legend-label">调价密度：</span>
+      <span class="legend-item"><span class="legend-dot" style="background:#e8f5e9"></span>0</span>
+      <span class="legend-item"><span class="legend-dot" style="background:#c8e6c9"></span>1-50</span>
+      <span class="legend-item"><span class="legend-dot" style="background:#a5d6a7"></span>51-200</span>
+      <span class="legend-item"><span class="legend-dot" style="background:#81c784"></span>201-400</span>
+      <span class="legend-item"><span class="legend-dot" style="background:#66bb6a"></span>401-800</span>
+      <span class="legend-item"><span class="legend-dot" style="background:#43a047"></span>&gt;800</span>
+    </div>
+    <div id="calendarGrid" class="calendar-grid"></div>
+  </div>
+</section>
+
+<!-- Unified filter panel -->
+<section class="panel" style="margin-bottom: 18px;">
+  <div class="filters-grid price-review-filters">
+    <label class="filter-control">
+      <span>调价日期</span>
+      <input id="adjustDateInput" type="date">
+    </label>
+    <label class="filter-control">
+      <span>对比周期</span>
+      <select id="compareDaysSelect">
+        <option value="7">调价前后 7 天</option>
+        <option value="14" selected>调价前后 14 天</option>
+        <option value="28">调价前后 28 天</option>
+      </select>
+    </label>
+    <label class="filter-control">
+      <span>国家</span>
+      <select id="countrySelect"><option value="all">全部国家</option></select>
+    </label>
+    <label class="filter-control">
+      <span>店铺</span>
+      <select id="storeSelect"><option value="all">全部店铺</option></select>
+    </label>
+    <label class="filter-control">
+      <span>调价幅度</span>
+      <select id="dropRangeSelect"><option value="all">全部幅度</option></select>
+    </label>
+    <label class="filter-control">
+      <span>价格带</span>
+      <select id="priceBandSelect"><option value="all">全部价格</option></select>
+    </label>
+    <label class="filter-control">
+      <span>关键词</span>
+      <input id="keywordInput" type="search" placeholder="搜索 MSKU / 品名 / 店铺">
+    </label>
+    <div class="filter-control filter-actions">
+      <button id="applyFiltersBtn" class="primary-button" type="button">应用筛选</button>
+      <button id="resetFiltersBtn" class="ghost-button" type="button">重置</button>
+    </div>
+  </div>
+</section>
+
+<section class="kpi-section">
+  <div class="section-head">
+    <div>
+      <p class="section-kicker">核心指标</p>
+      <h2>调价前后经营指标对比</h2>
+    </div>
+  </div>
+  <div id="kpiGrid" class="kpi-grid price-review-kpi-grid"></div>
+</section>
+
+<section class="diagnostics-section">
+  <div class="section-head">
+    <div>
+      <p class="section-kicker">分层迁移</p>
+      <h2>调价前后 SKU 分层结构变化</h2>
+    </div>
+    <div class="segmented-tabs" role="tablist" id="matrixTabs">
+      <button class="tab-button active" type="button" data-matrix="daily_sales">日销分层</button>
+      <button class="tab-button" type="button" data-matrix="margin">毛利率分层</button>
+      <button class="tab-button" type="button" data-matrix="rank">排名分层</button>
+      <button class="tab-button" type="button" data-matrix="sales">销量分层</button>
+    </div>
+  </div>
+  <article class="panel matrix-panel">
+    <div id="matrixPanelTitle" class="matrix-summary"></div>
+    <div id="matrixChart" class="matrix-wrap"></div>
+  </article>
+</section>
+
+<section class="diagnostics-section">
+  <div class="section-head">
+    <div>
+      <p class="section-kicker">国家站点</p>
+      <h2>各国家站点调价效果对比</h2>
+    </div>
+    <div class="section-actions">
+      <button id="countryShowAllBtn" class="ghost-button" type="button" style="display:none;">显示全部国家</button>
+    </div>
+  </div>
+  <article class="panel chart-card">
+    <div class="panel-head">
+      <div>
+        <p class="section-kicker">图表 C</p>
+        <h3>国家站点核心指标</h3>
+      </div>
+    </div>
+    <div id="countryChart" class="chart-host chart-host-echarts"></div>
+  </article>
+  <div class="table-wrap" style="margin-top: 18px;">
+    <table class="sku-table">
+      <thead>
+        <tr>
+          <th>国家</th>
+          <th>SKU 数</th>
+          <th>销量变化 <span class="color-dot" style="background:#1769e0"></span></th>
+          <th>销售额变化 <span class="color-dot" style="background:#d97706"></span></th>
+          <th>毛利润变化 <span class="color-dot" style="background:#18a17d"></span></th>
+          <th>后毛利率</th>
+          <th>前毛利率</th>
+          <th>排名恶化</th>
+          <th>排名改善</th>
+          <th>断销 SKU</th>
+          <th>利润下降</th>
+          <th>恶化占比</th>
+          <th>改善占比</th>
+        </tr>
+      </thead>
+      <tbody id="countryTableBody"></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="diagnostics-section">
+  <div class="section-head">
+    <div>
+      <p class="section-kicker">调价效果</p>
+      <h2>不同调价幅度的表现对比</h2>
+    </div>
+  </div>
+  <div class="chart-grid chart-grid-product">
+    <article class="panel chart-card">
+      <div class="panel-head">
+        <div>
+          <p class="section-kicker">图表 A</p>
+          <h3>调价幅度 SKU 分布</h3>
+        </div>
+      </div>
+      <div id="dropRangeSkuChart" class="chart-host chart-host-echarts"></div>
+    </article>
+    <article class="panel chart-card">
+      <div class="panel-head">
+        <div>
+          <p class="section-kicker">图表 B</p>
+          <h3>调价幅度效果对比</h3>
+        </div>
+      </div>
+      <div id="dropRangeEffectChart" class="chart-host chart-host-echarts"></div>
+    </article>
+  </div>
+</section>
+
+<section class="diagnostics-section">
+  <div class="section-head">
+    <div>
+      <p class="section-kicker">Top 榜单</p>
+      <h2>销量与排名变化显著 SKU</h2>
+    </div>
+    <div class="section-actions">
+      <div class="segmented-tabs" role="tablist" id="topListTabs">
+        <button class="tab-button active" type="button" data-top="sales_up">销量增长 Top</button>
+        <button class="tab-button" type="button" data-top="sales_down">销量下降 Top</button>
+        <button class="tab-button" type="button" data-top="rank_improve">排名改善 Top</button>
+        <button class="tab-button" type="button" data-top="rank_worsen">排名恶化 Top</button>
+      </div>
+      <button id="exportTopListBtn" class="ghost-button" type="button">导出当前榜单</button>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table class="sku-table">
+      <thead>
+        <tr>
+          <th>国家</th>
+          <th>店铺</th>
+          <th>MSKU</th>
+          <th>前销量</th>
+          <th>后销量</th>
+          <th>销量变化</th>
+          <th>前日销</th>
+          <th>后日销</th>
+          <th>日销变化</th>
+          <th>毛利润变化</th>
+          <th>前毛利率</th>
+          <th>后毛利率</th>
+          <th>排名变化</th>
+          <th>最后一天排名</th>
+        </tr>
+      </thead>
+      <tbody id="topListTableBody"></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel table-section">
+  <div class="panel-head">
+    <div>
+      <p class="section-kicker">SKU 明细</p>
+      <h2>全量调价 SKU 数据明细</h2>
+    </div>
+    <div class="table-actions">
+      <span id="skuTableCountText"></span>
+      <button id="exportSkuListBtn" class="ghost-button" type="button">导出全部明细</button>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table class="sku-table">
+      <thead>
+        <tr>
+          <th>国家</th>
+          <th>店铺</th>
+          <th>MSKU</th>
+          <th>调价前价格</th>
+          <th>调价后价格</th>
+          <th>调价幅度</th>
+          <th>前销量</th>
+          <th>后销量</th>
+          <th>销量变化</th>
+          <th>前日销</th>
+          <th>后日销</th>
+          <th>日销变化</th>
+          <th>前毛利率</th>
+          <th>后毛利率</th>
+          <th>毛利率变化</th>
+        </tr>
+      </thead>
+      <tbody id="skuTableBody"></tbody>
+    </table>
+  </div>
+
+  <div class="pagination-bar">
+    <div id="paginationInfo" class="pagination-info"></div>
+    <div class="pagination-controls">
+      <button id="prevPageBtn" class="ghost-button" type="button">上一页</button>
+      <div id="paginationNumbers" class="pagination-numbers"></div>
+      <button id="nextPageBtn" class="ghost-button" type="button">下一页</button>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', path='js/price_review.js') }}?v=20260521a"></script>
+{% endblock %}

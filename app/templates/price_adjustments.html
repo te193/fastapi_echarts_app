@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block content %}
+<header class="hero hero-compact">
+  <div>
+    <p class="hero-eyebrow">调价追踪</p>
+    <h1>最近 30 天调价日历</h1>
+  </div>
+  <div class="hero-meta">
+    <div class="hero-stat">
+      <span class="label">累计调价</span>
+      <strong id="statTotalAdjustments">-</strong>
+    </div>
+    <div class="hero-stat">
+      <span class="label">有调价天数</span>
+      <strong id="statActiveDays">-</strong>
+    </div>
+    <div class="hero-stat">
+      <span class="label">日均调价</span>
+      <strong id="statAvgAdjustments">-</strong>
+    </div>
+  </div>
+</header>
+
+<section class="panel">
+  <div class="calendar-legend">
+    <span class="legend-label">调价密度：</span>
+    <span class="legend-item"><span class="legend-dot" style="background:#e8f5e9"></span>0</span>
+    <span class="legend-item"><span class="legend-dot" style="background:#c8e6c9"></span>1-50</span>
+    <span class="legend-item"><span class="legend-dot" style="background:#a5d6a7"></span>51-200</span>
+    <span class="legend-item"><span class="legend-dot" style="background:#81c784"></span>201-400</span>
+    <span class="legend-item"><span class="legend-dot" style="background:#66bb6a"></span>401-800</span>
+    <span class="legend-item"><span class="legend-dot" style="background:#43a047"></span>&gt;800</span>
+  </div>
+  <div id="calendarGrid" class="calendar-grid"></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', path='js/price_adjustments.js') }}?v=20260521a"></script>
+{% endblock %}

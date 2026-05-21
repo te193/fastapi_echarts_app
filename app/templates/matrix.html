@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block content %}
+<header class="hero hero-compact">
+  <h1>日销 × 毛利率交叉矩阵</h1>
+</header>
+
+<section class="panel filters-panel">
+  <div class="panel-head compact">
+    <div>
+      <p class="section-kicker">筛选区</p>
+      <h2>产品观察窗口</h2>
+    </div>
+    <button id="clearFiltersBtn" class="ghost-button" type="button">一键清空</button>
+  </div>
+
+  <div class="filters-grid">
+    <label class="filter-control">
+      <span>观察周期</span>
+      <div id="periodQuickButtons" class="period-quick-buttons" role="group" aria-label="快速选择观察周期">
+        <button class="period-quick-button" type="button" data-period="7">7天</button>
+        <button class="period-quick-button" type="button" data-period="14">14天</button>
+        <button class="period-quick-button" type="button" data-period="30">30天</button>
+        <button class="period-quick-button" type="button" data-period="90">90天</button>
+        <button class="period-quick-button" type="button" data-period="last_month">上月</button>
+      </div>
+      <!-- Date range picker kept for later.
+      <div class="date-range-inputs date-range-inputs-split">
+        <input id="startDateInput" class="date-range-split-input" type="text" placeholder="开始日期" readonly>
+        <span class="date-range-split-separator">~</span>
+        <input id="endDateInput" class="date-range-split-input" type="text" placeholder="结束日期" readonly>
+      </div>
+      -->
+    </label>
+    <label class="filter-control">
+      <span>站点</span>
+      <select id="siteSelect"></select>
+    </label>
+    <label class="filter-control">
+      <span>店铺</span>
+      <select id="storeSelect"></select>
+    </label>
+    <label class="filter-control">
+      <span>是否超限价</span>
+      <select id="overLimitSelect"></select>
+    </label>
+    <label class="filter-control">
+      <span>日销分层</span>
+      <select id="dailySalesBandSelect"></select>
+    </label>
+    <label class="filter-control">
+      <span>订单毛利率分层</span>
+      <select id="marginBandSelect"></select>
+    </label>
+    <label class="filter-control">
+      <span>关键词</span>
+      <input id="keywordInput" type="search" placeholder="搜索 SKU / ASIN / 商品名称">
+    </label>
+  </div>
+
+  <div class="toolbar-row">
+    <div class="active-filters">
+      <span class="toolbar-label">当前条件</span>
+      <div id="activeFilterChips" class="chip-list"></div>
+    </div>
+  </div>
+</section>
+
+<section class="diagnostics-section">
+  <div class="section-head">
+    <div>
+      <p class="section-kicker">矩阵诊断</p>
+      <h2>日销 × 毛利率交叉矩阵</h2>
+    </div>
+    <p id="summaryHint" class="summary-hint"></p>
+  </div>
+  <article class="panel matrix-panel">
+    <div class="panel-head">
+      <div>
+        <p class="section-kicker">图表 C</p>
+        <h3>日销 × 毛利率交叉矩阵</h3>
+      </div>
+    </div>
+    <div id="matrixSummary" class="matrix-summary"></div>
+    <div id="matrixChart" class="matrix-wrap"></div>
+  </article>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', path='js/dashboard.js') }}?v=20260508e"></script>
+{% endblock %}

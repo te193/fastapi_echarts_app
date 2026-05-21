@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+
+.idea/
+backups/
+页面新增代码/
+
+logs/
+uvicorn.out.log
+uvicorn.err.log
+
+scripts/dashboard_env.ps1
+scripts/dashboard_env.local.ps1
