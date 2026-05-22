@@ -5,6 +5,7 @@
   var trendChart = null;
   var datePicker = null;
   var elements = {};
+  var tableRenderToken = 0;
 
   document.addEventListener("DOMContentLoaded", init);
 
@@ -164,6 +165,11 @@
     });
   }
 
+  function setLoading(isLoading) {
+    var main = document.querySelector(".main-content");
+    if (main) main.classList.toggle("page-loading", isLoading);
+  }
+
   function formatOriginalPrice(value) {
     return Number(value || 0).toLocaleString("zh-CN", {
       minimumFractionDigits: 0,
@@ -172,11 +178,17 @@
   }
 
   function renderTable() {
+    var token = ++tableRenderToken;
+    setLoading(true);
     app.writeQueryState(state);
     app.apiGet("/api/detail", Object.assign({}, state, { page_size: 15 })).then(function (payload) {
       elements.tableCountText.textContent = "当前明细 " + payload.total + " 条";
       renderRows(payload.rows);
       renderPagination(payload);
+    }).catch(function (error) {
+      console.error(error);
+    }).then(function () {
+      if (token === tableRenderToken) setLoading(false);
     });
   }
 

@@ -5,6 +5,7 @@
   var charts = {};
   var datePicker = null;
   var elements = {};
+  var renderToken = 0;
 
   document.addEventListener("DOMContentLoaded", init);
 
@@ -161,7 +162,14 @@
     });
   }
 
+  function setLoading(isLoading) {
+    var main = document.querySelector(".main-content");
+    if (main) main.classList.toggle("page-loading", isLoading);
+  }
+
   function render() {
+    var token = ++renderToken;
+    setLoading(true);
     app.writeQueryState(state);
     app.apiGet("/api/dashboard", state).then(function (payload) {
       if (elements.summaryHint) {
@@ -182,6 +190,10 @@
       if (elements.matrixChart && elements.matrixSummary) {
         renderMatrix(payload.matrix);
       }
+    }).catch(function (error) {
+      console.error(error);
+    }).then(function () {
+      if (token === renderToken) setLoading(false);
     });
   }
 
