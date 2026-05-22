@@ -389,8 +389,6 @@ def execute_price_review_source_load(
     lookback = int(os.getenv("DASHBOARD_PRICE_QUEUE_LOOKBACK_DAYS", str(DEFAULT_QUEUE_LOOKBACK_DAYS)))
     adjust_start = biz_date - timedelta(days=max(lookback, 1) - 1)
     adjust_end = biz_date
-    adjust_start_at = datetime.combine(adjust_start, datetime.min.time())
-    adjust_end_exclusive = datetime.combine(adjust_end + timedelta(days=1), datetime.min.time())
     affected = 0
     queue_table = source_table("DASHBOARD_PRICE_QUEUE_SOURCE_SCHEMA", "temporary_APP", "lx_sale_adjust_price_queue")
     adjustment_columns = (
@@ -399,7 +397,42 @@ def execute_price_review_source_load(
         "finish_time", "raw_updated_at",
     )
 
-    with source_conn.cursor() as source_cursor, target_conn.cursor() as target_cursor:
+    select_sql = f"""
+        select
+            id as source_id,
+            date(finish_time) as adjust_date,
+            msku,
+            local_sku,
+            asin,
+            local_name as product_name,
+            store_name as store,
+            substring_index(store_name, '-', 1) as seller_name_new,
+            marketplace as country,
+            currency_icon as currency,
+            cast(nullif(adjust_before_obj_standard_price, '') as decimal(18,4)) as price_before,
+            cast(nullif(adjust_after_obj_standard_price, '') as decimal(18,4)) as price_after,
+            round(
+                (cast(nullif(adjust_before_obj_standard_price, '') as decimal(18,4))
+                 - cast(nullif(adjust_after_obj_standard_price, '') as decimal(18,4)))
+                / nullif(cast(nullif(adjust_before_obj_standard_price, '') as decimal(18,4)), 0),
+                6
+            ) as drop_ratio,
+            cast(finish_time as datetime) as finish_time,
+            coalesce(update_time, ods_update_time, backup_time) as raw_updated_at
+        from {queue_table}
+        where delete_flag = 0
+          and finish_time is not null
+          and finish_time <> ''
+          and finish_time >= %(adjust_start_at)s
+          and finish_time < %(adjust_end_exclusive)s
+          and msku is not null
+          and msku <> ''
+          and store_name is not null
+          and store_name <> ''
+    """
+    insert_sql = _insert_sql(target_table(target_schema, "price_review_adjustment_source"), adjustment_columns)
+
+    with target_conn.cursor() as target_cursor:
         target_cursor.execute(
             f"""
             delete from {target_table(target_schema, "price_review_adjustment_source")}
@@ -407,48 +440,18 @@ def execute_price_review_source_load(
             """,
             {"adjust_start": adjust_start, "adjust_end": adjust_end},
         )
-        source_cursor.execute(
-            f"""
-            select
-                id as source_id,
-                date(finish_time) as adjust_date,
-                msku,
-                local_sku,
-                asin,
-                local_name as product_name,
-                store_name as store,
-                substring_index(store_name, '-', 1) as seller_name_new,
-                marketplace as country,
-                currency_icon as currency,
-                cast(nullif(adjust_before_obj_standard_price, '') as decimal(18,4)) as price_before,
-                cast(nullif(adjust_after_obj_standard_price, '') as decimal(18,4)) as price_after,
-                round(
-                    (cast(nullif(adjust_before_obj_standard_price, '') as decimal(18,4))
-                     - cast(nullif(adjust_after_obj_standard_price, '') as decimal(18,4)))
-                    / nullif(cast(nullif(adjust_before_obj_standard_price, '') as decimal(18,4)), 0),
-                    6
-                ) as drop_ratio,
-                cast(finish_time as datetime) as finish_time,
-                coalesce(update_time, ods_update_time, backup_time) as raw_updated_at
-            from {queue_table}
-            where delete_flag = 0
-              and finish_time is not null
-              and finish_time <> ''
-              and finish_time >= %(adjust_start_at)s
-              and finish_time < %(adjust_end_exclusive)s
-              and msku is not null
-              and msku <> ''
-              and store_name is not null
-              and store_name <> ''
-            """,
-            {"adjust_start_at": adjust_start_at, "adjust_end_exclusive": adjust_end_exclusive},
-        )
-        affected += _copy_rows(
-            source_cursor,
-            target_cursor,
-            _insert_sql(target_table(target_schema, "price_review_adjustment_source"), adjustment_columns),
-            batch_size,
-        )
+
+        current_day = adjust_start
+        while current_day <= adjust_end:
+            day_start_at = datetime.combine(current_day, datetime.min.time())
+            day_end_exclusive = datetime.combine(current_day + timedelta(days=1), datetime.min.time())
+            with source_conn.cursor() as source_cursor:
+                source_cursor.execute(
+                    select_sql,
+                    {"adjust_start_at": day_start_at, "adjust_end_exclusive": day_end_exclusive},
+                )
+                affected += _copy_rows(source_cursor, target_cursor, insert_sql, batch_size)
+            current_day += timedelta(days=1)
     target_conn.commit()
     return affected
 

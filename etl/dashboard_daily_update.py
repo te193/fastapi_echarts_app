@@ -123,6 +123,10 @@ def connect_source():
     )
 
 
+def ensure_live_source_connection(source_conn) -> None:
+    source_conn.ping(reconnect=True)
+
+
 def clean_identifier(value: str, fallback: str) -> str:
     name = (value or fallback).strip()
     if not re.fullmatch(r"[A-Za-z0-9_]+", name):
@@ -1884,10 +1888,15 @@ def main() -> None:
             if isinstance(step, SourceLoadStep):
                 if source_conn is None:
                     raise RuntimeError("Source connection is required for source load steps")
+                ensure_live_source_connection(source_conn)
                 execute_source_load_step(target_conn, source_conn, schemas, step, params, args.batch_size)
             elif isinstance(step, PeriodPresetStep):
                 execute_period_preset_step(target_conn, schemas, step, params)
             elif isinstance(step, PriceReviewStep):
+                if step.name != "price_review_tracking":
+                    if source_conn is None:
+                        raise RuntimeError(f"Source connection is required for {step.name}")
+                    ensure_live_source_connection(source_conn)
                 execute_price_review_step(
                     target_conn,
                     source_conn,
