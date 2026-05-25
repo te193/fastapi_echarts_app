@@ -95,9 +95,15 @@
       if (value == null || value === "" || value === "all") return;
       url.searchParams.set(key, value);
     });
-    return fetch(url.toString()).then(function (response) {
+    var controller = window.AbortController ? new AbortController() : null;
+    var timeoutId = setTimeout(function () {
+      if (controller) controller.abort();
+    }, 45000);
+    return fetch(url.toString(), controller ? { signal: controller.signal } : {}).then(function (response) {
       if (!response.ok) throw new Error("Request failed: " + response.status);
       return response.json();
+    }).finally(function () {
+      clearTimeout(timeoutId);
     });
   }
 

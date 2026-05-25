@@ -377,13 +377,35 @@ class DashboardDbService:
             start_date, end_date = default_start, default_end
         period_table = self._preset_table_for_range(bounds["max_date"], start_date, end_date)
         period_code = {table: name for name, table in PERIOD_PRESET_TABLES.items()}.get(period_table, "custom")
+        snapshot_date = self._get_period_snapshot_date(conn, period_table, start_date, end_date)
         return PeriodWindow(
             start_date=start_date,
             end_date=end_date,
-            snapshot_date=self._get_latest_snapshot_date(conn),
+            snapshot_date=snapshot_date,
             period_table=period_table,
             period_code=period_code,
         )
+
+    def _get_period_snapshot_date(
+        self,
+        conn,
+        period_table: str,
+        start_date: date,
+        end_date: date,
+    ) -> date:
+        rendered_table = self._render_period_table(period_table)
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                select max(snapshot_date) as snapshot_date
+                from {rendered_table}
+                where period_start = %(period_start)s
+                  and period_end = %(period_end)s
+                """,
+                {"period_start": start_date, "period_end": end_date},
+            )
+            row = cursor.fetchone() or {}
+        return row.get("snapshot_date") or self._get_latest_snapshot_date(conn)
 
     def _preset_table_for_range(self, biz_date: date, start_date: date, end_date: date) -> str:
         month_start = date(biz_date.year, biz_date.month, 1)
