@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import math
 import os
+import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -358,10 +360,19 @@ class DashboardDbService:
     def _resolve_window(self, conn, filters: dict[str, Any]) -> PeriodWindow:
         bounds = self._get_daily_bounds(conn)
         default_start, default_end = self._default_range(bounds)
-        start_date = parse_day(filters.get("start_date")) or default_start
-        end_date = parse_day(filters.get("end_date")) or default_end
+        requested_start = parse_day(filters.get("start_date"))
+        requested_end = parse_day(filters.get("end_date"))
+        start_date = requested_start or default_start
+        end_date = requested_end or default_end
+        requested_days = (
+            (requested_end - requested_start).days + 1
+            if requested_start and requested_end and requested_start <= requested_end
+            else None
+        )
         start_date = max(bounds["min_date"], start_date)
         end_date = min(bounds["max_date"], end_date)
+        if requested_days and requested_end and requested_end > bounds["max_date"]:
+            start_date = max(bounds["min_date"], end_date - timedelta(days=requested_days - 1))
         if start_date > end_date:
             start_date, end_date = default_start, default_end
         period_table = self._preset_table_for_range(bounds["max_date"], start_date, end_date)
@@ -403,30 +414,52 @@ class DashboardDbService:
             "period_end": window.end_date,
         }
         period_table = self._render_period_table(window.period_table)
+        lock_raw = f"{window.period_table}:{window.snapshot_date}:{window.start_date}:{window.end_date}"
+        lock_name = "dashboard_period:" + hashlib.sha1(lock_raw.encode("utf-8")).hexdigest()
+        lock_acquired = False
         with conn.cursor() as cursor:
-            cursor.execute(
-                f"""
-                select count(*) as total
-                from {period_table}
-                where snapshot_date = %(snapshot_date)s
-                  and period_start = %(period_start)s
-                  and period_end = %(period_end)s
-                """,
-                params,
-            )
-            exists = to_int((cursor.fetchone() or {}).get("total")) > 0
-            if exists:
-                return
+            try:
+                cursor.execute("select get_lock(%s, 30) as locked", (lock_name,))
+                lock_acquired = to_int((cursor.fetchone() or {}).get("locked")) == 1
+                if not lock_acquired:
+                    raise RuntimeError("Timed out waiting for period snapshot lock")
 
-            if window.period_table == "etl_datasync.dashboard_product_period_snapshot":
-                delete_sql = DELETE_PERIOD_SNAPSHOT_SQL
-                insert_sql = INSERT_PERIOD_SNAPSHOT_SQL
-            else:
-                delete_sql = period_delete_sql(window.period_table)
-                insert_sql = period_insert_sql(window.period_table)
-            cursor.execute(render_sql(delete_sql, self.schemas), params)
-            cursor.execute(render_sql(insert_sql, self.schemas), params)
-        conn.commit()
+                cursor.execute(
+                    f"""
+                    select count(*) as total
+                    from {period_table}
+                    where snapshot_date = %(snapshot_date)s
+                      and period_start = %(period_start)s
+                      and period_end = %(period_end)s
+                    """,
+                    params,
+                )
+                exists = to_int((cursor.fetchone() or {}).get("total")) > 0
+                if exists:
+                    return
+
+                if window.period_table == "etl_datasync.dashboard_product_period_snapshot":
+                    delete_sql = DELETE_PERIOD_SNAPSHOT_SQL
+                    insert_sql = INSERT_PERIOD_SNAPSHOT_SQL
+                else:
+                    delete_sql = period_delete_sql(window.period_table)
+                    insert_sql = period_insert_sql(window.period_table)
+                for attempt in range(3):
+                    try:
+                        cursor.execute(render_sql(delete_sql, self.schemas), params)
+                        cursor.execute(render_sql(insert_sql, self.schemas), params)
+                        conn.commit()
+                        return
+                    except pymysql.err.OperationalError as exc:
+                        conn.rollback()
+                        if exc.args and exc.args[0] in {1205, 1213} and attempt < 2:
+                            time.sleep(0.4 * (attempt + 1))
+                            continue
+                        raise
+            finally:
+                if lock_acquired:
+                    cursor.execute("select release_lock(%s)", (lock_name,))
+                    conn.commit()
 
     def _base_period_params(self, window: PeriodWindow) -> dict[str, Any]:
         return {
