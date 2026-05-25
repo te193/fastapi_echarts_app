@@ -212,6 +212,7 @@ create table if not exists etl_datasync.dashboard_product_performance_daily (
     unique key uk_day_item (dt_date, item_key),
     key idx_day_store (dt_date, seller_name_new),
     key idx_day_country (dt_date, country),
+    key idx_period_group (dt_date, seller_name_new, seller_sku_adj, country_category, country, local_sku),
     key idx_sku (seller_sku_adj)
 ) engine=InnoDB default charset=utf8mb4;
 """
@@ -228,6 +229,7 @@ create table if not exists etl_datasync.dashboard_restock_daily_snapshot (
     updated_at datetime not null default current_timestamp on update current_timestamp,
     unique key uk_snapshot_item (snapshot_date, item_key),
     key idx_snapshot_store (snapshot_date, seller_name_new),
+    key idx_snapshot_join (snapshot_date, country_category, seller_sku_adj, seller_name_new),
     key idx_sku (seller_sku_adj)
 ) engine=InnoDB default charset=utf8mb4;
 """
@@ -256,6 +258,7 @@ create table if not exists etl_datasync.dashboard_inventory_daily_snapshot (
     updated_at datetime not null default current_timestamp on update current_timestamp,
     unique key uk_snapshot_item (snapshot_date, item_key),
     key idx_snapshot_store (snapshot_date, seller_name_new),
+    key idx_snapshot_join (snapshot_date, country_category, seller_sku_adj, seller_name_new),
     key idx_sku (seller_sku_adj)
 ) engine=InnoDB default charset=utf8mb4;
 """
@@ -276,6 +279,7 @@ create table if not exists etl_datasync.dashboard_listing_price_daily_snapshot (
     updated_at datetime not null default current_timestamp on update current_timestamp,
     unique key uk_snapshot_item (snapshot_date, item_key),
     key idx_snapshot_store (snapshot_date, seller_name_new),
+    key idx_snapshot_join (snapshot_date, country_category, seller_name_new, country, seller_sku),
     key idx_sku (seller_sku)
 ) engine=InnoDB default charset=utf8mb4;
 """
@@ -301,6 +305,7 @@ create table if not exists etl_datasync.dashboard_limit_price_daily_snapshot (
     updated_at datetime not null default current_timestamp on update current_timestamp,
     unique key uk_snapshot_item (snapshot_date, item_key),
     key idx_snapshot_store (snapshot_date, seller_name_new),
+    key idx_snapshot_join (snapshot_date, country_category, seller_name_new, country, seller_sku, local_sku),
     key idx_sku (seller_sku)
 ) engine=InnoDB default charset=utf8mb4;
 """

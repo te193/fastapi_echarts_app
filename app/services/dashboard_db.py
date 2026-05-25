@@ -311,8 +311,6 @@ class DashboardDbService:
                 """
                 select min(latest_date) as snapshot_date
                 from (
-                    select max(snapshot_date) as latest_date from dashboard_restock_daily_snapshot
-                    union all
                     select max(snapshot_date) as latest_date from dashboard_inventory_daily_snapshot
                     union all
                     select max(snapshot_date) as latest_date from dashboard_listing_price_daily_snapshot
@@ -393,6 +391,10 @@ class DashboardDbService:
         start_date: date,
         end_date: date,
     ) -> date:
+        latest_snapshot_date = self._get_latest_snapshot_date(conn)
+        if period_table == "etl_datasync.dashboard_product_period_snapshot":
+            return latest_snapshot_date
+
         rendered_table = self._render_period_table(period_table)
         with conn.cursor() as cursor:
             cursor.execute(
@@ -405,7 +407,7 @@ class DashboardDbService:
                 {"period_start": start_date, "period_end": end_date},
             )
             row = cursor.fetchone() or {}
-        return row.get("snapshot_date") or self._get_latest_snapshot_date(conn)
+        return row.get("snapshot_date") or latest_snapshot_date
 
     def _preset_table_for_range(self, biz_date: date, start_date: date, end_date: date) -> str:
         month_start = date(biz_date.year, biz_date.month, 1)
@@ -441,6 +443,20 @@ class DashboardDbService:
         lock_acquired = False
         with conn.cursor() as cursor:
             try:
+                cursor.execute(
+                    f"""
+                    select count(*) as total
+                    from {period_table}
+                    where snapshot_date = %(snapshot_date)s
+                      and period_start = %(period_start)s
+                      and period_end = %(period_end)s
+                    """,
+                    params,
+                )
+                exists = to_int((cursor.fetchone() or {}).get("total")) > 0
+                if exists:
+                    return
+
                 cursor.execute("select get_lock(%s, 30) as locked", (lock_name,))
                 lock_acquired = to_int((cursor.fetchone() or {}).get("locked")) == 1
                 if not lock_acquired:
