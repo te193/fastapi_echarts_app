@@ -73,6 +73,14 @@
       <select id="priceBandSelect"><option value="all">全部价格</option></select>
     </label>
     <label class="filter-control">
+      <span>调价类型</span>
+      <select id="adjustmentTypeSelect">
+        <option value="all">全部类型</option>
+        <option value="首次调价">首次调价</option>
+        <option value="二次调价">二次调价</option>
+      </select>
+    </label>
+    <label class="filter-control">
       <span>关键词</span>
       <input id="keywordInput" type="search" placeholder="搜索 MSKU / 品名 / 店铺">
     </label>
@@ -244,6 +252,8 @@
           <th>国家</th>
           <th>店铺</th>
           <th>MSKU</th>
+          <th>调价类型</th>
+          <th>上次调价</th>
           <th>调价前价格</th>
           <th>调价后价格</th>
           <th>调价幅度</th>
@@ -274,5 +284,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', path='js/price_review.js') }}?v=20260521a"></script>
+<script src="{{ url_for('static', path='js/price_review.js') }}?v=20260526a"></script>
 {% endblock %}

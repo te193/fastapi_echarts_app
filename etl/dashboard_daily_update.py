@@ -213,6 +213,7 @@ create table if not exists etl_datasync.dashboard_product_performance_daily (
     key idx_day_store (dt_date, seller_name_new),
     key idx_day_country (dt_date, country),
     key idx_period_group (dt_date, seller_name_new, seller_sku_adj, country_category, country, local_sku),
+    key idx_price_review_lookup (seller_name, seller_sku_adj, dt_date),
     key idx_sku (seller_sku_adj)
 ) engine=InnoDB default charset=utf8mb4;
 """

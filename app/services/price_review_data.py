@@ -724,6 +724,7 @@ class PriceReviewService:
                 "risk_levels": risk_levels_opt,
                 "stores": stores,
                 "price_bands": price_bands,
+                "adjustment_types": ["首次调价", "二次调价"],
             },
             period_incomplete=self._period_incomplete(adjust_date, compare_days, bool(skus)),
             latest_data_date=self._latest_product_data_date(),
@@ -761,6 +762,9 @@ class PriceReviewService:
             "price_before": round(safe_float(row.get("price_before")), 2),
             "price_after": round(safe_float(row.get("price_after")), 2),
             "drop_ratio": round(safe_float(row.get("drop_ratio")), 4),
+            "is_second_adjustment": safe_int(row.get("is_second_adjustment")) == 1,
+            "adjustment_type": "二次调价" if safe_int(row.get("is_second_adjustment")) == 1 else "首次调价",
+            "previous_adjust_date": row.get("previous_adjust_date").isoformat() if row.get("previous_adjust_date") else "",
             "drop_range": safe_str(row.get("drop_range")),
             "price_band": safe_str(row.get("price_band")),
             "sales_before": safe_int(row.get("sales_before")),
@@ -877,6 +881,7 @@ class PriceReviewService:
         risk_level: str = "",
         store: str = "",
         price_band: str = "",
+        adjustment_type: str = "",
         keyword: str = "",
     ) -> list[dict[str, Any]]:
         rows = list(skus)
@@ -890,6 +895,8 @@ class PriceReviewService:
             rows = [r for r in rows if r["store"] == store]
         if price_band and price_band != "all":
             rows = [r for r in rows if r["price_band"] == price_band]
+        if adjustment_type and adjustment_type != "all":
+            rows = [r for r in rows if r["adjustment_type"] == adjustment_type]
         if keyword:
             kw = keyword.lower()
             rows = [
@@ -904,9 +911,9 @@ class PriceReviewService:
     # -----------------------------------------------------------------------
     # API payload builders
     # -----------------------------------------------------------------------
-    def get_overview_payload(self, adjust_date: date | None = None, compare_days: int = 14, country: str = "", drop_range: str = "", risk_level: str = "", store: str = "", price_band: str = "", keyword: str = "") -> dict[str, Any]:
+    def get_overview_payload(self, adjust_date: date | None = None, compare_days: int = 14, country: str = "", drop_range: str = "", risk_level: str = "", store: str = "", price_band: str = "", adjustment_type: str = "", keyword: str = "") -> dict[str, Any]:
         data = self.load(adjust_date, compare_days)
-        filtered = self._filter_skus(data.sku_list, country, drop_range, risk_level, store, price_band, keyword)
+        filtered = self._filter_skus(data.sku_list, country, drop_range, risk_level, store, price_band, adjustment_type, keyword)
         overall = data.overall if len(filtered) == len(data.sku_list) else _build_overall(filtered, compare_days)
         kpi_keys = {
             "销量（个）": {"key": "sales", "label": "总销量", "type": "number"},
@@ -954,9 +961,9 @@ class PriceReviewService:
             "latest_data_date": data.latest_data_date.isoformat() if data.latest_data_date else None,
         }
 
-    def get_drop_range_payload(self, adjust_date: date | None = None, compare_days: int = 14, country: str = "", drop_range: str = "", risk_level: str = "", store: str = "", price_band: str = "", keyword: str = "") -> dict[str, Any]:
+    def get_drop_range_payload(self, adjust_date: date | None = None, compare_days: int = 14, country: str = "", drop_range: str = "", risk_level: str = "", store: str = "", price_band: str = "", adjustment_type: str = "", keyword: str = "") -> dict[str, Any]:
         data = self.load(adjust_date, compare_days)
-        filtered = self._filter_skus(data.sku_list, country, drop_range, risk_level, store, price_band, keyword)
+        filtered = self._filter_skus(data.sku_list, country, drop_range, risk_level, store, price_band, adjustment_type, keyword)
         items = data.drop_range_analysis if len(filtered) == len(data.sku_list) else _build_drop_range_analysis(filtered)
         return {
             "items": items,
@@ -964,9 +971,9 @@ class PriceReviewService:
             "latest_data_date": data.latest_data_date.isoformat() if data.latest_data_date else None,
         }
 
-    def get_matrices_payload(self, adjust_date: date | None = None, compare_days: int = 14, country: str = "", drop_range: str = "", risk_level: str = "", store: str = "", price_band: str = "", keyword: str = "") -> dict[str, Any]:
+    def get_matrices_payload(self, adjust_date: date | None = None, compare_days: int = 14, country: str = "", drop_range: str = "", risk_level: str = "", store: str = "", price_band: str = "", adjustment_type: str = "", keyword: str = "") -> dict[str, Any]:
         data = self.load(adjust_date, compare_days)
-        filtered = self._filter_skus(data.sku_list, country, drop_range, risk_level, store, price_band, keyword)
+        filtered = self._filter_skus(data.sku_list, country, drop_range, risk_level, store, price_band, adjustment_type, keyword)
         if len(filtered) == len(data.sku_list):
             return {
                 "sales": data.sales_band_matrix,
@@ -985,9 +992,9 @@ class PriceReviewService:
             "latest_data_date": data.latest_data_date.isoformat() if data.latest_data_date else None,
         }
 
-    def get_country_payload(self, adjust_date: date | None = None, compare_days: int = 14, country: str = "", drop_range: str = "", risk_level: str = "", store: str = "", price_band: str = "", keyword: str = "") -> dict[str, Any]:
+    def get_country_payload(self, adjust_date: date | None = None, compare_days: int = 14, country: str = "", drop_range: str = "", risk_level: str = "", store: str = "", price_band: str = "", adjustment_type: str = "", keyword: str = "") -> dict[str, Any]:
         data = self.load(adjust_date, compare_days)
-        filtered = self._filter_skus(data.sku_list, country, drop_range, risk_level, store, price_band, keyword)
+        filtered = self._filter_skus(data.sku_list, country, drop_range, risk_level, store, price_band, adjustment_type, keyword)
         items = data.country_stats if len(filtered) == len(data.sku_list) else _build_country_stats(filtered)
         return {
             "items": items,
@@ -995,9 +1002,9 @@ class PriceReviewService:
             "latest_data_date": data.latest_data_date.isoformat() if data.latest_data_date else None,
         }
 
-    def get_top_lists_payload(self, adjust_date: date | None = None, compare_days: int = 14, country: str = "", drop_range: str = "", risk_level: str = "", store: str = "", price_band: str = "", keyword: str = "") -> dict[str, Any]:
+    def get_top_lists_payload(self, adjust_date: date | None = None, compare_days: int = 14, country: str = "", drop_range: str = "", risk_level: str = "", store: str = "", price_band: str = "", adjustment_type: str = "", keyword: str = "") -> dict[str, Any]:
         data = self.load(adjust_date, compare_days)
-        filtered = self._filter_skus(data.sku_list, country, drop_range, risk_level, store, price_band, keyword)
+        filtered = self._filter_skus(data.sku_list, country, drop_range, risk_level, store, price_band, adjustment_type, keyword)
         if len(filtered) == len(data.sku_list):
             return {
                 "sales_up": data.top_sales_up,
@@ -1021,6 +1028,7 @@ class PriceReviewService:
         risk_level: str = "",
         store: str = "",
         price_band: str = "",
+        adjustment_type: str = "",
         keyword: str = "",
         adjust_date: date | None = None,
         compare_days: int = 14,
@@ -1038,6 +1046,8 @@ class PriceReviewService:
             rows = [r for r in rows if r["store"] == store]
         if price_band and price_band != "all":
             rows = [r for r in rows if r["price_band"] == price_band]
+        if adjustment_type and adjustment_type != "all":
+            rows = [r for r in rows if r["adjustment_type"] == adjustment_type]
         if keyword:
             kw = keyword.lower()
             rows = [
@@ -1065,9 +1075,9 @@ class PriceReviewService:
             "latest_data_date": data.latest_data_date.isoformat() if data.latest_data_date else None,
         }
 
-    def get_top_lists_export_payload(self, adjust_date: date | None = None, compare_days: int = 14, country: str = "", drop_range: str = "", risk_level: str = "", store: str = "", price_band: str = "", keyword: str = "") -> list[dict[str, Any]]:
+    def get_top_lists_export_payload(self, adjust_date: date | None = None, compare_days: int = 14, country: str = "", drop_range: str = "", risk_level: str = "", store: str = "", price_band: str = "", adjustment_type: str = "", keyword: str = "") -> list[dict[str, Any]]:
         data = self.load(adjust_date, compare_days)
-        filtered = self._filter_skus(data.sku_list, country, drop_range, risk_level, store, price_band, keyword)
+        filtered = self._filter_skus(data.sku_list, country, drop_range, risk_level, store, price_band, adjustment_type, keyword)
         if len(filtered) == len(data.sku_list):
             top_lists = {
                 "sales_up": data.top_sales_up,
@@ -1098,6 +1108,7 @@ class PriceReviewService:
         risk_level: str = "",
         store: str = "",
         price_band: str = "",
+        adjustment_type: str = "",
         keyword: str = "",
         adjust_date: date | None = None,
         compare_days: int = 14,
@@ -1115,6 +1126,8 @@ class PriceReviewService:
             rows = [r for r in rows if r["store"] == store]
         if price_band and price_band != "all":
             rows = [r for r in rows if r["price_band"] == price_band]
+        if adjustment_type and adjustment_type != "all":
+            rows = [r for r in rows if r["adjustment_type"] == adjustment_type]
         if keyword:
             kw = keyword.lower()
             rows = [

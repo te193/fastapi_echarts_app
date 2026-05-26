@@ -16,6 +16,7 @@
     drop_range: "all",
     risk_level: "all",
     price_band: "all",
+    adjustment_type: "all",
     keyword: "",
     page: 1,
     page_size: 20,
@@ -59,6 +60,7 @@
     if (elements.dropRangeSelect) elements.dropRangeSelect.value = filterState.drop_range;
     if (elements.riskLevelSelect) elements.riskLevelSelect.value = filterState.risk_level;
     if (elements.priceBandSelect) elements.priceBandSelect.value = filterState.price_band;
+    if (elements.adjustmentTypeSelect) elements.adjustmentTypeSelect.value = filterState.adjustment_type;
     if (elements.keywordInput) elements.keywordInput.value = filterState.keyword;
   }
 
@@ -73,7 +75,7 @@
       "topListTabs", "topListTableBody",
       // Filters
       "adjustDateInput", "compareDaysSelect",
-      "countrySelect", "storeSelect", "dropRangeSelect", "riskLevelSelect", "priceBandSelect", "keywordInput",
+      "countrySelect", "storeSelect", "dropRangeSelect", "riskLevelSelect", "priceBandSelect", "adjustmentTypeSelect", "keywordInput",
       "applyFiltersBtn", "resetFiltersBtn",
       // SKU table
       "skuTableCountText", "skuTableBody", "paginationInfo", "paginationNumbers", "prevPageBtn", "nextPageBtn",
@@ -167,6 +169,7 @@
         // 暂时移除风险等级筛选
         // filterState.risk_level = elements.riskLevelSelect ? elements.riskLevelSelect.value : "all";
         filterState.price_band = elements.priceBandSelect ? elements.priceBandSelect.value : "all";
+        filterState.adjustment_type = elements.adjustmentTypeSelect ? elements.adjustmentTypeSelect.value : "all";
         filterState.keyword = elements.keywordInput ? elements.keywordInput.value.trim() : "";
         filterState.page = 1;
         refreshAll();
@@ -183,6 +186,7 @@
         if (elements.dropRangeSelect) elements.dropRangeSelect.value = "all";
         if (elements.riskLevelSelect) elements.riskLevelSelect.value = "all";
         if (elements.priceBandSelect) elements.priceBandSelect.value = "all";
+        if (elements.adjustmentTypeSelect) elements.adjustmentTypeSelect.value = "all";
         if (elements.keywordInput) elements.keywordInput.value = "";
 
         filterState.adjust_date = defaultAdjustDate;
@@ -193,6 +197,7 @@
         // 暂时移除风险等级筛选
         // filterState.risk_level = "all";
         filterState.price_band = "all";
+        filterState.adjustment_type = "all";
         filterState.keyword = "";
         filterState.page = 1;
         refreshAll();
@@ -734,6 +739,12 @@
     return '<span class="tag ' + cls + '">' + app.escapeHtml(level) + '</span>';
   }
 
+  function adjustmentTypeTag(type) {
+    var label = type || "首次调价";
+    var cls = label === "二次调价" ? "priority-p1" : "band-low";
+    return '<span class="tag ' + cls + '">' + app.escapeHtml(label) + '</span>';
+  }
+
   // ===== SKU List =====
 
   function loadSkuList() {
@@ -751,6 +762,7 @@
     // 暂时移除风险等级筛选（数据不完整）
     // populateSelect(elements.riskLevelSelect, filters.risk_levels || [], filterState.risk_level, "全部风险");
     populateSelect(elements.priceBandSelect, filters.price_bands || [], filterState.price_band, "全部价格");
+    populateSelect(elements.adjustmentTypeSelect, filters.adjustment_types || [], filterState.adjustment_type, "全部类型");
   }
 
   function populateSelect(el, options, currentValue, defaultLabel) {
@@ -768,7 +780,7 @@
     }
     if (!elements.skuTableBody) return;
     if (!rows.length) {
-      elements.skuTableBody.innerHTML = '<tr><td colspan="15"><div class="empty-state">当前筛选条件下无数据</div></td></tr>';
+      elements.skuTableBody.innerHTML = '<tr><td colspan="17"><div class="empty-state">当前筛选条件下无数据</div></td></tr>';
       return;
     }
     elements.skuTableBody.innerHTML = rows.map(function (item) {
@@ -780,6 +792,8 @@
         '<td>' + app.escapeHtml(item.country) + '</td>',
         '<td>' + app.escapeHtml(item.store) + '</td>',
         '<td><strong>' + app.escapeHtml(item.msku) + '</strong></td>',
+        '<td>' + adjustmentTypeTag(item.adjustment_type) + '</td>',
+        '<td>' + (item.previous_adjust_date || '—') + '</td>',
         '<td>' + item.price_before + '</td>',
         '<td>' + item.price_after + '</td>',
         '<td>' + app.formatPercent(item.drop_ratio, 1) + '</td>',

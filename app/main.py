@@ -250,6 +250,7 @@ def price_review_filters(
     risk_level: str = Query(default=""),
     store: str = Query(default=""),
     price_band: str = Query(default=""),
+    adjustment_type: str = Query(default=""),
     keyword: str = Query(default=""),
 ) -> dict:
     return {
@@ -260,6 +261,7 @@ def price_review_filters(
         "risk_level": risk_level,
         "store": store,
         "price_band": price_band,
+        "adjustment_type": adjustment_type,
         "keyword": keyword,
     }
 
@@ -304,6 +306,8 @@ _TOP_LIST_COLUMNS = [
     ("店铺", "store"),
     ("MSKU", "msku"),
     ("品名", "product_name"),
+    ("调价类型", "adjustment_type"),
+    ("上次调价日期", "previous_adjust_date"),
     ("前销量", "sales_before"),
     ("后销量", "sales_after"),
     ("销量变化", "sales_change"),
@@ -322,6 +326,8 @@ _SKU_EXPORT_COLUMNS = [
     ("店铺", "store"),
     ("MSKU", "msku"),
     ("品名", "product_name"),
+    ("调价类型", "adjustment_type"),
+    ("上次调价日期", "previous_adjust_date"),
     ("调价前价格", "price_before"),
     ("调价后价格", "price_after"),
     ("降幅", "drop_ratio"),

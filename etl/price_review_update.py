@@ -201,7 +201,7 @@ def ensure_price_review_tables(conn, target_schema: str) -> None:
             updated_at datetime not null default current_timestamp on update current_timestamp,
             primary key (adjust_date, store, msku),
             key idx_adjust_date (adjust_date),
-            key idx_store_msku (store, msku)
+            key idx_store_msku (store, msku, adjust_date)
         ) engine=InnoDB default charset=utf8mb4;
         """,
         f"""
@@ -266,6 +266,8 @@ def ensure_price_review_tables(conn, target_schema: str) -> None:
             price_before decimal(18,4) null,
             price_after decimal(18,4) null,
             drop_ratio decimal(10,6) null,
+            is_second_adjustment tinyint not null default 0,
+            previous_adjust_date date null,
             drop_range varchar(32) not null,
             price_band varchar(32) not null,
             period_start date not null,
@@ -331,6 +333,30 @@ def ensure_price_review_tables(conn, target_schema: str) -> None:
     with conn.cursor() as cursor:
         for statement in ddl:
             cursor.execute(with_price_review_comments(statement))
+        cursor.execute(f"show columns from {target_table(target_schema, 'price_review_sku_tracking')} like 'is_second_adjustment'")
+        if not cursor.fetchone():
+            cursor.execute(
+                f"""
+                alter table {target_table(target_schema, "price_review_sku_tracking")}
+                add column is_second_adjustment tinyint not null default 0 after drop_ratio
+                """
+            )
+        cursor.execute(f"show columns from {target_table(target_schema, 'price_review_sku_tracking')} like 'previous_adjust_date'")
+        if not cursor.fetchone():
+            cursor.execute(
+                f"""
+                alter table {target_table(target_schema, "price_review_sku_tracking")}
+                add column previous_adjust_date date null after is_second_adjustment
+                """
+            )
+        cursor.execute(f"show index from {target_table(target_schema, 'price_review_adjustment_source')} where Key_name = 'idx_store_msku_date'")
+        if not cursor.fetchone():
+            cursor.execute(
+                f"""
+                alter table {target_table(target_schema, "price_review_adjustment_source")}
+                add index idx_store_msku_date (store, msku, adjust_date)
+                """
+            )
     conn.commit()
 
 
@@ -512,8 +538,49 @@ def execute_price_review_tracking(target_conn, target_schema: str, params: dict[
                 },
             )
             affected += max(cursor.rowcount, 0)
+            cursor.execute(
+                _second_adjustment_update_sql(target_schema),
+                {
+                    "period_days": period_days,
+                    "adjust_start": adjust_start,
+                    "adjust_end": adjust_end,
+                    "local_max_data_date": local_max_data_date,
+                },
+            )
     target_conn.commit()
     return affected
+
+
+def _second_adjustment_update_sql(target_schema: str) -> str:
+    tracking = target_table(target_schema, "price_review_sku_tracking")
+    adjustments = target_table(target_schema, "price_review_adjustment_source")
+    return f"""
+    update {tracking} t
+    left join (
+        select
+            curr.adjust_date,
+            curr.store,
+            curr.msku,
+            max(prev.adjust_date) as previous_adjust_date
+        from {adjustments} curr
+        left join {adjustments} prev
+          on prev.store = curr.store
+         and prev.msku = curr.msku
+         and prev.adjust_date < curr.adjust_date
+        where curr.adjust_date between %(adjust_start)s and %(adjust_end)s
+          and date_add(curr.adjust_date, interval %(period_days)s day) <= %(local_max_data_date)s
+        group by curr.adjust_date, curr.store, curr.msku
+    ) p
+      on p.adjust_date = t.adjust_date
+     and p.store = t.store
+     and p.msku = t.msku
+    set
+        t.previous_adjust_date = p.previous_adjust_date,
+        t.is_second_adjustment = case when p.previous_adjust_date is not null then 1 else 0 end
+    where t.period_days = %(period_days)s
+      and t.adjust_date between %(adjust_start)s and %(adjust_end)s
+      and date_add(t.adjust_date, interval %(period_days)s day) <= %(local_max_data_date)s
+    """
 
 
 def _tracking_insert_sql(target_schema: str) -> str:
