@@ -286,6 +286,11 @@ def api_price_review_countries(filters: dict = Depends(price_review_filters)) ->
     return price_review_service.get_country_payload(**filters)
 
 
+@app.get("/api/price-review/second-adjustments")
+def api_price_review_second_adjustments(filters: dict = Depends(price_review_filters)) -> dict:
+    return price_review_service.get_second_adjustments_payload(**filters)
+
+
 @app.get("/api/price-review/top-lists")
 def api_price_review_top_lists(filters: dict = Depends(price_review_filters)) -> dict:
     return price_review_service.get_top_lists_payload(**filters)

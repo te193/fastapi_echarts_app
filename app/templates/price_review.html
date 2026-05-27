@@ -104,6 +104,52 @@
 <section class="diagnostics-section">
   <div class="section-head">
     <div>
+      <p class="section-kicker">二次调价</p>
+      <h2>二次调价上次调价时间分布</h2>
+    </div>
+    <div class="section-actions">
+      <span id="secondAdjustSummary" class="muted"></span>
+    </div>
+  </div>
+  <div class="chart-grid chart-grid-product">
+    <article class="panel chart-card">
+      <div class="panel-head">
+        <div>
+          <p class="section-kicker">上次调价日期</p>
+          <h3>二次调价 SKU 来源日期</h3>
+        </div>
+      </div>
+      <div id="secondAdjustDateChart" class="chart-host chart-host-echarts"></div>
+    </article>
+    <article class="panel chart-card">
+      <div class="panel-head">
+        <div>
+          <p class="section-kicker">调价间隔</p>
+          <h3>距离上次调价间隔</h3>
+        </div>
+      </div>
+      <div id="secondAdjustGapChart" class="chart-host chart-host-echarts"></div>
+    </article>
+  </div>
+  <div class="table-wrap" style="margin-top: 18px;">
+    <table class="sku-table">
+      <thead>
+        <tr>
+          <th>上次调价日期</th>
+          <th>二次调价 SKU</th>
+          <th>平均间隔天数</th>
+          <th>涉及店铺</th>
+          <th>涉及国家</th>
+        </tr>
+      </thead>
+      <tbody id="secondAdjustTableBody"></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="diagnostics-section">
+  <div class="section-head">
+    <div>
       <p class="section-kicker">分层迁移</p>
       <h2>调价前后 SKU 分层结构变化</h2>
     </div>
@@ -284,5 +330,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', path='js/price_review.js') }}?v=20260526a"></script>
+<script src="{{ url_for('static', path='js/price_review.js') }}?v=20260527a"></script>
 {% endblock %}

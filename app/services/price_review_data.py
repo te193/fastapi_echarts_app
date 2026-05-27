@@ -530,6 +530,82 @@ def _build_drop_range_analysis(skus: list[dict[str, Any]]) -> list[dict[str, Any
     return result
 
 
+def _build_second_adjustment_timing(skus: list[dict[str, Any]]) -> dict[str, Any]:
+    from collections import defaultdict
+
+    by_date: dict[str, dict[str, Any]] = defaultdict(lambda: {
+        "previous_adjust_date": "",
+        "sku_count": 0,
+        "gap_days_sum": 0,
+        "stores": set(),
+        "countries": set(),
+    })
+    gap_buckets = {
+        "1天": 0,
+        "2-3天": 0,
+        "4-7天": 0,
+        "8-14天": 0,
+        "15天以上": 0,
+    }
+    second_rows = [
+        s for s in skus
+        if s.get("is_second_adjustment") and s.get("previous_adjust_date")
+    ]
+
+    for sku in second_rows:
+        previous_date = str(sku.get("previous_adjust_date") or "")
+        current_date = sku.get("adjust_date")
+        gap_days = 0
+        try:
+            current = date.fromisoformat(str(current_date))
+            previous = date.fromisoformat(previous_date)
+            gap_days = max((current - previous).days, 0)
+        except (TypeError, ValueError):
+            gap_days = 0
+
+        row = by_date[previous_date]
+        row["previous_adjust_date"] = previous_date
+        row["sku_count"] += 1
+        row["gap_days_sum"] += gap_days
+        if sku.get("store"):
+            row["stores"].add(sku["store"])
+        if sku.get("country"):
+            row["countries"].add(sku["country"])
+
+        if gap_days <= 1:
+            gap_buckets["1天"] += 1
+        elif gap_days <= 3:
+            gap_buckets["2-3天"] += 1
+        elif gap_days <= 7:
+            gap_buckets["4-7天"] += 1
+        elif gap_days <= 14:
+            gap_buckets["8-14天"] += 1
+        else:
+            gap_buckets["15天以上"] += 1
+
+    items = []
+    for previous_date in sorted(by_date.keys(), reverse=True):
+        row = by_date[previous_date]
+        sku_count = row["sku_count"]
+        items.append({
+            "previous_adjust_date": previous_date,
+            "sku_count": sku_count,
+            "avg_gap_days": round(row["gap_days_sum"] / sku_count, 1) if sku_count else 0,
+            "store_count": len(row["stores"]),
+            "country_count": len(row["countries"]),
+        })
+
+    total_gap_days = sum(item["avg_gap_days"] * item["sku_count"] for item in items)
+    total = len(second_rows)
+    return {
+        "total": total,
+        "date_count": len(items),
+        "avg_gap_days": round(total_gap_days / total, 1) if total else 0,
+        "items": items,
+        "gap_buckets": [{"label": label, "sku_count": count} for label, count in gap_buckets.items()],
+    }
+
+
 def _build_overall(skus: list[dict[str, Any]], compare_days: int) -> list[dict[str, Any]]:
     def _sum(key: str) -> float:
         return sum(s[key] for s in skus)
@@ -755,6 +831,7 @@ class PriceReviewService:
     def _row_to_sku(self, row: dict[str, Any]) -> dict[str, Any]:
         return {
             "country": safe_str(row.get("country")),
+            "adjust_date": row.get("adjust_date").isoformat() if row.get("adjust_date") else "",
             "store": safe_str(row.get("store")),
             "msku_adj": safe_str(row.get("msku")),
             "msku": safe_str(row.get("msku")),
@@ -1001,6 +1078,14 @@ class PriceReviewService:
             "period_incomplete": data.period_incomplete,
             "latest_data_date": data.latest_data_date.isoformat() if data.latest_data_date else None,
         }
+
+    def get_second_adjustments_payload(self, adjust_date: date | None = None, compare_days: int = 14, country: str = "", drop_range: str = "", risk_level: str = "", store: str = "", price_band: str = "", adjustment_type: str = "", keyword: str = "") -> dict[str, Any]:
+        data = self.load(adjust_date, compare_days)
+        filtered = self._filter_skus(data.sku_list, country, drop_range, risk_level, store, price_band, adjustment_type, keyword)
+        payload = _build_second_adjustment_timing(filtered)
+        payload["period_incomplete"] = data.period_incomplete
+        payload["latest_data_date"] = data.latest_data_date.isoformat() if data.latest_data_date else None
+        return payload
 
     def get_top_lists_payload(self, adjust_date: date | None = None, compare_days: int = 14, country: str = "", drop_range: str = "", risk_level: str = "", store: str = "", price_band: str = "", adjustment_type: str = "", keyword: str = "") -> dict[str, Any]:
         data = self.load(adjust_date, compare_days)

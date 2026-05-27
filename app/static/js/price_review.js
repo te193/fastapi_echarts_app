@@ -72,6 +72,7 @@
       "dropRangeSkuChart", "dropRangeEffectChart",
       "matrixTabs", "matrixPanelTitle", "matrixChart",
       "countryChart", "countryTableBody",
+      "secondAdjustSummary", "secondAdjustDateChart", "secondAdjustGapChart", "secondAdjustTableBody",
       "topListTabs", "topListTableBody",
       // Filters
       "adjustDateInput", "compareDaysSelect",
@@ -109,6 +110,7 @@
       loadDropRange(),
       loadMatrices(),
       loadCountries(),
+      loadSecondAdjustments(),
       loadTopLists(),
       loadSkuList(),
     ]).then(function () {
@@ -688,6 +690,91 @@
         '<td>' + item.profit_down_count + '</td>',
         '<td>' + app.formatPercent(item.rank_worsen_ratio, 1) + '</td>',
         '<td>' + app.formatPercent(item.rank_improve_ratio, 1) + '</td>',
+        '</tr>'
+      ].join("");
+    }).join("");
+  }
+
+  // ===== Second Adjustments =====
+
+  function loadSecondAdjustments() {
+    return app.apiGet("/api/price-review/second-adjustments" + buildQuery()).then(function (payload) {
+      renderSecondAdjustments(payload || {});
+    });
+  }
+
+  function renderSecondAdjustments(payload) {
+    var items = payload.items || [];
+    var gapBuckets = payload.gap_buckets || [];
+    if (elements.secondAdjustSummary) {
+      elements.secondAdjustSummary.textContent = "二次调价 " + (payload.total || 0).toLocaleString("zh-CN") +
+        " 个，上次调价日期 " + (payload.date_count || 0) + " 天，平均间隔 " + (payload.avg_gap_days || 0) + " 天";
+    }
+    renderSecondAdjustDateChart(items);
+    renderSecondAdjustGapChart(gapBuckets);
+    renderSecondAdjustTable(items);
+  }
+
+  function renderSecondAdjustDateChart(items) {
+    if (!elements.secondAdjustDateChart) return;
+    var chart = echarts.init(elements.secondAdjustDateChart);
+    charts.secondAdjustDate = chart;
+    if (!items.length) {
+      chart.setOption({ xAxis: { data: [] }, series: [{ data: [] }] }, true);
+      return;
+    }
+    var labels = items.map(function (i) { return i.previous_adjust_date; });
+    var counts = items.map(function (i) { return i.sku_count; });
+    chart.setOption({
+      tooltip: { trigger: "axis", confine: true },
+      grid: { left: 48, right: 20, top: 24, bottom: 52 },
+      xAxis: { type: "category", data: labels, axisLabel: { color: "#5f7086", interval: 0, rotate: labels.length > 8 ? 30 : 0 } },
+      yAxis: { type: "value", axisLabel: { color: "#5f7086" }, splitLine: { lineStyle: { color: "#e4ebf5" } } },
+      series: [{
+        type: "bar",
+        data: counts,
+        itemStyle: { color: "#1769e0", borderRadius: [6, 6, 0, 0] },
+        barMaxWidth: 34,
+        label: { show: true, position: "top", color: "#132238" }
+      }]
+    });
+  }
+
+  function renderSecondAdjustGapChart(items) {
+    if (!elements.secondAdjustGapChart) return;
+    var chart = echarts.init(elements.secondAdjustGapChart);
+    charts.secondAdjustGap = chart;
+    var labels = items.map(function (i) { return i.label; });
+    var counts = items.map(function (i) { return i.sku_count; });
+    chart.setOption({
+      tooltip: { trigger: "axis", confine: true },
+      grid: { left: 48, right: 20, top: 24, bottom: 42 },
+      xAxis: { type: "category", data: labels, axisLabel: { color: "#5f7086" } },
+      yAxis: { type: "value", axisLabel: { color: "#5f7086" }, splitLine: { lineStyle: { color: "#e4ebf5" } } },
+      series: [{
+        type: "bar",
+        data: counts,
+        itemStyle: { color: "#18a17d", borderRadius: [6, 6, 0, 0] },
+        barMaxWidth: 42,
+        label: { show: true, position: "top", color: "#132238" }
+      }]
+    });
+  }
+
+  function renderSecondAdjustTable(items) {
+    if (!elements.secondAdjustTableBody) return;
+    if (!items.length) {
+      elements.secondAdjustTableBody.innerHTML = '<tr><td colspan="5"><div class="empty-state">当前筛选条件下没有二次调价数据</div></td></tr>';
+      return;
+    }
+    elements.secondAdjustTableBody.innerHTML = items.map(function (item) {
+      return [
+        '<tr>',
+        '<td><strong>' + app.escapeHtml(item.previous_adjust_date) + '</strong></td>',
+        '<td>' + item.sku_count + '</td>',
+        '<td>' + Number(item.avg_gap_days || 0).toFixed(1) + '</td>',
+        '<td>' + item.store_count + '</td>',
+        '<td>' + item.country_count + '</td>',
         '</tr>'
       ].join("");
     }).join("");
