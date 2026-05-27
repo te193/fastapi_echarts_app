@@ -26,6 +26,7 @@
   var currentTopTab = "sales_up";
   var countryData = [];
   var hiddenCountries = [];
+  var skuColumnFilters = {};
 
   document.addEventListener("DOMContentLoaded", init);
 
@@ -100,6 +101,19 @@
       }
     });
     return parts.length ? "?" + parts.join("&") : "";
+  }
+
+  function buildSkuQuery(extra) {
+    var q = buildQuery(extra);
+    var separator = q ? "&" : "?";
+    var parts = [];
+    Object.keys(skuColumnFilters).forEach(function (key) {
+      var value = skuColumnFilters[key];
+      if (value !== "" && value !== null && value !== undefined) {
+        parts.push("cf_" + encodeURIComponent(key) + "=" + encodeURIComponent(value));
+      }
+    });
+    return q + (parts.length ? separator + parts.join("&") : "");
   }
 
   function refreshAll() {
@@ -202,6 +216,8 @@
         filterState.adjustment_type = "all";
         filterState.keyword = "";
         filterState.page = 1;
+        skuColumnFilters = {};
+        closeColumnFilterPopover();
         refreshAll();
       });
     }
@@ -229,10 +245,12 @@
     if (elements.exportSkuListBtn) {
       elements.exportSkuListBtn.addEventListener("click", function () {
         var extra = { page: null, page_size: null };
-        var url = "/api/price-review/skus/export" + buildQuery(extra);
+        var url = "/api/price-review/skus/export" + buildSkuQuery(extra);
         window.open(url, "_blank");
       });
     }
+
+    bindSkuColumnFilters();
 
     window.addEventListener("resize", function () {
       Object.keys(charts).forEach(function (key) {
@@ -832,13 +850,163 @@
     return '<span class="tag ' + cls + '">' + app.escapeHtml(label) + '</span>';
   }
 
+  function bindSkuColumnFilters() {
+    var buttons = document.querySelectorAll("[data-sku-filter-key]");
+    buttons.forEach(function (button) {
+      button.addEventListener("click", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        openColumnFilterPopover(button);
+      });
+    });
+
+    document.addEventListener("click", function (event) {
+      var popover = document.querySelector(".column-filter-popover");
+      if (!popover) return;
+      if (event.target.closest("[data-filter-apply]")) {
+        event.preventDefault();
+        applyColumnFilter(popover);
+        return;
+      }
+      if (event.target.closest("[data-filter-clear]")) {
+        event.preventDefault();
+        clearColumnFilter(popover.dataset.filterKey, popover.dataset.filterType || "text");
+        return;
+      }
+      if (popover.contains(event.target)) return;
+      if (event.target.closest("[data-sku-filter-key]")) return;
+      closeColumnFilterPopover();
+    });
+  }
+
+  function activeColumnFilterValue(key, type) {
+    if (type === "number") {
+      return {
+        min: skuColumnFilters[key + "_min"] || "",
+        max: skuColumnFilters[key + "_max"] || "",
+      };
+    }
+    return skuColumnFilters[key] || "";
+  }
+
+  function openColumnFilterPopover(button) {
+    closeColumnFilterPopover();
+
+    var key = button.dataset.skuFilterKey;
+    var type = button.dataset.skuFilterType || "text";
+    var rect = button.getBoundingClientRect();
+    var value = activeColumnFilterValue(key, type);
+    var popover = document.createElement("div");
+    popover.className = "column-filter-popover";
+    popover.dataset.filterKey = key;
+    popover.dataset.filterType = type;
+
+    if (type === "number") {
+      popover.innerHTML = [
+        '<label>最小值<input type="number" step="any" data-filter-min value="' + app.escapeHtml(value.min) + '"></label>',
+        '<label>最大值<input type="number" step="any" data-filter-max value="' + app.escapeHtml(value.max) + '"></label>',
+        '<div class="column-filter-actions">',
+        '<button type="button" class="primary" data-filter-apply>筛选</button>',
+        '<button type="button" data-filter-clear>清除</button>',
+        '</div>',
+      ].join("");
+    } else {
+      popover.innerHTML = [
+        '<label>包含文本<input type="text" data-filter-text value="' + app.escapeHtml(value) + '" placeholder="输入关键词"></label>',
+        '<div class="column-filter-actions">',
+        '<button type="button" class="primary" data-filter-apply>筛选</button>',
+        '<button type="button" data-filter-clear>清除</button>',
+        '</div>',
+      ].join("");
+    }
+
+    document.body.appendChild(popover);
+    var top = rect.bottom + window.scrollY + 8;
+    var left = rect.left + window.scrollX;
+    var maxLeft = window.scrollX + document.documentElement.clientWidth - popover.offsetWidth - 12;
+    popover.style.top = top + "px";
+    popover.style.left = Math.max(12 + window.scrollX, Math.min(left, maxLeft)) + "px";
+
+    var firstInput = popover.querySelector("input");
+    if (firstInput) {
+      firstInput.focus();
+      firstInput.select();
+    }
+
+    popover.addEventListener("keydown", function (event) {
+      if (event.key === "Enter") applyColumnFilter(popover);
+      if (event.key === "Escape") closeColumnFilterPopover();
+    });
+    popover.addEventListener("pointerdown", function (event) {
+      if (event.target.closest("[data-filter-apply]")) {
+        event.preventDefault();
+        applyColumnFilter(popover);
+      }
+      if (event.target.closest("[data-filter-clear]")) {
+        event.preventDefault();
+        clearColumnFilter(key, type);
+      }
+    });
+  }
+
+  function closeColumnFilterPopover() {
+    var popover = document.querySelector(".column-filter-popover");
+    if (popover) popover.remove();
+  }
+
+  function applyColumnFilter(popover) {
+    var key = popover.dataset.filterKey;
+    var type = popover.dataset.filterType || "text";
+    if (type === "number") {
+      setColumnFilterValue(key + "_min", popover.querySelector("[data-filter-min]").value.trim());
+      setColumnFilterValue(key + "_max", popover.querySelector("[data-filter-max]").value.trim());
+    } else {
+      setColumnFilterValue(key, popover.querySelector("[data-filter-text]").value.trim());
+    }
+    filterState.page = 1;
+    closeColumnFilterPopover();
+    loadSkuList();
+  }
+
+  function clearColumnFilter(key, type) {
+    if (type === "number") {
+      delete skuColumnFilters[key + "_min"];
+      delete skuColumnFilters[key + "_max"];
+    } else {
+      delete skuColumnFilters[key];
+    }
+    filterState.page = 1;
+    closeColumnFilterPopover();
+    loadSkuList();
+  }
+
+  function setColumnFilterValue(key, value) {
+    if (value === "") {
+      delete skuColumnFilters[key];
+    } else {
+      skuColumnFilters[key] = value;
+    }
+  }
+
+  function updateSkuColumnFilterButtons() {
+    document.querySelectorAll("[data-sku-filter-key]").forEach(function (button) {
+      var key = button.dataset.skuFilterKey;
+      var type = button.dataset.skuFilterType || "text";
+      var isActive = type === "number"
+        ? Boolean(skuColumnFilters[key + "_min"] || skuColumnFilters[key + "_max"])
+        : Boolean(skuColumnFilters[key]);
+      button.classList.toggle("active", isActive);
+    });
+  }
+
   // ===== SKU List =====
 
   function loadSkuList() {
-    return app.apiGet("/api/price-review/skus" + buildQuery()).then(function (payload) {
+    return app.apiGet("/api/price-review/skus" + buildSkuQuery()).then(function (payload) {
       populateFilters(payload.filters || {});
       renderSkuTable(payload.rows || [], payload.total);
       renderPagination(payload);
+      updateSkuColumnFilterButtons();
     });
   }
 

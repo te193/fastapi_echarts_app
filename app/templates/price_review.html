@@ -295,23 +295,23 @@
     <table class="sku-table">
       <thead>
         <tr>
-          <th>国家</th>
-          <th>店铺</th>
-          <th>MSKU</th>
-          <th>调价类型</th>
-          <th>上次调价</th>
-          <th>调价前价格</th>
-          <th>调价后价格</th>
-          <th>调价幅度</th>
-          <th>前销量</th>
-          <th>后销量</th>
-          <th>销量变化</th>
-          <th>前日销</th>
-          <th>后日销</th>
-          <th>日销变化</th>
-          <th>前毛利率</th>
-          <th>后毛利率</th>
-          <th>毛利率变化</th>
+          <th><span class="column-filter-head"><span>国家</span><button class="column-filter-btn" type="button" data-sku-filter-key="country" data-sku-filter-type="text">筛</button></span></th>
+          <th><span class="column-filter-head"><span>店铺</span><button class="column-filter-btn" type="button" data-sku-filter-key="store" data-sku-filter-type="text">筛</button></span></th>
+          <th><span class="column-filter-head"><span>MSKU</span><button class="column-filter-btn" type="button" data-sku-filter-key="msku" data-sku-filter-type="text">筛</button></span></th>
+          <th><span class="column-filter-head"><span>调价类型</span><button class="column-filter-btn" type="button" data-sku-filter-key="adjustment_type" data-sku-filter-type="text">筛</button></span></th>
+          <th><span class="column-filter-head"><span>上次调价</span><button class="column-filter-btn" type="button" data-sku-filter-key="previous_adjust_date" data-sku-filter-type="text">筛</button></span></th>
+          <th><span class="column-filter-head"><span>调价前价格</span><button class="column-filter-btn" type="button" data-sku-filter-key="price_before" data-sku-filter-type="number">筛</button></span></th>
+          <th><span class="column-filter-head"><span>调价后价格</span><button class="column-filter-btn" type="button" data-sku-filter-key="price_after" data-sku-filter-type="number">筛</button></span></th>
+          <th><span class="column-filter-head"><span>调价幅度</span><button class="column-filter-btn" type="button" data-sku-filter-key="drop_ratio" data-sku-filter-type="number">筛</button></span></th>
+          <th><span class="column-filter-head"><span>前销量</span><button class="column-filter-btn" type="button" data-sku-filter-key="sales_before" data-sku-filter-type="number">筛</button></span></th>
+          <th><span class="column-filter-head"><span>后销量</span><button class="column-filter-btn" type="button" data-sku-filter-key="sales_after" data-sku-filter-type="number">筛</button></span></th>
+          <th><span class="column-filter-head"><span>销量变化</span><button class="column-filter-btn" type="button" data-sku-filter-key="sales_change" data-sku-filter-type="number">筛</button></span></th>
+          <th><span class="column-filter-head"><span>前日销</span><button class="column-filter-btn" type="button" data-sku-filter-key="daily_sales_before" data-sku-filter-type="number">筛</button></span></th>
+          <th><span class="column-filter-head"><span>后日销</span><button class="column-filter-btn" type="button" data-sku-filter-key="daily_sales_after" data-sku-filter-type="number">筛</button></span></th>
+          <th><span class="column-filter-head"><span>日销变化</span><button class="column-filter-btn" type="button" data-sku-filter-key="daily_sales_change" data-sku-filter-type="number">筛</button></span></th>
+          <th><span class="column-filter-head"><span>前毛利率</span><button class="column-filter-btn" type="button" data-sku-filter-key="margin_before" data-sku-filter-type="number">筛</button></span></th>
+          <th><span class="column-filter-head"><span>后毛利率</span><button class="column-filter-btn" type="button" data-sku-filter-key="margin_after" data-sku-filter-type="number">筛</button></span></th>
+          <th><span class="column-filter-head"><span>毛利率变化</span><button class="column-filter-btn" type="button" data-sku-filter-key="margin_change" data-sku-filter-type="number">筛</button></span></th>
         </tr>
       </thead>
       <tbody id="skuTableBody"></tbody>
@@ -330,5 +330,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', path='js/price_review.js') }}?v=20260527a"></script>
+<script src="{{ url_for('static', path='js/price_review.js') }}?v=20260527b"></script>
 {% endblock %}

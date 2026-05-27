@@ -985,6 +985,49 @@ class PriceReviewService:
             ]
         return rows
 
+    def _filter_sku_columns(self, rows: list[dict[str, Any]], column_filters: dict[str, str] | None = None) -> list[dict[str, Any]]:
+        if not column_filters:
+            return rows
+
+        numeric_fields = {
+            "price_before", "price_after", "drop_ratio",
+            "sales_before", "sales_after", "sales_change",
+            "daily_sales_before", "daily_sales_after", "daily_sales_change",
+            "margin_before", "margin_after", "margin_change",
+        }
+        text_fields = {
+            "country", "store", "msku", "adjustment_type", "previous_adjust_date",
+        }
+        filtered = list(rows)
+
+        for key, raw_value in column_filters.items():
+            value = safe_str(raw_value).strip()
+            if not value:
+                continue
+
+            if key.endswith("_min"):
+                field = key[:-4]
+                if field in numeric_fields:
+                    minimum = safe_float(value)
+                    filtered = [r for r in filtered if safe_float(r.get(field)) >= minimum]
+                continue
+
+            if key.endswith("_max"):
+                field = key[:-4]
+                if field in numeric_fields:
+                    maximum = safe_float(value)
+                    filtered = [r for r in filtered if safe_float(r.get(field)) <= maximum]
+                continue
+
+            if key in text_fields:
+                needle = value.lower()
+                filtered = [r for r in filtered if needle in safe_str(r.get(key)).lower()]
+            elif key in numeric_fields:
+                target = safe_float(value)
+                filtered = [r for r in filtered if safe_float(r.get(key)) == target]
+
+        return filtered
+
     # -----------------------------------------------------------------------
     # API payload builders
     # -----------------------------------------------------------------------
@@ -1115,6 +1158,7 @@ class PriceReviewService:
         price_band: str = "",
         adjustment_type: str = "",
         keyword: str = "",
+        column_filters: dict[str, str] | None = None,
         adjust_date: date | None = None,
         compare_days: int = 14,
     ) -> dict[str, Any]:
@@ -1142,6 +1186,7 @@ class PriceReviewService:
                 or kw in r["msku"].lower()
                 or kw in r["product_name"].lower()
             ]
+        rows = self._filter_sku_columns(rows, column_filters)
 
         total = len(rows)
         total_pages = max(1, math.ceil(total / page_size))
@@ -1195,6 +1240,7 @@ class PriceReviewService:
         price_band: str = "",
         adjustment_type: str = "",
         keyword: str = "",
+        column_filters: dict[str, str] | None = None,
         adjust_date: date | None = None,
         compare_days: int = 14,
     ) -> list[dict[str, Any]]:
@@ -1222,6 +1268,7 @@ class PriceReviewService:
                 or kw in r["msku"].lower()
                 or kw in r["product_name"].lower()
             ]
+        rows = self._filter_sku_columns(rows, column_filters)
         return rows
 
     def get_daily_adjustment_counts(self, days: int = 30) -> list[dict[str, Any]]:

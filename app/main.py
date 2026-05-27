@@ -266,6 +266,14 @@ def price_review_filters(
     }
 
 
+def price_review_column_filters(request: Request) -> dict[str, str]:
+    return {
+        key[3:]: value
+        for key, value in request.query_params.items()
+        if key.startswith("cf_") and value not in {"", "all"}
+    }
+
+
 @app.get("/api/price-review/overview")
 def api_price_review_overview(filters: dict = Depends(price_review_filters)) -> dict:
     return price_review_service.get_overview_payload(**filters)
@@ -298,10 +306,13 @@ def api_price_review_top_lists(filters: dict = Depends(price_review_filters)) ->
 
 @app.get("/api/price-review/skus")
 def api_price_review_skus(
+    request: Request,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     filters: dict = Depends(price_review_filters),
 ) -> dict:
+    filters = dict(filters)
+    filters["column_filters"] = price_review_column_filters(request)
     return price_review_service.get_sku_list_payload(page=page, page_size=page_size, **filters)
 
 
@@ -400,8 +411,11 @@ def api_price_review_top_lists_export(
 
 @app.get("/api/price-review/skus/export")
 def api_price_review_skus_export(
+    request: Request,
     filters: dict = Depends(price_review_filters),
 ) -> StreamingResponse:
+    filters = dict(filters)
+    filters["column_filters"] = price_review_column_filters(request)
     rows = price_review_service.get_sku_list_export_payload(**filters)
     date_label = filters["adjust_date"].isoformat() if filters.get("adjust_date") else "latest"
     filename = f"price_review_skus_{date_label}_{filters['compare_days']}d.csv"

@@ -1974,6 +1974,92 @@ span.flatpickr-weekday {
   text-transform: none;
 }
 
+.column-filter-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.column-filter-btn {
+  width: 22px;
+  height: 22px;
+  border: 1px solid rgba(84, 103, 128, 0.22);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #52657d;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.column-filter-btn:hover,
+.column-filter-btn.active {
+  border-color: rgba(23, 105, 224, 0.45);
+  background: #eaf2ff;
+  color: #1769e0;
+}
+
+.column-filter-popover {
+  position: absolute;
+  z-index: 50;
+  width: 220px;
+  padding: 14px;
+  border: 1px solid #d6e0ee;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 14px 32px rgba(18, 39, 69, 0.16);
+}
+
+.column-filter-popover label {
+  display: grid;
+  gap: 6px;
+  color: #53657d;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.column-filter-popover label + label {
+  margin-top: 10px;
+}
+
+.column-filter-popover input {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid #d1dbea;
+  border-radius: 8px;
+  color: #0f1f35;
+  font-size: 13px;
+  outline: none;
+}
+
+.column-filter-popover input:focus {
+  border-color: #1769e0;
+  box-shadow: 0 0 0 3px rgba(23, 105, 224, 0.12);
+}
+
+.column-filter-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.column-filter-actions button {
+  flex: 1;
+  height: 34px;
+  border: 1px solid #d6e0ee;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #253a56;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.column-filter-actions button.primary {
+  border-color: #1769e0;
+  background: #1769e0;
+  color: #ffffff;
+}
+
 .sku-table tbody tr {
   cursor: pointer;
   transition: background-color 0.18s ease;
