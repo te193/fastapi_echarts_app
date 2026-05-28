@@ -1344,6 +1344,188 @@ span.flatpickr-weekday {
   color: #183456;
 }
 
+.monthly-goal-card {
+  margin-bottom: 18px;
+}
+
+.monthly-goal-panel {
+  padding: 20px 24px;
+  background: var(--panel-solid);
+}
+
+.monthly-goal-head,
+.monthly-goal-chart-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.monthly-goal-head {
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.monthly-goal-head h3 {
+  margin: 4px 0 6px;
+  font-size: 22px;
+}
+
+.monthly-goal-tabs button {
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.monthly-goal-tabs button.active {
+  background: linear-gradient(135deg, #2464d6, #1a9b86);
+  color: #ffffff;
+}
+
+.monthly-goal-chart-row {
+  align-items: stretch;
+}
+
+.monthly-goal-chart {
+  width: min(100%, 1180px);
+  height: 320px;
+}
+
+.monthly-goal-summary {
+  width: 220px;
+  flex: 0 0 220px;
+  padding: 18px;
+  border: 1px solid rgba(188, 200, 217, 0.68);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(245, 249, 255, 0.92), rgba(255, 255, 255, 0.96));
+}
+
+.monthly-goal-summary .label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.monthly-goal-summary > strong {
+  display: block;
+  margin: 6px 0 16px;
+  color: #0f1f35;
+  font-size: 24px;
+}
+
+.monthly-goal-summary div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid #e8eef6;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.monthly-goal-summary b {
+  color: #0f1f35;
+}
+
+.monthly-goal-matrix {
+  margin-top: 18px;
+  overflow-x: auto;
+}
+
+.monthly-goal-matrix-head,
+.monthly-goal-matrix-row {
+  display: grid;
+  grid-template-columns: 92px repeat(12, minmax(72px, 1fr));
+  gap: 6px;
+  min-width: 1020px;
+}
+
+.monthly-goal-matrix-head {
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.monthly-goal-matrix-head span,
+.monthly-goal-metric-name,
+.monthly-goal-cell {
+  min-height: 44px;
+  border-radius: 10px;
+}
+
+.monthly-goal-matrix-head span {
+  display: grid;
+  place-items: center;
+}
+
+.monthly-goal-matrix-row + .monthly-goal-matrix-row {
+  margin-top: 6px;
+}
+
+.monthly-goal-metric-name,
+.monthly-goal-cell {
+  border: 1px solid transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.monthly-goal-metric-name {
+  background: #eef4fb;
+  color: #253a56;
+  font-weight: 800;
+}
+
+.monthly-goal-metric-name.active {
+  background: #1769e0;
+  color: #ffffff;
+}
+
+.monthly-goal-cell {
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  padding: 6px;
+  color: #0f1f35;
+}
+
+.monthly-goal-cell strong {
+  font-size: 13px;
+}
+
+.monthly-goal-cell span {
+  color: rgba(15, 31, 53, 0.62);
+  font-size: 11px;
+}
+
+.monthly-goal-cell.done {
+  background: rgba(24, 161, 125, 0.18);
+  border-color: rgba(24, 161, 125, 0.26);
+}
+
+.monthly-goal-cell.near {
+  background: rgba(217, 119, 6, 0.16);
+  border-color: rgba(217, 119, 6, 0.24);
+}
+
+.monthly-goal-cell.behind {
+  background: rgba(207, 79, 95, 0.15);
+  border-color: rgba(207, 79, 95, 0.24);
+}
+
+.monthly-goal-cell.future {
+  background: #f1f5f9;
+  color: #718096;
+}
+
+.monthly-goal-cell.active {
+  box-shadow: inset 0 0 0 2px rgba(23, 105, 224, 0.34);
+}
+
 .kpi-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));

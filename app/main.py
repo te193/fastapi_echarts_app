@@ -145,6 +145,11 @@ def api_dashboard(
     return dashboard_service.get_dashboard_payload(filters)
 
 
+@app.get("/api/dashboard/monthly-goals")
+def api_dashboard_monthly_goals() -> dict:
+    return dashboard_service.get_monthly_goals_payload()
+
+
 @app.get("/api/detail")
 def api_detail(
     request: Request,

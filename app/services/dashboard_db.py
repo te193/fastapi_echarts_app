@@ -84,6 +84,12 @@ def day_of_year(current: date) -> int:
     return (current - date(current.year, 1, 1)).days + 1
 
 
+def days_in_month(current: date) -> int:
+    if current.month == 12:
+        return 31
+    return (date(current.year, current.month + 1, 1) - date(current.year, current.month, 1)).days
+
+
 def iter_days(start: date, end: date) -> list[date]:
     count = (end - start).days + 1
     return [start + timedelta(days=index) for index in range(max(count, 0))]
@@ -186,6 +192,128 @@ class DashboardDbService:
             "daily_sales_chart": daily_sales_chart,
             "margin_chart": margin_chart,
             "matrix": matrix,
+        }
+
+    def get_monthly_goals_payload(self) -> dict[str, Any]:
+        metrics = [
+            {"key": "sales", "label": "销售额", "type": "currency"},
+            {"key": "volume", "label": "销量", "type": "number"},
+            {"key": "profit", "label": "毛利润", "type": "currency"},
+            {"key": "margin", "label": "毛利率", "type": "percent"},
+        ]
+        try:
+            with self.connect() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("select max(goal_year) as goal_year from dashboard_monthly_goal")
+                    goal_year = to_int((cursor.fetchone() or {}).get("goal_year")) or date.today().year
+                    cursor.execute(
+                        """
+                        select
+                            goal_month,
+                            sales_goal,
+                            sales_volume_goal,
+                            gross_profit_goal,
+                            margin_goal
+                        from dashboard_monthly_goal
+                        where goal_year = %(goal_year)s
+                        order by goal_month
+                        """,
+                        {"goal_year": goal_year},
+                    )
+                    goals = cursor.fetchall()
+                    cursor.execute(
+                        """
+                        select
+                            month(dt_date) as goal_month,
+                            max(dt_date) as data_end_date,
+                            sum(sales_amount) as sales_actual,
+                            sum(sales_qty) as volume_actual,
+                            sum(order_gross_profit) as profit_actual,
+                            sum(order_gross_profit) / nullif(sum(sales_amount), 0) as margin_actual
+                        from dashboard_product_performance_daily
+                        where dt_date between %(year_start)s and %(year_end)s
+                          and seller_name_new not regexp 'baihuiyi|Yuanoboo|Bailboo|Qianytyy'
+                          and char_length(seller_sku_adj) between 5 and 10
+                        group by month(dt_date)
+                        """,
+                        {
+                            "year_start": date(goal_year, 1, 1),
+                            "year_end": date(goal_year, 12, 31),
+                        },
+                    )
+                    actual_by_month = {to_int(row.get("goal_month")): row for row in cursor.fetchall()}
+        except pymysql.err.ProgrammingError as exc:
+            if exc.args and exc.args[0] == 1146:
+                return {"year": date.today().year, "data_end_date": None, "metrics": metrics, "months": []}
+            raise
+
+        data_end_date = max(
+            (row.get("data_end_date") for row in actual_by_month.values() if row.get("data_end_date")),
+            default=None,
+        )
+        current_month = data_end_date.month if data_end_date else 0
+        current_day = data_end_date.day if data_end_date else 0
+        months = []
+        for goal in goals:
+            month = to_int(goal.get("goal_month"))
+            actual = actual_by_month.get(month, {})
+            is_future = bool(data_end_date and month > current_month)
+            is_current = bool(data_end_date and month == current_month)
+            days_in_month_value = days_in_month(date(goal_year, month, 1))
+            progress_ratio = current_day / days_in_month_value if is_current and days_in_month_value else 1
+            month_metrics = {
+                "sales": self._monthly_goal_metric(goal.get("sales_goal"), actual.get("sales_actual"), "currency", progress_ratio, is_future),
+                "volume": self._monthly_goal_metric(goal.get("sales_volume_goal"), actual.get("volume_actual"), "number", progress_ratio, is_future),
+                "profit": self._monthly_goal_metric(goal.get("gross_profit_goal"), actual.get("profit_actual"), "currency", progress_ratio, is_future),
+                "margin": self._monthly_goal_metric(goal.get("margin_goal"), actual.get("margin_actual"), "percent", 1, is_future),
+            }
+            months.append(
+                {
+                    "month": month,
+                    "label": f"{month}月",
+                    "is_current": is_current,
+                    "is_future": is_future,
+                    "data_end_date": format_day(actual.get("data_end_date")) if actual.get("data_end_date") else None,
+                    "metrics": month_metrics,
+                }
+            )
+
+        return {
+            "year": goal_year,
+            "data_end_date": format_day(data_end_date) if data_end_date else None,
+            "metrics": metrics,
+            "months": months,
+        }
+
+    def _monthly_goal_metric(
+        self,
+        target_value: Any,
+        actual_value: Any,
+        metric_type: str,
+        progress_ratio: float,
+        is_future: bool,
+    ) -> dict[str, Any]:
+        target = to_float(target_value)
+        actual = None if is_future else round(to_float(actual_value), 4)
+        progress_target = round(target * progress_ratio, 4) if metric_type != "percent" else target
+        ratio = None if actual is None or not progress_target else round(actual / progress_target, 4)
+        gap = None if actual is None else round(actual - progress_target, 4)
+        if ratio is None:
+            status = "future"
+        elif ratio >= 1:
+            status = "done"
+        elif ratio >= 0.8:
+            status = "near"
+        else:
+            status = "behind"
+        return {
+            "target": round(target, 4),
+            "progress_target": progress_target,
+            "actual": actual,
+            "ratio": ratio,
+            "gap": gap,
+            "status": status,
+            "type": metric_type,
         }
 
     def get_detail_payload(self, filters: dict[str, Any], page: int, page_size: int) -> dict[str, Any]:

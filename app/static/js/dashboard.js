@@ -6,6 +6,8 @@
   var datePicker = null;
   var elements = {};
   var renderToken = 0;
+  var monthlyGoalData = null;
+  var currentMonthlyMetric = "sales";
 
   document.addEventListener("DOMContentLoaded", init);
 
@@ -19,6 +21,7 @@
       initDateRangePicker();
       syncControls();
       render();
+      loadMonthlyGoals();
     });
   }
 
@@ -27,6 +30,7 @@
       "startDateInput", "endDateInput", "siteSelect", "storeSelect", "overLimitSelect",
       "dailySalesBandSelect", "marginBandSelect", "keywordInput",
       "clearFiltersBtn", "periodQuickButtons", "activeFilterChips", "summaryHint", "goalOverviewCard", "kpiGrid",
+      "monthlyGoalCard",
       "dailySalesSummary", "marginBandSummary", "dailySalesChart", "marginBandChart",
       "matrixSummary", "matrixChart"
     ].forEach(function (id) {
@@ -247,6 +251,209 @@
       '  <div class="goal-metric-note">' + app.escapeHtml(item.delta_text) + "</div>",
       "</article>"
     ].join("");
+  }
+
+  function loadMonthlyGoals() {
+    if (!elements.monthlyGoalCard) return;
+    app.apiGet("/api/dashboard/monthly-goals").then(function (payload) {
+      monthlyGoalData = payload;
+      renderMonthlyGoals();
+    }).catch(function (error) {
+      console.error(error);
+      elements.monthlyGoalCard.innerHTML = "";
+    });
+  }
+
+  function renderMonthlyGoals() {
+    if (!elements.monthlyGoalCard || !monthlyGoalData || !monthlyGoalData.months) return;
+    disposeChartsByPrefix("monthly:");
+    var metric = getMonthlyMetric(currentMonthlyMetric);
+    elements.monthlyGoalCard.innerHTML = [
+      '<section class="panel monthly-goal-panel">',
+      '  <div class="monthly-goal-head">',
+      '    <div>',
+      '      <p class="section-kicker">目标管理</p>',
+      '      <h3>月度目标完成情况</h3>',
+      '      <p class="goal-panel-copy">按全量数据展示每月目标、实际完成与达成率。当前月按截至最新数据日的进度目标计算。</p>',
+      '    </div>',
+      '    <div id="monthlyGoalTabs" class="segmented-tabs monthly-goal-tabs">',
+      monthlyGoalData.metrics.map(function (item) {
+        return '<button type="button" class="' + (item.key === currentMonthlyMetric ? "active" : "") + '" data-monthly-metric="' + app.escapeHtml(item.key) + '">' + app.escapeHtml(item.label) + '</button>';
+      }).join(""),
+      "    </div>",
+      "  </div>",
+      '  <div class="monthly-goal-chart-row">',
+      '    <div id="monthlyGoalChart" class="monthly-goal-chart"></div>',
+      buildMonthlyGoalSummary(metric),
+      "  </div>",
+      buildMonthlyGoalMatrix(),
+      "</section>",
+    ].join("");
+
+    Array.from(elements.monthlyGoalCard.querySelectorAll("[data-monthly-metric]")).forEach(function (button) {
+      button.addEventListener("click", function () {
+        currentMonthlyMetric = this.dataset.monthlyMetric;
+        renderMonthlyGoals();
+      });
+    });
+    renderMonthlyGoalChart(metric);
+  }
+
+  function getMonthlyMetric(key) {
+    var metrics = monthlyGoalData.metrics || [];
+    return metrics.find(function (item) { return item.key === key; }) || metrics[0] || { key: "sales", label: "销售额", type: "currency" };
+  }
+
+  function buildMonthlyGoalSummary(metric) {
+    var months = monthlyGoalData.months || [];
+    var started = months.filter(function (month) {
+      return !month.is_future && month.metrics[metric.key] && month.metrics[metric.key].ratio !== null;
+    });
+    var done = started.filter(function (month) {
+      return Number(month.metrics[metric.key].ratio || 0) >= 1;
+    }).length;
+    var current = months.find(function (month) { return month.is_current; });
+    var currentMetric = current && current.metrics[metric.key];
+    var ratioText = currentMetric && currentMetric.ratio !== null ? app.formatPercent(currentMetric.ratio) : "—";
+    return [
+      '<aside class="monthly-goal-summary">',
+      '  <span class="label">当前指标</span>',
+      '  <strong>' + app.escapeHtml(metric.label) + '</strong>',
+      '  <div><span>已达标月份</span><b>' + done + ' / ' + started.length + '</b></div>',
+      '  <div><span>当前月达成</span><b>' + ratioText + '</b></div>',
+      '  <div><span>数据截至</span><b>' + app.escapeHtml(monthlyGoalData.data_end_date || "—") + '</b></div>',
+      '</aside>',
+    ].join("");
+  }
+
+  function buildMonthlyGoalMatrix() {
+    var metrics = monthlyGoalData.metrics || [];
+    var months = monthlyGoalData.months || [];
+    return [
+      '<div class="monthly-goal-matrix">',
+      '  <div class="monthly-goal-matrix-head"><span>指标</span>' + months.map(function (month) { return '<span>' + app.escapeHtml(month.label) + '</span>'; }).join("") + '</div>',
+      metrics.map(function (metric) {
+        return [
+          '<div class="monthly-goal-matrix-row">',
+          '<button type="button" class="monthly-goal-metric-name ' + (metric.key === currentMonthlyMetric ? "active" : "") + '" data-monthly-metric="' + app.escapeHtml(metric.key) + '">' + app.escapeHtml(metric.label) + '</button>',
+          months.map(function (month) {
+            var item = month.metrics[metric.key] || {};
+            return '<button type="button" class="monthly-goal-cell ' + monthlyStatusClass(item.status) + (metric.key === currentMonthlyMetric ? " active" : "") + '" data-monthly-metric="' + app.escapeHtml(metric.key) + '"><strong>' + (item.ratio === null || item.ratio === undefined ? "—" : app.formatPercent(item.ratio, 0)) + '</strong><span>' + app.escapeHtml(month.label) + '</span></button>';
+          }).join(""),
+          '</div>',
+        ].join("");
+      }).join(""),
+      '</div>',
+    ].join("");
+  }
+
+  function monthlyStatusClass(status) {
+    if (status === "done") return "done";
+    if (status === "near") return "near";
+    if (status === "behind") return "behind";
+    return "future";
+  }
+
+  function renderMonthlyGoalChart(metric) {
+    var host = document.getElementById("monthlyGoalChart");
+    if (!host || typeof echarts === "undefined") return;
+    var months = monthlyGoalData.months || [];
+    var labels = months.map(function (month) { return month.label; });
+    var actual = months.map(function (month) {
+      var item = month.metrics[metric.key] || {};
+      return item.actual === null || item.actual === undefined ? null : Number(item.actual || 0);
+    });
+    var target = months.map(function (month) {
+      var item = month.metrics[metric.key] || {};
+      return Number(item.progress_target || item.target || 0);
+    });
+    var ratios = months.map(function (month) {
+      var item = month.metrics[metric.key] || {};
+      return item.ratio === null || item.ratio === undefined ? null : Number((item.ratio * 100).toFixed(1));
+    });
+    var chart = echarts.init(host);
+    charts["monthly:goal"] = chart;
+    chart.setOption({
+      animationDuration: 300,
+      grid: { left: 58, right: 54, top: 36, bottom: 36 },
+      tooltip: {
+        trigger: "axis",
+        formatter: function (params) {
+          var index = params[0].dataIndex;
+          var month = months[index];
+          var item = month.metrics[metric.key] || {};
+          return [
+            '<strong>' + app.escapeHtml(month.label) + " " + app.escapeHtml(metric.label) + '</strong>',
+            '实际：' + formatMonthlyMetricValue(item.actual, metric.type),
+            '目标：' + formatMonthlyMetricValue(item.progress_target, metric.type),
+            '完成率：' + (item.ratio === null || item.ratio === undefined ? "—" : app.formatPercent(item.ratio)),
+          ].join("<br>");
+        }
+      },
+      xAxis: { type: "category", data: labels, axisLabel: { color: "#53657d" } },
+      yAxis: [
+        {
+          type: "value",
+          axisLabel: {
+            color: "#53657d",
+            formatter: function (value) { return formatMonthlyAxisValue(value, metric.type); }
+          },
+          splitLine: { lineStyle: { color: "#e6edf6" } }
+        },
+        {
+          type: "value",
+          min: 0,
+          max: 140,
+          axisLabel: { color: "#53657d", formatter: "{value}%" },
+          splitLine: { show: false }
+        }
+      ],
+      series: [
+        {
+          name: "实际",
+          type: "bar",
+          data: actual.map(function (value, index) {
+            var item = months[index].metrics[metric.key] || {};
+            return { value: value, itemStyle: { color: item.status === "done" ? "#18a17d" : item.status === "near" ? "#d97706" : item.status === "future" ? "#cbd5e1" : "#cf4f5f" } };
+          }),
+          barWidth: 24,
+          itemStyle: { borderRadius: [6, 6, 0, 0] }
+        },
+        {
+          name: "目标",
+          type: "line",
+          data: target,
+          smooth: true,
+          symbolSize: 7,
+          lineStyle: { color: "#183456", width: 2 },
+          itemStyle: { color: "#183456" }
+        },
+        {
+          name: "完成率",
+          type: "line",
+          yAxisIndex: 1,
+          data: ratios,
+          smooth: true,
+          symbol: "circle",
+          symbolSize: 6,
+          lineStyle: { color: "#1769e0", width: 2, type: "dashed" },
+          itemStyle: { color: "#1769e0" }
+        }
+      ]
+    });
+  }
+
+  function formatMonthlyMetricValue(value, type) {
+    if (value === null || value === undefined) return "—";
+    if (type === "currency") return app.formatCompactCurrency(value);
+    if (type === "percent") return app.formatPercent(value);
+    return Number(value || 0).toLocaleString("zh-CN");
+  }
+
+  function formatMonthlyAxisValue(value, type) {
+    if (type === "currency") return value >= 10000 ? (value / 10000).toFixed(0) + "万" : value;
+    if (type === "percent") return (value * 100).toFixed(0) + "%";
+    return value >= 10000 ? (value / 10000).toFixed(0) + "万" : value;
   }
 
   function renderKpis(kpis) {
