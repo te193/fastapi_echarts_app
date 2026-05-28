@@ -552,6 +552,83 @@ class DashboardDbService:
         )
         return where_sql, params
 
+    def _detail_recent_join_sql(self, window: PeriodWindow, params: dict[str, Any]) -> str:
+        params["recent_7_start"] = window.end_date - timedelta(days=6)
+        params["recent_30_start"] = window.end_date - timedelta(days=29)
+        params["recent_period_end"] = window.end_date
+        return """
+            left join (
+                select
+                    item_key,
+                    sum(case when dt_date between %(recent_7_start)s and %(recent_period_end)s then sales_qty else 0 end) as sales_7d,
+                    sum(case when dt_date between %(recent_30_start)s and %(recent_period_end)s then sales_qty else 0 end) as sales_30d,
+                    sum(case when dt_date between %(recent_30_start)s and %(recent_period_end)s then sales_amount else 0 end) as revenue_30d
+                from dashboard_product_performance_daily
+                where dt_date between %(recent_30_start)s and %(recent_period_end)s
+                group by item_key
+            ) r on r.item_key = p.item_key
+        """
+
+    def _detail_column_filter_clause(self, filters: dict[str, Any], params: dict[str, Any]) -> tuple[str, bool]:
+        column_filters = filters.get("column_filters") or {}
+        if not column_filters:
+            return "", False
+
+        text_fields = {
+            "country": "coalesce(p.country, '')",
+            "store": "coalesce(p.seller_name_new, '')",
+            "msku": "coalesce(p.seller_sku_adj, '')",
+            "daily_sales_band": "coalesce(p.daily_sales_band, '')",
+            "margin_band": "coalesce(p.margin_band, '')",
+            "over_limit": "case when p.over_limit_flag = 1 then '是' else '否' end",
+        }
+        numeric_fields = {
+            "daily_sales": "coalesce(p.daily_sales, 0)",
+            "order_gross_margin": "coalesce(p.order_gross_margin, 0)",
+            "sales_7d": "coalesce(r.sales_7d, 0)",
+            "sales_30d": "coalesce(r.sales_30d, 0)",
+            "revenue_30d": "coalesce(r.revenue_30d, 0)",
+            "current_price": "coalesce(p.current_price, 0)",
+            "limit_price_35": "coalesce(p.limit_price, 0)",
+            "limit_price_10": "coalesce(p.limit_price_10, 0)",
+            "price_gap": "(coalesce(p.current_price, 0) - coalesce(p.limit_price, 0))",
+            "fba_sellable_inventory": "coalesce(p.fba_sellable_inventory, 0)",
+            "stock_days": "coalesce(p.local_stock_sellable_days, 0)",
+        }
+        recent_fields = {"sales_7d", "sales_30d", "revenue_30d"}
+        clauses: list[str] = []
+        needs_recent_join = False
+
+        for index, (key, raw_value) in enumerate(column_filters.items()):
+            value = str(raw_value or "").strip()
+            if not value:
+                continue
+
+            if key.endswith("_min") or key.endswith("_max"):
+                field = key[:-4]
+                if field not in numeric_fields:
+                    continue
+                op = ">=" if key.endswith("_min") else "<="
+                param_key = f"cf_{index}"
+                params[param_key] = to_float(value)
+                clauses.append(f"{numeric_fields[field]} {op} %({param_key})s")
+                needs_recent_join = needs_recent_join or field in recent_fields
+                continue
+
+            if key in numeric_fields:
+                param_key = f"cf_{index}"
+                params[param_key] = to_float(value)
+                clauses.append(f"{numeric_fields[key]} = %({param_key})s")
+                needs_recent_join = needs_recent_join or key in recent_fields
+                continue
+
+            if key in text_fields:
+                param_key = f"cf_{index}"
+                params[param_key] = f"%{value}%"
+                clauses.append(f"{text_fields[key]} like %({param_key})s")
+
+        return (" and " + " and ".join(clauses) if clauses else ""), needs_recent_join
+
     def _fetch_dashboard_stats(self, conn, window: PeriodWindow, filters: dict[str, Any]) -> dict[str, float]:
         where_sql, params = self._period_where(window, filters)
         with conn.cursor() as cursor:
@@ -834,13 +911,16 @@ class DashboardDbService:
             params["limit"] = limit
             params["offset"] = offset
             limit_sql = "limit %(limit)s offset %(offset)s"
+        column_filter_sql, needs_recent_join = self._detail_column_filter_clause(filters, params)
+        recent_join_sql = self._detail_recent_join_sql(window, params) if needs_recent_join else ""
 
         with conn.cursor() as cursor:
             cursor.execute(
                 f"""
                 select p.*
                 from {self._render_period_table(window.period_table)} p
-                where {where_sql}
+                {recent_join_sql}
+                where {where_sql}{column_filter_sql}
                 order by p.sales_amount desc, p.daily_sales desc, p.seller_sku_adj
                 {limit_sql}
                 """,
@@ -857,12 +937,15 @@ class DashboardDbService:
         filters: dict[str, Any],
     ) -> tuple[list[str], list[dict[str, Any]]]:
         where_sql, params = self._period_where(window, filters)
+        column_filter_sql, needs_recent_join = self._detail_column_filter_clause(filters, params)
+        recent_join_sql = self._detail_recent_join_sql(window, params) if needs_recent_join else ""
         with conn.cursor() as cursor:
             cursor.execute(
                 f"""
                 select p.*
                 from {self._render_period_table(window.period_table)} p
-                where {where_sql}
+                {recent_join_sql}
+                where {where_sql}{column_filter_sql}
                 order by p.sales_amount desc, p.daily_sales desc, p.seller_sku_adj
                 """,
                 params,
@@ -917,12 +1000,15 @@ class DashboardDbService:
 
     def _count_period_items(self, conn, window: PeriodWindow, filters: dict[str, Any]) -> int:
         where_sql, params = self._period_where(window, filters)
+        column_filter_sql, needs_recent_join = self._detail_column_filter_clause(filters, params)
+        recent_join_sql = self._detail_recent_join_sql(window, params) if needs_recent_join else ""
         with conn.cursor() as cursor:
             cursor.execute(
                 f"""
                 select count(*) as total
                 from {self._render_period_table(window.period_table)} p
-                where {where_sql}
+                {recent_join_sql}
+                where {where_sql}{column_filter_sql}
                 """,
                 params,
             )

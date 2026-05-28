@@ -147,6 +147,7 @@ def api_dashboard(
 
 @app.get("/api/detail")
 def api_detail(
+    request: Request,
     start_date: Optional[str] = Query(default=None),
     end_date: Optional[str] = Query(default=None),
     site: str = Query(default="all"),
@@ -168,11 +169,13 @@ def api_detail(
         margin_band=margin_band,
         keyword=keyword,
     )
+    filters["column_filters"] = price_review_column_filters(request)
     return dashboard_service.get_detail_payload(filters, page=page, page_size=page_size)
 
 
 @app.get("/api/detail/export")
 def api_detail_export(
+    request: Request,
     start_date: Optional[str] = Query(default=None),
     end_date: Optional[str] = Query(default=None),
     site: str = Query(default="all"),
@@ -192,6 +195,7 @@ def api_detail_export(
         margin_band=margin_band,
         keyword=keyword,
     )
+    filters["column_filters"] = price_review_column_filters(request)
     payload = dashboard_service.get_detail_export_payload(filters)
     columns = payload["columns"]
 

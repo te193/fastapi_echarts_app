@@ -6,6 +6,7 @@
   var datePicker = null;
   var elements = {};
   var tableRenderToken = 0;
+  var detailColumnFilters = {};
 
   document.addEventListener("DOMContentLoaded", init);
 
@@ -111,6 +112,8 @@
       state.margin_band = "all";
       state.keyword = "";
       state.page = 1;
+      detailColumnFilters = {};
+      closeColumnFilterPopover();
       syncControls();
       renderTable();
     });
@@ -120,6 +123,7 @@
     if (elements.exportRawCsvBtn) {
       elements.exportRawCsvBtn.addEventListener("click", exportRawCsv);
     }
+    bindDetailColumnFilters();
     window.addEventListener("resize", function () {
       if (trendChart) trendChart.resize();
     });
@@ -170,6 +174,165 @@
     if (main) main.classList.toggle("page-loading", isLoading);
   }
 
+  function buildDetailParams(extra) {
+    var params = Object.assign({}, state, extra || {});
+    Object.keys(detailColumnFilters).forEach(function (key) {
+      var value = detailColumnFilters[key];
+      if (value !== "" && value !== null && value !== undefined) {
+        params["cf_" + key] = value;
+      }
+    });
+    return params;
+  }
+
+  function bindDetailColumnFilters() {
+    document.querySelectorAll("[data-detail-filter-key]").forEach(function (button) {
+      button.addEventListener("click", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        openColumnFilterPopover(button);
+      });
+    });
+
+    document.addEventListener("click", function (event) {
+      var popover = document.querySelector(".column-filter-popover");
+      if (!popover) return;
+      if (event.target.closest("[data-filter-apply]")) {
+        event.preventDefault();
+        applyColumnFilter(popover);
+        return;
+      }
+      if (event.target.closest("[data-filter-clear]")) {
+        event.preventDefault();
+        clearColumnFilter(popover.dataset.filterKey, popover.dataset.filterType || "text");
+        return;
+      }
+      if (popover.contains(event.target)) return;
+      if (event.target.closest("[data-detail-filter-key]")) return;
+      closeColumnFilterPopover();
+    });
+  }
+
+  function activeColumnFilterValue(key, type) {
+    if (type === "number") {
+      return {
+        min: detailColumnFilters[key + "_min"] || "",
+        max: detailColumnFilters[key + "_max"] || "",
+      };
+    }
+    return detailColumnFilters[key] || "";
+  }
+
+  function openColumnFilterPopover(button) {
+    closeColumnFilterPopover();
+
+    var key = button.dataset.detailFilterKey;
+    var type = button.dataset.detailFilterType || "text";
+    var rect = button.getBoundingClientRect();
+    var value = activeColumnFilterValue(key, type);
+    var popover = document.createElement("div");
+    popover.className = "column-filter-popover";
+    popover.dataset.filterKey = key;
+    popover.dataset.filterType = type;
+
+    if (type === "number") {
+      popover.innerHTML = [
+        '<label>最小值<input type="number" step="any" data-filter-min value="' + app.escapeHtml(value.min) + '"></label>',
+        '<label>最大值<input type="number" step="any" data-filter-max value="' + app.escapeHtml(value.max) + '"></label>',
+        '<div class="column-filter-actions">',
+        '<button type="button" class="primary" data-filter-apply>筛选</button>',
+        '<button type="button" data-filter-clear>清除</button>',
+        '</div>',
+      ].join("");
+    } else {
+      popover.innerHTML = [
+        '<label>包含文本<input type="text" data-filter-text value="' + app.escapeHtml(value) + '" placeholder="输入关键词"></label>',
+        '<div class="column-filter-actions">',
+        '<button type="button" class="primary" data-filter-apply>筛选</button>',
+        '<button type="button" data-filter-clear>清除</button>',
+        '</div>',
+      ].join("");
+    }
+
+    document.body.appendChild(popover);
+    var top = rect.bottom + window.scrollY + 8;
+    var left = rect.left + window.scrollX;
+    var maxLeft = window.scrollX + document.documentElement.clientWidth - popover.offsetWidth - 12;
+    popover.style.top = top + "px";
+    popover.style.left = Math.max(12 + window.scrollX, Math.min(left, maxLeft)) + "px";
+
+    var firstInput = popover.querySelector("input");
+    if (firstInput) {
+      firstInput.focus();
+      firstInput.select();
+    }
+
+    popover.addEventListener("keydown", function (event) {
+      if (event.key === "Enter") applyColumnFilter(popover);
+      if (event.key === "Escape") closeColumnFilterPopover();
+    });
+    popover.addEventListener("pointerdown", function (event) {
+      if (event.target.closest("[data-filter-apply]")) {
+        event.preventDefault();
+        applyColumnFilter(popover);
+      }
+      if (event.target.closest("[data-filter-clear]")) {
+        event.preventDefault();
+        clearColumnFilter(key, type);
+      }
+    });
+  }
+
+  function closeColumnFilterPopover() {
+    var popover = document.querySelector(".column-filter-popover");
+    if (popover) popover.remove();
+  }
+
+  function applyColumnFilter(popover) {
+    var key = popover.dataset.filterKey;
+    var type = popover.dataset.filterType || "text";
+    if (type === "number") {
+      setColumnFilterValue(key + "_min", popover.querySelector("[data-filter-min]").value.trim());
+      setColumnFilterValue(key + "_max", popover.querySelector("[data-filter-max]").value.trim());
+    } else {
+      setColumnFilterValue(key, popover.querySelector("[data-filter-text]").value.trim());
+    }
+    state.page = 1;
+    closeColumnFilterPopover();
+    renderTable();
+  }
+
+  function clearColumnFilter(key, type) {
+    if (type === "number") {
+      delete detailColumnFilters[key + "_min"];
+      delete detailColumnFilters[key + "_max"];
+    } else {
+      delete detailColumnFilters[key];
+    }
+    state.page = 1;
+    closeColumnFilterPopover();
+    renderTable();
+  }
+
+  function setColumnFilterValue(key, value) {
+    if (value === "") {
+      delete detailColumnFilters[key];
+    } else {
+      detailColumnFilters[key] = value;
+    }
+  }
+
+  function updateDetailColumnFilterButtons() {
+    document.querySelectorAll("[data-detail-filter-key]").forEach(function (button) {
+      var key = button.dataset.detailFilterKey;
+      var type = button.dataset.detailFilterType || "text";
+      var isActive = type === "number"
+        ? Boolean(detailColumnFilters[key + "_min"] || detailColumnFilters[key + "_max"])
+        : Boolean(detailColumnFilters[key]);
+      button.classList.toggle("active", isActive);
+    });
+  }
+
   function formatOriginalPrice(value) {
     return Number(value || 0).toLocaleString("zh-CN", {
       minimumFractionDigits: 0,
@@ -181,10 +344,11 @@
     var token = ++tableRenderToken;
     setLoading(true);
     app.writeQueryState(state);
-    app.apiGet("/api/detail", Object.assign({}, state, { page_size: 15 })).then(function (payload) {
+    app.apiGet("/api/detail", buildDetailParams({ page_size: 15 })).then(function (payload) {
       elements.tableCountText.textContent = "当前明细 " + payload.total + " 条";
       renderRows(payload.rows);
       renderPagination(payload);
+      updateDetailColumnFilterButtons();
     }).catch(function (error) {
       console.error(error);
     }).then(function () {
@@ -278,6 +442,11 @@
       var value = state[key];
       if (value == null || value === "" || value === "all") return;
       params.set(key, value);
+    });
+    Object.keys(detailColumnFilters).forEach(function (key) {
+      var value = detailColumnFilters[key];
+      if (value == null || value === "") return;
+      params.set("cf_" + key, value);
     });
     window.location.href = "/api/detail/export" + (params.toString() ? ("?" + params.toString()) : "");
   }
