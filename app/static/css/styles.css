@@ -1195,7 +1195,8 @@ span.flatpickr-weekday {
   line-height: 1.6;
 }
 
-.goal-overview-card {
+.goal-overview-card,
+.monthly-goal-card {
   margin-bottom: 18px;
 }
 
@@ -1342,10 +1343,6 @@ span.flatpickr-weekday {
   font-size: 13px;
   font-weight: 700;
   color: #183456;
-}
-
-.monthly-goal-card {
-  margin-bottom: 18px;
 }
 
 .monthly-goal-panel {
