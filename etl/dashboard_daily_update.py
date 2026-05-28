@@ -1025,6 +1025,29 @@ with product_period as (
         country,
         local_sku
 ),
+effective_snapshot_dates as (
+    select
+        (
+            select max(snapshot_date)
+            from etl_datasync.dashboard_restock_daily_snapshot
+            where snapshot_date <= %(snapshot_date)s
+        ) as restock_snapshot_date,
+        (
+            select max(snapshot_date)
+            from etl_datasync.dashboard_inventory_daily_snapshot
+            where snapshot_date <= %(snapshot_date)s
+        ) as inventory_snapshot_date,
+        (
+            select max(snapshot_date)
+            from etl_datasync.dashboard_listing_price_daily_snapshot
+            where snapshot_date <= %(snapshot_date)s
+        ) as listing_snapshot_date,
+        (
+            select max(snapshot_date)
+            from etl_datasync.dashboard_limit_price_daily_snapshot
+            where snapshot_date <= %(snapshot_date)s
+        ) as limit_snapshot_date
+),
 joined as (
     select
         p.*,
@@ -1052,24 +1075,25 @@ joined as (
         lim.shipping_method,
         lim.target_margin
     from product_period p
+    cross join effective_snapshot_dates ed
     left join etl_datasync.dashboard_restock_daily_snapshot r
-      on r.snapshot_date = %(snapshot_date)s
+      on r.snapshot_date = ed.restock_snapshot_date
      and p.country_category = r.country_category
      and p.seller_sku_adj = r.seller_sku_adj
      and p.seller_name_new = r.seller_name_new
     left join etl_datasync.dashboard_inventory_daily_snapshot i
-      on i.snapshot_date = %(snapshot_date)s
+      on i.snapshot_date = ed.inventory_snapshot_date
      and p.country_category = i.country_category
      and p.seller_sku_adj = i.seller_sku_adj
      and p.seller_name_new = i.seller_name_new
     left join etl_datasync.dashboard_listing_price_daily_snapshot lp
-      on lp.snapshot_date = %(snapshot_date)s
+      on lp.snapshot_date = ed.listing_snapshot_date
      and p.country_category = lp.country_category
      and binary p.seller_sku_adj = binary lp.seller_sku
      and p.seller_name_new = lp.seller_name_new
      and p.country = lp.country
     left join etl_datasync.dashboard_limit_price_daily_snapshot lim
-      on lim.snapshot_date = %(snapshot_date)s
+      on lim.snapshot_date = ed.limit_snapshot_date
      and p.country_category = lim.country_category
      and p.seller_sku_adj = lim.seller_sku
      and p.seller_name_new = lim.seller_name_new
