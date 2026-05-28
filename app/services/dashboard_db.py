@@ -679,7 +679,6 @@ class DashboardDbService:
 
         stat_days = max(window.days, 1)
         sales_amount = to_float(row.get("sales_amount"))
-        sales_amount_ex_tax = to_float(row.get("sales_amount_ex_tax"))
         order_gross_profit = to_float(row.get("order_gross_profit"))
         ad_spend = to_float(row.get("ad_spend"))
         ad_sales = to_float(row.get("ad_sales"))
@@ -688,7 +687,7 @@ class DashboardDbService:
             "over_limit_count": to_int(row.get("over_limit_count")),
             "sales_qty": to_float(row.get("sales_qty")),
             "sales_amount": sales_amount,
-            "order_gross_margin": round(order_gross_profit / sales_amount_ex_tax, 4) if sales_amount_ex_tax else 0,
+            "order_gross_margin": round(order_gross_profit / sales_amount, 4) if sales_amount else 0,
             "avg_daily_sales": round(to_float(row.get("sales_qty")) / stat_days, 2),
             "fba_total_inventory": to_float(inventory_row.get("fba_total_inventory")),
             "fba_sellable_inventory": to_float(inventory_row.get("fba_sellable_inventory")),
@@ -1124,7 +1123,7 @@ class DashboardDbService:
             day_ad_sales = to_float(row.get("ad_sales"))
             revenue.append(round(day_revenue, 2))
             daily_sales.append(round(day_units, 2))
-            margin.append(round(to_float(row.get("order_gross_profit")) / to_float(row.get("sales_amount_ex_tax")), 4) if to_float(row.get("sales_amount_ex_tax")) else 0)
+            margin.append(round(to_float(row.get("order_gross_profit")) / to_float(row.get("sales_amount")), 4) if to_float(row.get("sales_amount")) else 0)
             ad_spend.append(round(day_ad_spend, 2))
             ad_sales.append(round(day_ad_sales, 2))
             active_sku.append(to_int(row.get("active_sku")))
