@@ -1265,9 +1265,6 @@ class DashboardDbService:
         target_by_today = round(to_float(row.get("target_amount_to_date")), 2)
         sales_goal_ratio = round(to_float(row.get("sales_goal_ratio")), 4)
         current_goal_ratio = round(to_float(row.get("current_goal_ratio")), 4)
-        current_day = day_of_year(snapshot_date)
-        year_days = days_in_year(snapshot_date)
-
         return {
             "sales_goal": {
                 "title": "销售额目标",
@@ -1282,8 +1279,8 @@ class DashboardDbService:
                 "current_value": current_revenue,
                 "target_value": target_by_today,
                 "ratio": current_goal_ratio,
-                "detail_text": f"{format_day(snapshot_date)} / 1.35 亿 / {year_days} * 1.01 * 第 {current_day} 天",
-                "delta_text": f"数据截至 {format_day(data_end_date)}，距离今日进度差 {target_by_today - current_revenue:,.2f}",
+                "detail_text": f"{row.get('goal_year')} 年月度目标累计 / 截至 {format_day(data_end_date)}",
+                "delta_text": f"数据截至 {format_day(data_end_date)}，距离累计目标差 {target_by_today - current_revenue:,.2f}",
             },
             "margin_goal": {
                 "title": "毛利率目标",

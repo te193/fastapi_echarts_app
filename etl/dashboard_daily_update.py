@@ -440,6 +440,23 @@ create table if not exists etl_datasync.dashboard_annual_goal_snapshot (
 ) engine=InnoDB default charset=utf8mb4;
 """
 
+CREATE_MONTHLY_GOAL_SQL = """
+create table if not exists etl_datasync.dashboard_monthly_goal (
+    goal_year int not null,
+    goal_month tinyint not null,
+    month_start date not null,
+    sales_goal decimal(18,2) not null,
+    margin_goal decimal(10,6) not null,
+    gross_profit_goal decimal(18,2) not null,
+    sales_volume_goal decimal(18,2) null,
+    source_file varchar(255) null,
+    created_at datetime not null default current_timestamp,
+    updated_at datetime not null default current_timestamp on update current_timestamp,
+    primary key (goal_year, goal_month),
+    key idx_month_start (month_start)
+) engine=InnoDB default charset=utf8mb4;
+"""
+
 
 def period_create_sql(table_name: str) -> str:
     return CREATE_PERIOD_SNAPSHOT_SQL.replace(
@@ -532,26 +549,55 @@ ytd as (
       on p.dt_date between c.year_start and %(biz_date)s
     where p.seller_name_new not regexp 'baihuiyi|Yuanoboo|Bailboo|Qianytyy'
       and char_length(p.seller_sku_adj) between 5 and 10
+),
+monthly_goal as (
+    select
+        c.goal_year,
+        coalesce(sum(g.sales_goal), {ANNUAL_SALES_GOAL:.2f}) as sales_goal,
+        coalesce(round(sum(g.gross_profit_goal) / nullif(sum(g.sales_goal), 0), 4), {ANNUAL_MARGIN_GOAL:.4f}) as margin_goal,
+        coalesce(
+            sum(
+                case
+                    when g.goal_month < month(coalesce(y.data_end_date, %(biz_date)s)) then g.sales_goal
+                    when g.goal_month = month(coalesce(y.data_end_date, %(biz_date)s))
+                        then round(
+                            g.sales_goal
+                            * day(coalesce(y.data_end_date, %(biz_date)s))
+                            / day(last_day(coalesce(y.data_end_date, %(biz_date)s))),
+                            2
+                        )
+                    else 0
+                end
+            ),
+            round({ANNUAL_SALES_GOAL:.2f} / (datediff(c.year_end, c.year_start) + 1) * {ANNUAL_SALES_GOAL_BUFFER:.4f} * dayofyear(%(snapshot_date)s), 2)
+        ) as target_amount_to_date
+    from calendar c
+    cross join ytd y
+    left join etl_datasync.dashboard_monthly_goal g
+      on g.goal_year = c.goal_year
+    group by c.goal_year, c.year_start, c.year_end, y.data_end_date
 )
 select
     %(snapshot_date)s as snapshot_date,
     c.goal_year,
     c.year_start,
     coalesce(y.data_end_date, c.year_start) as data_end_date,
-    {ANNUAL_SALES_GOAL:.2f} as sales_goal,
-    {ANNUAL_MARGIN_GOAL:.4f} as margin_goal,
-    {ANNUAL_SALES_GOAL_BUFFER:.4f} as sales_goal_buffer,
+    m.sales_goal as sales_goal,
+    m.margin_goal as margin_goal,
+    1.0000 as sales_goal_buffer,
     round(y.sales_amount_ytd, 2) as sales_amount_ytd,
     round(y.sales_amount_ex_tax_ytd, 2) as sales_amount_ex_tax_ytd,
     round(y.order_gross_profit_ytd, 2) as order_gross_profit_ytd,
     round(y.order_gross_profit_ytd / nullif(y.sales_amount_ex_tax_ytd, 0), 4) as order_gross_margin_ytd,
-    round({ANNUAL_SALES_GOAL:.2f} / (datediff(c.year_end, c.year_start) + 1) * {ANNUAL_SALES_GOAL_BUFFER:.4f} * dayofyear(%(snapshot_date)s), 2) as target_amount_to_date,
-    round(y.sales_amount_ytd / nullif({ANNUAL_SALES_GOAL:.2f}, 0), 4) as sales_goal_ratio,
-    round(y.sales_amount_ytd / nullif(round({ANNUAL_SALES_GOAL:.2f} / (datediff(c.year_end, c.year_start) + 1) * {ANNUAL_SALES_GOAL_BUFFER:.4f} * dayofyear(%(snapshot_date)s), 2), 0), 4) as current_goal_ratio,
+    round(m.target_amount_to_date, 2) as target_amount_to_date,
+    round(y.sales_amount_ytd / nullif(m.sales_goal, 0), 4) as sales_goal_ratio,
+    round(y.sales_amount_ytd / nullif(m.target_amount_to_date, 0), 4) as current_goal_ratio,
     now() as created_at,
     now() as updated_at
 from calendar c
-cross join ytd y;
+cross join ytd y
+join monthly_goal m
+  on m.goal_year = c.goal_year;
 """
 
 
@@ -1207,6 +1253,7 @@ DDL_STATEMENTS = (
     CREATE_PERIOD_SNAPSHOT_SQL,
     *(period_create_sql(table_name) for table_name in PERIOD_PRESET_TABLES.values()),
     CREATE_MATRIX_PERIOD_SNAPSHOT_SQL,
+    CREATE_MONTHLY_GOAL_SQL,
     CREATE_ANNUAL_GOAL_SNAPSHOT_SQL,
 )
 
@@ -1224,6 +1271,7 @@ TABLE_COMMENTS = {
     "dashboard_product_period_90d_snapshot": "最近90天产品表现快照",
     "dashboard_product_period_last_month_snapshot": "上月产品表现快照",
     "dashboard_product_matrix_period_snapshot": "日销与毛利率矩阵周期汇总快照",
+    "dashboard_monthly_goal": "月度经营目标表",
     "dashboard_annual_goal_snapshot": "年度目标达成快照",
 }
 
@@ -1338,10 +1386,15 @@ COLUMN_COMMENTS = {
     "sku_count": "SKU数量",
     "over_limit_count": "超限价数量",
     "goal_year": "目标年份",
+    "goal_month": "目标月份",
+    "month_start": "月份开始日期",
     "year_start": "年份开始日期",
     "data_end_date": "数据截止日期",
     "sales_goal": "年度销售目标",
     "margin_goal": "年度毛利率目标",
+    "gross_profit_goal": "毛利润目标",
+    "sales_volume_goal": "销量目标",
+    "source_file": "来源文件",
     "sales_goal_buffer": "销售目标缓冲系数",
     "sales_amount_ytd": "年初至今销售额",
     "sales_amount_ex_tax_ytd": "年初至今不含税销售额",

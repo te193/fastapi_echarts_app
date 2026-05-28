@@ -199,7 +199,6 @@
 
   function renderGoalOverview(goal) {
     if (!elements.goalOverviewCard) return;
-    var currentDayText = (goal.current_goal.detail_text.split("第 ")[1] || "").replace(" 天", "");
     elements.goalOverviewCard.innerHTML = [
       '<div class="panel goal-panel">',
       '  <div class="goal-panel-head">',
@@ -210,13 +209,13 @@
       "    </div>",
       '    <div class="goal-panel-meta">',
       '      <span class="summary-badge">销售目标 <strong>' + app.formatCompactCurrency(goal.sales_goal.target_value) + "</strong></span>",
-      '      <span class="summary-badge">当前进度 <strong>第 ' + app.escapeHtml(currentDayText) + " 天</strong></span>",
+      '      <span class="summary-badge">当前进度 <strong>月度累计</strong></span>',
       '      <span class="summary-badge">毛利率目标 <strong>' + app.formatPercent(goal.margin_goal.target_value) + "</strong></span>",
       "    </div>",
       "  </div>",
       '  <div class="goal-grid">',
       buildGoalCard(goal.sales_goal, "revenue", "当前值", "目标值", false),
-      buildGoalCard(goal.current_goal, "current-progress", "当前累计", "截至今日目标", false),
+      buildGoalCard(goal.current_goal, "current-progress", "当前累计", "累计目标", false),
       buildGoalCard(goal.margin_goal, "margin", "当前值", "目标值", true),
       "  </div>",
       "</div>"
