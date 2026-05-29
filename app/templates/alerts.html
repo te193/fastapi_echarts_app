@@ -16,6 +16,10 @@
 
   <div class="filters-grid alert-filters">
     <label class="filter-control">
+      <span>观察维度</span>
+      <select id="compareDaysSelect"></select>
+    </label>
+    <label class="filter-control">
       <span>站点</span>
       <select id="siteSelect"></select>
     </label>
@@ -26,6 +30,22 @@
     <label class="filter-control">
       <span>预警类型</span>
       <select id="alertTypeSelect"></select>
+    </label>
+    <label class="filter-control">
+      <span>销量趋势</span>
+      <select id="salesTrendSelect"></select>
+    </label>
+    <label class="filter-control">
+      <span>排名趋势</span>
+      <select id="rankTrendSelect"></select>
+    </label>
+    <label class="filter-control">
+      <span>毛利状态</span>
+      <select id="marginStatusSelect"></select>
+    </label>
+    <label class="filter-control">
+      <span>库存状态</span>
+      <select id="stockStatusSelect"></select>
     </label>
     <label class="filter-control">
       <span>关键词</span>
@@ -58,5 +78,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', path='js/alerts.js') }}?v=20260529d"></script>
+<script src="{{ url_for('static', path='js/alerts.js') }}?v=20260529e"></script>
 {% endblock %}

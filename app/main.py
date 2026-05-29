@@ -170,6 +170,11 @@ def api_alerts(
     margin_band: str = Query(default="all"),
     keyword: str = Query(default=""),
     alert_type: str = Query(default="all"),
+    compare_days: int = Query(default=7, ge=7, le=30),
+    sales_trend: str = Query(default="all"),
+    rank_trend: str = Query(default="all"),
+    margin_status: str = Query(default="all"),
+    stock_status: str = Query(default="all"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=10, le=100),
 ) -> dict:
@@ -183,7 +188,17 @@ def api_alerts(
         margin_band=margin_band,
         keyword=keyword,
     )
-    return dashboard_service.get_alerts_payload(filters, alert_type=alert_type, page=page, page_size=page_size)
+    return dashboard_service.get_alerts_payload(
+        filters,
+        alert_type=alert_type,
+        compare_days=compare_days,
+        sales_trend=sales_trend,
+        rank_trend=rank_trend,
+        margin_status=margin_status,
+        stock_status=stock_status,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @app.get("/api/detail")

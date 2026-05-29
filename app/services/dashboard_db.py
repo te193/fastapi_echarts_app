@@ -296,17 +296,29 @@ class DashboardDbService:
         self,
         filters: dict[str, Any],
         alert_type: str = "all",
+        compare_days: int = 7,
+        sales_trend: str = "all",
+        rank_trend: str = "all",
+        margin_status: str = "all",
+        stock_status: str = "all",
         page: int = 1,
         page_size: int = 20,
     ) -> dict[str, Any]:
         with self.connect() as conn:
             window = self._resolve_window(conn, filters)
-            payload = self._fetch_alert_center(conn, window, filters, per_type_limit=100000, total_limit=400000)
+            payload = self._fetch_alert_center(
+                conn,
+                window,
+                filters,
+                compare_days=compare_days,
+                alert_type=alert_type,
+                sales_trend=sales_trend,
+                rank_trend=rank_trend,
+                margin_status=margin_status,
+                stock_status=stock_status,
+            )
 
-        valid_types = {"sales_drop", "margin_low", "rank_drop", "stock_short"}
         payload["total_count"] = len(payload["items"])
-        if alert_type in valid_types:
-            payload["items"] = [item for item in payload["items"] if item.get("type") == alert_type]
         total = len(payload["items"])
         safe_page_size = max(10, min(100, int(page_size or 20)))
         total_pages = max(1, math.ceil(total / safe_page_size))
@@ -317,11 +329,12 @@ class DashboardDbService:
         payload["page"] = safe_page
         payload["page_size"] = safe_page_size
         payload["total_pages"] = total_pages
+        valid_types = {"sales_drop", "margin_low", "rank_drop", "stock_short"}
         payload["selected_type"] = alert_type if alert_type in valid_types else "all"
         payload["rules"] = [
-            {"type": "sales_drop", "label": "销量下滑", "rule": "近7天销量较前7天下滑超过30%，且前7天销量不少于10。"},
+            {"type": "sales_drop", "label": "销量下滑", "rule": f"近{payload.get('compare_days', compare_days)}天销量较前一周期下滑超过30%，且前一周期销量不少于10。"},
             {"type": "margin_low", "label": "低毛利", "rule": "当前筛选周期销售额不少于1000，订单毛利率低于8%。"},
-            {"type": "rank_drop", "label": "排名下滑", "rule": "近7天平均排名较前7天下滑至少5名，且下滑幅度不少于20%。"},
+            {"type": "rank_drop", "label": "排名下滑", "rule": f"近{payload.get('compare_days', compare_days)}天平均排名较前一周期下滑至少5名，且下滑幅度不少于20%。"},
             {"type": "stock_short", "label": "库存偏低", "rule": "日销不少于1，FBA可售库存按当前日销测算不足14天。"},
         ]
         return payload
@@ -1316,15 +1329,20 @@ class DashboardDbService:
         conn,
         window: PeriodWindow,
         filters: dict[str, Any],
-        per_type_limit: int = 4,
-        total_limit: int = 10,
+        compare_days: int = 7,
+        alert_type: str = "all",
+        sales_trend: str = "all",
+        rank_trend: str = "all",
+        margin_status: str = "all",
+        stock_status: str = "all",
     ) -> dict[str, Any]:
         table = self._render_period_table(window.period_table)
         where_sql, params = self._period_where(window, filters, alias="p")
+        compare_days = 30 if compare_days >= 30 else 14 if compare_days >= 14 else 7
         recent_end = window.end_date
-        recent_start = recent_end - timedelta(days=6)
+        recent_start = recent_end - timedelta(days=compare_days - 1)
         previous_end = recent_start - timedelta(days=1)
-        previous_start = previous_end - timedelta(days=6)
+        previous_start = previous_end - timedelta(days=compare_days - 1)
         params.update(
             {
                 "recent_start": recent_start,
@@ -1333,137 +1351,159 @@ class DashboardDbService:
                 "previous_end": previous_end,
             }
         )
-        alerts: list[dict[str, Any]] = []
+        items: list[dict[str, Any]] = []
 
         with conn.cursor() as cursor:
             cursor.execute(
                 f"""
                 select
                     p.seller_sku_adj, p.seller_name_new, p.country,
+                    max(p.sales_amount) as sales_amount,
+                    max(p.order_gross_margin) as order_gross_margin,
+                    max(p.fba_sellable_inventory) as fba_sellable_inventory,
+                    max(p.daily_sales) as daily_sales,
+                    max(p.fba_sellable_inventory / nullif(p.daily_sales, 0)) as sellable_days,
                     sum(case when d.dt_date between %(recent_start)s and %(recent_end)s then d.sales_qty else 0 end) as recent_sales_qty,
                     sum(case when d.dt_date between %(previous_start)s and %(previous_end)s then d.sales_qty else 0 end) as previous_sales_qty,
-                    sum(case when d.dt_date between %(recent_start)s and %(recent_end)s then d.sales_amount else 0 end) as recent_sales_amount
+                    sum(case when d.dt_date between %(recent_start)s and %(recent_end)s then d.sales_amount else 0 end) as recent_sales_amount,
+                    avg(case when d.dt_date between %(recent_start)s and %(recent_end)s and d.ranking > 0 then d.ranking end) as recent_rank,
+                    avg(case when d.dt_date between %(previous_start)s and %(previous_end)s and d.ranking > 0 then d.ranking end) as previous_rank
                 from {table} p
-                join dashboard_product_performance_daily d
+                left join dashboard_product_performance_daily d
                   on d.item_key = p.item_key
                  and d.dt_date between %(previous_start)s and %(recent_end)s
                 where {where_sql}
                 group by p.item_key, p.seller_sku_adj, p.seller_name_new, p.country
-                having previous_sales_qty >= 10
-                   and recent_sales_qty <= previous_sales_qty * 0.7
-                order by (previous_sales_qty - recent_sales_qty) desc, recent_sales_amount desc
-                limit %(per_type_limit)s
                 """,
-                {**params, "per_type_limit": per_type_limit},
+                params,
             )
             for row in cursor.fetchall():
-                previous_qty = to_float(row.get("previous_sales_qty"))
-                current_qty = to_float(row.get("recent_sales_qty"))
-                alerts.append(
-                    self._build_alert_item(
-                        "sales_drop",
-                        "销量下滑",
-                        row,
-                        f"近7天销量 {current_qty:.0f}，前7天 {previous_qty:.0f}",
-                        "negative",
-                    )
-                )
-
-            cursor.execute(
-                f"""
-                select p.seller_sku_adj, p.seller_name_new, p.country,
-                       p.sales_amount, p.order_gross_margin, p.order_gross_profit
-                from {table} p
-                where {where_sql}
-                  and p.sales_amount >= 1000
-                  and coalesce(p.order_gross_margin, 0) < 0.08
-                order by p.sales_amount desc
-                limit %(per_type_limit)s
-                """,
-                {**params, "per_type_limit": per_type_limit},
-            )
-            for row in cursor.fetchall():
-                alerts.append(
-                    self._build_alert_item(
-                        "margin_low",
-                        "低毛利",
-                        row,
-                        f"销售额 {compact_currency(to_float(row.get('sales_amount')))}，毛利率 {to_float(row.get('order_gross_margin')):.1%}",
-                        "warning",
-                    )
-                )
-
-            cursor.execute(
-                f"""
-                select p.seller_sku_adj, p.seller_name_new, p.country,
-                       avg(case when d.dt_date between %(recent_start)s and %(recent_end)s and d.ranking > 0 then d.ranking end) as recent_rank,
-                       avg(case when d.dt_date between %(previous_start)s and %(previous_end)s and d.ranking > 0 then d.ranking end) as previous_rank
-                from {table} p
-                join dashboard_product_performance_daily d
-                  on d.item_key = p.item_key
-                 and d.dt_date between %(previous_start)s and %(recent_end)s
-                where {where_sql}
-                group by p.item_key, p.seller_sku_adj, p.seller_name_new, p.country
-                having previous_rank is not null
-                   and recent_rank is not null
-                   and recent_rank >= previous_rank + 5
-                   and recent_rank >= previous_rank * 1.2
-                order by (recent_rank - previous_rank) desc
-                limit %(per_type_limit)s
-                """,
-                {**params, "per_type_limit": per_type_limit},
-            )
-            for row in cursor.fetchall():
-                previous_rank = int(round(to_float(row.get("previous_rank"))))
-                recent_rank = int(round(to_float(row.get("recent_rank"))))
-                alerts.append(
-                    self._build_alert_item(
-                        "rank_drop",
-                        "排名下滑",
-                        row,
-                        f"平均排名 {previous_rank} -> {recent_rank}",
-                        "warning",
-                    )
-                )
-
-            cursor.execute(
-                f"""
-                select p.seller_sku_adj, p.seller_name_new, p.country,
-                       p.fba_sellable_inventory, p.daily_sales,
-                       p.fba_sellable_inventory / nullif(p.daily_sales, 0) as sellable_days
-                from {table} p
-                where {where_sql}
-                  and p.daily_sales >= 1
-                  and p.fba_sellable_inventory > 0
-                  and p.fba_sellable_inventory / nullif(p.daily_sales, 0) < 14
-                order by sellable_days asc, p.daily_sales desc
-                limit %(per_type_limit)s
-                """,
-                {**params, "per_type_limit": per_type_limit},
-            )
-            for row in cursor.fetchall():
-                alerts.append(
-                    self._build_alert_item(
-                        "stock_short",
-                        "库存偏低",
-                        row,
-                        f"可售约 {to_float(row.get('sellable_days')):.1f} 天，日销 {to_float(row.get('daily_sales')):.1f}",
-                        "negative",
-                    )
-                )
+                item = self._build_alert_metric_item(row, compare_days)
+                if item["has_alert"]:
+                    items.append(item)
 
         priority = {"sales_drop": 0, "margin_low": 1, "rank_drop": 2, "stock_short": 3}
-        alerts = sorted(alerts, key=lambda item: (priority.get(item["type"], 9), item["title"]))[:total_limit]
+        filtered = [
+            item
+            for item in items
+            if self._alert_item_matches(
+                item,
+                alert_type=alert_type,
+                sales_trend=sales_trend,
+                rank_trend=rank_trend,
+                margin_status=margin_status,
+                stock_status=stock_status,
+            )
+        ]
+        filtered.sort(key=lambda item: (item["priority"], item["title"]))
         summary = {key: 0 for key in priority}
-        for item in alerts:
-            summary[item["type"]] = summary.get(item["type"], 0) + 1
+        for item in filtered:
+            for key in item["alert_types"]:
+                if key in summary:
+                    summary[key] += 1
         return {
-            "items": alerts,
+            "items": filtered,
             "summary": summary,
-            "window": f"近7天 {format_day(recent_start)} ~ {format_day(recent_end)}",
-            "comparison_window": f"前7天 {format_day(previous_start)} ~ {format_day(previous_end)}",
+            "window": f"近{compare_days}天 {format_day(recent_start)} ~ {format_day(recent_end)}",
+            "comparison_window": f"前{compare_days}天 {format_day(previous_start)} ~ {format_day(previous_end)}",
+            "compare_days": compare_days,
             "empty_text": "当前筛选下没有明显异常。",
         }
+
+    def _build_alert_metric_item(self, row: dict[str, Any], compare_days: int) -> dict[str, Any]:
+        previous_qty = to_float(row.get("previous_sales_qty"))
+        recent_qty = to_float(row.get("recent_sales_qty"))
+        sales_change = (recent_qty - previous_qty) / previous_qty if previous_qty else (1 if recent_qty > 0 else 0)
+        sales_down = previous_qty >= 10 and recent_qty <= previous_qty * 0.7
+        sales_up = recent_qty >= 10 and recent_qty >= previous_qty * 1.3
+
+        previous_rank_raw = row.get("previous_rank")
+        recent_rank_raw = row.get("recent_rank")
+        previous_rank = int(round(to_float(previous_rank_raw))) if previous_rank_raw is not None else None
+        recent_rank = int(round(to_float(recent_rank_raw))) if recent_rank_raw is not None else None
+        rank_down = (
+            previous_rank is not None
+            and recent_rank is not None
+            and recent_rank >= previous_rank + 5
+            and recent_rank >= previous_rank * 1.2
+        )
+        rank_up = (
+            previous_rank is not None
+            and recent_rank is not None
+            and recent_rank <= max(previous_rank - 5, previous_rank * 0.8)
+        )
+
+        sales_amount = to_float(row.get("sales_amount"))
+        margin = to_float(row.get("order_gross_margin"))
+        margin_low = sales_amount >= 1000 and margin < 0.08
+
+        daily_sales = to_float(row.get("daily_sales"))
+        sellable_days = to_float(row.get("sellable_days"))
+        stock_short = daily_sales >= 1 and to_float(row.get("fba_sellable_inventory")) > 0 and sellable_days < 14
+
+        alert_types: list[str] = []
+        labels: list[str] = []
+        if sales_down:
+            alert_types.append("sales_drop")
+            labels.append("销量下滑")
+        if margin_low:
+            alert_types.append("margin_low")
+            labels.append("低毛利")
+        if rank_down:
+            alert_types.append("rank_drop")
+            labels.append("排名下滑")
+        if stock_short:
+            alert_types.append("stock_short")
+            labels.append("库存偏低")
+
+        priority_map = {"sales_drop": 0, "margin_low": 1, "rank_drop": 2, "stock_short": 3}
+        priority = min((priority_map[key] for key in alert_types), default=9)
+        primary_type = min(alert_types, key=lambda key: priority_map.get(key, 9)) if alert_types else "observe"
+        tone = "negative" if sales_down or stock_short else "warning"
+        return {
+            "type": primary_type,
+            "alert_types": alert_types,
+            "label": " / ".join(labels) if labels else "观察",
+            "labels": labels,
+            "tone": tone,
+            "title": str(row.get("seller_sku_adj") or "-"),
+            "subtitle": f"{row.get('seller_name_new') or '-'} / {row.get('country') or '-'}",
+            "store": str(row.get("seller_name_new") or "-"),
+            "country": str(row.get("country") or "-"),
+            "detail": "；".join(labels) if labels else "未触发预警",
+            "keyword": str(row.get("seller_sku_adj") or ""),
+            "priority": priority,
+            "has_alert": bool(alert_types),
+            "sales_trend": "down" if sales_down else "up" if sales_up else "stable",
+            "rank_trend": "down" if rank_down else "up" if rank_up else "stable",
+            "margin_status": "low" if margin_low else "normal",
+            "stock_status": "short" if stock_short else "normal",
+            "sales_text": f"近{compare_days}天 {recent_qty:.0f} / 前{compare_days}天 {previous_qty:.0f}（{sales_change:+.1%}）",
+            "rank_text": f"{previous_rank or '—'} -> {recent_rank or '—'}",
+            "margin_text": f"{margin:.1%} / {compact_currency(sales_amount)}",
+            "stock_text": f"{sellable_days:.1f} 天 / 日销 {daily_sales:.1f}" if stock_short or daily_sales else "—",
+        }
+
+    def _alert_item_matches(
+        self,
+        item: dict[str, Any],
+        alert_type: str,
+        sales_trend: str,
+        rank_trend: str,
+        margin_status: str,
+        stock_status: str,
+    ) -> bool:
+        if alert_type != "all" and alert_type not in item.get("alert_types", []):
+            return False
+        if sales_trend in {"down", "up", "stable"} and item.get("sales_trend") != sales_trend:
+            return False
+        if rank_trend in {"down", "up", "stable"} and item.get("rank_trend") != rank_trend:
+            return False
+        if margin_status in {"low", "normal"} and item.get("margin_status") != margin_status:
+            return False
+        if stock_status in {"short", "normal"} and item.get("stock_status") != stock_status:
+            return False
+        return True
 
     def _build_alert_item(
         self,

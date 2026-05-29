@@ -2,6 +2,11 @@
   var app = window.kanbanApp;
   var state = app.readQueryState();
   state.alert_type = new URLSearchParams(window.location.search).get("alert_type") || "all";
+  state.compare_days = Number(new URLSearchParams(window.location.search).get("compare_days") || 7);
+  state.sales_trend = new URLSearchParams(window.location.search).get("sales_trend") || "all";
+  state.rank_trend = new URLSearchParams(window.location.search).get("rank_trend") || "all";
+  state.margin_status = new URLSearchParams(window.location.search).get("margin_status") || "all";
+  state.stock_status = new URLSearchParams(window.location.search).get("stock_status") || "all";
   state.page_size = 20;
   var meta = null;
   var elements = {};
@@ -29,7 +34,9 @@
 
   function cacheElements() {
     [
-      "siteSelect", "storeSelect", "alertTypeSelect", "keywordInput", "clearFiltersBtn",
+      "compareDaysSelect", "siteSelect", "storeSelect", "alertTypeSelect",
+      "salesTrendSelect", "rankTrendSelect", "marginStatusSelect", "stockStatusSelect",
+      "keywordInput", "clearFiltersBtn",
       "alertPeriodHint", "alertStatsGrid", "alertTypeTabs", "alertTableCard",
       "paginationInfo", "paginationNumbers", "prevPageBtn", "nextPageBtn"
     ].forEach(function (id) {
@@ -40,27 +47,63 @@
   function populateFilters() {
     app.setSelectOptions(elements.siteSelect, meta.sites, "全部站点");
     app.setSelectOptions(elements.storeSelect, meta.stores, "全部店铺");
+    elements.compareDaysSelect.innerHTML = [
+      '<option value="7">近7天 vs 前7天</option>',
+      '<option value="14">近14天 vs 前14天</option>',
+      '<option value="30">近30天 vs 前30天</option>'
+    ].join("");
     elements.alertTypeSelect.innerHTML = alertDefs.map(function (item) {
       return '<option value="' + app.escapeHtml(item.key) + '">' + app.escapeHtml(item.label) + '</option>';
     }).join("");
+    elements.salesTrendSelect.innerHTML = trendOptions("销量");
+    elements.rankTrendSelect.innerHTML = trendOptions("排名");
+    elements.marginStatusSelect.innerHTML = [
+      '<option value="all">全部毛利</option>',
+      '<option value="low">低毛利</option>',
+      '<option value="normal">非低毛利</option>'
+    ].join("");
+    elements.stockStatusSelect.innerHTML = [
+      '<option value="all">全部库存</option>',
+      '<option value="short">库存偏低</option>',
+      '<option value="normal">库存正常</option>'
+    ].join("");
+  }
+
+  function trendOptions(label) {
+    return [
+      '<option value="all">全部' + label + '</option>',
+      '<option value="down">' + label + '下降</option>',
+      '<option value="up">' + label + '上涨</option>',
+      '<option value="stable">' + label + '无明显变化</option>'
+    ].join("");
   }
 
   function syncControls() {
+    elements.compareDaysSelect.value = String(state.compare_days || 7);
     elements.siteSelect.value = state.site;
     elements.storeSelect.value = state.store;
     elements.alertTypeSelect.value = state.alert_type || "all";
+    elements.salesTrendSelect.value = state.sales_trend || "all";
+    elements.rankTrendSelect.value = state.rank_trend || "all";
+    elements.marginStatusSelect.value = state.margin_status || "all";
+    elements.stockStatusSelect.value = state.stock_status || "all";
     elements.keywordInput.value = state.keyword || "";
   }
 
   function bindEvents() {
     [
+      ["compareDaysSelect", "compare_days"],
       ["siteSelect", "site"],
       ["storeSelect", "store"],
       ["alertTypeSelect", "alert_type"],
+      ["salesTrendSelect", "sales_trend"],
+      ["rankTrendSelect", "rank_trend"],
+      ["marginStatusSelect", "margin_status"],
+      ["stockStatusSelect", "stock_status"],
     ].forEach(function (pair) {
       if (!elements[pair[0]]) return;
       elements[pair[0]].addEventListener("change", function () {
-        state[pair[1]] = this.value;
+        state[pair[1]] = pair[1] === "compare_days" ? Number(this.value || 7) : this.value;
         state.page = 1;
         syncControls();
         render();
@@ -77,6 +120,11 @@
       state.site = "all";
       state.store = "all";
       state.alert_type = "all";
+      state.compare_days = 7;
+      state.sales_trend = "all";
+      state.rank_trend = "all";
+      state.margin_status = "all";
+      state.stock_status = "all";
       state.keyword = "";
       state.page = 1;
       syncControls();
@@ -154,7 +202,7 @@
       '</div>',
       '<div class="alert-table-wrap">',
       '<table class="alert-table">',
-      '<thead><tr><th>类型</th><th>MSKU</th><th>店铺</th><th>国家</th><th>异常值</th><th>处理入口</th></tr></thead>',
+      '<thead><tr><th>类型</th><th>MSKU</th><th>店铺</th><th>国家</th><th>销量趋势</th><th>排名趋势</th><th>毛利</th><th>库存</th><th>处理入口</th></tr></thead>',
       '<tbody>',
       items.map(renderRow).join(""),
       '</tbody></table>',
@@ -211,7 +259,10 @@
       '  <td><strong>' + app.escapeHtml(item.title || "-") + '</strong></td>',
       '  <td>' + app.escapeHtml(item.store || "-") + '</td>',
       '  <td>' + app.escapeHtml(item.country || "-") + '</td>',
-      '  <td>' + app.escapeHtml(item.detail || "-") + '</td>',
+      '  <td>' + app.escapeHtml(item.sales_text || "-") + '</td>',
+      '  <td>' + app.escapeHtml(item.rank_text || "-") + '</td>',
+      '  <td>' + app.escapeHtml(item.margin_text || "-") + '</td>',
+      '  <td>' + app.escapeHtml(item.stock_text || "-") + '</td>',
       '  <td><button class="text-button alert-detail-link" type="button" data-alert-keyword="' + app.escapeHtml(item.keyword || "") + '" data-alert-label="' + app.escapeHtml(item.label || "") + '">查看明细</button></td>',
       '</tr>',
     ].join("");
