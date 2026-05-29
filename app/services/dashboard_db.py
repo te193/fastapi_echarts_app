@@ -224,22 +224,17 @@ class DashboardDbService:
                     cursor.execute(
                         """
                         select
-                            month(dt_date) as goal_month,
-                            max(dt_date) as data_end_date,
-                            sum(sales_amount) as sales_actual,
-                            sum(sales_qty) as volume_actual,
-                            sum(order_gross_profit) as profit_actual,
-                            sum(order_gross_profit) / nullif(sum(sales_amount), 0) as margin_actual
-                        from dashboard_product_performance_daily
-                        where dt_date between %(year_start)s and %(year_end)s
-                          and seller_name_new not regexp 'baihuiyi|Yuanoboo|Bailboo|Qianytyy'
-                          and char_length(seller_sku_adj) between 5 and 10
-                        group by month(dt_date)
+                            goal_month,
+                            data_end_date,
+                            sales_actual,
+                            volume_actual,
+                            profit_actual,
+                            margin_actual
+                        from dashboard_monthly_goal_actual_snapshot
+                        where goal_year = %(goal_year)s
+                        order by goal_month
                         """,
-                        {
-                            "year_start": date(goal_year, 1, 1),
-                            "year_end": date(goal_year, 12, 31),
-                        },
+                        {"goal_year": goal_year},
                     )
                     actual_by_month = {to_int(row.get("goal_month")): row for row in cursor.fetchall()}
         except pymysql.err.ProgrammingError as exc:

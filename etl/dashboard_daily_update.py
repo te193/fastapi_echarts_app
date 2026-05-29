@@ -27,6 +27,7 @@ ANNUAL_MARGIN_GOAL = 0.20
 ANNUAL_SALES_GOAL_BUFFER = 1.01
 DEFAULT_STEP_ORDER = [
     "product_performance_daily",
+    "monthly_goal_actual_snapshot",
     "annual_goal_snapshot",
     "restock_snapshot",
     "inventory_snapshot",
@@ -455,6 +456,50 @@ create table if not exists etl_datasync.dashboard_monthly_goal (
     primary key (goal_year, goal_month),
     key idx_month_start (month_start)
 ) engine=InnoDB default charset=utf8mb4;
+"""
+
+CREATE_MONTHLY_GOAL_ACTUAL_SNAPSHOT_SQL = """
+create table if not exists etl_datasync.dashboard_monthly_goal_actual_snapshot (
+    goal_year int not null,
+    goal_month tinyint not null,
+    data_end_date date null,
+    sales_actual decimal(18,4) not null default 0,
+    volume_actual decimal(18,4) not null default 0,
+    profit_actual decimal(18,4) not null default 0,
+    margin_actual decimal(10,6) null,
+    created_at datetime not null default current_timestamp,
+    updated_at datetime not null default current_timestamp on update current_timestamp,
+    primary key (goal_year, goal_month),
+    key idx_data_end_date (data_end_date)
+) engine=InnoDB default charset=utf8mb4;
+"""
+
+DELETE_MONTHLY_GOAL_ACTUAL_SNAPSHOT_SQL = """
+delete from etl_datasync.dashboard_monthly_goal_actual_snapshot
+where goal_year = year(%(biz_date)s);
+"""
+
+INSERT_MONTHLY_GOAL_ACTUAL_SNAPSHOT_SQL = """
+insert into etl_datasync.dashboard_monthly_goal_actual_snapshot (
+    goal_year, goal_month, data_end_date,
+    sales_actual, volume_actual, profit_actual, margin_actual,
+    created_at, updated_at
+)
+select
+    year(dt_date) as goal_year,
+    month(dt_date) as goal_month,
+    max(dt_date) as data_end_date,
+    round(sum(sales_amount), 4) as sales_actual,
+    round(sum(sales_qty), 4) as volume_actual,
+    round(sum(order_gross_profit), 4) as profit_actual,
+    round(sum(order_gross_profit) / nullif(sum(sales_amount), 0), 6) as margin_actual,
+    now() as created_at,
+    now() as updated_at
+from etl_datasync.dashboard_product_performance_daily
+where dt_date between makedate(year(%(biz_date)s), 1) and str_to_date(concat(year(%(biz_date)s), '-12-31'), '%%Y-%%m-%%d')
+  and seller_name_new not regexp 'baihuiyi|Yuanoboo|Bailboo|Qianytyy'
+  and char_length(seller_sku_adj) between 5 and 10
+group by year(dt_date), month(dt_date);
 """
 
 
@@ -1254,6 +1299,7 @@ DDL_STATEMENTS = (
     *(period_create_sql(table_name) for table_name in PERIOD_PRESET_TABLES.values()),
     CREATE_MATRIX_PERIOD_SNAPSHOT_SQL,
     CREATE_MONTHLY_GOAL_SQL,
+    CREATE_MONTHLY_GOAL_ACTUAL_SNAPSHOT_SQL,
     CREATE_ANNUAL_GOAL_SNAPSHOT_SQL,
 )
 
@@ -1272,6 +1318,7 @@ TABLE_COMMENTS = {
     "dashboard_product_period_last_month_snapshot": "上月产品表现快照",
     "dashboard_product_matrix_period_snapshot": "日销与毛利率矩阵周期汇总快照",
     "dashboard_monthly_goal": "月度经营目标表",
+    "dashboard_monthly_goal_actual_snapshot": "月度目标实绩汇总快照",
     "dashboard_annual_goal_snapshot": "年度目标达成快照",
 }
 
@@ -1390,11 +1437,15 @@ COLUMN_COMMENTS = {
     "month_start": "月份开始日期",
     "year_start": "年份开始日期",
     "data_end_date": "数据截止日期",
-    "sales_goal": "年度销售目标",
-    "margin_goal": "年度毛利率目标",
+    "sales_goal": "销售额目标",
+    "margin_goal": "毛利率目标",
     "gross_profit_goal": "毛利润目标",
     "sales_volume_goal": "销量目标",
     "source_file": "来源文件",
+    "sales_actual": "销售额实际完成值",
+    "volume_actual": "销量实际完成值",
+    "profit_actual": "毛利润实际完成值",
+    "margin_actual": "毛利率实际完成值",
     "sales_goal_buffer": "销售目标缓冲系数",
     "sales_amount_ytd": "年初至今销售额",
     "sales_amount_ex_tax_ytd": "年初至今不含税销售额",
@@ -1459,6 +1510,10 @@ STEPS = {
         extract_source_select(INSERT_PRODUCT_DAILY_SQL),
         "etl_datasync.dashboard_product_performance_daily",
         PRODUCT_DAILY_COLUMNS,
+    ),
+    "monthly_goal_actual_snapshot": SqlStep(
+        "monthly_goal_actual_snapshot",
+        (DELETE_MONTHLY_GOAL_ACTUAL_SNAPSHOT_SQL, INSERT_MONTHLY_GOAL_ACTUAL_SNAPSHOT_SQL),
     ),
     "annual_goal_snapshot": SqlStep(
         "annual_goal_snapshot",
@@ -1924,7 +1979,7 @@ def main() -> None:
         "--steps",
         default="all",
         help="Comma separated step names or all. "
-        "Available: product_performance_daily, annual_goal_snapshot, restock_snapshot, inventory_snapshot, "
+        "Available: product_performance_daily, monthly_goal_actual_snapshot, annual_goal_snapshot, restock_snapshot, inventory_snapshot, "
         "listing_price_snapshot, limit_price_snapshot, period_snapshot, period_preset_snapshots, "
         "price_review_source_load, price_review_tracking.",
     )
