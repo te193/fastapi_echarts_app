@@ -526,7 +526,14 @@
       '    </div>',
       '    <span class="summary-badge">统计周期 <strong>' + app.escapeHtml((payload && payload.window) || "-") + '</strong></span>',
       '  </div>',
-      items.length ? '<div class="alert-grid">' + items.map(renderAlertItem).join("") + '</div>' : '<div class="empty-state compact">' + app.escapeHtml((payload && payload.empty_text) || "当前没有明显异常。") + '</div>',
+      items.length ? [
+        '<div class="alert-workbench">',
+        renderAlertSummary(items),
+        '<div class="alert-list">',
+        items.map(renderAlertItem).join(""),
+        '</div>',
+        '</div>',
+      ].join("") : '<div class="empty-state compact">' + app.escapeHtml((payload && payload.empty_text) || "当前没有明显异常。") + '</div>',
       '</section>',
     ].join("");
 
@@ -541,13 +548,43 @@
     });
   }
 
+  function renderAlertSummary(items) {
+    var definitions = [
+      { key: "sales_drop", label: "销量下滑", tone: "negative" },
+      { key: "margin_low", label: "低毛利", tone: "warning" },
+      { key: "over_limit", label: "超限价", tone: "warning" },
+      { key: "stock_short", label: "库存偏低", tone: "negative" },
+    ];
+    var counts = items.reduce(function (result, item) {
+      result[item.type] = (result[item.type] || 0) + 1;
+      return result;
+    }, {});
+    return [
+      '<aside class="alert-summary-panel">',
+      '  <span class="alert-summary-eyebrow">预警类型</span>',
+      '  <strong>' + items.length + '</strong>',
+      '  <span class="alert-summary-caption">当前需关注 SKU</span>',
+      '  <div class="alert-summary-list">',
+      definitions.map(function (item) {
+        return [
+          '<div class="alert-summary-item ' + app.escapeHtml(item.tone) + '">',
+          '  <span>' + app.escapeHtml(item.label) + '</span>',
+          '  <strong>' + Number(counts[item.key] || 0).toLocaleString("zh-CN") + '</strong>',
+          '</div>',
+        ].join("");
+      }).join(""),
+      '  </div>',
+      '</aside>',
+    ].join("");
+  }
+
   function renderAlertItem(item) {
     return [
-      '<button type="button" class="alert-card ' + app.escapeHtml(item.tone || "warning") + '" data-alert-keyword="' + app.escapeHtml(item.keyword || "") + '" data-alert-label="' + app.escapeHtml(item.label || "") + '">',
+      '<button type="button" class="alert-row ' + app.escapeHtml(item.tone || "warning") + '" data-alert-keyword="' + app.escapeHtml(item.keyword || "") + '" data-alert-label="' + app.escapeHtml(item.label || "") + '">',
       '  <span class="alert-label">' + app.escapeHtml(item.label || "预警") + '</span>',
-      '  <strong>' + app.escapeHtml(item.title || "-") + '</strong>',
-      '  <span class="alert-subtitle">' + app.escapeHtml(item.subtitle || "-") + '</span>',
+      '  <span class="alert-main"><strong>' + app.escapeHtml(item.title || "-") + '</strong><small>' + app.escapeHtml(item.subtitle || "-") + '</small></span>',
       '  <span class="alert-detail">' + app.escapeHtml(item.detail || "") + '</span>',
+      '  <span class="alert-action">查看</span>',
       '</button>',
     ].join("");
   }
