@@ -30,7 +30,7 @@
       "startDateInput", "endDateInput", "siteSelect", "storeSelect", "overLimitSelect",
       "dailySalesBandSelect", "marginBandSelect", "keywordInput",
       "clearFiltersBtn", "periodQuickButtons", "activeFilterChips", "summaryHint", "goalOverviewCard", "kpiGrid",
-      "monthlyGoalCard",
+      "alertCenterCard", "goalGapCard", "monthlyGoalCard",
       "dailySalesSummary", "marginBandSummary", "dailySalesChart", "marginBandChart",
       "matrixSummary", "matrixChart"
     ].forEach(function (id) {
@@ -184,6 +184,12 @@
       }
       if (elements.kpiGrid) {
         renderKpis(payload.kpis);
+      }
+      if (elements.alertCenterCard) {
+        renderAlertCenter(payload.alert_center);
+      }
+      if (elements.goalGapCard) {
+        renderGoalGap(payload.goal_gap_breakdown);
       }
       if (elements.dailySalesChart && elements.dailySalesSummary) {
         renderBandListChart("dailySalesChart", "dailySalesSummary", payload.daily_sales_chart.items, state.daily_sales_band, "daily_sales_band", "日销分层");
@@ -505,6 +511,93 @@
     if (label === "日销") return "band-mid";
     if (label === "库存" || label === "营收占比") return "band-low";
     return "band-low";
+  }
+
+  function renderAlertCenter(payload) {
+    if (!elements.alertCenterCard) return;
+    var items = (payload && payload.items) || [];
+    elements.alertCenterCard.innerHTML = [
+      '<section class="panel insight-panel alert-panel">',
+      '  <div class="insight-head">',
+      '    <div>',
+      '      <p class="section-kicker">经营预警</p>',
+      '      <h3>异常预警中心</h3>',
+      '      <p class="goal-panel-copy">跟随当前筛选和周期，优先提示销量下滑、低毛利、超限价和库存偏低 SKU。</p>',
+      '    </div>',
+      '    <span class="summary-badge">统计周期 <strong>' + app.escapeHtml((payload && payload.window) || "-") + '</strong></span>',
+      '  </div>',
+      items.length ? '<div class="alert-grid">' + items.map(renderAlertItem).join("") + '</div>' : '<div class="empty-state compact">' + app.escapeHtml((payload && payload.empty_text) || "当前没有明显异常。") + '</div>',
+      '</section>',
+    ].join("");
+
+    Array.from(elements.alertCenterCard.querySelectorAll("[data-alert-keyword]")).forEach(function (node) {
+      node.addEventListener("click", function () {
+        var next = Object.assign({}, state);
+        next.keyword = this.dataset.alertKeyword || "";
+        next.source = "异常预警 / " + (this.dataset.alertLabel || "");
+        next.page = 1;
+        window.location.href = "/detail?" + new URLSearchParams(next).toString();
+      });
+    });
+  }
+
+  function renderAlertItem(item) {
+    return [
+      '<button type="button" class="alert-card ' + app.escapeHtml(item.tone || "warning") + '" data-alert-keyword="' + app.escapeHtml(item.keyword || "") + '" data-alert-label="' + app.escapeHtml(item.label || "") + '">',
+      '  <span class="alert-label">' + app.escapeHtml(item.label || "预警") + '</span>',
+      '  <strong>' + app.escapeHtml(item.title || "-") + '</strong>',
+      '  <span class="alert-subtitle">' + app.escapeHtml(item.subtitle || "-") + '</span>',
+      '  <span class="alert-detail">' + app.escapeHtml(item.detail || "") + '</span>',
+      '</button>',
+    ].join("");
+  }
+
+  function renderGoalGap(payload) {
+    if (!elements.goalGapCard) return;
+    var summary = payload && payload.summary;
+    if (!summary) {
+      elements.goalGapCard.innerHTML = "";
+      return;
+    }
+    elements.goalGapCard.innerHTML = [
+      '<section class="panel insight-panel goal-gap-panel">',
+      '  <div class="insight-head">',
+      '    <div>',
+      '      <p class="section-kicker">目标拆解</p>',
+      '      <h3>目标差距拆解</h3>',
+      '      <p class="goal-panel-copy">' + app.escapeHtml(summary.method || "") + '</p>',
+      '    </div>',
+      '    <div class="goal-gap-summary">',
+      '      <span>进度目标 <strong>' + app.formatCompactCurrency(summary.target_to_date) + '</strong></span>',
+      '      <span>实际完成 <strong>' + app.formatCompactCurrency(summary.actual) + '</strong></span>',
+      '      <span class="' + (summary.gap > 0 ? "negative" : "positive") + '">' + (summary.gap > 0 ? "缺口 " : "超额 ") + '<strong>' + app.formatCompactCurrency(Math.abs(summary.gap || 0)) + '</strong></span>',
+      '    </div>',
+      '  </div>',
+      '  <div class="goal-gap-grid">',
+      renderGoalGapGroup("国家站点", (payload.groups && payload.groups.country) || [], summary.gap),
+      renderGoalGapGroup("店铺", (payload.groups && payload.groups.store) || [], summary.gap),
+      '  </div>',
+      '</section>',
+    ].join("");
+  }
+
+  function renderGoalGapGroup(title, items, totalGap) {
+    var maxValue = Math.max.apply(null, items.map(function (item) { return Math.abs(item.gap_contribution || 0); }).concat([1]));
+    return [
+      '<div class="goal-gap-group">',
+      '  <div class="goal-gap-group-head"><strong>' + app.escapeHtml(title) + '</strong><span>按销售贡献分摊</span></div>',
+      items.map(function (item) {
+        var width = Math.max(4, Math.min(100, Math.abs(item.gap_contribution || 0) / maxValue * 100));
+        return [
+          '<div class="goal-gap-row">',
+          '  <div class="goal-gap-name"><strong>' + app.escapeHtml(item.name || "-") + '</strong><span>占比 ' + app.formatPercent(item.share || 0, 1) + ' / 毛利率 ' + app.formatPercent(item.margin || 0, 1) + '</span></div>',
+          '  <div class="goal-gap-bar"><i style="width:' + width.toFixed(1) + '%"></i></div>',
+          '  <div class="goal-gap-value"><strong>' + app.formatCompactCurrency(Math.abs(item.gap_contribution || 0)) + '</strong><span>' + (totalGap > 0 ? "缺口分摊" : "超额贡献") + '</span></div>',
+          '</div>',
+        ].join("");
+      }).join("") || '<div class="empty-state compact">暂无拆解数据</div>',
+      '</div>',
+    ].join("");
   }
 
   function disposeChartsByPrefix(prefix) {

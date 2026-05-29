@@ -28,6 +28,7 @@ ANNUAL_SALES_GOAL_BUFFER = 1.01
 DEFAULT_STEP_ORDER = [
     "product_performance_daily",
     "monthly_goal_actual_snapshot",
+    "goal_dimension_snapshot",
     "annual_goal_snapshot",
     "restock_snapshot",
     "inventory_snapshot",
@@ -500,6 +501,76 @@ where dt_date between makedate(year(%(biz_date)s), 1) and str_to_date(concat(yea
   and seller_name_new not regexp 'baihuiyi|Yuanoboo|Bailboo|Qianytyy'
   and char_length(seller_sku_adj) between 5 and 10
 group by year(dt_date), month(dt_date);
+"""
+
+CREATE_GOAL_DIMENSION_SNAPSHOT_SQL = """
+create table if not exists etl_datasync.dashboard_goal_dimension_snapshot (
+    snapshot_date date not null,
+    goal_year int not null,
+    data_end_date date null,
+    dimension_type varchar(32) not null,
+    dimension_name varchar(128) not null,
+    sales_amount_ytd decimal(18,4) not null default 0,
+    sales_qty_ytd decimal(18,4) not null default 0,
+    order_gross_profit_ytd decimal(18,4) not null default 0,
+    order_gross_margin_ytd decimal(10,6) null,
+    created_at datetime not null default current_timestamp,
+    updated_at datetime not null default current_timestamp on update current_timestamp,
+    primary key (snapshot_date, goal_year, dimension_type, dimension_name),
+    key idx_dimension_lookup (goal_year, dimension_type, sales_amount_ytd)
+) engine=InnoDB default charset=utf8mb4;
+"""
+
+DELETE_GOAL_DIMENSION_SNAPSHOT_SQL = """
+delete from etl_datasync.dashboard_goal_dimension_snapshot
+where snapshot_date = %(snapshot_date)s
+  and goal_year = year(%(biz_date)s);
+"""
+
+INSERT_GOAL_DIMENSION_SNAPSHOT_SQL = """
+insert into etl_datasync.dashboard_goal_dimension_snapshot (
+    snapshot_date, goal_year, data_end_date, dimension_type, dimension_name,
+    sales_amount_ytd, sales_qty_ytd, order_gross_profit_ytd, order_gross_margin_ytd,
+    created_at, updated_at
+)
+select
+    %(snapshot_date)s as snapshot_date,
+    year(dt_date) as goal_year,
+    max(dt_date) as data_end_date,
+    dimension_type,
+    dimension_name,
+    round(sum(sales_amount), 4) as sales_amount_ytd,
+    round(sum(sales_qty), 4) as sales_qty_ytd,
+    round(sum(order_gross_profit), 4) as order_gross_profit_ytd,
+    round(sum(order_gross_profit) / nullif(sum(sales_amount), 0), 6) as order_gross_margin_ytd,
+    now() as created_at,
+    now() as updated_at
+from (
+    select
+        dt_date,
+        country as dimension_name,
+        'country' as dimension_type,
+        sales_amount,
+        sales_qty,
+        order_gross_profit
+    from etl_datasync.dashboard_product_performance_daily
+    where dt_date between makedate(year(%(biz_date)s), 1) and %(biz_date)s
+      and seller_name_new not regexp 'baihuiyi|Yuanoboo|Bailboo|Qianytyy'
+      and char_length(seller_sku_adj) between 5 and 10
+    union all
+    select
+        dt_date,
+        seller_name_new as dimension_name,
+        'store' as dimension_type,
+        sales_amount,
+        sales_qty,
+        order_gross_profit
+    from etl_datasync.dashboard_product_performance_daily
+    where dt_date between makedate(year(%(biz_date)s), 1) and %(biz_date)s
+      and seller_name_new not regexp 'baihuiyi|Yuanoboo|Bailboo|Qianytyy'
+      and char_length(seller_sku_adj) between 5 and 10
+) x
+group by year(dt_date), dimension_type, dimension_name;
 """
 
 
@@ -1300,6 +1371,7 @@ DDL_STATEMENTS = (
     CREATE_MATRIX_PERIOD_SNAPSHOT_SQL,
     CREATE_MONTHLY_GOAL_SQL,
     CREATE_MONTHLY_GOAL_ACTUAL_SNAPSHOT_SQL,
+    CREATE_GOAL_DIMENSION_SNAPSHOT_SQL,
     CREATE_ANNUAL_GOAL_SNAPSHOT_SQL,
 )
 
@@ -1319,6 +1391,7 @@ TABLE_COMMENTS = {
     "dashboard_product_matrix_period_snapshot": "日销与毛利率矩阵周期汇总快照",
     "dashboard_monthly_goal": "月度经营目标表",
     "dashboard_monthly_goal_actual_snapshot": "月度目标实绩汇总快照",
+    "dashboard_goal_dimension_snapshot": "目标差距维度拆解快照",
     "dashboard_annual_goal_snapshot": "年度目标达成快照",
 }
 
@@ -1446,6 +1519,8 @@ COLUMN_COMMENTS = {
     "volume_actual": "销量实际完成值",
     "profit_actual": "毛利润实际完成值",
     "margin_actual": "毛利率实际完成值",
+    "dimension_type": "拆解维度类型",
+    "dimension_name": "拆解维度名称",
     "sales_goal_buffer": "销售目标缓冲系数",
     "sales_amount_ytd": "年初至今销售额",
     "sales_amount_ex_tax_ytd": "年初至今不含税销售额",
@@ -1514,6 +1589,10 @@ STEPS = {
     "monthly_goal_actual_snapshot": SqlStep(
         "monthly_goal_actual_snapshot",
         (DELETE_MONTHLY_GOAL_ACTUAL_SNAPSHOT_SQL, INSERT_MONTHLY_GOAL_ACTUAL_SNAPSHOT_SQL),
+    ),
+    "goal_dimension_snapshot": SqlStep(
+        "goal_dimension_snapshot",
+        (DELETE_GOAL_DIMENSION_SNAPSHOT_SQL, INSERT_GOAL_DIMENSION_SNAPSHOT_SQL),
     ),
     "annual_goal_snapshot": SqlStep(
         "annual_goal_snapshot",
@@ -1979,7 +2058,7 @@ def main() -> None:
         "--steps",
         default="all",
         help="Comma separated step names or all. "
-        "Available: product_performance_daily, monthly_goal_actual_snapshot, annual_goal_snapshot, restock_snapshot, inventory_snapshot, "
+        "Available: product_performance_daily, monthly_goal_actual_snapshot, goal_dimension_snapshot, annual_goal_snapshot, restock_snapshot, inventory_snapshot, "
         "listing_price_snapshot, limit_price_snapshot, period_snapshot, period_preset_snapshots, "
         "price_review_source_load, price_review_tracking.",
     )

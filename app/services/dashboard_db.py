@@ -76,6 +76,16 @@ def format_percent(value: float, digits: int = 1) -> str:
     return f"{value * 100:.{digits}f}%"
 
 
+def compact_currency(value: float) -> str:
+    amount = to_float(value)
+    absolute = abs(amount)
+    if absolute >= 100000000:
+        return f"¥{amount / 100000000:.2f}亿"
+    if absolute >= 10000:
+        return f"¥{amount / 10000:.2f}万"
+    return f"¥{amount:,.0f}"
+
+
 def days_in_year(current: date) -> int:
     return (date(current.year + 1, 1, 1) - date(current.year, 1, 1)).days
 
@@ -181,6 +191,8 @@ class DashboardDbService:
             matrix = self._fetch_matrix_counts(conn, window, filters)
             series = self._fetch_kpi_series(conn, window, filters)
             annual_goal = self._fetch_latest_annual_goal(conn)
+            alert_center = self._fetch_alert_center(conn, window, filters)
+            goal_gap = self._fetch_goal_gap_breakdown(conn, annual_goal)
 
         return {
             "meta": self.get_meta(),
@@ -192,6 +204,8 @@ class DashboardDbService:
             "daily_sales_chart": daily_sales_chart,
             "margin_chart": margin_chart,
             "matrix": matrix,
+            "alert_center": alert_center,
+            "goal_gap_breakdown": goal_gap,
         }
 
     def get_monthly_goals_payload(self) -> dict[str, Any]:
@@ -1264,6 +1278,222 @@ class DashboardDbService:
             }
         )
         return empty
+
+    def _fetch_alert_center(self, conn, window: PeriodWindow, filters: dict[str, Any]) -> dict[str, Any]:
+        table = self._render_period_table(window.period_table)
+        where_sql, params = self._period_where(window, filters, alias="p")
+        days = max((window.end_date - window.start_date).days + 1, 1)
+        previous_start = window.start_date - timedelta(days=days)
+        previous_end = window.start_date - timedelta(days=1)
+        filter_sql, filter_params = self._filter_clause(filters, alias="q")
+        params.update(filter_params)
+        params.update({"previous_start": previous_start, "previous_end": previous_end})
+        alerts: list[dict[str, Any]] = []
+
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                select
+                    p.seller_sku_adj, p.seller_name_new, p.country,
+                    p.sales_qty, q.sales_qty as previous_sales_qty,
+                    p.sales_amount, q.sales_amount as previous_sales_amount
+                from {table} p
+                join {table} q
+                  on q.snapshot_date = p.snapshot_date
+                 and q.period_start = %(previous_start)s
+                 and q.period_end = %(previous_end)s
+                 and q.item_key = p.item_key
+                 and {filter_sql}
+                where {where_sql}
+                  and q.sales_qty >= 10
+                  and p.sales_qty <= q.sales_qty * 0.7
+                order by (q.sales_qty - p.sales_qty) desc, q.sales_amount desc
+                limit 4
+                """,
+                params,
+            )
+            for row in cursor.fetchall():
+                previous_qty = to_float(row.get("previous_sales_qty"))
+                current_qty = to_float(row.get("sales_qty"))
+                alerts.append(
+                    self._build_alert_item(
+                        "sales_drop",
+                        "销量下滑",
+                        row,
+                        f"销量 {previous_qty:.0f} -> {current_qty:.0f}",
+                        "negative",
+                    )
+                )
+
+            cursor.execute(
+                f"""
+                select p.seller_sku_adj, p.seller_name_new, p.country,
+                       p.sales_amount, p.order_gross_margin, p.order_gross_profit
+                from {table} p
+                where {where_sql}
+                  and p.sales_amount >= 1000
+                  and coalesce(p.order_gross_margin, 0) < 0.08
+                order by p.sales_amount desc
+                limit 4
+                """,
+                params,
+            )
+            for row in cursor.fetchall():
+                alerts.append(
+                    self._build_alert_item(
+                        "margin_low",
+                        "低毛利",
+                        row,
+                        f"销售额 {compact_currency(to_float(row.get('sales_amount')))}，毛利率 {to_float(row.get('order_gross_margin')):.1%}",
+                        "warning",
+                    )
+                )
+
+            cursor.execute(
+                f"""
+                select p.seller_sku_adj, p.seller_name_new, p.country,
+                       p.sales_amount, p.current_price, p.limit_price
+                from {table} p
+                where {where_sql}
+                  and p.over_limit_flag = 1
+                order by p.sales_amount desc
+                limit 4
+                """,
+                params,
+            )
+            for row in cursor.fetchall():
+                alerts.append(
+                    self._build_alert_item(
+                        "over_limit",
+                        "超限价",
+                        row,
+                        f"售价 {to_float(row.get('current_price')):.2f}，限价 {to_float(row.get('limit_price')):.2f}",
+                        "warning",
+                    )
+                )
+
+            cursor.execute(
+                f"""
+                select p.seller_sku_adj, p.seller_name_new, p.country,
+                       p.fba_sellable_inventory, p.daily_sales,
+                       p.fba_sellable_inventory / nullif(p.daily_sales, 0) as sellable_days
+                from {table} p
+                where {where_sql}
+                  and p.daily_sales >= 1
+                  and p.fba_sellable_inventory > 0
+                  and p.fba_sellable_inventory / nullif(p.daily_sales, 0) < 14
+                order by sellable_days asc, p.daily_sales desc
+                limit 4
+                """,
+                params,
+            )
+            for row in cursor.fetchall():
+                alerts.append(
+                    self._build_alert_item(
+                        "stock_short",
+                        "库存偏低",
+                        row,
+                        f"可售约 {to_float(row.get('sellable_days')):.1f} 天，日销 {to_float(row.get('daily_sales')):.1f}",
+                        "negative",
+                    )
+                )
+
+        priority = {"sales_drop": 0, "margin_low": 1, "over_limit": 2, "stock_short": 3}
+        alerts = sorted(alerts, key=lambda item: (priority.get(item["type"], 9), item["title"]))[:10]
+        return {
+            "items": alerts,
+            "window": f"{format_day(window.start_date)} ~ {format_day(window.end_date)}",
+            "empty_text": "当前筛选下没有明显异常。",
+        }
+
+    def _build_alert_item(
+        self,
+        alert_type: str,
+        label: str,
+        row: dict[str, Any],
+        detail: str,
+        tone: str,
+    ) -> dict[str, Any]:
+        return {
+            "type": alert_type,
+            "label": label,
+            "tone": tone,
+            "title": str(row.get("seller_sku_adj") or "-"),
+            "subtitle": f"{row.get('seller_name_new') or '-'} / {row.get('country') or '-'}",
+            "detail": detail,
+            "keyword": str(row.get("seller_sku_adj") or ""),
+        }
+
+    def _fetch_goal_gap_breakdown(self, conn, annual_goal: dict[str, Any] | None) -> dict[str, Any]:
+        if not annual_goal:
+            return {"summary": None, "groups": {"country": [], "store": []}}
+        goal_year = to_int(annual_goal.get("goal_year"))
+        actual = to_float(annual_goal.get("sales_amount_ytd"))
+        target = to_float(annual_goal.get("target_amount_to_date"))
+        gap = round(target - actual, 2)
+        groups: dict[str, list[dict[str, Any]]] = {"country": [], "store": []}
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select max(snapshot_date) as snapshot_date
+                    from dashboard_goal_dimension_snapshot
+                    where goal_year = %(goal_year)s
+                    """,
+                    {"goal_year": goal_year},
+                )
+                snapshot_date = (cursor.fetchone() or {}).get("snapshot_date")
+                if snapshot_date:
+                    cursor.execute(
+                        """
+                        select
+                            dimension_type,
+                            dimension_name,
+                            data_end_date,
+                            sales_amount_ytd,
+                            sales_qty_ytd,
+                            order_gross_profit_ytd,
+                            order_gross_margin_ytd
+                        from dashboard_goal_dimension_snapshot
+                        where goal_year = %(goal_year)s
+                          and snapshot_date = %(snapshot_date)s
+                          and dimension_type in ('country', 'store')
+                        order by dimension_type, sales_amount_ytd desc
+                        """,
+                        {"goal_year": goal_year, "snapshot_date": snapshot_date},
+                    )
+                    for row in cursor.fetchall():
+                        dimension_type = row.get("dimension_type")
+                        if dimension_type not in groups:
+                            continue
+                        sales = to_float(row.get("sales_amount_ytd"))
+                        share = sales / actual if actual else 0
+                        groups[dimension_type].append(
+                            {
+                                "name": row.get("dimension_name") or "-",
+                                "sales_amount": round(sales, 2),
+                                "sales_qty": round(to_float(row.get("sales_qty_ytd")), 2),
+                                "margin": round(to_float(row.get("order_gross_margin_ytd")), 4),
+                                "share": round(share, 4),
+                                "gap_contribution": round(gap * share, 2),
+                            }
+                        )
+        except pymysql.err.ProgrammingError as exc:
+            if not (exc.args and exc.args[0] == 1146):
+                raise
+
+        return {
+            "summary": {
+                "year": goal_year,
+                "data_end_date": format_day(annual_goal.get("data_end_date")),
+                "actual": round(actual, 2),
+                "target_to_date": round(target, 2),
+                "gap": gap,
+                "ratio": round(actual / target, 4) if target else 0,
+                "method": "按 2026 年实际销售贡献占比分摊当前进度目标缺口。",
+            },
+            "groups": {key: value[:8] for key, value in groups.items()},
+        }
 
     def _fetch_item_trend(self, conn, row: dict[str, Any], period_end: date, trend_days: int) -> dict[str, Any]:
         days = max(7, min(30, trend_days))
