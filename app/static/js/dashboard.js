@@ -303,7 +303,7 @@
   function buildMonthlyGoalLegend() {
     return [
       '<div class="monthly-goal-legend" aria-label="月度目标图例">',
-      '  <span><i class="monthly-legend-bar"></i>实际值：柱状，颜色表示完成状态</span>',
+      '  <span><i class="monthly-legend-bars"><b></b><b></b><b></b></i>实际值：柱状，颜色随完成状态变化</span>',
       '  <span><i class="monthly-legend-line target"></i>目标值：深色实线</span>',
       '  <span><i class="monthly-legend-line rate"></i>完成率：蓝色虚线，右侧百分比轴</span>',
       '  <span><i class="monthly-legend-dot done"></i>已达标</span>',
@@ -389,14 +389,7 @@
     charts["monthly:goal"] = chart;
     chart.setOption({
       animationDuration: 300,
-      legend: {
-        top: 4,
-        right: 0,
-        data: ["实际", "目标", "完成率"],
-        textStyle: { color: "#53657d", fontSize: 12 },
-        itemGap: 16
-      },
-      grid: { left: 58, right: 54, top: 54, bottom: 36 },
+      grid: { left: 58, right: 54, top: 36, bottom: 36 },
       tooltip: {
         trigger: "axis",
         formatter: function (params) {

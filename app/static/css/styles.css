@@ -1404,11 +1404,33 @@ span.flatpickr-weekday {
   gap: 6px;
 }
 
-.monthly-legend-bar {
-  width: 18px;
-  height: 10px;
-  border-radius: 4px 4px 1px 1px;
+.monthly-legend-bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  width: 22px;
+  height: 14px;
+}
+
+.monthly-legend-bars b {
+  display: block;
+  width: 6px;
+  border-radius: 3px 3px 1px 1px;
+}
+
+.monthly-legend-bars b:nth-child(1) {
+  height: 12px;
   background: #18a17d;
+}
+
+.monthly-legend-bars b:nth-child(2) {
+  height: 9px;
+  background: #d97706;
+}
+
+.monthly-legend-bars b:nth-child(3) {
+  height: 7px;
+  background: #cf4f5f;
 }
 
 .monthly-legend-line {
