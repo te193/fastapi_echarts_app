@@ -8,15 +8,15 @@ $ErrorActionPreference = "Stop"
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot = Resolve-Path (Join-Path $ScriptDir "..")
-$PythonExe = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
-if (-not (Test-Path -LiteralPath $PythonExe)) {
-    throw "Python virtual environment was not found. Run scripts\deploy_windows.ps1 first."
+$LauncherScript = Join-Path $ProjectRoot "run_lan_server.ps1"
+if (-not (Test-Path -LiteralPath $LauncherScript)) {
+    throw "Web launcher script was not found: $LauncherScript"
 }
 
-$TaskArgument = '-m uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 --log-level info'
+$TaskArgument = "-NoProfile -ExecutionPolicy Bypass -File `"$LauncherScript`""
 
 $Action = New-ScheduledTaskAction `
-    -Execute $PythonExe `
+    -Execute "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" `
     -Argument $TaskArgument `
     -WorkingDirectory $ProjectRoot
 
