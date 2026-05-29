@@ -115,7 +115,7 @@
       var value = item.key === "all" ? total : Number(summary[item.key] || 0);
       return [
         '<button type="button" class="alert-stat-card ' + app.escapeHtml(item.tone) + (state.alert_type === item.key ? " active" : "") + '" data-alert-type="' + app.escapeHtml(item.key) + '">',
-        '  <span>' + app.escapeHtml(item.label) + '</span>',
+        '  <span>' + app.escapeHtml(item.label === "全部" ? "真实命中" : item.label) + '</span>',
         '  <strong>' + value.toLocaleString("zh-CN") + '</strong>',
         '</button>',
       ].join("");
@@ -150,7 +150,7 @@
     elements.alertTableCard.innerHTML = [
       '<div class="alert-table-head">',
       '  <div><p class="section-kicker">预警明细</p><h3>待处理 SKU 清单</h3></div>',
-      '  <span class="summary-badge">当前筛选 <strong>' + Number(payload.total || items.length).toLocaleString("zh-CN") + '</strong> 条</span>',
+      '  <span class="summary-badge">当前筛选真实命中 <strong>' + Number(payload.total || items.length).toLocaleString("zh-CN") + '</strong> 条</span>',
       '</div>',
       '<div class="alert-table-wrap">',
       '<table class="alert-table">',

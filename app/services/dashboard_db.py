@@ -301,7 +301,7 @@ class DashboardDbService:
     ) -> dict[str, Any]:
         with self.connect() as conn:
             window = self._resolve_window(conn, filters)
-            payload = self._fetch_alert_center(conn, window, filters, per_type_limit=80, total_limit=320)
+            payload = self._fetch_alert_center(conn, window, filters, per_type_limit=100000, total_limit=400000)
 
         valid_types = {"sales_drop", "margin_low", "rank_drop", "stock_short"}
         payload["total_count"] = len(payload["items"])
