@@ -2,6 +2,7 @@
   var app = window.kanbanApp;
   var state = app.readQueryState();
   state.alert_type = new URLSearchParams(window.location.search).get("alert_type") || "all";
+  state.page_size = 20;
   var meta = null;
   var elements = {};
   var renderToken = 0;
@@ -29,7 +30,8 @@
   function cacheElements() {
     [
       "siteSelect", "storeSelect", "alertTypeSelect", "keywordInput", "clearFiltersBtn",
-      "alertPeriodHint", "alertStatsGrid", "alertTypeTabs", "alertTableCard"
+      "alertPeriodHint", "alertStatsGrid", "alertTypeTabs", "alertTableCard",
+      "paginationInfo", "paginationNumbers", "prevPageBtn", "nextPageBtn"
     ].forEach(function (id) {
       elements[id] = document.getElementById(id);
     });
@@ -59,6 +61,7 @@
       if (!elements[pair[0]]) return;
       elements[pair[0]].addEventListener("change", function () {
         state[pair[1]] = this.value;
+        state.page = 1;
         syncControls();
         render();
       });
@@ -66,6 +69,7 @@
 
     elements.keywordInput.addEventListener("input", function () {
       state.keyword = this.value.trim();
+      state.page = 1;
       render();
     });
 
@@ -74,6 +78,7 @@
       state.store = "all";
       state.alert_type = "all";
       state.keyword = "";
+      state.page = 1;
       syncControls();
       render();
     });
@@ -89,6 +94,7 @@
       renderStats(payload);
       renderTabs(payload);
       renderTable(payload);
+      renderPagination(payload);
     }).catch(function (error) {
       console.error(error);
       elements.alertTableCard.innerHTML = '<div class="empty-state compact">加载失败，请稍后重试。</div>';
@@ -129,6 +135,7 @@
   function bindTypeButton(node) {
     node.addEventListener("click", function () {
       state.alert_type = this.dataset.alertType || "all";
+      state.page = 1;
       syncControls();
       render();
     });
@@ -143,7 +150,7 @@
     elements.alertTableCard.innerHTML = [
       '<div class="alert-table-head">',
       '  <div><p class="section-kicker">预警明细</p><h3>待处理 SKU 清单</h3></div>',
-      '  <span class="summary-badge">当前 <strong>' + items.length.toLocaleString("zh-CN") + '</strong> 条</span>',
+      '  <span class="summary-badge">当前筛选 <strong>' + Number(payload.total || items.length).toLocaleString("zh-CN") + '</strong> 条</span>',
       '</div>',
       '<div class="alert-table-wrap">',
       '<table class="alert-table">',
@@ -160,6 +167,39 @@
         next.source = "异常预警 / " + (this.dataset.alertLabel || "");
         delete next.alert_type;
         window.location.href = "/detail?" + new URLSearchParams(next).toString();
+      });
+    });
+  }
+
+  function renderPagination(payload) {
+    if (!elements.paginationInfo) return;
+    var page = Number(payload.page || 1);
+    var totalPages = Number(payload.total_pages || 1);
+    var total = Number(payload.total || 0);
+    elements.paginationInfo.textContent = "第 " + page + " / " + totalPages + " 页，共 " + total.toLocaleString("zh-CN") + " 条";
+    elements.prevPageBtn.disabled = page <= 1;
+    elements.nextPageBtn.disabled = page >= totalPages;
+    elements.prevPageBtn.onclick = function () {
+      if (page <= 1) return;
+      state.page = page - 1;
+      render();
+    };
+    elements.nextPageBtn.onclick = function () {
+      if (page >= totalPages) return;
+      state.page = page + 1;
+      render();
+    };
+    var startPage = Math.max(1, page - 2);
+    var endPage = Math.min(totalPages, page + 2);
+    var pages = [];
+    for (var index = startPage; index <= endPage; index += 1) pages.push(index);
+    elements.paginationNumbers.innerHTML = pages.map(function (item) {
+      return '<button type="button" class="page-number ' + (item === page ? "active" : "") + '" data-page="' + item + '">' + item + '</button>';
+    }).join("");
+    Array.from(elements.paginationNumbers.querySelectorAll("[data-page]")).forEach(function (button) {
+      button.addEventListener("click", function () {
+        state.page = Number(this.dataset.page);
+        render();
       });
     });
   }

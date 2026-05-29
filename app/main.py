@@ -170,6 +170,8 @@ def api_alerts(
     margin_band: str = Query(default="all"),
     keyword: str = Query(default=""),
     alert_type: str = Query(default="all"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=10, le=100),
 ) -> dict:
     filters = build_filters(
         start_date=start_date,
@@ -181,7 +183,7 @@ def api_alerts(
         margin_band=margin_band,
         keyword=keyword,
     )
-    return dashboard_service.get_alerts_payload(filters, alert_type=alert_type)
+    return dashboard_service.get_alerts_payload(filters, alert_type=alert_type, page=page, page_size=page_size)
 
 
 @app.get("/api/detail")

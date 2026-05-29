@@ -292,7 +292,13 @@ class DashboardDbService:
             "months": months,
         }
 
-    def get_alerts_payload(self, filters: dict[str, Any], alert_type: str = "all") -> dict[str, Any]:
+    def get_alerts_payload(
+        self,
+        filters: dict[str, Any],
+        alert_type: str = "all",
+        page: int = 1,
+        page_size: int = 20,
+    ) -> dict[str, Any]:
         with self.connect() as conn:
             window = self._resolve_window(conn, filters)
             payload = self._fetch_alert_center(conn, window, filters, per_type_limit=80, total_limit=320)
@@ -301,6 +307,16 @@ class DashboardDbService:
         payload["total_count"] = len(payload["items"])
         if alert_type in valid_types:
             payload["items"] = [item for item in payload["items"] if item.get("type") == alert_type]
+        total = len(payload["items"])
+        safe_page_size = max(10, min(100, int(page_size or 20)))
+        total_pages = max(1, math.ceil(total / safe_page_size))
+        safe_page = min(max(1, int(page or 1)), total_pages)
+        start = (safe_page - 1) * safe_page_size
+        payload["items"] = payload["items"][start:start + safe_page_size]
+        payload["total"] = total
+        payload["page"] = safe_page
+        payload["page_size"] = safe_page_size
+        payload["total_pages"] = total_pages
         payload["selected_type"] = alert_type if alert_type in valid_types else "all"
         payload["rules"] = [
             {"type": "sales_drop", "label": "销量下滑", "rule": "近7天销量较前7天下滑超过30%，且前7天销量不少于10。"},

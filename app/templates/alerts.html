@@ -46,9 +46,17 @@
   <div id="alertStatsGrid" class="alert-stats-grid"></div>
   <div id="alertTypeTabs" class="segmented-tabs alert-type-tabs"></div>
   <div id="alertTableCard" class="panel alert-table-card"></div>
+  <div class="pagination-bar">
+    <div id="paginationInfo" class="pagination-info"></div>
+    <div class="pagination-controls">
+      <button id="prevPageBtn" class="ghost-button" type="button">上一页</button>
+      <div id="paginationNumbers" class="pagination-numbers"></div>
+      <button id="nextPageBtn" class="ghost-button" type="button">下一页</button>
+    </div>
+  </div>
 </section>
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', path='js/alerts.js') }}?v=20260529b"></script>
+<script src="{{ url_for('static', path='js/alerts.js') }}?v=20260529c"></script>
 {% endblock %}
