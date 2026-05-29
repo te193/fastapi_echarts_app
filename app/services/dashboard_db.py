@@ -1282,12 +1282,18 @@ class DashboardDbService:
     def _fetch_alert_center(self, conn, window: PeriodWindow, filters: dict[str, Any]) -> dict[str, Any]:
         table = self._render_period_table(window.period_table)
         where_sql, params = self._period_where(window, filters, alias="p")
-        days = max((window.end_date - window.start_date).days + 1, 1)
-        previous_start = window.start_date - timedelta(days=days)
-        previous_end = window.start_date - timedelta(days=1)
-        filter_sql, filter_params = self._filter_clause(filters, alias="q")
-        params.update(filter_params)
-        params.update({"previous_start": previous_start, "previous_end": previous_end})
+        recent_end = window.end_date
+        recent_start = recent_end - timedelta(days=6)
+        previous_end = recent_start - timedelta(days=1)
+        previous_start = previous_end - timedelta(days=6)
+        params.update(
+            {
+                "recent_start": recent_start,
+                "recent_end": recent_end,
+                "previous_start": previous_start,
+                "previous_end": previous_end,
+            }
+        )
         alerts: list[dict[str, Any]] = []
 
         with conn.cursor() as cursor:
@@ -1295,32 +1301,31 @@ class DashboardDbService:
                 f"""
                 select
                     p.seller_sku_adj, p.seller_name_new, p.country,
-                    p.sales_qty, q.sales_qty as previous_sales_qty,
-                    p.sales_amount, q.sales_amount as previous_sales_amount
+                    sum(case when d.dt_date between %(recent_start)s and %(recent_end)s then d.sales_qty else 0 end) as recent_sales_qty,
+                    sum(case when d.dt_date between %(previous_start)s and %(previous_end)s then d.sales_qty else 0 end) as previous_sales_qty,
+                    sum(case when d.dt_date between %(recent_start)s and %(recent_end)s then d.sales_amount else 0 end) as recent_sales_amount
                 from {table} p
-                join {table} q
-                  on q.snapshot_date = p.snapshot_date
-                 and q.period_start = %(previous_start)s
-                 and q.period_end = %(previous_end)s
-                 and q.item_key = p.item_key
-                 and {filter_sql}
+                join dashboard_product_performance_daily d
+                  on d.item_key = p.item_key
+                 and d.dt_date between %(previous_start)s and %(recent_end)s
                 where {where_sql}
-                  and q.sales_qty >= 10
-                  and p.sales_qty <= q.sales_qty * 0.7
-                order by (q.sales_qty - p.sales_qty) desc, q.sales_amount desc
+                group by p.item_key, p.seller_sku_adj, p.seller_name_new, p.country
+                having previous_sales_qty >= 10
+                   and recent_sales_qty <= previous_sales_qty * 0.7
+                order by (previous_sales_qty - recent_sales_qty) desc, recent_sales_amount desc
                 limit 4
                 """,
                 params,
             )
             for row in cursor.fetchall():
                 previous_qty = to_float(row.get("previous_sales_qty"))
-                current_qty = to_float(row.get("sales_qty"))
+                current_qty = to_float(row.get("recent_sales_qty"))
                 alerts.append(
                     self._build_alert_item(
                         "sales_drop",
                         "销量下滑",
                         row,
-                        f"销量 {previous_qty:.0f} -> {current_qty:.0f}",
+                        f"近7天销量 {current_qty:.0f}，前7天 {previous_qty:.0f}",
                         "negative",
                     )
                 )
@@ -1352,22 +1357,32 @@ class DashboardDbService:
             cursor.execute(
                 f"""
                 select p.seller_sku_adj, p.seller_name_new, p.country,
-                       p.sales_amount, p.current_price, p.limit_price
+                       avg(case when d.dt_date between %(recent_start)s and %(recent_end)s and d.ranking > 0 then d.ranking end) as recent_rank,
+                       avg(case when d.dt_date between %(previous_start)s and %(previous_end)s and d.ranking > 0 then d.ranking end) as previous_rank
                 from {table} p
+                join dashboard_product_performance_daily d
+                  on d.item_key = p.item_key
+                 and d.dt_date between %(previous_start)s and %(recent_end)s
                 where {where_sql}
-                  and p.over_limit_flag = 1
-                order by p.sales_amount desc
+                group by p.item_key, p.seller_sku_adj, p.seller_name_new, p.country
+                having previous_rank is not null
+                   and recent_rank is not null
+                   and recent_rank >= previous_rank + 5
+                   and recent_rank >= previous_rank * 1.2
+                order by (recent_rank - previous_rank) desc
                 limit 4
                 """,
                 params,
             )
             for row in cursor.fetchall():
+                previous_rank = int(round(to_float(row.get("previous_rank"))))
+                recent_rank = int(round(to_float(row.get("recent_rank"))))
                 alerts.append(
                     self._build_alert_item(
-                        "over_limit",
-                        "超限价",
+                        "rank_drop",
+                        "排名下滑",
                         row,
-                        f"售价 {to_float(row.get('current_price')):.2f}，限价 {to_float(row.get('limit_price')):.2f}",
+                        f"平均排名 {previous_rank} -> {recent_rank}",
                         "warning",
                     )
                 )
@@ -1398,11 +1413,11 @@ class DashboardDbService:
                     )
                 )
 
-        priority = {"sales_drop": 0, "margin_low": 1, "over_limit": 2, "stock_short": 3}
+        priority = {"sales_drop": 0, "margin_low": 1, "rank_drop": 2, "stock_short": 3}
         alerts = sorted(alerts, key=lambda item: (priority.get(item["type"], 9), item["title"]))[:10]
         return {
             "items": alerts,
-            "window": f"{format_day(window.start_date)} ~ {format_day(window.end_date)}",
+            "window": f"近7天 {format_day(recent_start)} ~ {format_day(recent_end)}",
             "empty_text": "当前筛选下没有明显异常。",
         }
 

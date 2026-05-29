@@ -522,7 +522,7 @@
       '    <div>',
       '      <p class="section-kicker">经营预警</p>',
       '      <h3>异常预警中心</h3>',
-      '      <p class="goal-panel-copy">跟随当前筛选和周期，优先提示销量下滑、低毛利、超限价和库存偏低 SKU。</p>',
+      '      <p class="goal-panel-copy">跟随当前筛选，优先提示近7天销量下滑、低毛利、排名下滑和库存偏低 SKU。</p>',
       '    </div>',
       '    <span class="summary-badge">统计周期 <strong>' + app.escapeHtml((payload && payload.window) || "-") + '</strong></span>',
       '  </div>',
@@ -552,7 +552,7 @@
     var definitions = [
       { key: "sales_drop", label: "销量下滑", tone: "negative" },
       { key: "margin_low", label: "低毛利", tone: "warning" },
-      { key: "over_limit", label: "超限价", tone: "warning" },
+      { key: "rank_drop", label: "排名下滑", tone: "warning" },
       { key: "stock_short", label: "库存偏低", tone: "negative" },
     ];
     var counts = items.reduce(function (result, item) {
