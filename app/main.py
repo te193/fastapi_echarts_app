@@ -116,6 +116,15 @@ def detail_page(request: Request) -> HTMLResponse:
     )
 
 
+@app.get("/alerts", response_class=HTMLResponse)
+def alerts_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "alerts.html",
+        {"page": "alerts", "title": "异常预警工作台"},
+    )
+
+
 @app.get("/api/meta")
 def api_meta() -> dict:
     return dashboard_service.get_meta()
@@ -148,6 +157,31 @@ def api_dashboard(
 @app.get("/api/dashboard/monthly-goals")
 def api_dashboard_monthly_goals() -> dict:
     return dashboard_service.get_monthly_goals_payload()
+
+
+@app.get("/api/alerts")
+def api_alerts(
+    start_date: Optional[str] = Query(default=None),
+    end_date: Optional[str] = Query(default=None),
+    site: str = Query(default="all"),
+    store: str = Query(default="all"),
+    over_limit: str = Query(default="all"),
+    daily_sales_band: str = Query(default="all"),
+    margin_band: str = Query(default="all"),
+    keyword: str = Query(default=""),
+    alert_type: str = Query(default="all"),
+) -> dict:
+    filters = build_filters(
+        start_date=start_date,
+        end_date=end_date,
+        site=site,
+        store=store,
+        over_limit=over_limit,
+        daily_sales_band=daily_sales_band,
+        margin_band=margin_band,
+        keyword=keyword,
+    )
+    return dashboard_service.get_alerts_payload(filters, alert_type=alert_type)
 
 
 @app.get("/api/detail")

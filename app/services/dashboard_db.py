@@ -191,7 +191,6 @@ class DashboardDbService:
             matrix = self._fetch_matrix_counts(conn, window, filters)
             series = self._fetch_kpi_series(conn, window, filters)
             annual_goal = self._fetch_latest_annual_goal(conn)
-            alert_center = self._fetch_alert_center(conn, window, filters)
             goal_gap = self._fetch_goal_gap_breakdown(conn, annual_goal)
 
         return {
@@ -204,7 +203,6 @@ class DashboardDbService:
             "daily_sales_chart": daily_sales_chart,
             "margin_chart": margin_chart,
             "matrix": matrix,
-            "alert_center": alert_center,
             "goal_gap_breakdown": goal_gap,
         }
 
@@ -293,6 +291,24 @@ class DashboardDbService:
             "metrics": metrics,
             "months": months,
         }
+
+    def get_alerts_payload(self, filters: dict[str, Any], alert_type: str = "all") -> dict[str, Any]:
+        with self.connect() as conn:
+            window = self._resolve_window(conn, filters)
+            payload = self._fetch_alert_center(conn, window, filters, per_type_limit=80, total_limit=320)
+
+        valid_types = {"sales_drop", "margin_low", "rank_drop", "stock_short"}
+        payload["total_count"] = len(payload["items"])
+        if alert_type in valid_types:
+            payload["items"] = [item for item in payload["items"] if item.get("type") == alert_type]
+        payload["selected_type"] = alert_type if alert_type in valid_types else "all"
+        payload["rules"] = [
+            {"type": "sales_drop", "label": "销量下滑", "rule": "近7天销量较前7天下滑超过30%，且前7天销量不少于10。"},
+            {"type": "margin_low", "label": "低毛利", "rule": "当前筛选周期销售额不少于1000，订单毛利率低于8%。"},
+            {"type": "rank_drop", "label": "排名下滑", "rule": "近7天平均排名较前7天下滑至少5名，且下滑幅度不少于20%。"},
+            {"type": "stock_short", "label": "库存偏低", "rule": "日销不少于1，FBA可售库存按当前日销测算不足14天。"},
+        ]
+        return payload
 
     def _monthly_goal_metric(
         self,
@@ -1279,7 +1295,14 @@ class DashboardDbService:
         )
         return empty
 
-    def _fetch_alert_center(self, conn, window: PeriodWindow, filters: dict[str, Any]) -> dict[str, Any]:
+    def _fetch_alert_center(
+        self,
+        conn,
+        window: PeriodWindow,
+        filters: dict[str, Any],
+        per_type_limit: int = 4,
+        total_limit: int = 10,
+    ) -> dict[str, Any]:
         table = self._render_period_table(window.period_table)
         where_sql, params = self._period_where(window, filters, alias="p")
         recent_end = window.end_date
@@ -1313,9 +1336,9 @@ class DashboardDbService:
                 having previous_sales_qty >= 10
                    and recent_sales_qty <= previous_sales_qty * 0.7
                 order by (previous_sales_qty - recent_sales_qty) desc, recent_sales_amount desc
-                limit 4
+                limit %(per_type_limit)s
                 """,
-                params,
+                {**params, "per_type_limit": per_type_limit},
             )
             for row in cursor.fetchall():
                 previous_qty = to_float(row.get("previous_sales_qty"))
@@ -1339,9 +1362,9 @@ class DashboardDbService:
                   and p.sales_amount >= 1000
                   and coalesce(p.order_gross_margin, 0) < 0.08
                 order by p.sales_amount desc
-                limit 4
+                limit %(per_type_limit)s
                 """,
-                params,
+                {**params, "per_type_limit": per_type_limit},
             )
             for row in cursor.fetchall():
                 alerts.append(
@@ -1370,9 +1393,9 @@ class DashboardDbService:
                    and recent_rank >= previous_rank + 5
                    and recent_rank >= previous_rank * 1.2
                 order by (recent_rank - previous_rank) desc
-                limit 4
+                limit %(per_type_limit)s
                 """,
-                params,
+                {**params, "per_type_limit": per_type_limit},
             )
             for row in cursor.fetchall():
                 previous_rank = int(round(to_float(row.get("previous_rank"))))
@@ -1398,9 +1421,9 @@ class DashboardDbService:
                   and p.fba_sellable_inventory > 0
                   and p.fba_sellable_inventory / nullif(p.daily_sales, 0) < 14
                 order by sellable_days asc, p.daily_sales desc
-                limit 4
+                limit %(per_type_limit)s
                 """,
-                params,
+                {**params, "per_type_limit": per_type_limit},
             )
             for row in cursor.fetchall():
                 alerts.append(
@@ -1414,10 +1437,15 @@ class DashboardDbService:
                 )
 
         priority = {"sales_drop": 0, "margin_low": 1, "rank_drop": 2, "stock_short": 3}
-        alerts = sorted(alerts, key=lambda item: (priority.get(item["type"], 9), item["title"]))[:10]
+        alerts = sorted(alerts, key=lambda item: (priority.get(item["type"], 9), item["title"]))[:total_limit]
+        summary = {key: 0 for key in priority}
+        for item in alerts:
+            summary[item["type"]] = summary.get(item["type"], 0) + 1
         return {
             "items": alerts,
+            "summary": summary,
             "window": f"近7天 {format_day(recent_start)} ~ {format_day(recent_end)}",
+            "comparison_window": f"前7天 {format_day(previous_start)} ~ {format_day(previous_end)}",
             "empty_text": "当前筛选下没有明显异常。",
         }
 
@@ -1435,6 +1463,8 @@ class DashboardDbService:
             "tone": tone,
             "title": str(row.get("seller_sku_adj") or "-"),
             "subtitle": f"{row.get('seller_name_new') or '-'} / {row.get('country') or '-'}",
+            "store": str(row.get("seller_name_new") or "-"),
+            "country": str(row.get("country") or "-"),
             "detail": detail,
             "keyword": str(row.get("seller_sku_adj") or ""),
         }

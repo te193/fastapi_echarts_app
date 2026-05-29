@@ -1627,6 +1627,154 @@ span.flatpickr-weekday {
   font-weight: 700;
 }
 
+.alerts-page-section {
+  margin-top: 28px;
+  position: relative;
+  z-index: 1;
+}
+
+.filters-grid.alert-filters {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.alert-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.alert-stat-card {
+  min-height: 110px;
+  padding: 16px;
+  border: 1px solid rgba(188, 200, 217, 0.68);
+  border-radius: 16px;
+  background: var(--panel-solid);
+  color: #10233d;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.alert-stat-card span {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.alert-stat-card strong {
+  display: block;
+  margin-top: 12px;
+  font-size: 32px;
+}
+
+.alert-stat-card.warning {
+  border-color: rgba(217, 119, 6, 0.28);
+}
+
+.alert-stat-card.negative {
+  border-color: rgba(207, 79, 95, 0.3);
+}
+
+.alert-stat-card.active {
+  box-shadow: inset 0 0 0 2px rgba(23, 105, 224, 0.35);
+}
+
+.alert-type-tabs {
+  margin-bottom: 14px;
+  align-items: center;
+}
+
+.alert-type-tabs button {
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.alert-type-tabs button.active {
+  background: linear-gradient(135deg, #2464d6, #1a9b86);
+  color: #ffffff;
+}
+
+.alert-rule-note {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.alert-table-card {
+  padding: 18px 20px;
+}
+
+.alert-table-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+  margin-bottom: 14px;
+}
+
+.alert-table-head h3 {
+  margin: 4px 0 0;
+  font-size: 22px;
+}
+
+.alert-table-wrap {
+  overflow-x: auto;
+}
+
+.alert-table {
+  width: 100%;
+  min-width: 980px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.alert-table th,
+.alert-table td {
+  padding: 13px 12px;
+  border-bottom: 1px solid #e7edf6;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.alert-table th {
+  color: #53657d;
+  font-size: 12px;
+  font-weight: 900;
+  background: #f4f8fd;
+}
+
+.alert-table td:nth-child(5) {
+  white-space: normal;
+  min-width: 240px;
+  color: #183456;
+  font-weight: 700;
+}
+
+.alert-label.warning {
+  background: rgba(217, 119, 6, 0.12);
+  color: #b85f05;
+}
+
+.alert-label.negative {
+  background: rgba(207, 79, 95, 0.12);
+  color: #c23e52;
+}
+
+.alert-detail-link {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
 .monthly-goal-panel {
   padding: 20px 24px;
   background: var(--panel-solid);

@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block content %}
+<header class="hero hero-compact">
+  <h1>异常预警工作台</h1>
+</header>
+
+<section class="panel filters-panel">
+  <div class="panel-head compact">
+    <div>
+      <p class="section-kicker">筛选区</p>
+      <h2>预警观察口径</h2>
+    </div>
+    <button id="clearFiltersBtn" class="ghost-button" type="button">一键清空</button>
+  </div>
+
+  <div class="filters-grid alert-filters">
+    <label class="filter-control">
+      <span>站点</span>
+      <select id="siteSelect"></select>
+    </label>
+    <label class="filter-control">
+      <span>店铺</span>
+      <select id="storeSelect"></select>
+    </label>
+    <label class="filter-control">
+      <span>预警类型</span>
+      <select id="alertTypeSelect"></select>
+    </label>
+    <label class="filter-control">
+      <span>关键词</span>
+      <input id="keywordInput" type="search" placeholder="搜索 SKU / 店铺 / 国家">
+    </label>
+  </div>
+</section>
+
+<section class="alerts-page-section">
+  <div class="section-head">
+    <div>
+      <p class="section-kicker">经营预警</p>
+      <h2>异常预警中心</h2>
+    </div>
+    <p id="alertPeriodHint" class="summary-hint"></p>
+  </div>
+
+  <div id="alertStatsGrid" class="alert-stats-grid"></div>
+  <div id="alertTypeTabs" class="segmented-tabs alert-type-tabs"></div>
+  <div id="alertTableCard" class="panel alert-table-card"></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', path='js/alerts.js') }}?v=20260529b"></script>
+{% endblock %}
