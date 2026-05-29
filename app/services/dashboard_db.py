@@ -1490,7 +1490,7 @@ class DashboardDbService:
                 "target_to_date": round(target, 2),
                 "gap": gap,
                 "ratio": round(actual / target, 4) if target else 0,
-                "method": "按 2026 年实际销售贡献占比分摊当前进度目标缺口。",
+                "method": "说明：当前没有国家/店铺独立目标，这里仅按 2026 年实际销售占比分摊总目标缺口，用来判断缺口主要关联的业务板块，不代表该国家或店铺自己的目标完成率。",
             },
             "groups": {key: value[:8] for key, value in groups.items()},
         }

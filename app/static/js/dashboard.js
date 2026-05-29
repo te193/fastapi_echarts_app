@@ -563,14 +563,14 @@
       '<section class="panel insight-panel goal-gap-panel">',
       '  <div class="insight-head">',
       '    <div>',
-      '      <p class="section-kicker">目标拆解</p>',
-      '      <h3>目标差距拆解</h3>',
+      '      <p class="section-kicker">缺口参考</p>',
+      '      <h3>目标缺口关联板块</h3>',
       '      <p class="goal-panel-copy">' + app.escapeHtml(summary.method || "") + '</p>',
       '    </div>',
       '    <div class="goal-gap-summary">',
       '      <span>进度目标 <strong>' + app.formatCompactCurrency(summary.target_to_date) + '</strong></span>',
       '      <span>实际完成 <strong>' + app.formatCompactCurrency(summary.actual) + '</strong></span>',
-      '      <span class="' + (summary.gap > 0 ? "negative" : "positive") + '">' + (summary.gap > 0 ? "缺口 " : "超额 ") + '<strong>' + app.formatCompactCurrency(Math.abs(summary.gap || 0)) + '</strong></span>',
+      '      <span class="' + (summary.gap > 0 ? "negative" : "positive") + '">' + (summary.gap > 0 ? "总缺口 " : "总超额 ") + '<strong>' + app.formatCompactCurrency(Math.abs(summary.gap || 0)) + '</strong></span>',
       '    </div>',
       '  </div>',
       '  <div class="goal-gap-grid">',
@@ -585,14 +585,14 @@
     var maxValue = Math.max.apply(null, items.map(function (item) { return Math.abs(item.gap_contribution || 0); }).concat([1]));
     return [
       '<div class="goal-gap-group">',
-      '  <div class="goal-gap-group-head"><strong>' + app.escapeHtml(title) + '</strong><span>按销售贡献分摊</span></div>',
+      '  <div class="goal-gap-group-head"><strong>' + app.escapeHtml(title) + '</strong><span>按销售占比估算关联金额</span></div>',
       items.map(function (item) {
         var width = Math.max(4, Math.min(100, Math.abs(item.gap_contribution || 0) / maxValue * 100));
         return [
           '<div class="goal-gap-row">',
           '  <div class="goal-gap-name"><strong>' + app.escapeHtml(item.name || "-") + '</strong><span>占比 ' + app.formatPercent(item.share || 0, 1) + ' / 毛利率 ' + app.formatPercent(item.margin || 0, 1) + '</span></div>',
           '  <div class="goal-gap-bar"><i style="width:' + width.toFixed(1) + '%"></i></div>',
-          '  <div class="goal-gap-value"><strong>' + app.formatCompactCurrency(Math.abs(item.gap_contribution || 0)) + '</strong><span>' + (totalGap > 0 ? "缺口分摊" : "超额贡献") + '</span></div>',
+          '  <div class="goal-gap-value"><strong>' + app.formatCompactCurrency(Math.abs(item.gap_contribution || 0)) + '</strong><span>' + (totalGap > 0 ? "关联缺口" : "关联超额") + '</span></div>',
           '</div>',
         ].join("");
       }).join("") || '<div class="empty-state compact">暂无拆解数据</div>',
