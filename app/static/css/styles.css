@@ -1200,6 +1200,10 @@ span.flatpickr-weekday {
   margin-bottom: 18px;
 }
 
+.kpi-grid + .monthly-goal-card {
+  margin-top: 22px;
+}
+
 .goal-panel {
   padding: 18px 24px 16px;
   background:
@@ -1381,6 +1385,59 @@ span.flatpickr-weekday {
 .monthly-goal-tabs button.active {
   background: linear-gradient(135deg, #2464d6, #1a9b86);
   color: #ffffff;
+}
+
+.monthly-goal-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.monthly-goal-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.monthly-legend-bar {
+  width: 18px;
+  height: 10px;
+  border-radius: 4px 4px 1px 1px;
+  background: #18a17d;
+}
+
+.monthly-legend-line {
+  width: 24px;
+  height: 0;
+  border-top: 2px solid #183456;
+}
+
+.monthly-legend-line.rate {
+  border-top-color: #1769e0;
+  border-top-style: dashed;
+}
+
+.monthly-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.monthly-legend-dot.done {
+  background: #18a17d;
+}
+
+.monthly-legend-dot.near {
+  background: #d97706;
+}
+
+.monthly-legend-dot.behind {
+  background: #cf4f5f;
 }
 
 .monthly-goal-chart-row {
