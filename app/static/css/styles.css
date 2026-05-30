@@ -2406,7 +2406,7 @@ span.flatpickr-weekday {
 
 .matrix-table {
   width: 100%;
-  min-width: 1420px;
+  min-width: 900px;
   border-collapse: separate;
   border-spacing: 12px 14px;
 }
@@ -2502,6 +2502,44 @@ span.flatpickr-weekday {
 .metric-compare-cell strong {
   font-size: 13px;
   color: var(--text);
+}
+
+.compact-toggle {
+  min-height: 34px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.matrix-detail-row td,
+.country-detail-row td {
+  padding: 8px 12px 18px;
+}
+
+.metric-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(188, 200, 217, 0.52);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(247, 251, 255, 0.94), rgba(240, 247, 253, 0.92));
+}
+
+.metric-detail-card {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.76);
+  text-align: left;
+}
+
+.metric-detail-card > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .matrix-cell-compare .positive {

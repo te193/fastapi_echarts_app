@@ -27,6 +27,8 @@
   var countryData = [];
   var hiddenCountries = [];
   var skuColumnFilters = {};
+  var expandedMatrixBand = "";
+  var expandedCountry = "";
 
   document.addEventListener("DOMContentLoaded", init);
 
@@ -154,6 +156,7 @@
         var button = event.target.closest("[data-matrix]");
         if (!button) return;
         currentMatrix = button.dataset.matrix;
+        expandedMatrixBand = "";
         Array.from(elements.matrixTabs.querySelectorAll("[data-matrix]")).forEach(function (b) {
           b.classList.toggle("active", b.dataset.matrix === currentMatrix);
         });
@@ -188,6 +191,8 @@
         filterState.adjustment_type = elements.adjustmentTypeSelect ? elements.adjustmentTypeSelect.value : "all";
         filterState.keyword = elements.keywordInput ? elements.keywordInput.value.trim() : "";
         filterState.page = 1;
+        expandedMatrixBand = "";
+        expandedCountry = "";
         refreshAll();
       });
     }
@@ -217,6 +222,8 @@
         filterState.keyword = "";
         filterState.page = 1;
         skuColumnFilters = {};
+        expandedMatrixBand = "";
+        expandedCountry = "";
         closeColumnFilterPopover();
         refreshAll();
       });
@@ -508,18 +515,14 @@
 
     var html = [
       '<table class="matrix-table">',
-      '  <thead><tr><th>分层</th><th>调前 SKU</th><th>调前占比</th><th>调后 SKU</th><th>调后占比</th><th>SKU 变化</th><th>日销变化</th><th>销售额变化</th><th>毛利润变化</th><th>ACOS变化</th><th>TACOS变化</th></tr></thead>',
+      '  <thead><tr><th>分层</th><th>调前 SKU</th><th>调前占比</th><th>调后 SKU</th><th>调后占比</th><th>SKU 变化</th><th>更多指标</th></tr></thead>',
       '  <tbody>'
     ];
 
     rows.forEach(function (row) {
       var changeClass = row.sku_change > 0 ? "positive" : row.sku_change < 0 ? "negative" : "neutral";
       var changePrefix = row.sku_change > 0 ? "+" : "";
-      var dailyClass = metricTone(row.daily_sales_change);
-      var revenueClass = metricTone(row.revenue_change);
-      var profitClass = metricTone(row.profit_change);
-      var acosClass = metricTone(row.acos_after - row.acos_before, true);
-      var tacosClass = metricTone(row.tacos_after - row.tacos_before, true);
+      var isExpanded = expandedMatrixBand === row.band;
       html.push([
         '<tr>',
         '  <th class="matrix-axis">' + app.escapeHtml(row.band) + '</th>',
@@ -528,13 +531,16 @@
         '  <td><strong>' + row.sku_after + '</strong></td>',
         '  <td>' + app.formatPercent(row.sku_after_ratio, 1) + '</td>',
         '  <td><span class="' + changeClass + '" style="font-weight:800">' + changePrefix + row.sku_change + '</span></td>',
-        '  <td>' + renderBeforeAfterMetric(row.daily_sales_before, row.daily_sales_after, row.daily_sales_change, "number", dailyClass) + '</td>',
-        '  <td>' + renderBeforeAfterMetric(row.revenue_before, row.revenue_after, row.revenue_change, "currency", revenueClass) + '</td>',
-        '  <td>' + renderBeforeAfterMetric(row.profit_before, row.profit_after, row.profit_change, "currency", profitClass) + '</td>',
-        '  <td>' + renderBeforeAfterMetric(row.acos_before, row.acos_after, row.acos_after - row.acos_before, "percent", acosClass) + '</td>',
-        '  <td>' + renderBeforeAfterMetric(row.tacos_before, row.tacos_after, row.tacos_after - row.tacos_before, "percent", tacosClass) + '</td>',
+        '  <td><button class="ghost-button compact-toggle" type="button" data-matrix-band="' + app.escapeHtml(row.band) + '">' + (isExpanded ? "收起" : "查看指标") + '</button></td>',
         '</tr>'
       ].join(""));
+      if (isExpanded) {
+        html.push([
+          '<tr class="matrix-detail-row">',
+          '  <td colspan="7">' + renderMetricDetailGrid(row) + '</td>',
+          '</tr>'
+        ].join(""));
+      }
     });
 
     html.push([
@@ -545,12 +551,21 @@
       '  <td>' + formatNumber(totalAfter, 0) + '</td>',
       '  <td>100%</td>',
       '  <td>' + (totalAfter - totalBefore) + '</td>',
-      '  <td colspan="5"></td>',
+      '  <td></td>',
       '</tr>'
     ].join(""));
 
     html.push('  </tbody></table>');
-    if (elements.matrixChart) elements.matrixChart.innerHTML = html.join("");
+    if (elements.matrixChart) {
+      elements.matrixChart.innerHTML = html.join("");
+      Array.from(elements.matrixChart.querySelectorAll("[data-matrix-band]")).forEach(function (button) {
+        button.addEventListener("click", function () {
+          var band = this.dataset.matrixBand || "";
+          expandedMatrixBand = expandedMatrixBand === band ? "" : band;
+          renderMatrix(currentMatrix);
+        });
+      });
+    }
   }
 
   function metricTone(value, lowerIsBetter) {
@@ -569,6 +584,7 @@
   function formatMetricValue(value, type) {
     if (type === "currency") return app.formatCurrency(Number(value || 0));
     if (type === "percent") return app.formatPercent(Number(value || 0), 1);
+    if (type === "number0") return formatNumber(value, 0);
     return formatNumber(value, 2);
   }
 
@@ -580,6 +596,30 @@
       '  <strong class="' + tone + '">' + prefix + formatMetricValue(change, type) + '</strong>',
       '</div>'
     ].join("");
+  }
+
+  function renderMetricDetailGrid(item) {
+    var metrics = [
+      ["日销", item.daily_sales_before, item.daily_sales_after, item.daily_sales_change, "number", false],
+      ["销量", item.sales_before, item.sales_after, item.sales_change, "number0", false],
+      ["销售额", item.revenue_before, item.revenue_after, item.revenue_change, "currency", false],
+      ["毛利润", item.profit_before, item.profit_after, item.profit_change, "currency", false],
+      ["毛利率", item.margin_before, item.margin_after, item.margin_after - item.margin_before, "percent", false],
+      ["Sessions", item.sessions_before, item.sessions_after, item.sessions_change, "number0", false],
+      ["转化率", item.conversion_before, item.conversion_after, item.conversion_after - item.conversion_before, "percent", false],
+      ["广告花费", item.ad_spend_before, item.ad_spend_after, item.ad_spend_change, "currency", true],
+      ["ACOS", item.acos_before, item.acos_after, item.acos_after - item.acos_before, "percent", true],
+      ["TACOS", item.tacos_before, item.tacos_after, item.tacos_after - item.tacos_before, "percent", true],
+    ];
+    return '<div class="metric-detail-grid">' + metrics.map(function (metric) {
+      var tone = metricTone(metric[3], metric[5]);
+      return [
+        '<div class="metric-detail-card">',
+        '  <span>' + app.escapeHtml(metric[0]) + '</span>',
+        renderBeforeAfterMetric(metric[1], metric[2], metric[3], metric[4], tone),
+        '</div>'
+      ].join("");
+    }).join("") + '</div>';
   }
 
   // ===== Countries =====
@@ -729,39 +769,42 @@
   function renderCountryTable(items) {
     if (!elements.countryTableBody) return;
     if (!items.length) {
-      elements.countryTableBody.innerHTML = '<tr><td colspan="18"><div class="empty-state">暂无数据</div></td></tr>';
+      elements.countryTableBody.innerHTML = '<tr><td colspan="13"><div class="empty-state">暂无数据</div></td></tr>';
       return;
     }
     elements.countryTableBody.innerHTML = items.map(function (item) {
-      var dailyClass = metricTone(item.daily_sales_change);
       var revenueClass = metricTone(item.revenue_change);
       var profitClass = metricTone(item.profit_change);
-      var sessionsClass = metricTone(item.sessions_change);
-      var acosClass = metricTone(item.acos_after - item.acos_before, true);
-      var tacosClass = metricTone(item.tacos_after - item.tacos_before, true);
-      return [
+      var isExpanded = expandedCountry === item.country;
+      var rows = [
         '<tr>',
         '<td><strong>' + app.escapeHtml(item.country) + '</strong></td>',
         '<td>' + item.sku_count + '</td>',
         '<td>' + (item.sales_change > 0 ? "+" : "") + item.sales_change + '</td>',
-        '<td><span class="' + dailyClass + '" style="font-weight:800">' + (item.daily_sales_change > 0 ? "+" : "") + formatNumber(item.daily_sales_change, 2) + '</span></td>',
         '<td><span class="' + revenueClass + '" style="font-weight:800">' + app.formatCurrency(item.revenue_change) + '</span></td>',
         '<td><span class="' + profitClass + '" style="font-weight:800">' + app.formatCurrency(item.profit_change) + '</span></td>',
-        '<td>' + renderBeforeAfterMetric(item.sessions_before, item.sessions_after, item.sessions_change, "number", sessionsClass) + '</td>',
-        '<td>' + app.formatPercent(item.conversion_after, 1) + '</td>',
         '<td>' + app.formatPercent(item.margin_after, 1) + '</td>',
-        '<td>' + app.formatPercent(item.margin_before, 1) + '</td>',
-        '<td>' + renderBeforeAfterMetric(item.acos_before, item.acos_after, item.acos_after - item.acos_before, "percent", acosClass) + '</td>',
-        '<td>' + renderBeforeAfterMetric(item.tacos_before, item.tacos_after, item.tacos_after - item.tacos_before, "percent", tacosClass) + '</td>',
         '<td>' + item.rank_worsen_count + '</td>',
         '<td>' + item.rank_improve_count + '</td>',
         '<td>' + item.out_of_stock_count + '</td>',
         '<td>' + item.profit_down_count + '</td>',
         '<td>' + app.formatPercent(item.rank_worsen_ratio, 1) + '</td>',
         '<td>' + app.formatPercent(item.rank_improve_ratio, 1) + '</td>',
+        '<td><button class="ghost-button compact-toggle" type="button" data-country-metric="' + app.escapeHtml(item.country) + '">' + (isExpanded ? "收起" : "查看指标") + '</button></td>',
         '</tr>'
-      ].join("");
+      ];
+      if (isExpanded) {
+        rows.push('<tr class="country-detail-row"><td colspan="13">' + renderMetricDetailGrid(item) + '</td></tr>');
+      }
+      return rows.join("");
     }).join("");
+    Array.from(elements.countryTableBody.querySelectorAll("[data-country-metric]")).forEach(function (button) {
+      button.addEventListener("click", function () {
+        var country = this.dataset.countryMetric || "";
+        expandedCountry = expandedCountry === country ? "" : country;
+        renderCountrySection();
+      });
+    });
   }
 
   // ===== Second Adjustments =====
