@@ -153,14 +153,23 @@
       <p class="section-kicker">分层迁移</p>
       <h2>调价前后 SKU 分层结构变化</h2>
     </div>
-    <div class="segmented-tabs" role="tablist" id="matrixTabs">
-      <button class="tab-button active" type="button" data-matrix="daily_sales">日销分层</button>
-      <button class="tab-button" type="button" data-matrix="margin">毛利率分层</button>
-      <button class="tab-button" type="button" data-matrix="rank">排名分层</button>
-      <button class="tab-button" type="button" data-matrix="sales">销量分层</button>
-    </div>
   </div>
   <article class="panel matrix-panel">
+    <div class="matrix-toolbar">
+      <div class="segmented-tabs matrix-tabs" role="tablist" id="matrixTabs">
+        <button class="tab-button active" type="button" data-matrix="daily_sales">日销分层</button>
+        <button class="tab-button" type="button" data-matrix="margin">毛利率分层</button>
+        <button class="tab-button" type="button" data-matrix="rank">排名分层</button>
+        <button class="tab-button" type="button" data-matrix="sales">销量分层</button>
+      </div>
+      <div class="matrix-tools">
+        <label class="matrix-search">
+          <span>搜索</span>
+          <input id="matrixSearchInput" type="search" placeholder="输入分层级别筛选...">
+        </label>
+        <span class="matrix-sync-dot">数据已同步</span>
+      </div>
+    </div>
     <div id="matrixPanelTitle" class="matrix-summary"></div>
     <div id="matrixChart" class="matrix-wrap"></div>
   </article>
@@ -330,5 +339,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', path='js/price_review.js') }}?v=20260530b"></script>
+<script src="{{ url_for('static', path='js/price_review.js') }}?v=20260530c"></script>
 {% endblock %}

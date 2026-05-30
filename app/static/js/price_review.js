@@ -29,6 +29,7 @@
   var skuColumnFilters = {};
   var expandedMatrixBand = "";
   var expandedCountry = "";
+  var matrixSearchKeyword = "";
 
   document.addEventListener("DOMContentLoaded", init);
 
@@ -73,7 +74,7 @@
       "pageTitle", "statSkuCount", "statCountryCount", "kpiGrid",
       // Charts
       "dropRangeSkuChart", "dropRangeEffectChart",
-      "matrixTabs", "matrixPanelTitle", "matrixChart",
+      "matrixTabs", "matrixPanelTitle", "matrixChart", "matrixSearchInput",
       "countryChart", "countryTableBody",
       "secondAdjustSummary", "secondAdjustDateChart", "secondAdjustGapChart", "secondAdjustTableBody",
       "topListTabs", "topListTableBody",
@@ -160,6 +161,14 @@
         Array.from(elements.matrixTabs.querySelectorAll("[data-matrix]")).forEach(function (b) {
           b.classList.toggle("active", b.dataset.matrix === currentMatrix);
         });
+        renderMatrix(currentMatrix);
+      });
+    }
+
+    if (elements.matrixSearchInput) {
+      elements.matrixSearchInput.addEventListener("input", function () {
+        matrixSearchKeyword = this.value.trim().toLowerCase();
+        expandedMatrixBand = "";
         renderMatrix(currentMatrix);
       });
     }
@@ -505,57 +514,65 @@
     var data = matrixData[type];
     if (!data || !data.rows) return;
     var titleMap = { sales: "销量分层", daily_sales: "日销分层", margin: "毛利率分层", rank: "排名分层" };
+    var hintMap = {
+      sales: "按销量区间观察调价前后 SKU 流向",
+      daily_sales: "按日销层级观察调价前后 SKU 数量与占比变化",
+      margin: "按毛利率层级观察经营质量迁移",
+      rank: "按排名层级观察调价后的排名结构变化"
+    };
     if (elements.matrixPanelTitle) {
-      elements.matrixPanelTitle.textContent = titleMap[type] + " — 调价前后 SKU 数量与占比变化";
+      elements.matrixPanelTitle.textContent = (hintMap[type] || titleMap[type]);
     }
 
-    var rows = data.rows;
+    var rows = data.rows.filter(function (row) {
+      return !matrixSearchKeyword || String(row.band || "").toLowerCase().indexOf(matrixSearchKeyword) >= 0;
+    });
     var totalBefore = rows.reduce(function (s, r) { return s + r.sku_before; }, 0);
     var totalAfter = rows.reduce(function (s, r) { return s + r.sku_after; }, 0);
 
     var html = [
-      '<table class="matrix-table">',
-      '  <thead><tr><th>分层</th><th>调前 SKU</th><th>调前占比</th><th>调后 SKU</th><th>调后占比</th><th>SKU 变化</th><th>更多指标</th></tr></thead>',
-      '  <tbody>'
+      '<div class="matrix-list">',
+      '  <div class="matrix-list-head">',
+      '    <span>分层结构</span><span>调前 SKU</span><span>调前占比</span><span>调后 SKU</span><span>调后占比</span><span>SKU 净增减</span><span>关键指标</span>',
+      '  </div>'
     ];
 
     rows.forEach(function (row) {
       var changeClass = row.sku_change > 0 ? "positive" : row.sku_change < 0 ? "negative" : "neutral";
       var changePrefix = row.sku_change > 0 ? "+" : "";
       var isExpanded = expandedMatrixBand === row.band;
+      var insight = matrixBandInsight(type, row);
       html.push([
-        '<tr>',
-        '  <th class="matrix-axis">' + app.escapeHtml(row.band) + '</th>',
-        '  <td><strong>' + row.sku_before + '</strong></td>',
-        '  <td>' + app.formatPercent(row.sku_before_ratio, 1) + '</td>',
-        '  <td><strong>' + row.sku_after + '</strong></td>',
-        '  <td>' + app.formatPercent(row.sku_after_ratio, 1) + '</td>',
-        '  <td><span class="' + changeClass + '" style="font-weight:800">' + changePrefix + row.sku_change + '</span></td>',
-        '  <td><button class="metric-toggle" type="button" data-matrix-band="' + app.escapeHtml(row.band) + '"><span>' + (isExpanded ? "收起" : "指标") + '</span><b>' + (isExpanded ? "−" : "+") + '</b></button></td>',
-        '</tr>'
+        '<div class="matrix-list-row ' + (isExpanded ? "expanded" : "") + '">',
+        '  <div class="matrix-band-cell"><strong>' + app.escapeHtml(row.band) + '</strong><small>' + app.escapeHtml(insight) + '</small></div>',
+        '  <div class="matrix-number"><strong>' + row.sku_before + '</strong></div>',
+        '  <div class="matrix-muted">' + app.formatPercent(row.sku_before_ratio, 1) + '</div>',
+        '  <div class="matrix-number"><strong>' + row.sku_after + '</strong></div>',
+        '  <div class="matrix-muted">' + app.formatPercent(row.sku_after_ratio, 1) + '</div>',
+        '  <div><span class="matrix-change-pill ' + changeClass + '">' + changePrefix + row.sku_change + '</span></div>',
+        '  <div><button class="metric-toggle" type="button" data-matrix-band="' + app.escapeHtml(row.band) + '"><span>' + (isExpanded ? "收起指标" : "查看指标") + '</span><b>' + (isExpanded ? "⌃" : "⌄") + '</b></button></div>',
+        '</div>'
       ].join(""));
       if (isExpanded) {
         html.push([
-          '<tr class="matrix-detail-row">',
-          '  <td colspan="7">' + renderMetricDetailGrid(row) + '</td>',
-          '</tr>'
+          '<div class="matrix-detail-row">' + renderMetricDetailGrid(row) + '</div>'
         ].join(""));
       }
     });
 
     html.push([
-      '<tr style="border-top:2px solid #d5deeb;font-weight:800">',
-      '  <th class="matrix-axis">合计</th>',
-      '  <td>' + formatNumber(totalBefore, 0) + '</td>',
-      '  <td>100%</td>',
-      '  <td>' + formatNumber(totalAfter, 0) + '</td>',
-      '  <td>100%</td>',
-      '  <td>' + (totalAfter - totalBefore) + '</td>',
-      '  <td></td>',
-      '</tr>'
+      '<div class="matrix-list-row total">',
+      '  <div class="matrix-band-cell"><strong>全系合计</strong></div>',
+      '  <div class="matrix-number"><strong>' + formatNumber(totalBefore, 0) + '</strong></div>',
+      '  <div class="matrix-muted">100%</div>',
+      '  <div class="matrix-number"><strong>' + formatNumber(totalAfter, 0) + '</strong></div>',
+      '  <div class="matrix-muted">100%</div>',
+      '  <div><span class="matrix-change-pill neutral">对等平衡</span></div>',
+      '  <div></div>',
+      '</div>'
     ].join(""));
 
-    html.push('  </tbody></table>');
+    html.push('</div>');
     if (elements.matrixChart) {
       elements.matrixChart.innerHTML = html.join("");
       Array.from(elements.matrixChart.querySelectorAll("[data-matrix-band]")).forEach(function (button) {
@@ -566,6 +583,19 @@
         });
       });
     }
+  }
+
+  function matrixBandInsight(type, row) {
+    var change = Number(row.sku_change || 0);
+    if (type === "daily_sales") {
+      if (row.band === "日销 0") return "调价后流量骤降";
+      if (row.band.indexOf("<1") >= 0) return "轻步回升分层";
+      if (row.band.indexOf("1-5") >= 0) return "核心中坚销售层";
+      return "调价观察的重销分层";
+    }
+    if (type === "margin") return change >= 0 ? "毛利结构承接层" : "毛利结构流出层";
+    if (type === "rank") return change >= 0 ? "排名结构承接层" : "排名结构流出层";
+    return change >= 0 ? "销量结构承接层" : "销量结构流出层";
   }
 
   function metricTone(value, lowerIsBetter) {
