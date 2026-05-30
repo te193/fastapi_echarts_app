@@ -2406,7 +2406,7 @@ span.flatpickr-weekday {
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  padding: 20px 24px 14px;
+  padding: 18px 22px 12px;
 }
 
 .matrix-tabs {
@@ -2480,10 +2480,10 @@ span.flatpickr-weekday {
 .matrix-list-head,
 .matrix-list-row {
   display: grid;
-  grid-template-columns: minmax(190px, 1.3fr) repeat(5, minmax(96px, 0.75fr)) minmax(150px, 0.9fr);
+  grid-template-columns: minmax(170px, 1.15fr) repeat(5, minmax(82px, 0.66fr)) minmax(128px, 0.78fr);
   align-items: center;
-  column-gap: 18px;
-  padding: 0 24px;
+  column-gap: 12px;
+  padding: 0 22px;
 }
 
 .matrix-list-head {
@@ -2497,7 +2497,7 @@ span.flatpickr-weekday {
 }
 
 .matrix-list-row {
-  min-height: 82px;
+  min-height: 66px;
   border-bottom: 1px solid rgba(229, 235, 245, 0.86);
   background: rgba(255, 255, 255, 0.86);
   color: var(--text);
@@ -2508,28 +2508,28 @@ span.flatpickr-weekday {
 }
 
 .matrix-list-row.total {
-  min-height: 72px;
+  min-height: 62px;
   background: rgba(248, 251, 255, 0.92);
   font-weight: 900;
 }
 
 .matrix-band-cell {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   text-align: left;
 }
 
 .matrix-band-cell strong {
-  font-size: 16px;
+  font-size: 15px;
 }
 
 .matrix-band-cell small {
   color: #7890aa;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .matrix-number strong {
-  font-size: 16px;
+  font-size: 15px;
 }
 
 .matrix-muted {
@@ -2540,12 +2540,12 @@ span.flatpickr-weekday {
   display: inline-flex;
   min-width: 44px;
   justify-content: center;
-  padding: 6px 10px;
+  padding: 5px 9px;
   border-radius: 999px;
   border: 1px solid rgba(188, 200, 217, 0.62);
   background: #f4f8fd;
   color: #233a59;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 900;
 }
 
@@ -2631,7 +2631,7 @@ span.flatpickr-weekday {
 }
 
 .matrix-detail-row {
-  padding: 0 24px 22px;
+  padding: 0 22px 18px;
   border-bottom: 1px solid rgba(229, 235, 245, 0.86);
   background: rgba(255, 255, 255, 0.86);
 }
@@ -2644,9 +2644,9 @@ span.flatpickr-weekday {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  min-height: 32px;
-  padding: 6px 10px 6px 12px;
+  gap: 6px;
+  min-height: 30px;
+  padding: 5px 9px 5px 11px;
   border: 1px solid rgba(20, 184, 166, 0.46);
   border-radius: 999px;
   background: rgba(236, 253, 249, 0.85);
@@ -2667,8 +2667,8 @@ span.flatpickr-weekday {
 .metric-toggle b {
   display: grid;
   place-items: center;
-  width: 18px;
-  height: 18px;
+  width: 17px;
+  height: 17px;
   border-radius: 50%;
   background: rgba(20, 184, 166, 0.12);
   color: #028477;
