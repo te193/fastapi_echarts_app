@@ -598,6 +598,11 @@
     ].join("");
   }
 
+  function renderMetricChange(change, type, tone) {
+    var prefix = Number(change || 0) > 0 ? "+" : "";
+    return '<span class="metric-change ' + tone + '">' + prefix + formatMetricValue(change, type) + '</span>';
+  }
+
   function renderMetricDetailGrid(item) {
     var groups = [
       {
@@ -629,18 +634,23 @@
     return '<div class="metric-detail-panel">' + groups.map(function (group) {
       return [
         '<section class="metric-detail-group">',
-        '  <h4>' + app.escapeHtml(group.title) + '</h4>',
-        '  <div class="metric-detail-grid">',
+        '  <div class="metric-group-title">' + app.escapeHtml(group.title) + '</div>',
+        '  <table class="metric-compare-table">',
+        '    <thead><tr><th>指标</th><th>调前</th><th>调后</th><th>变化</th></tr></thead>',
+        '    <tbody>',
         group.metrics.map(function (metric) {
           var tone = metricTone(metric[3], metric[5]);
           return [
-            '<div class="metric-detail-card">',
-            '  <span>' + app.escapeHtml(metric[0]) + '</span>',
-            renderBeforeAfterMetric(metric[1], metric[2], metric[3], metric[4], tone),
-            '</div>'
+            '<tr>',
+            '  <th>' + app.escapeHtml(metric[0]) + '</th>',
+            '  <td>' + formatMetricValue(metric[1], metric[4]) + '</td>',
+            '  <td>' + formatMetricValue(metric[2], metric[4]) + '</td>',
+            '  <td>' + renderMetricChange(metric[3], metric[4], tone) + '</td>',
+            '</tr>'
           ].join("");
         }).join(""),
-        '  </div>',
+        '    </tbody>',
+        '  </table>',
         '</section>'
       ].join("");
     }).join("") + '</div>';
