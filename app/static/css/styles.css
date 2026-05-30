@@ -2413,60 +2413,6 @@ span.flatpickr-weekday {
   flex: 0 0 auto;
 }
 
-.matrix-tools {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-left: auto;
-}
-
-.matrix-search {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 240px;
-  padding: 0 14px;
-  border-radius: 14px;
-  background: #f1f6fc;
-  color: #7890aa;
-}
-
-.matrix-search span {
-  font-size: 0;
-}
-
-.matrix-search span::before {
-  content: "⌕";
-  font-size: 15px;
-}
-
-.matrix-search input {
-  width: 100%;
-  height: 42px;
-  border: 0;
-  outline: none;
-  background: transparent;
-  color: var(--text);
-}
-
-.matrix-sync-dot {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: #5b6f89;
-  font-size: 12px;
-  font-weight: 800;
-  white-space: nowrap;
-}
-
-.matrix-sync-dot::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #0bbf8a;
-}
-
 .matrix-wrap {
   margin-top: 0;
   overflow-x: auto;
@@ -2559,6 +2505,32 @@ span.flatpickr-weekday {
   border-color: rgba(244, 63, 94, 0.26);
   background: rgba(244, 63, 94, 0.1);
   color: #dc2446;
+}
+
+.matrix-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.matrix-flow-button {
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid rgba(188, 200, 217, 0.72);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #4f6682;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.matrix-flow-button:hover {
+  border-color: rgba(23, 105, 224, 0.32);
+  color: #1769e0;
 }
 
 .matrix-cell-button {
@@ -2738,6 +2710,93 @@ span.flatpickr-weekday {
 
 .metric-change {
   font-weight: 900;
+}
+
+.price-review-drawer {
+  width: min(720px, calc(100vw - 96px));
+}
+
+.drawer-subtitle {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.flow-diagram-card {
+  display: grid;
+  gap: 14px;
+}
+
+.flow-diagram-stage {
+  position: relative;
+  height: var(--flow-height);
+  min-height: 210px;
+  border-radius: 18px;
+  background: #071027;
+  overflow: hidden;
+}
+
+.flow-diagram-stage svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.flow-diagram-stage path {
+  fill: none;
+  stroke: #27d7c2;
+  stroke-linecap: round;
+  opacity: 0.82;
+}
+
+.flow-node {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  min-width: 96px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid rgba(39, 215, 194, 0.9);
+  border-radius: 8px;
+  background: rgba(5, 19, 45, 0.92);
+  color: #dffefa;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.flow-node.left {
+  left: 28px;
+}
+
+.flow-node.right {
+  right: 28px;
+}
+
+.flow-legend {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.flow-legend li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  border: 1px solid rgba(214, 224, 237, 0.72);
+  border-radius: 12px;
+  background: rgba(248, 251, 255, 0.9);
+  color: #435a76;
+  font-size: 12px;
+}
+
+.flow-legend strong {
+  color: var(--text);
 }
 
 .matrix-cell-compare .positive {

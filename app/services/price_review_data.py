@@ -374,6 +374,7 @@ def _generate_skus(rng: random.Random, adjust_date: date, compare_days: int) -> 
 
 def _build_matrix(rows: list[dict[str, Any]], band_key_before: str, band_key_after: str, value_key_before: str, value_key_after: str, matrix_type: str) -> dict[str, Any]:
     band_counts: dict[str, dict[str, Any]] = {}
+    flows: dict[tuple[str, str], int] = {}
     metric_defaults = {
         "sales_before": 0.0, "sales_after": 0.0,
         "daily_sales_before": 0.0, "daily_sales_after": 0.0,
@@ -399,6 +400,8 @@ def _build_matrix(rows: list[dict[str, Any]], band_key_before: str, band_key_aft
 
     for sku in rows:
         band = sku[band_key_before]
+        band_a = sku[band_key_after]
+        flows[(band, band_a)] = flows.get((band, band_a), 0) + 1
         if band not in band_counts:
             band_counts[band] = new_bucket()
         band_counts[band]["sku_before"] += 1
@@ -406,7 +409,6 @@ def _build_matrix(rows: list[dict[str, Any]], band_key_before: str, band_key_aft
         band_counts[band]["value_before_cnt"] += 1
         add_metric(band_counts[band], sku, "before")
 
-        band_a = sku[band_key_after]
         if band_a not in band_counts:
             band_counts[band_a] = new_bucket()
         band_counts[band_a]["sku_after"] += 1
@@ -491,6 +493,10 @@ def _build_matrix(rows: list[dict[str, Any]], band_key_before: str, band_key_aft
         "type": matrix_type,
         "bands": all_bands,
         "rows": result_rows,
+        "flows": [
+            {"source": source, "target": target, "value": value}
+            for (source, target), value in sorted(flows.items(), key=lambda item: (-item[1], item[0][0], item[0][1]))
+        ],
     }
 
 

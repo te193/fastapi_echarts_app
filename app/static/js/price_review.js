@@ -29,7 +29,6 @@
   var skuColumnFilters = {};
   var expandedMatrixBand = "";
   var expandedCountry = "";
-  var matrixSearchKeyword = "";
 
   document.addEventListener("DOMContentLoaded", init);
 
@@ -74,7 +73,7 @@
       "pageTitle", "statSkuCount", "statCountryCount", "kpiGrid",
       // Charts
       "dropRangeSkuChart", "dropRangeEffectChart",
-      "matrixTabs", "matrixPanelTitle", "matrixChart", "matrixSearchInput",
+      "matrixTabs", "matrixPanelTitle", "matrixChart",
       "countryChart", "countryTableBody",
       "secondAdjustSummary", "secondAdjustDateChart", "secondAdjustGapChart", "secondAdjustTableBody",
       "topListTabs", "topListTableBody",
@@ -90,6 +89,7 @@
       "calendarToggleBtn", "calendarBody", "calendarGrid", "calendarSummary",
       // Country show-all
       "countryShowAllBtn",
+      "priceReviewDrawerMask", "priceReviewDrawer", "closePriceReviewDrawerBtn", "priceReviewDrawerTitle", "priceReviewDrawerSubtitle", "priceReviewDrawerContent",
     ].forEach(function (id) {
       elements[id] = document.getElementById(id);
     });
@@ -165,13 +165,8 @@
       });
     }
 
-    if (elements.matrixSearchInput) {
-      elements.matrixSearchInput.addEventListener("input", function () {
-        matrixSearchKeyword = this.value.trim().toLowerCase();
-        expandedMatrixBand = "";
-        renderMatrix(currentMatrix);
-      });
-    }
+    if (elements.closePriceReviewDrawerBtn) elements.closePriceReviewDrawerBtn.addEventListener("click", closePriceReviewDrawer);
+    if (elements.priceReviewDrawerMask) elements.priceReviewDrawerMask.addEventListener("click", closePriceReviewDrawer);
 
     // Top list tabs
     if (elements.topListTabs) {
@@ -524,16 +519,14 @@
       elements.matrixPanelTitle.textContent = (hintMap[type] || titleMap[type]);
     }
 
-    var rows = data.rows.filter(function (row) {
-      return !matrixSearchKeyword || String(row.band || "").toLowerCase().indexOf(matrixSearchKeyword) >= 0;
-    });
+    var rows = data.rows;
     var totalBefore = rows.reduce(function (s, r) { return s + r.sku_before; }, 0);
     var totalAfter = rows.reduce(function (s, r) { return s + r.sku_after; }, 0);
 
     var html = [
       '<div class="matrix-list">',
       '  <div class="matrix-list-head">',
-      '    <span>分层结构</span><span>调前 SKU</span><span>调前占比</span><span>调后 SKU</span><span>调后占比</span><span>SKU 净增减</span><span>关键指标</span>',
+      '    <span>分层结构</span><span>调前 SKU</span><span>调前占比</span><span>调后 SKU</span><span>调后占比</span><span>SKU 净增减</span><span>操作</span>',
       '  </div>'
     ];
 
@@ -550,7 +543,10 @@
         '  <div class="matrix-number"><strong>' + row.sku_after + '</strong></div>',
         '  <div class="matrix-muted">' + app.formatPercent(row.sku_after_ratio, 1) + '</div>',
         '  <div><span class="matrix-change-pill ' + changeClass + '">' + changePrefix + row.sku_change + '</span></div>',
-        '  <div><button class="metric-toggle" type="button" data-matrix-band="' + app.escapeHtml(row.band) + '"><span>' + (isExpanded ? "收起指标" : "查看指标") + '</span><b>' + (isExpanded ? "⌃" : "⌄") + '</b></button></div>',
+        '  <div class="matrix-row-actions">',
+        '    <button class="metric-toggle" type="button" data-matrix-band="' + app.escapeHtml(row.band) + '"><span>' + (isExpanded ? "收起指标" : "查看指标") + '</span><b>' + (isExpanded ? "⌃" : "⌄") + '</b></button>',
+        '    <button class="matrix-flow-button" type="button" data-matrix-flow="' + app.escapeHtml(row.band) + '">流向图</button>',
+        '  </div>',
         '</div>'
       ].join(""));
       if (isExpanded) {
@@ -582,7 +578,85 @@
           renderMatrix(currentMatrix);
         });
       });
+      Array.from(elements.matrixChart.querySelectorAll("[data-matrix-flow]")).forEach(function (button) {
+        button.addEventListener("click", function () {
+          var band = this.dataset.matrixFlow || "";
+          var row = rows.find(function (item) { return item.band === band; });
+          if (row) openMatrixFlowDrawer(type, row, data);
+        });
+      });
     }
+  }
+
+  function openMatrixFlowDrawer(type, row, data) {
+    if (!elements.priceReviewDrawer || !elements.priceReviewDrawerContent) return;
+    var titleMap = { sales: "销量分层", daily_sales: "日销分层", margin: "毛利率分层", rank: "排名分层" };
+    elements.priceReviewDrawerTitle.textContent = row.band + " 分层决策面板";
+    elements.priceReviewDrawerSubtitle.textContent = (titleMap[type] || "分层") + "：调前 " + row.sku_before + " 个 → 调后 " + row.sku_after + " 个";
+    elements.priceReviewDrawerContent.innerHTML = [
+      '<section class="drawer-block">',
+      '  <h3>分层迁移流向图</h3>',
+      renderFlowDiagram(row, data),
+      '</section>',
+      '<section class="drawer-block">',
+      '  <h3>分层指标流转明细</h3>',
+      renderMetricDetailGrid(row),
+      '</section>'
+    ].join("");
+    elements.priceReviewDrawerMask.classList.remove("hidden");
+    elements.priceReviewDrawer.classList.remove("hidden");
+    elements.priceReviewDrawer.setAttribute("aria-hidden", "false");
+  }
+
+  function closePriceReviewDrawer() {
+    if (!elements.priceReviewDrawer || !elements.priceReviewDrawerMask) return;
+    elements.priceReviewDrawerMask.classList.add("hidden");
+    elements.priceReviewDrawer.classList.add("hidden");
+    elements.priceReviewDrawer.setAttribute("aria-hidden", "true");
+  }
+
+  function renderFlowDiagram(row, data) {
+    var allFlows = data.flows || [];
+    var flows = allFlows.filter(function (flow) {
+      return flow.source === row.band || flow.target === row.band;
+    }).sort(function (a, b) { return b.value - a.value; });
+    if (!flows.length) {
+      flows = [{ source: row.band, target: row.band, value: row.sku_after || row.sku_before || 0 }];
+    }
+    var max = flows.reduce(function (m, flow) { return Math.max(m, Number(flow.value || 0)); }, 1);
+    var leftBands = Array.from(new Set(flows.map(function (flow) { return flow.source; })));
+    var rightBands = Array.from(new Set(flows.map(function (flow) { return flow.target; })));
+    var leftIndex = {};
+    var rightIndex = {};
+    leftBands.forEach(function (band, index) { leftIndex[band] = index; });
+    rightBands.forEach(function (band, index) { rightIndex[band] = index; });
+    var height = Math.max(leftBands.length, rightBands.length, 3) * 52 + 36;
+    function yFor(index) { return 36 + index * 52; }
+    var paths = flows.map(function (flow) {
+      var y1 = yFor(leftIndex[flow.source]);
+      var y2 = yFor(rightIndex[flow.target]);
+      var width = Math.max(2, Math.round(2 + (Number(flow.value || 0) / max) * 8));
+      return '<path d="M142 ' + y1 + ' C230 ' + y1 + ', 250 ' + y2 + ', 338 ' + y2 + '" stroke-width="' + width + '" />';
+    }).join("");
+    var labels = leftBands.map(function (band, index) {
+      return '<div class="flow-node left" style="top:' + (yFor(index) - 16) + 'px">' + app.escapeHtml(band) + '</div>';
+    }).join("") + rightBands.map(function (band, index) {
+      return '<div class="flow-node right" style="top:' + (yFor(index) - 16) + 'px">' + app.escapeHtml(band) + '</div>';
+    }).join("");
+    var legend = flows.slice(0, 5).map(function (flow) {
+      return '<li><span>' + app.escapeHtml(flow.source) + ' → ' + app.escapeHtml(flow.target) + '</span><strong>' + flow.value + ' SKU</strong></li>';
+    }).join("");
+    return [
+      '<div class="flow-diagram-card" style="--flow-height:' + height + 'px">',
+      '  <div class="flow-diagram-stage">',
+      labels,
+      '    <svg viewBox="0 0 480 ' + height + '" preserveAspectRatio="none" aria-hidden="true">',
+      paths,
+      '    </svg>',
+      '  </div>',
+      '  <ul class="flow-legend">' + legend + '</ul>',
+      '</div>'
+    ].join("");
   }
 
   function matrixBandInsight(type, row) {

@@ -162,13 +162,6 @@
         <button class="tab-button" type="button" data-matrix="rank">排名分层</button>
         <button class="tab-button" type="button" data-matrix="sales">销量分层</button>
       </div>
-      <div class="matrix-tools">
-        <label class="matrix-search">
-          <span>搜索</span>
-          <input id="matrixSearchInput" type="search" placeholder="输入分层级别筛选...">
-        </label>
-        <span class="matrix-sync-dot">数据已同步</span>
-      </div>
     </div>
     <div id="matrixPanelTitle" class="matrix-summary"></div>
     <div id="matrixChart" class="matrix-wrap"></div>
@@ -338,6 +331,21 @@
 </section>
 {% endblock %}
 
+{% block overlay %}
+<div id="priceReviewDrawerMask" class="drawer-mask hidden"></div>
+<aside id="priceReviewDrawer" class="detail-drawer price-review-drawer hidden" aria-hidden="true">
+  <div class="drawer-head">
+    <div>
+      <p class="section-kicker">分层流向</p>
+      <h2 id="priceReviewDrawerTitle">未选择分层</h2>
+      <p id="priceReviewDrawerSubtitle" class="drawer-subtitle"></p>
+    </div>
+    <button id="closePriceReviewDrawerBtn" class="icon-button" type="button" aria-label="关闭详情">×</button>
+  </div>
+  <div id="priceReviewDrawerContent" class="drawer-content"></div>
+</aside>
+{% endblock %}
+
 {% block scripts %}
-<script src="{{ url_for('static', path='js/price_review.js') }}?v=20260530c"></script>
+<script src="{{ url_for('static', path='js/price_review.js') }}?v=20260530d"></script>
 {% endblock %}
