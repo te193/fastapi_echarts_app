@@ -201,6 +201,70 @@ def api_alerts(
     )
 
 
+@app.get("/api/alerts/export")
+def api_alerts_export(
+    start_date: Optional[str] = Query(default=None),
+    end_date: Optional[str] = Query(default=None),
+    site: str = Query(default="all"),
+    store: str = Query(default="all"),
+    over_limit: str = Query(default="all"),
+    daily_sales_band: str = Query(default="all"),
+    margin_band: str = Query(default="all"),
+    keyword: str = Query(default=""),
+    alert_type: str = Query(default="all"),
+    compare_days: int = Query(default=7, ge=7, le=30),
+    sales_trend: str = Query(default="all"),
+    rank_trend: str = Query(default="all"),
+    margin_status: str = Query(default="all"),
+    stock_status: str = Query(default="all"),
+) -> StreamingResponse:
+    filters = build_filters(
+        start_date=start_date,
+        end_date=end_date,
+        site=site,
+        store=store,
+        over_limit=over_limit,
+        daily_sales_band=daily_sales_band,
+        margin_band=margin_band,
+        keyword=keyword,
+    )
+    payload = dashboard_service.get_alerts_export_payload(
+        filters,
+        alert_type=alert_type,
+        compare_days=compare_days,
+        sales_trend=sales_trend,
+        rank_trend=rank_trend,
+        margin_status=margin_status,
+        stock_status=stock_status,
+    )
+
+    output = io.StringIO(newline="")
+    output.write("\ufeff")
+    writer = csv.writer(output)
+    writer.writerow(["统计周期", "对比周期", "类型", "MSKU", "店铺", "国家", "销量趋势", "排名趋势", "毛利", "库存"])
+    for item in payload["items"]:
+        writer.writerow(
+            [
+                payload["window"],
+                payload["comparison_window"],
+                csv_cell_value(item.get("label")),
+                csv_cell_value(item.get("title")),
+                csv_cell_value(item.get("store")),
+                csv_cell_value(item.get("country")),
+                csv_cell_value(item.get("sales_text")),
+                csv_cell_value(item.get("rank_text")),
+                csv_cell_value(item.get("margin_text")),
+                csv_cell_value(item.get("stock_text")),
+            ]
+        )
+
+    filename = f"alerts_{payload['compare_days']}d_{date.today().isoformat()}.csv"
+    headers = {
+        "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}",
+    }
+    return StreamingResponse(iter([output.getvalue()]), media_type="text/csv; charset=utf-8", headers=headers)
+
+
 @app.get("/api/detail")
 def api_detail(
     request: Request,

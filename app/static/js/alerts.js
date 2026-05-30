@@ -163,7 +163,7 @@
       var value = item.key === "all" ? total : Number(summary[item.key] || 0);
       return [
         '<button type="button" class="alert-stat-card ' + app.escapeHtml(item.tone) + (state.alert_type === item.key ? " active" : "") + '" data-alert-type="' + app.escapeHtml(item.key) + '">',
-        '  <span>' + app.escapeHtml(item.label === "全部" ? "真实命中" : item.label) + '</span>',
+        '  <span>' + app.escapeHtml(item.label === "全部" ? "当前命中" : item.label) + '</span>',
         '  <strong>' + value.toLocaleString("zh-CN") + '</strong>',
         '</button>',
       ].join("");
@@ -198,7 +198,10 @@
     elements.alertTableCard.innerHTML = [
       '<div class="alert-table-head">',
       '  <div><p class="section-kicker">预警明细</p><h3>待处理 SKU 清单</h3></div>',
-      '  <span class="summary-badge">当前筛选真实命中 <strong>' + Number(payload.total || items.length).toLocaleString("zh-CN") + '</strong> 条</span>',
+      '  <div class="alert-table-actions">',
+      '    <span class="summary-badge">当前筛选共 <strong>' + Number(payload.total || items.length).toLocaleString("zh-CN") + '</strong> 条</span>',
+      '    <button id="exportAlertsBtn" class="ghost-button" type="button">导出当前明细</button>',
+      '  </div>',
       '</div>',
       '<div class="alert-table-wrap">',
       '<table class="alert-table">',
@@ -208,6 +211,10 @@
       '</tbody></table>',
       '</div>',
     ].join("");
+    var exportButton = document.getElementById("exportAlertsBtn");
+    if (exportButton) {
+      exportButton.addEventListener("click", exportAlerts);
+    }
     Array.from(elements.alertTableCard.querySelectorAll("[data-alert-keyword]")).forEach(function (node) {
       node.addEventListener("click", function () {
         var next = Object.assign({}, state);
@@ -217,6 +224,21 @@
         window.location.href = "/detail?" + new URLSearchParams(next).toString();
       });
     });
+  }
+
+  function exportAlerts() {
+    var params = new URLSearchParams();
+    [
+      "start_date", "end_date", "site", "store", "over_limit", "daily_sales_band",
+      "margin_band", "keyword", "alert_type", "compare_days", "sales_trend",
+      "rank_trend", "margin_status", "stock_status"
+    ].forEach(function (key) {
+      var value = state[key];
+      if (value !== undefined && value !== null && value !== "") {
+        params.set(key, value);
+      }
+    });
+    window.location.href = "/api/alerts/export" + (params.toString() ? ("?" + params.toString()) : "");
   }
 
   function renderPagination(payload) {

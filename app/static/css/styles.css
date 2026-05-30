@@ -1721,6 +1721,14 @@ span.flatpickr-weekday {
   margin-bottom: 14px;
 }
 
+.alert-table-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .alert-table-head h3 {
   margin: 4px 0 0;
   font-size: 22px;

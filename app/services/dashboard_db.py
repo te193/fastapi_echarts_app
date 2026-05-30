@@ -339,6 +339,36 @@ class DashboardDbService:
         ]
         return payload
 
+    def get_alerts_export_payload(
+        self,
+        filters: dict[str, Any],
+        alert_type: str = "all",
+        compare_days: int = 7,
+        sales_trend: str = "all",
+        rank_trend: str = "all",
+        margin_status: str = "all",
+        stock_status: str = "all",
+    ) -> dict[str, Any]:
+        with self.connect() as conn:
+            window = self._resolve_window(conn, filters)
+            payload = self._fetch_alert_center(
+                conn,
+                window,
+                filters,
+                compare_days=compare_days,
+                alert_type=alert_type,
+                sales_trend=sales_trend,
+                rank_trend=rank_trend,
+                margin_status=margin_status,
+                stock_status=stock_status,
+            )
+        return {
+            "items": payload["items"],
+            "window": payload["window"],
+            "comparison_window": payload["comparison_window"],
+            "compare_days": payload["compare_days"],
+        }
+
     def _monthly_goal_metric(
         self,
         target_value: Any,
