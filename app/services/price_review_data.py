@@ -374,28 +374,45 @@ def _generate_skus(rng: random.Random, adjust_date: date, compare_days: int) -> 
 
 def _build_matrix(rows: list[dict[str, Any]], band_key_before: str, band_key_after: str, value_key_before: str, value_key_after: str, matrix_type: str) -> dict[str, Any]:
     band_counts: dict[str, dict[str, Any]] = {}
+    metric_defaults = {
+        "sales_before": 0.0, "sales_after": 0.0,
+        "daily_sales_before": 0.0, "daily_sales_after": 0.0,
+        "revenue_before": 0.0, "revenue_after": 0.0,
+        "profit_before": 0.0, "profit_after": 0.0,
+        "sessions_before": 0.0, "sessions_after": 0.0,
+        "ad_spend_before": 0.0, "ad_spend_after": 0.0,
+        "ad_revenue_before": 0.0, "ad_revenue_after": 0.0,
+    }
+
+    def new_bucket() -> dict[str, Any]:
+        return {
+            "sku_before": 0, "sku_after": 0,
+            "value_before_sum": 0.0, "value_after_sum": 0.0,
+            "value_before_cnt": 0, "value_after_cnt": 0,
+            **metric_defaults,
+        }
+
+    def add_metric(bucket: dict[str, Any], sku: dict[str, Any], suffix: str) -> None:
+        for key in metric_defaults:
+            if key.endswith("_" + suffix):
+                bucket[key] += safe_float(sku.get(key))
+
     for sku in rows:
         band = sku[band_key_before]
         if band not in band_counts:
-            band_counts[band] = {
-                "sku_before": 0, "sku_after": 0,
-                "value_before_sum": 0.0, "value_after_sum": 0.0,
-                "value_before_cnt": 0, "value_after_cnt": 0,
-            }
+            band_counts[band] = new_bucket()
         band_counts[band]["sku_before"] += 1
         band_counts[band]["value_before_sum"] += sku[value_key_before]
         band_counts[band]["value_before_cnt"] += 1
+        add_metric(band_counts[band], sku, "before")
 
         band_a = sku[band_key_after]
         if band_a not in band_counts:
-            band_counts[band_a] = {
-                "sku_before": 0, "sku_after": 0,
-                "value_before_sum": 0.0, "value_after_sum": 0.0,
-                "value_before_cnt": 0, "value_after_cnt": 0,
-            }
+            band_counts[band_a] = new_bucket()
         band_counts[band_a]["sku_after"] += 1
         band_counts[band_a]["value_after_sum"] += sku[value_key_after]
         band_counts[band_a]["value_after_cnt"] += 1
+        add_metric(band_counts[band_a], sku, "after")
 
     total_before = len(rows)
     total_after = len(rows)
@@ -416,13 +433,23 @@ def _build_matrix(rows: list[dict[str, Any]], band_key_before: str, band_key_aft
 
     result_rows: list[dict[str, Any]] = []
     for band in all_bands:
-        counts = band_counts.get(band, {"sku_before": 0, "sku_after": 0, "value_before_sum": 0.0, "value_after_sum": 0.0, "value_before_cnt": 0, "value_after_cnt": 0})
+        counts = band_counts.get(band, new_bucket())
         if use_avg:
             vb = round(counts["value_before_sum"] / counts["value_before_cnt"], 2) if counts["value_before_cnt"] else 0.0
             va = round(counts["value_after_sum"] / counts["value_after_cnt"], 2) if counts["value_after_cnt"] else 0.0
         else:
             vb = round(counts["value_before_sum"], 2)
             va = round(counts["value_after_sum"], 2)
+        revenue_before = counts["revenue_before"]
+        revenue_after = counts["revenue_after"]
+        profit_before = counts["profit_before"]
+        profit_after = counts["profit_after"]
+        sessions_before = counts["sessions_before"]
+        sessions_after = counts["sessions_after"]
+        ad_spend_before = counts["ad_spend_before"]
+        ad_spend_after = counts["ad_spend_after"]
+        ad_revenue_before = counts["ad_revenue_before"]
+        ad_revenue_after = counts["ad_revenue_after"]
         result_rows.append({
             "band": band,
             "sku_before": counts["sku_before"],
@@ -432,6 +459,32 @@ def _build_matrix(rows: list[dict[str, Any]], band_key_before: str, band_key_aft
             "sku_change": counts["sku_after"] - counts["sku_before"],
             "value_before": vb,
             "value_after": va,
+            "daily_sales_before": round(counts["daily_sales_before"], 2),
+            "daily_sales_after": round(counts["daily_sales_after"], 2),
+            "daily_sales_change": round(counts["daily_sales_after"] - counts["daily_sales_before"], 2),
+            "sales_before": round(counts["sales_before"], 2),
+            "sales_after": round(counts["sales_after"], 2),
+            "sales_change": round(counts["sales_after"] - counts["sales_before"], 2),
+            "revenue_before": round(revenue_before, 2),
+            "revenue_after": round(revenue_after, 2),
+            "revenue_change": round(revenue_after - revenue_before, 2),
+            "profit_before": round(profit_before, 2),
+            "profit_after": round(profit_after, 2),
+            "profit_change": round(profit_after - profit_before, 2),
+            "margin_before": round(profit_before / revenue_before, 4) if revenue_before else 0.0,
+            "margin_after": round(profit_after / revenue_after, 4) if revenue_after else 0.0,
+            "sessions_before": round(sessions_before, 2),
+            "sessions_after": round(sessions_after, 2),
+            "sessions_change": round(sessions_after - sessions_before, 2),
+            "conversion_before": round(counts["sales_before"] / sessions_before, 4) if sessions_before else 0.0,
+            "conversion_after": round(counts["sales_after"] / sessions_after, 4) if sessions_after else 0.0,
+            "ad_spend_before": round(ad_spend_before, 2),
+            "ad_spend_after": round(ad_spend_after, 2),
+            "ad_spend_change": round(ad_spend_after - ad_spend_before, 2),
+            "acos_before": round(ad_spend_before / ad_revenue_before, 4) if ad_revenue_before else 0.0,
+            "acos_after": round(ad_spend_after / ad_revenue_after, 4) if ad_revenue_after else 0.0,
+            "tacos_before": round(ad_spend_before / revenue_before, 4) if revenue_before else 0.0,
+            "tacos_after": round(ad_spend_after / revenue_after, 4) if revenue_after else 0.0,
         })
 
     return {
@@ -444,8 +497,15 @@ def _build_matrix(rows: list[dict[str, Any]], band_key_before: str, band_key_aft
 def _build_country_stats(skus: list[dict[str, Any]]) -> list[dict[str, Any]]:
     from collections import defaultdict
     stats: dict[str, dict[str, Any]] = defaultdict(lambda: {
-        "sku_count": 0, "sales_change": 0, "revenue_change": 0.0,
-        "profit_change": 0.0, "margin_before_sum": 0.0, "margin_after_sum": 0.0, "high_risk_count": 0,
+        "sku_count": 0,
+        "sales_before": 0.0, "sales_after": 0.0, "sales_change": 0.0,
+        "daily_sales_before": 0.0, "daily_sales_after": 0.0,
+        "revenue_before": 0.0, "revenue_after": 0.0, "revenue_change": 0.0,
+        "profit_before": 0.0, "profit_after": 0.0, "profit_change": 0.0,
+        "sessions_before": 0.0, "sessions_after": 0.0,
+        "ad_spend_before": 0.0, "ad_spend_after": 0.0,
+        "ad_revenue_before": 0.0, "ad_revenue_after": 0.0,
+        "high_risk_count": 0,
         "rank_worsen_count": 0, "rank_improve_count": 0,
         "out_of_stock_count": 0, "profit_down_count": 0,
     })
@@ -454,11 +514,23 @@ def _build_country_stats(skus: list[dict[str, Any]]) -> list[dict[str, Any]]:
         c = sku["country"]
         s = stats[c]
         s["sku_count"] += 1
+        s["sales_before"] += safe_float(sku.get("sales_before"))
+        s["sales_after"] += safe_float(sku.get("sales_after"))
         s["sales_change"] += sku["sales_change"]
+        s["daily_sales_before"] += safe_float(sku.get("daily_sales_before"))
+        s["daily_sales_after"] += safe_float(sku.get("daily_sales_after"))
+        s["revenue_before"] += safe_float(sku.get("revenue_before"))
+        s["revenue_after"] += safe_float(sku.get("revenue_after"))
         s["revenue_change"] += sku["revenue_change"]
+        s["profit_before"] += safe_float(sku.get("profit_before"))
+        s["profit_after"] += safe_float(sku.get("profit_after"))
         s["profit_change"] += sku["profit_change"]
-        s["margin_before_sum"] += sku["margin_before"]
-        s["margin_after_sum"] += sku["margin_after"]
+        s["sessions_before"] += safe_float(sku.get("sessions_before"))
+        s["sessions_after"] += safe_float(sku.get("sessions_after"))
+        s["ad_spend_before"] += safe_float(sku.get("ad_spend_before"))
+        s["ad_spend_after"] += safe_float(sku.get("ad_spend_after"))
+        s["ad_revenue_before"] += safe_float(sku.get("ad_revenue_before"))
+        s["ad_revenue_after"] += safe_float(sku.get("ad_revenue_after"))
         if sku["risk_level"] == "高":
             s["high_risk_count"] += 1
         if sku["rank_change"] > 0:
@@ -473,14 +545,43 @@ def _build_country_stats(skus: list[dict[str, Any]]) -> list[dict[str, Any]]:
     result = []
     for c in sorted(stats.keys()):
         s = stats[c]
+        revenue_before = s["revenue_before"]
+        revenue_after = s["revenue_after"]
+        sessions_before = s["sessions_before"]
+        sessions_after = s["sessions_after"]
+        ad_spend_before = s["ad_spend_before"]
+        ad_spend_after = s["ad_spend_after"]
+        ad_revenue_before = s["ad_revenue_before"]
+        ad_revenue_after = s["ad_revenue_after"]
         result.append({
             "country": c,
             "sku_count": s["sku_count"],
-            "sales_change": s["sales_change"],
+            "sales_before": round(s["sales_before"], 2),
+            "sales_after": round(s["sales_after"], 2),
+            "sales_change": round(s["sales_change"], 2),
+            "daily_sales_before": round(s["daily_sales_before"], 2),
+            "daily_sales_after": round(s["daily_sales_after"], 2),
+            "daily_sales_change": round(s["daily_sales_after"] - s["daily_sales_before"], 2),
+            "revenue_before": round(revenue_before, 2),
+            "revenue_after": round(revenue_after, 2),
             "revenue_change": round(s["revenue_change"], 2),
+            "profit_before": round(s["profit_before"], 2),
+            "profit_after": round(s["profit_after"], 2),
             "profit_change": round(s["profit_change"], 2),
-            "margin_before": round(s["margin_before_sum"] / s["sku_count"], 4) if s["sku_count"] else 0.0,
-            "margin_after": round(s["margin_after_sum"] / s["sku_count"], 4) if s["sku_count"] else 0.0,
+            "margin_before": round(s["profit_before"] / revenue_before, 4) if revenue_before else 0.0,
+            "margin_after": round(s["profit_after"] / revenue_after, 4) if revenue_after else 0.0,
+            "sessions_before": round(sessions_before, 2),
+            "sessions_after": round(sessions_after, 2),
+            "sessions_change": round(sessions_after - sessions_before, 2),
+            "conversion_before": round(s["sales_before"] / sessions_before, 4) if sessions_before else 0.0,
+            "conversion_after": round(s["sales_after"] / sessions_after, 4) if sessions_after else 0.0,
+            "ad_spend_before": round(ad_spend_before, 2),
+            "ad_spend_after": round(ad_spend_after, 2),
+            "ad_spend_change": round(ad_spend_after - ad_spend_before, 2),
+            "acos_before": round(ad_spend_before / ad_revenue_before, 4) if ad_revenue_before else 0.0,
+            "acos_after": round(ad_spend_after / ad_revenue_after, 4) if ad_revenue_after else 0.0,
+            "tacos_before": round(ad_spend_before / revenue_before, 4) if revenue_before else 0.0,
+            "tacos_after": round(ad_spend_after / revenue_after, 4) if revenue_after else 0.0,
             "high_risk_count": s["high_risk_count"],
             "high_risk_ratio": round(s["high_risk_count"] / s["sku_count"], 4) if s["sku_count"] else 0.0,
             "rank_worsen_count": s["rank_worsen_count"],

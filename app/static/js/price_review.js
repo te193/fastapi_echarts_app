@@ -508,13 +508,18 @@
 
     var html = [
       '<table class="matrix-table">',
-      '  <thead><tr><th>分层</th><th>调前 SKU</th><th>调前占比</th><th>调后 SKU</th><th>调后占比</th><th>SKU 变化</th></tr></thead>',
+      '  <thead><tr><th>分层</th><th>调前 SKU</th><th>调前占比</th><th>调后 SKU</th><th>调后占比</th><th>SKU 变化</th><th>日销变化</th><th>销售额变化</th><th>毛利润变化</th><th>ACOS变化</th><th>TACOS变化</th></tr></thead>',
       '  <tbody>'
     ];
 
     rows.forEach(function (row) {
       var changeClass = row.sku_change > 0 ? "positive" : row.sku_change < 0 ? "negative" : "neutral";
       var changePrefix = row.sku_change > 0 ? "+" : "";
+      var dailyClass = metricTone(row.daily_sales_change);
+      var revenueClass = metricTone(row.revenue_change);
+      var profitClass = metricTone(row.profit_change);
+      var acosClass = metricTone(row.acos_after - row.acos_before, true);
+      var tacosClass = metricTone(row.tacos_after - row.tacos_before, true);
       html.push([
         '<tr>',
         '  <th class="matrix-axis">' + app.escapeHtml(row.band) + '</th>',
@@ -523,6 +528,11 @@
         '  <td><strong>' + row.sku_after + '</strong></td>',
         '  <td>' + app.formatPercent(row.sku_after_ratio, 1) + '</td>',
         '  <td><span class="' + changeClass + '" style="font-weight:800">' + changePrefix + row.sku_change + '</span></td>',
+        '  <td>' + renderBeforeAfterMetric(row.daily_sales_before, row.daily_sales_after, row.daily_sales_change, "number", dailyClass) + '</td>',
+        '  <td>' + renderBeforeAfterMetric(row.revenue_before, row.revenue_after, row.revenue_change, "currency", revenueClass) + '</td>',
+        '  <td>' + renderBeforeAfterMetric(row.profit_before, row.profit_after, row.profit_change, "currency", profitClass) + '</td>',
+        '  <td>' + renderBeforeAfterMetric(row.acos_before, row.acos_after, row.acos_after - row.acos_before, "percent", acosClass) + '</td>',
+        '  <td>' + renderBeforeAfterMetric(row.tacos_before, row.tacos_after, row.tacos_after - row.tacos_before, "percent", tacosClass) + '</td>',
         '</tr>'
       ].join(""));
     });
@@ -530,16 +540,46 @@
     html.push([
       '<tr style="border-top:2px solid #d5deeb;font-weight:800">',
       '  <th class="matrix-axis">合计</th>',
-      '  <td>' + totalBefore + '</td>',
+      '  <td>' + formatNumber(totalBefore, 0) + '</td>',
       '  <td>100%</td>',
-      '  <td>' + totalAfter + '</td>',
+      '  <td>' + formatNumber(totalAfter, 0) + '</td>',
       '  <td>100%</td>',
       '  <td>' + (totalAfter - totalBefore) + '</td>',
+      '  <td colspan="5"></td>',
       '</tr>'
     ].join(""));
 
     html.push('  </tbody></table>');
     if (elements.matrixChart) elements.matrixChart.innerHTML = html.join("");
+  }
+
+  function metricTone(value, lowerIsBetter) {
+    var n = Number(value || 0);
+    if (Math.abs(n) < 0.000001) return "neutral";
+    return lowerIsBetter ? (n < 0 ? "positive" : "negative") : (n > 0 ? "positive" : "negative");
+  }
+
+  function formatNumber(value, digits) {
+    return Number(value || 0).toLocaleString("zh-CN", {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits
+    });
+  }
+
+  function formatMetricValue(value, type) {
+    if (type === "currency") return app.formatCurrency(Number(value || 0));
+    if (type === "percent") return app.formatPercent(Number(value || 0), 1);
+    return formatNumber(value, 2);
+  }
+
+  function renderBeforeAfterMetric(before, after, change, type, tone) {
+    var prefix = Number(change || 0) > 0 ? "+" : "";
+    return [
+      '<div class="metric-compare-cell">',
+      '  <span>' + formatMetricValue(before, type) + ' → ' + formatMetricValue(after, type) + '</span>',
+      '  <strong class="' + tone + '">' + prefix + formatMetricValue(change, type) + '</strong>',
+      '</div>'
+    ].join("");
   }
 
   // ===== Countries =====
@@ -689,19 +729,30 @@
   function renderCountryTable(items) {
     if (!elements.countryTableBody) return;
     if (!items.length) {
-      elements.countryTableBody.innerHTML = '<tr><td colspan="13"><div class="empty-state">暂无数据</div></td></tr>';
+      elements.countryTableBody.innerHTML = '<tr><td colspan="18"><div class="empty-state">暂无数据</div></td></tr>';
       return;
     }
     elements.countryTableBody.innerHTML = items.map(function (item) {
+      var dailyClass = metricTone(item.daily_sales_change);
+      var revenueClass = metricTone(item.revenue_change);
+      var profitClass = metricTone(item.profit_change);
+      var sessionsClass = metricTone(item.sessions_change);
+      var acosClass = metricTone(item.acos_after - item.acos_before, true);
+      var tacosClass = metricTone(item.tacos_after - item.tacos_before, true);
       return [
         '<tr>',
         '<td><strong>' + app.escapeHtml(item.country) + '</strong></td>',
         '<td>' + item.sku_count + '</td>',
         '<td>' + (item.sales_change > 0 ? "+" : "") + item.sales_change + '</td>',
-        '<td>' + app.formatCurrency(item.revenue_change) + '</td>',
-        '<td>' + app.formatCurrency(item.profit_change) + '</td>',
+        '<td><span class="' + dailyClass + '" style="font-weight:800">' + (item.daily_sales_change > 0 ? "+" : "") + formatNumber(item.daily_sales_change, 2) + '</span></td>',
+        '<td><span class="' + revenueClass + '" style="font-weight:800">' + app.formatCurrency(item.revenue_change) + '</span></td>',
+        '<td><span class="' + profitClass + '" style="font-weight:800">' + app.formatCurrency(item.profit_change) + '</span></td>',
+        '<td>' + renderBeforeAfterMetric(item.sessions_before, item.sessions_after, item.sessions_change, "number", sessionsClass) + '</td>',
+        '<td>' + app.formatPercent(item.conversion_after, 1) + '</td>',
         '<td>' + app.formatPercent(item.margin_after, 1) + '</td>',
         '<td>' + app.formatPercent(item.margin_before, 1) + '</td>',
+        '<td>' + renderBeforeAfterMetric(item.acos_before, item.acos_after, item.acos_after - item.acos_before, "percent", acosClass) + '</td>',
+        '<td>' + renderBeforeAfterMetric(item.tacos_before, item.tacos_after, item.tacos_after - item.tacos_before, "percent", tacosClass) + '</td>',
         '<td>' + item.rank_worsen_count + '</td>',
         '<td>' + item.rank_improve_count + '</td>',
         '<td>' + item.out_of_stock_count + '</td>',

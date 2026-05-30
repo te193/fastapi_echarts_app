@@ -2401,11 +2401,12 @@ span.flatpickr-weekday {
 
 .matrix-wrap {
   margin-top: 18px;
+  overflow-x: auto;
 }
 
 .matrix-table {
   width: 100%;
-  table-layout: fixed;
+  min-width: 1420px;
   border-collapse: separate;
   border-spacing: 12px 14px;
 }
@@ -2424,7 +2425,7 @@ span.flatpickr-weekday {
 }
 
 .matrix-table thead th:first-child {
-  width: 180px;
+  min-width: 150px;
 }
 
 .matrix-table tbody .matrix-axis {
@@ -2487,6 +2488,20 @@ span.flatpickr-weekday {
   line-height: 1.2;
   text-align: right;
   white-space: nowrap;
+}
+
+.metric-compare-cell {
+  display: grid;
+  gap: 4px;
+  min-width: 116px;
+  font-size: 12px;
+  line-height: 1.25;
+  color: #5b6f89;
+}
+
+.metric-compare-cell strong {
+  font-size: 13px;
+  color: var(--text);
 }
 
 .matrix-cell-compare .positive {
