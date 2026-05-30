@@ -531,7 +531,7 @@
         '  <td><strong>' + row.sku_after + '</strong></td>',
         '  <td>' + app.formatPercent(row.sku_after_ratio, 1) + '</td>',
         '  <td><span class="' + changeClass + '" style="font-weight:800">' + changePrefix + row.sku_change + '</span></td>',
-        '  <td><button class="ghost-button compact-toggle" type="button" data-matrix-band="' + app.escapeHtml(row.band) + '">' + (isExpanded ? "收起" : "查看指标") + '</button></td>',
+        '  <td><button class="metric-toggle" type="button" data-matrix-band="' + app.escapeHtml(row.band) + '"><span>' + (isExpanded ? "收起" : "指标") + '</span><b>' + (isExpanded ? "−" : "+") + '</b></button></td>',
         '</tr>'
       ].join(""));
       if (isExpanded) {
@@ -599,25 +599,49 @@
   }
 
   function renderMetricDetailGrid(item) {
-    var metrics = [
-      ["日销", item.daily_sales_before, item.daily_sales_after, item.daily_sales_change, "number", false],
-      ["销量", item.sales_before, item.sales_after, item.sales_change, "number0", false],
-      ["销售额", item.revenue_before, item.revenue_after, item.revenue_change, "currency", false],
-      ["毛利润", item.profit_before, item.profit_after, item.profit_change, "currency", false],
-      ["毛利率", item.margin_before, item.margin_after, item.margin_after - item.margin_before, "percent", false],
-      ["Sessions", item.sessions_before, item.sessions_after, item.sessions_change, "number0", false],
-      ["转化率", item.conversion_before, item.conversion_after, item.conversion_after - item.conversion_before, "percent", false],
-      ["广告花费", item.ad_spend_before, item.ad_spend_after, item.ad_spend_change, "currency", true],
-      ["ACOS", item.acos_before, item.acos_after, item.acos_after - item.acos_before, "percent", true],
-      ["TACOS", item.tacos_before, item.tacos_after, item.tacos_after - item.tacos_before, "percent", true],
+    var groups = [
+      {
+        title: "经营表现",
+        metrics: [
+          ["日销", item.daily_sales_before, item.daily_sales_after, item.daily_sales_change, "number", false],
+          ["销量", item.sales_before, item.sales_after, item.sales_change, "number0", false],
+          ["销售额", item.revenue_before, item.revenue_after, item.revenue_change, "currency", false],
+          ["毛利润", item.profit_before, item.profit_after, item.profit_change, "currency", false],
+          ["毛利率", item.margin_before, item.margin_after, item.margin_after - item.margin_before, "percent", false],
+        ],
+      },
+      {
+        title: "流量转化",
+        metrics: [
+          ["Sessions", item.sessions_before, item.sessions_after, item.sessions_change, "number0", false],
+          ["转化率", item.conversion_before, item.conversion_after, item.conversion_after - item.conversion_before, "percent", false],
+        ],
+      },
+      {
+        title: "广告效率",
+        metrics: [
+          ["广告花费", item.ad_spend_before, item.ad_spend_after, item.ad_spend_change, "currency", true],
+          ["ACOS", item.acos_before, item.acos_after, item.acos_after - item.acos_before, "percent", true],
+          ["TACOS", item.tacos_before, item.tacos_after, item.tacos_after - item.tacos_before, "percent", true],
+        ],
+      },
     ];
-    return '<div class="metric-detail-grid">' + metrics.map(function (metric) {
-      var tone = metricTone(metric[3], metric[5]);
+    return '<div class="metric-detail-panel">' + groups.map(function (group) {
       return [
-        '<div class="metric-detail-card">',
-        '  <span>' + app.escapeHtml(metric[0]) + '</span>',
-        renderBeforeAfterMetric(metric[1], metric[2], metric[3], metric[4], tone),
-        '</div>'
+        '<section class="metric-detail-group">',
+        '  <h4>' + app.escapeHtml(group.title) + '</h4>',
+        '  <div class="metric-detail-grid">',
+        group.metrics.map(function (metric) {
+          var tone = metricTone(metric[3], metric[5]);
+          return [
+            '<div class="metric-detail-card">',
+            '  <span>' + app.escapeHtml(metric[0]) + '</span>',
+            renderBeforeAfterMetric(metric[1], metric[2], metric[3], metric[4], tone),
+            '</div>'
+          ].join("");
+        }).join(""),
+        '  </div>',
+        '</section>'
       ].join("");
     }).join("") + '</div>';
   }
@@ -790,7 +814,7 @@
         '<td>' + item.profit_down_count + '</td>',
         '<td>' + app.formatPercent(item.rank_worsen_ratio, 1) + '</td>',
         '<td>' + app.formatPercent(item.rank_improve_ratio, 1) + '</td>',
-        '<td><button class="ghost-button compact-toggle" type="button" data-country-metric="' + app.escapeHtml(item.country) + '">' + (isExpanded ? "收起" : "查看指标") + '</button></td>',
+        '<td><button class="metric-toggle" type="button" data-country-metric="' + app.escapeHtml(item.country) + '"><span>' + (isExpanded ? "收起" : "指标") + '</span><b>' + (isExpanded ? "−" : "+") + '</b></button></td>',
         '</tr>'
       ];
       if (isExpanded) {
