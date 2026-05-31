@@ -2713,7 +2713,7 @@ span.flatpickr-weekday {
 }
 
 .price-review-drawer {
-  width: min(720px, calc(100vw - 96px));
+  width: min(680px, calc(100vw - 80px));
 }
 
 .drawer-subtitle {
@@ -2730,33 +2730,42 @@ span.flatpickr-weekday {
 
 .flow-diagram-stage {
   position: relative;
+  display: grid;
+  grid-template-columns: 124px minmax(150px, 1fr) 124px;
+  gap: 12px;
   height: var(--flow-height);
-  min-height: 210px;
+  min-height: 190px;
+  padding: 18px;
   border-radius: 18px;
   background: #071027;
-  overflow: hidden;
+  overflow: visible;
 }
 
-.flow-diagram-stage svg {
-  position: absolute;
-  inset: 0;
+.flow-node-column,
+.flow-svg-column {
+  position: relative;
+  min-width: 0;
+}
+
+.flow-svg-column svg {
+  display: block;
   width: 100%;
   height: 100%;
 }
 
-.flow-diagram-stage path {
+.flow-svg-column path {
   fill: none;
   stroke: #27d7c2;
   stroke-linecap: round;
   opacity: 0.82;
 }
 
-.flow-node {
+.flow-node-static {
   position: absolute;
-  z-index: 2;
+  left: 0;
+  right: 0;
   display: grid;
   place-items: center;
-  min-width: 96px;
   height: 32px;
   padding: 0 10px;
   border: 1px solid rgba(39, 215, 194, 0.9);
@@ -2765,14 +2774,6 @@ span.flatpickr-weekday {
   color: #dffefa;
   font-size: 12px;
   font-weight: 900;
-}
-
-.flow-node.left {
-  left: 28px;
-}
-
-.flow-node.right {
-  right: 28px;
 }
 
 .flow-legend {

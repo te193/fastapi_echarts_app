@@ -597,10 +597,6 @@
       '<section class="drawer-block">',
       '  <h3>分层迁移流向图</h3>',
       renderFlowDiagram(row, data),
-      '</section>',
-      '<section class="drawer-block">',
-      '  <h3>分层指标流转明细</h3>',
-      renderMetricDetailGrid(row),
       '</section>'
     ].join("");
     elements.priceReviewDrawerMask.classList.remove("hidden");
@@ -623,25 +619,27 @@
     if (!flows.length) {
       flows = [{ source: row.band, target: row.band, value: row.sku_after || row.sku_before || 0 }];
     }
-    var max = flows.reduce(function (m, flow) { return Math.max(m, Number(flow.value || 0)); }, 1);
     var leftBands = Array.from(new Set(flows.map(function (flow) { return flow.source; })));
     var rightBands = Array.from(new Set(flows.map(function (flow) { return flow.target; })));
     var leftIndex = {};
     var rightIndex = {};
     leftBands.forEach(function (band, index) { leftIndex[band] = index; });
     rightBands.forEach(function (band, index) { rightIndex[band] = index; });
-    var height = Math.max(leftBands.length, rightBands.length, 3) * 52 + 36;
-    function yFor(index) { return 36 + index * 52; }
+    var laneCount = Math.max(leftBands.length, rightBands.length, 3);
+    var height = laneCount * 54 + 24;
+    var max = flows.reduce(function (m, flow) { return Math.max(m, Number(flow.value || 0)); }, 1);
+    function yFor(index) { return 28 + index * 54; }
     var paths = flows.map(function (flow) {
       var y1 = yFor(leftIndex[flow.source]);
       var y2 = yFor(rightIndex[flow.target]);
       var width = Math.max(2, Math.round(2 + (Number(flow.value || 0) / max) * 8));
-      return '<path d="M142 ' + y1 + ' C230 ' + y1 + ', 250 ' + y2 + ', 338 ' + y2 + '" stroke-width="' + width + '" />';
+      return '<path d="M0 ' + y1 + ' C76 ' + y1 + ', 76 ' + y2 + ', 152 ' + y2 + '" stroke-width="' + width + '" />';
     }).join("");
-    var labels = leftBands.map(function (band, index) {
-      return '<div class="flow-node left" style="top:' + (yFor(index) - 16) + 'px">' + app.escapeHtml(band) + '</div>';
-    }).join("") + rightBands.map(function (band, index) {
-      return '<div class="flow-node right" style="top:' + (yFor(index) - 16) + 'px">' + app.escapeHtml(band) + '</div>';
+    var leftLabels = leftBands.map(function (band, index) {
+      return '<div class="flow-node-static" style="top:' + (yFor(index) - 16) + 'px">' + app.escapeHtml(band) + '</div>';
+    }).join("");
+    var rightLabels = rightBands.map(function (band, index) {
+      return '<div class="flow-node-static" style="top:' + (yFor(index) - 16) + 'px">' + app.escapeHtml(band) + '</div>';
     }).join("");
     var legend = flows.slice(0, 5).map(function (flow) {
       return '<li><span>' + app.escapeHtml(flow.source) + ' → ' + app.escapeHtml(flow.target) + '</span><strong>' + flow.value + ' SKU</strong></li>';
@@ -649,10 +647,11 @@
     return [
       '<div class="flow-diagram-card" style="--flow-height:' + height + 'px">',
       '  <div class="flow-diagram-stage">',
-      labels,
-      '    <svg viewBox="0 0 480 ' + height + '" preserveAspectRatio="none" aria-hidden="true">',
+      '    <div class="flow-node-column">' + leftLabels + '</div>',
+      '    <div class="flow-svg-column"><svg viewBox="0 0 152 ' + height + '" preserveAspectRatio="none" aria-hidden="true">',
       paths,
-      '    </svg>',
+      '    </svg></div>',
+      '    <div class="flow-node-column">' + rightLabels + '</div>',
       '  </div>',
       '  <ul class="flow-legend">' + legend + '</ul>',
       '</div>'
