@@ -2728,12 +2728,44 @@ span.flatpickr-weekday {
   gap: 14px;
 }
 
+.flow-retention-strip {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(20, 184, 166, 0.28);
+  border-radius: 14px;
+  background: rgba(236, 253, 249, 0.8);
+  color: #31506c;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.flow-retention-strip strong {
+  color: #073b4c;
+}
+
+.flow-retention-strip em {
+  font-style: normal;
+  color: #028477;
+}
+
 .flow-sankey-chart {
   width: 100%;
-  height: 330px;
+  height: 300px;
   border-radius: 18px;
   background: #071027;
   overflow: hidden;
+}
+
+.flow-empty-state {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: rgba(223, 254, 250, 0.72);
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .flow-legend {

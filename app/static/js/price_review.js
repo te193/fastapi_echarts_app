@@ -619,12 +619,25 @@
     var flows = allFlows.filter(function (flow) {
       return flow.source === row.band || flow.target === row.band;
     }).sort(function (a, b) { return b.value - a.value; });
-    if (!flows.length) flows = [{ source: row.band, target: row.band, value: row.sku_after || row.sku_before || 0 }];
-    var legend = flows.slice(0, 8).map(function (flow) {
+    var retained = flows.find(function (flow) {
+      return flow.source === row.band && flow.target === row.band;
+    });
+    var retainedValue = retained ? Number(retained.value || 0) : Math.min(Number(row.sku_before || 0), Number(row.sku_after || 0));
+    var retainedRatio = row.sku_before ? retainedValue / row.sku_before : 0;
+    var moveFlows = flows.filter(function (flow) {
+      return flow.source !== flow.target;
+    });
+    var legend = moveFlows.slice(0, 8).map(function (flow) {
       return '<li><span>' + app.escapeHtml(flow.source) + ' → ' + app.escapeHtml(flow.target) + '</span><strong>' + flow.value + ' SKU</strong></li>';
     }).join("");
+    if (!legend) legend = '<li><span>无跨分层迁移</span><strong>0 SKU</strong></li>';
     return [
       '<div class="flow-diagram-card">',
+      '  <div class="flow-retention-strip">',
+      '    <span>本层留存</span>',
+      '    <strong>' + retainedValue.toLocaleString("zh-CN") + ' SKU</strong>',
+      '    <em>' + app.formatPercent(retainedRatio, 1) + '</em>',
+      '  </div>',
       '  <div id="matrixFlowSankey" class="flow-sankey-chart">',
       '  </div>',
       '  <ul class="flow-legend">' + legend + '</ul>',
@@ -638,9 +651,12 @@
     if (charts.matrixFlow) charts.matrixFlow.dispose();
     var allFlows = data.flows || [];
     var flows = allFlows.filter(function (flow) {
-      return flow.source === row.band || flow.target === row.band;
+      return (flow.source === row.band || flow.target === row.band) && flow.source !== flow.target;
     });
-    if (!flows.length) flows = [{ source: row.band, target: row.band, value: row.sku_after || row.sku_before || 0 }];
+    if (!flows.length) {
+      host.innerHTML = '<div class="flow-empty-state">没有跨分层流入或流出，主要是本层留存。</div>';
+      return;
+    }
     var nodes = {};
     var links = flows.map(function (flow) {
       var source = flow.source + "（调前）";
@@ -665,18 +681,21 @@
         type: "sankey",
         data: Object.keys(nodes).map(function (key) { return nodes[key]; }),
         links: links,
-        left: 12,
-        right: 18,
-        top: 18,
-        bottom: 18,
-        nodeWidth: 18,
-        nodeGap: 14,
+        left: 92,
+        right: 96,
+        top: 22,
+        bottom: 22,
+        nodeWidth: 12,
+        nodeGap: 18,
         draggable: false,
         emphasis: { focus: "adjacency" },
         label: {
           color: "#dffefa",
           fontWeight: 800,
-          fontSize: 12
+          fontSize: 12,
+          formatter: function (params) {
+            return String(params.name || "").replace("（调前）", "").replace("（调后）", "");
+          }
         },
         itemStyle: {
           color: "#082a45",
