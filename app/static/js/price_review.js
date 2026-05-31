@@ -602,6 +602,9 @@
     elements.priceReviewDrawerMask.classList.remove("hidden");
     elements.priceReviewDrawer.classList.remove("hidden");
     elements.priceReviewDrawer.setAttribute("aria-hidden", "false");
+    window.requestAnimationFrame(function () {
+      renderMatrixSankey(row, data);
+    });
   }
 
   function closePriceReviewDrawer() {
@@ -613,56 +616,81 @@
 
   function renderFlowDiagram(row, data) {
     var allFlows = data.flows || [];
-    var incoming = allFlows.filter(function (flow) {
-      return flow.target === row.band && flow.source !== row.band;
+    var flows = allFlows.filter(function (flow) {
+      return flow.source === row.band || flow.target === row.band;
     }).sort(function (a, b) { return b.value - a.value; });
-    var outgoing = allFlows.filter(function (flow) {
-      return flow.source === row.band && flow.target !== row.band;
-    }).sort(function (a, b) { return b.value - a.value; });
-    var retained = allFlows.find(function (flow) {
-      return flow.source === row.band && flow.target === row.band;
-    });
-    var retainedValue = retained ? Number(retained.value || 0) : 0;
-    var legendFlows = []
-      .concat(retainedValue ? [{ source: row.band, target: row.band, value: retainedValue }] : [])
-      .concat(incoming)
-      .concat(outgoing);
-    var legend = legendFlows.slice(0, 6).map(function (flow) {
+    if (!flows.length) flows = [{ source: row.band, target: row.band, value: row.sku_after || row.sku_before || 0 }];
+    var legend = flows.slice(0, 8).map(function (flow) {
       return '<li><span>' + app.escapeHtml(flow.source) + ' → ' + app.escapeHtml(flow.target) + '</span><strong>' + flow.value + ' SKU</strong></li>';
     }).join("");
-    if (!legend) {
-      legend = '<li><span>暂无迁移记录</span><strong>0 SKU</strong></li>';
-    }
-    function flowBar(flow, direction) {
-      var value = Number(flow.value || 0);
-      var base = direction === "in" ? row.sku_after : row.sku_before;
-      var pct = base ? Math.max(6, Math.min(100, Math.round(value / base * 100))) : 6;
-      var label = direction === "in" ? flow.source : flow.target;
-      return [
-        '<div class="flow-bar-row">',
-        '  <span>' + app.escapeHtml(label) + '</span>',
-        '  <div class="flow-bar-track"><i style="width:' + pct + '%"></i></div>',
-        '  <strong>' + value + '</strong>',
-        '</div>'
-      ].join("");
-    }
-    var incomingHtml = incoming.length ? incoming.map(function (flow) { return flowBar(flow, "in"); }).join("") : '<div class="flow-empty">无外部分层流入</div>';
-    var outgoingHtml = outgoing.length ? outgoing.map(function (flow) { return flowBar(flow, "out"); }).join("") : '<div class="flow-empty">无流出到其他分层</div>';
-    var retainedRatio = row.sku_before ? Math.round(retainedValue / row.sku_before * 100) : 0;
     return [
       '<div class="flow-diagram-card">',
-      '  <div class="flow-diagram-stage">',
-      '    <section class="flow-side"><h4>流入来源</h4>' + incomingHtml + '</section>',
-      '    <section class="flow-center-node">',
-      '      <span>当前分层</span>',
-      '      <strong>' + app.escapeHtml(row.band) + '</strong>',
-      '      <small>留存 ' + retainedValue + ' SKU · ' + retainedRatio + '%</small>',
-      '    </section>',
-      '    <section class="flow-side"><h4>流出去向</h4>' + outgoingHtml + '</section>',
+      '  <div id="matrixFlowSankey" class="flow-sankey-chart">',
       '  </div>',
       '  <ul class="flow-legend">' + legend + '</ul>',
       '</div>'
     ].join("");
+  }
+
+  function renderMatrixSankey(row, data) {
+    var host = document.getElementById("matrixFlowSankey");
+    if (!host || typeof echarts === "undefined") return;
+    if (charts.matrixFlow) charts.matrixFlow.dispose();
+    var allFlows = data.flows || [];
+    var flows = allFlows.filter(function (flow) {
+      return flow.source === row.band || flow.target === row.band;
+    });
+    if (!flows.length) flows = [{ source: row.band, target: row.band, value: row.sku_after || row.sku_before || 0 }];
+    var nodes = {};
+    var links = flows.map(function (flow) {
+      var source = flow.source + "（调前）";
+      var target = flow.target + "（调后）";
+      nodes[source] = { name: source, depth: 0 };
+      nodes[target] = { name: target, depth: 1 };
+      return { source: source, target: target, value: Number(flow.value || 0) };
+    });
+    var chart = echarts.init(host);
+    charts.matrixFlow = chart;
+    chart.setOption({
+      tooltip: {
+        trigger: "item",
+        formatter: function (params) {
+          if (params.dataType === "edge") {
+            return params.data.source + " → " + params.data.target + "<br/>" + params.data.value + " SKU";
+          }
+          return params.name;
+        }
+      },
+      series: [{
+        type: "sankey",
+        data: Object.keys(nodes).map(function (key) { return nodes[key]; }),
+        links: links,
+        left: 12,
+        right: 18,
+        top: 18,
+        bottom: 18,
+        nodeWidth: 18,
+        nodeGap: 14,
+        draggable: false,
+        emphasis: { focus: "adjacency" },
+        label: {
+          color: "#dffefa",
+          fontWeight: 800,
+          fontSize: 12
+        },
+        itemStyle: {
+          color: "#082a45",
+          borderColor: "#27d7c2",
+          borderWidth: 1,
+          borderRadius: 4
+        },
+        lineStyle: {
+          color: "gradient",
+          curveness: 0.48,
+          opacity: 0.72
+        }
+      }]
+    });
   }
 
   function matrixBandInsight(type, row) {
