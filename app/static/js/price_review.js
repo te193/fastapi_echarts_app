@@ -563,7 +563,7 @@
       '  <div class="matrix-muted">100%</div>',
       '  <div class="matrix-number"><strong>' + formatNumber(totalAfter, 0) + '</strong></div>',
       '  <div class="matrix-muted">100%</div>',
-      '  <div><span class="matrix-change-pill neutral">对等平衡</span></div>',
+      '  <div></div>',
       '  <div></div>',
       '</div>'
     ].join(""));
