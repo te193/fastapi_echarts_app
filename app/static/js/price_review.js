@@ -613,45 +613,52 @@
 
   function renderFlowDiagram(row, data) {
     var allFlows = data.flows || [];
-    var flows = allFlows.filter(function (flow) {
-      return flow.source === row.band || flow.target === row.band;
+    var incoming = allFlows.filter(function (flow) {
+      return flow.target === row.band && flow.source !== row.band;
     }).sort(function (a, b) { return b.value - a.value; });
-    if (!flows.length) {
-      flows = [{ source: row.band, target: row.band, value: row.sku_after || row.sku_before || 0 }];
-    }
-    var leftBands = Array.from(new Set(flows.map(function (flow) { return flow.source; })));
-    var rightBands = Array.from(new Set(flows.map(function (flow) { return flow.target; })));
-    var leftIndex = {};
-    var rightIndex = {};
-    leftBands.forEach(function (band, index) { leftIndex[band] = index; });
-    rightBands.forEach(function (band, index) { rightIndex[band] = index; });
-    var laneCount = Math.max(leftBands.length, rightBands.length, 3);
-    var height = laneCount * 54 + 24;
-    var max = flows.reduce(function (m, flow) { return Math.max(m, Number(flow.value || 0)); }, 1);
-    function yFor(index) { return 28 + index * 54; }
-    var paths = flows.map(function (flow) {
-      var y1 = yFor(leftIndex[flow.source]);
-      var y2 = yFor(rightIndex[flow.target]);
-      var width = Math.max(2, Math.round(2 + (Number(flow.value || 0) / max) * 8));
-      return '<path d="M0 ' + y1 + ' C76 ' + y1 + ', 76 ' + y2 + ', 152 ' + y2 + '" stroke-width="' + width + '" />';
-    }).join("");
-    var leftLabels = leftBands.map(function (band, index) {
-      return '<div class="flow-node-static" style="top:' + (yFor(index) - 16) + 'px">' + app.escapeHtml(band) + '</div>';
-    }).join("");
-    var rightLabels = rightBands.map(function (band, index) {
-      return '<div class="flow-node-static" style="top:' + (yFor(index) - 16) + 'px">' + app.escapeHtml(band) + '</div>';
-    }).join("");
-    var legend = flows.slice(0, 5).map(function (flow) {
+    var outgoing = allFlows.filter(function (flow) {
+      return flow.source === row.band && flow.target !== row.band;
+    }).sort(function (a, b) { return b.value - a.value; });
+    var retained = allFlows.find(function (flow) {
+      return flow.source === row.band && flow.target === row.band;
+    });
+    var retainedValue = retained ? Number(retained.value || 0) : 0;
+    var legendFlows = []
+      .concat(retainedValue ? [{ source: row.band, target: row.band, value: retainedValue }] : [])
+      .concat(incoming)
+      .concat(outgoing);
+    var legend = legendFlows.slice(0, 6).map(function (flow) {
       return '<li><span>' + app.escapeHtml(flow.source) + ' → ' + app.escapeHtml(flow.target) + '</span><strong>' + flow.value + ' SKU</strong></li>';
     }).join("");
+    if (!legend) {
+      legend = '<li><span>暂无迁移记录</span><strong>0 SKU</strong></li>';
+    }
+    function flowBar(flow, direction) {
+      var value = Number(flow.value || 0);
+      var base = direction === "in" ? row.sku_after : row.sku_before;
+      var pct = base ? Math.max(6, Math.min(100, Math.round(value / base * 100))) : 6;
+      var label = direction === "in" ? flow.source : flow.target;
+      return [
+        '<div class="flow-bar-row">',
+        '  <span>' + app.escapeHtml(label) + '</span>',
+        '  <div class="flow-bar-track"><i style="width:' + pct + '%"></i></div>',
+        '  <strong>' + value + '</strong>',
+        '</div>'
+      ].join("");
+    }
+    var incomingHtml = incoming.length ? incoming.map(function (flow) { return flowBar(flow, "in"); }).join("") : '<div class="flow-empty">无外部分层流入</div>';
+    var outgoingHtml = outgoing.length ? outgoing.map(function (flow) { return flowBar(flow, "out"); }).join("") : '<div class="flow-empty">无流出到其他分层</div>';
+    var retainedRatio = row.sku_before ? Math.round(retainedValue / row.sku_before * 100) : 0;
     return [
-      '<div class="flow-diagram-card" style="--flow-height:' + height + 'px">',
+      '<div class="flow-diagram-card">',
       '  <div class="flow-diagram-stage">',
-      '    <div class="flow-node-column">' + leftLabels + '</div>',
-      '    <div class="flow-svg-column"><svg viewBox="0 0 152 ' + height + '" preserveAspectRatio="none" aria-hidden="true">',
-      paths,
-      '    </svg></div>',
-      '    <div class="flow-node-column">' + rightLabels + '</div>',
+      '    <section class="flow-side"><h4>流入来源</h4>' + incomingHtml + '</section>',
+      '    <section class="flow-center-node">',
+      '      <span>当前分层</span>',
+      '      <strong>' + app.escapeHtml(row.band) + '</strong>',
+      '      <small>留存 ' + retainedValue + ' SKU · ' + retainedRatio + '%</small>',
+      '    </section>',
+      '    <section class="flow-side"><h4>流出去向</h4>' + outgoingHtml + '</section>',
       '  </div>',
       '  <ul class="flow-legend">' + legend + '</ul>',
       '</div>'

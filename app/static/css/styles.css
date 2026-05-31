@@ -2731,49 +2731,99 @@ span.flatpickr-weekday {
 .flow-diagram-stage {
   position: relative;
   display: grid;
-  grid-template-columns: 124px minmax(150px, 1fr) 124px;
-  gap: 12px;
-  height: var(--flow-height);
-  min-height: 190px;
-  padding: 18px;
+  grid-template-columns: minmax(0, 1fr) 150px minmax(0, 1fr);
+  gap: 14px;
+  min-height: 250px;
+  padding: 18px 16px;
   border-radius: 18px;
   background: #071027;
-  overflow: visible;
+  overflow: hidden;
 }
 
-.flow-node-column,
-.flow-svg-column {
-  position: relative;
+.flow-side {
+  display: grid;
+  align-content: start;
+  gap: 10px;
   min-width: 0;
 }
 
-.flow-svg-column svg {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-
-.flow-svg-column path {
-  fill: none;
-  stroke: #27d7c2;
-  stroke-linecap: round;
-  opacity: 0.82;
-}
-
-.flow-node-static {
-  position: absolute;
-  left: 0;
-  right: 0;
-  display: grid;
-  place-items: center;
-  height: 32px;
-  padding: 0 10px;
-  border: 1px solid rgba(39, 215, 194, 0.9);
-  border-radius: 8px;
-  background: rgba(5, 19, 45, 0.92);
-  color: #dffefa;
+.flow-side h4 {
+  margin: 0 0 2px;
+  color: rgba(223, 254, 250, 0.82);
   font-size: 12px;
   font-weight: 900;
+}
+
+.flow-center-node {
+  align-self: center;
+  display: grid;
+  place-items: center;
+  gap: 7px;
+  min-height: 126px;
+  padding: 16px 12px;
+  border: 1px solid rgba(39, 215, 194, 0.9);
+  border-radius: 16px;
+  background: rgba(5, 19, 45, 0.96);
+  color: #dffefa;
+  text-align: center;
+}
+
+.flow-center-node span,
+.flow-center-node small {
+  color: rgba(223, 254, 250, 0.72);
+  font-size: 12px;
+}
+
+.flow-center-node strong {
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.flow-bar-row {
+  display: grid;
+  grid-template-columns: minmax(58px, 0.9fr) minmax(58px, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  color: #dffefa;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.flow-bar-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flow-bar-row strong {
+  min-width: 34px;
+  text-align: right;
+}
+
+.flow-bar-track {
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(39, 215, 194, 0.12);
+  overflow: hidden;
+}
+
+.flow-bar-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #27d7c2;
+}
+
+.flow-empty {
+  display: grid;
+  place-items: center;
+  min-height: 78px;
+  border: 1px dashed rgba(39, 215, 194, 0.28);
+  border-radius: 12px;
+  color: rgba(223, 254, 250, 0.66);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .flow-legend {
