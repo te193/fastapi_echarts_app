@@ -2510,27 +2510,32 @@ span.flatpickr-weekday {
 .matrix-row-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
 }
 
 .matrix-flow-button {
-  min-height: 30px;
-  padding: 5px 10px;
-  border: 1px solid rgba(188, 200, 217, 0.72);
-  border-radius: 999px;
-  background: #ffffff;
-  color: #4f6682;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 6px 12px;
+  border: 1px solid rgba(23, 105, 224, 0.24);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff, #f6f9fd);
+  color: #31557d;
   font: inherit;
   font-size: 12px;
   font-weight: 800;
   cursor: pointer;
   white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(15, 36, 64, 0.04);
 }
 
 .matrix-flow-button:hover {
-  border-color: rgba(23, 105, 224, 0.32);
+  border-color: rgba(23, 105, 224, 0.42);
   color: #1769e0;
+  background: #ffffff;
 }
 
 .matrix-cell-button {
@@ -2616,18 +2621,19 @@ span.flatpickr-weekday {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-height: 30px;
-  padding: 5px 9px 5px 11px;
-  border: 1px solid rgba(20, 184, 166, 0.46);
-  border-radius: 999px;
-  background: rgba(236, 253, 249, 0.85);
+  gap: 7px;
+  min-height: 32px;
+  padding: 6px 11px 6px 13px;
+  border: 1px solid rgba(20, 184, 166, 0.52);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(236, 253, 249, 0.96), rgba(224, 250, 245, 0.92));
   color: #028477;
   font: inherit;
   font-size: 12px;
   font-weight: 800;
   cursor: pointer;
   white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(15, 118, 110, 0.06);
 }
 
 .metric-toggle:hover {
@@ -2639,12 +2645,12 @@ span.flatpickr-weekday {
 .metric-toggle b {
   display: grid;
   place-items: center;
-  width: 17px;
-  height: 17px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
-  background: rgba(20, 184, 166, 0.12);
+  background: rgba(20, 184, 166, 0.16);
   color: #028477;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1;
 }
 
