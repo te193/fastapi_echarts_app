@@ -410,7 +410,7 @@
   }
 
   function formatValue(value, type) {
-    if (type === "currency") return app.formatCurrency(value);
+    if (type === "currency") return formatNumber(value, 2);
     if (type === "percent") return app.formatPercent(value, 1);
     return Number(value || 0).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
   }
@@ -739,7 +739,7 @@
   }
 
   function formatMetricValue(value, type) {
-    if (type === "currency") return app.formatCurrency(Number(value || 0));
+    if (type === "currency") return formatNumber(value, 2);
     if (type === "percent") return app.formatPercent(Number(value || 0), 1);
     if (type === "number0") return formatNumber(value, 0);
     return formatNumber(value, 2);
@@ -972,8 +972,8 @@
         '<td><strong>' + app.escapeHtml(item.country) + '</strong></td>',
         '<td>' + item.sku_count + '</td>',
         '<td>' + (item.sales_change > 0 ? "+" : "") + item.sales_change + '</td>',
-        '<td><span class="' + revenueClass + '" style="font-weight:800">' + app.formatCurrency(item.revenue_change) + '</span></td>',
-        '<td><span class="' + profitClass + '" style="font-weight:800">' + app.formatCurrency(item.profit_change) + '</span></td>',
+        '<td><span class="' + revenueClass + '" style="font-weight:800">' + formatMetricValue(item.revenue_change, "currency") + '</span></td>',
+        '<td><span class="' + profitClass + '" style="font-weight:800">' + formatMetricValue(item.profit_change, "currency") + '</span></td>',
         '<td>' + app.formatPercent(item.margin_after, 1) + '</td>',
         '<td>' + item.rank_worsen_count + '</td>',
         '<td>' + item.rank_improve_count + '</td>',
@@ -1113,7 +1113,7 @@
         '<td>' + Number(item.daily_sales_before).toFixed(2) + '</td>',
         '<td>' + Number(item.daily_sales_after).toFixed(2) + '</td>',
         '<td>' + (item.daily_sales_change > 0 ? "+" : "") + Number(item.daily_sales_change).toFixed(2) + '</td>',
-        '<td>' + app.formatCurrency(item.profit_change) + '</td>',
+        '<td>' + formatMetricValue(item.profit_change, "currency") + '</td>',
         '<td>' + (item.margin_before ? app.formatPercent(item.margin_before, 1) : "—") + '</td>',
         '<td>' + (item.margin_after ? app.formatPercent(item.margin_after, 1) : "—") + '</td>',
         '<td><span class="' + rankChangeClass + '" style="font-weight:800">' + (item.rank_change > 0 ? "+" : "") + item.rank_change + '</span></td>',
