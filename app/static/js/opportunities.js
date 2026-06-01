@@ -140,20 +140,31 @@
   function renderStats(payload) {
     var stats = payload.stats || {};
     var cards = [
-      ["当前机会", stats.total || payload.total_count || 0, "neutral"],
-      ["高毛利可放量", stats.high_margin_scale || 0, "positive"],
-      ["排名改善", stats.rank_improve || 0, "positive"],
-      ["库存充足", stats.inventory_push || 0, "warning"],
-      ["预计可加码销售额", app.formatCompactCurrency(stats.estimated_boost_revenue || 0), "positive"],
+      ["当前机会", stats.total || payload.total_count || 0, "neutral", "all"],
+      ["高毛利可放量", stats.high_margin_scale || 0, "positive", "high_margin_scale"],
+      ["排名改善", stats.rank_improve || 0, "positive", "rank_improve"],
+      ["库存充足", stats.inventory_push || 0, "warning", "inventory_push"],
+      ["预计可加码销售额", app.formatCompactCurrency(stats.estimated_boost_revenue || 0), "positive", ""],
     ];
     elements.opportunityStatsGrid.innerHTML = cards.map(function (item) {
+      var type = item[3] || "";
+      var active = type && state.opportunity_type === type ? " active" : "";
+      var dataAttr = type ? ' data-opportunity-stat-type="' + app.escapeHtml(type) + '"' : "";
       return [
-        '<button type="button" class="alert-stat-card opportunity-stat-card ' + item[2] + '">',
+        '<button type="button" class="alert-stat-card opportunity-stat-card ' + item[2] + active + '"' + dataAttr + '>',
         '  <span>' + app.escapeHtml(item[0]) + '</span>',
         '  <strong>' + (typeof item[1] === "number" ? item[1].toLocaleString("zh-CN") : app.escapeHtml(String(item[1]))) + '</strong>',
         '</button>'
       ].join("");
     }).join("");
+    Array.from(elements.opportunityStatsGrid.querySelectorAll("[data-opportunity-stat-type]")).forEach(function (node) {
+      node.addEventListener("click", function () {
+        state.opportunity_type = this.dataset.opportunityStatType || "all";
+        state.page = 1;
+        syncControls();
+        render();
+      });
+    });
   }
 
   function renderTabs(payload) {
