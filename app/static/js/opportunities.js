@@ -144,7 +144,7 @@
       ["高毛利可放量", stats.high_margin_scale || 0, "positive", "high_margin_scale"],
       ["排名改善", stats.rank_improve || 0, "positive", "rank_improve"],
       ["库存充足", stats.inventory_push || 0, "warning", "inventory_push"],
-      ["预计可加码销售额", app.formatCompactCurrency(stats.estimated_boost_revenue || 0), "positive", "", "日销 × min(可售天数,30) × 15% × 平均售价"],
+      ["预计可加码销售额", formatCompactAmount(stats.estimated_boost_revenue || 0), "positive", "", "日销 × min(可售天数,30) × 15% × 平均售价"],
     ];
     elements.opportunityStatsGrid.innerHTML = cards.map(function (item) {
       var type = item[3] || "";
@@ -227,10 +227,10 @@
       '  <td>' + app.escapeHtml(item.store || "-") + '</td>',
       '  <td>' + app.escapeHtml(item.country || "-") + '</td>',
       '  <td><strong>' + formatNumber(item.daily_sales || 0, 2) + '</strong><span class="table-subtext">' + app.escapeHtml(item.sales_text || "-") + '</span></td>',
-      '  <td><strong>' + app.formatCompactCurrency(item.scoped_revenue || 0) + '</strong><span class="table-subtext">毛利率 ' + app.formatPercent(item.margin || 0, 1) + ' / 毛利 ' + app.formatCompactCurrency(item.profit || 0) + '</span></td>',
+      '  <td><strong>' + formatCompactAmount(item.scoped_revenue || 0) + '</strong><span class="table-subtext">毛利率 ' + app.formatPercent(item.margin || 0, 1) + ' / 毛利 ' + formatCompactAmount(item.profit || 0) + '</span></td>',
       '  <td><strong>' + app.escapeHtml(item.rank_text || "-") + '</strong><span class="table-subtext">Sessions ' + Number(item.recent_sessions || 0).toLocaleString("zh-CN") + ' / CVR ' + app.formatPercent(item.conversion || 0, 1) + '</span></td>',
       '  <td><strong>' + Number(item.fba_sellable_inventory || 0).toLocaleString("zh-CN") + '</strong><span class="table-subtext">可售 ' + formatNumber(item.sellable_days || 0, 1) + ' 天</span></td>',
-      '  <td><strong>TACOS ' + app.formatPercent(item.tacos || 0, 1) + '</strong><span class="table-subtext">ACOS ' + app.formatPercent(item.acos || 0, 1) + ' / 花费 ' + app.formatCompactCurrency(item.ad_spend || 0) + '</span></td>',
+      '  <td><strong>TACOS ' + app.formatPercent(item.tacos || 0, 1) + '</strong><span class="table-subtext">ACOS ' + app.formatPercent(item.acos || 0, 1) + ' / 花费 ' + formatCompactAmount(item.ad_spend || 0) + '</span></td>',
       '  <td><strong>' + formatNumber(item.current_price || 0, 2) + '</strong><span class="table-subtext">35毛利 ' + formatNumber(item.limit_price_35 || 0, 2) + ' / ' + (item.over_limit ? "超限价" : "未超") + '</span></td>',
       '  <td><button class="text-button alert-detail-link" type="button" data-opportunity-keyword="' + app.escapeHtml(item.keyword || "") + '" data-opportunity-label="' + app.escapeHtml(item.label || "") + '">' + app.escapeHtml(item.suggested_action || "查看明细") + '</button></td>',
       '</tr>',
@@ -241,6 +241,26 @@
     return Number(value || 0).toLocaleString("zh-CN", {
       minimumFractionDigits: digits,
       maximumFractionDigits: digits
+    });
+  }
+
+  function formatCompactAmount(value) {
+    var amount = Number(value || 0);
+    var absAmount = Math.abs(amount);
+    if (absAmount >= 100000000) {
+      return (amount / 100000000).toLocaleString("zh-CN", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      }) + "亿";
+    }
+    if (absAmount >= 10000) {
+      return (amount / 10000).toLocaleString("zh-CN", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      }) + "万";
+    }
+    return amount.toLocaleString("zh-CN", {
+      maximumFractionDigits: 0
     });
   }
 
