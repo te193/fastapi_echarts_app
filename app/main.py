@@ -125,6 +125,15 @@ def alerts_page(request: Request) -> HTMLResponse:
     )
 
 
+@app.get("/opportunities", response_class=HTMLResponse)
+def opportunities_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "opportunities.html",
+        {"page": "opportunities", "title": "机会 SKU 池"},
+    )
+
+
 @app.get("/api/meta")
 def api_meta() -> dict:
     return dashboard_service.get_meta()
@@ -262,6 +271,110 @@ def api_alerts_export(
     headers = {
         "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}",
     }
+    return StreamingResponse(iter([output.getvalue()]), media_type="text/csv; charset=utf-8", headers=headers)
+
+
+@app.get("/api/opportunities")
+def api_opportunities(
+    site: str = Query(default="all"),
+    store: str = Query(default="all"),
+    country: str = Query(default="all"),
+    over_limit: str = Query(default="no"),
+    keyword: str = Query(default=""),
+    opportunity_type: str = Query(default="all"),
+    compare_days: int = Query(default=14, ge=7, le=30),
+    stock_status: str = Query(default="all"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=10, le=100),
+) -> dict:
+    filters = build_filters(
+        start_date=None,
+        end_date=None,
+        site=country if country != "all" else site,
+        store=store,
+        over_limit=over_limit,
+        daily_sales_band="all",
+        margin_band="all",
+        keyword=keyword,
+    )
+    return dashboard_service.get_opportunities_payload(
+        filters,
+        opportunity_type=opportunity_type,
+        compare_days=compare_days,
+        stock_status=stock_status,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@app.get("/api/opportunities/export")
+def api_opportunities_export(
+    site: str = Query(default="all"),
+    store: str = Query(default="all"),
+    country: str = Query(default="all"),
+    over_limit: str = Query(default="no"),
+    keyword: str = Query(default=""),
+    opportunity_type: str = Query(default="all"),
+    compare_days: int = Query(default=14, ge=7, le=30),
+    stock_status: str = Query(default="all"),
+) -> StreamingResponse:
+    filters = build_filters(
+        start_date=None,
+        end_date=None,
+        site=country if country != "all" else site,
+        store=store,
+        over_limit=over_limit,
+        daily_sales_band="all",
+        margin_band="all",
+        keyword=keyword,
+    )
+    payload = dashboard_service.get_opportunities_export_payload(
+        filters,
+        opportunity_type=opportunity_type,
+        compare_days=compare_days,
+        stock_status=stock_status,
+    )
+
+    output = io.StringIO(newline="")
+    output.write("\ufeff")
+    writer = csv.writer(output)
+    writer.writerow([
+        "统计周期", "对比周期", "机会类型", "机会分", "MSKU", "店铺", "国家",
+        "日销", "销量变化", "销售额", "毛利率", "毛利润", "排名变化",
+        "Sessions", "转化率", "FBA可售", "可售天数", "ACOS", "TACOS",
+        "广告花费", "售价", "35毛利定价", "10毛利定价", "是否超限价", "建议动作",
+    ])
+    for item in payload["items"]:
+        writer.writerow([
+            payload["window"],
+            payload["comparison_window"],
+            csv_cell_value(item.get("label")),
+            csv_cell_value(item.get("score")),
+            csv_cell_value(item.get("msku")),
+            csv_cell_value(item.get("store")),
+            csv_cell_value(item.get("country")),
+            csv_cell_value(item.get("daily_sales")),
+            csv_cell_value(item.get("sales_text")),
+            csv_cell_value(item.get("scoped_revenue")),
+            csv_cell_value(item.get("margin")),
+            csv_cell_value(item.get("profit")),
+            csv_cell_value(item.get("rank_text")),
+            csv_cell_value(item.get("recent_sessions")),
+            csv_cell_value(item.get("conversion")),
+            csv_cell_value(item.get("fba_sellable_inventory")),
+            csv_cell_value(item.get("sellable_days")),
+            csv_cell_value(item.get("acos")),
+            csv_cell_value(item.get("tacos")),
+            csv_cell_value(item.get("ad_spend")),
+            csv_cell_value(item.get("current_price")),
+            csv_cell_value(item.get("limit_price_35")),
+            csv_cell_value(item.get("limit_price_10")),
+            "是" if item.get("over_limit") else "否",
+            csv_cell_value(item.get("suggested_action")),
+        ])
+
+    filename = f"opportunities_{payload['compare_days']}d_{date.today().isoformat()}.csv"
+    headers = {"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"}
     return StreamingResponse(iter([output.getvalue()]), media_type="text/csv; charset=utf-8", headers=headers)
 
 

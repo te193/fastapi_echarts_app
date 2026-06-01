@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block content %}
+<header class="hero hero-compact opportunity-hero">
+  <h1>机会 SKU 池</h1>
+</header>
+
+<section class="panel filters-panel">
+  <div class="panel-head compact">
+    <div>
+      <p class="section-kicker">筛选区</p>
+      <h2>机会观察口径</h2>
+    </div>
+    <button id="clearFiltersBtn" class="ghost-button" type="button">一键清空</button>
+  </div>
+
+  <div class="filters-grid alert-filters">
+    <label class="filter-control">
+      <span>观察维度</span>
+      <select id="compareDaysSelect"></select>
+    </label>
+    <label class="filter-control">
+      <span>站点</span>
+      <select id="siteSelect"></select>
+    </label>
+    <label class="filter-control">
+      <span>店铺</span>
+      <select id="storeSelect"></select>
+    </label>
+    <label class="filter-control">
+      <span>机会类型</span>
+      <select id="opportunityTypeSelect"></select>
+    </label>
+    <label class="filter-control">
+      <span>库存状态</span>
+      <select id="stockStatusSelect"></select>
+    </label>
+    <label class="filter-control">
+      <span>是否超限价</span>
+      <select id="overLimitSelect"></select>
+    </label>
+    <label class="filter-control">
+      <span>关键词</span>
+      <input id="keywordInput" type="search" placeholder="搜索 SKU / 店铺 / 国家">
+    </label>
+  </div>
+</section>
+
+<section class="alerts-page-section opportunity-page-section">
+  <div class="section-head">
+    <div>
+      <p class="section-kicker">增长机会</p>
+      <h2>机会加码中心</h2>
+    </div>
+    <p id="opportunityPeriodHint" class="summary-hint"></p>
+  </div>
+
+  <div id="opportunityStatsGrid" class="alert-stats-grid opportunity-stats-grid"></div>
+  <div id="opportunityTypeTabs" class="segmented-tabs alert-type-tabs opportunity-type-tabs"></div>
+  <div id="opportunityTableCard" class="panel alert-table-card opportunity-table-card"></div>
+  <div class="pagination-bar">
+    <div id="paginationInfo" class="pagination-info"></div>
+    <div class="pagination-controls">
+      <button id="prevPageBtn" class="ghost-button" type="button">上一页</button>
+      <div id="paginationNumbers" class="pagination-numbers"></div>
+      <button id="nextPageBtn" class="ghost-button" type="button">下一页</button>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', path='js/opportunities.js') }}?v=20260601a"></script>
+{% endblock %}

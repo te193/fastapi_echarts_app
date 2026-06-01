@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ title }}</title>
-  <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}?v=20260601d">
+  <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}?v=20260601e">
 </head>
 <body data-page="{{ page }}">
   <div class="app-shell">
@@ -38,6 +38,11 @@
           <span class="side-nav-icon">警</span>
           <span class="side-nav-label">预警</span>
           <span class="side-nav-full-label">异常预警</span>
+        </a>
+        <a class="side-nav-link {% if page == 'opportunities' %}active{% endif %}" href="/opportunities" title="机会 SKU 池">
+          <span class="side-nav-icon">机</span>
+          <span class="side-nav-label">机会</span>
+          <span class="side-nav-full-label">机会池</span>
         </a>
         <a class="side-nav-link {% if page == 'price_review' %}active{% endif %}" href="/price-review" title="调价复盘">
           <span class="side-nav-icon">复</span>

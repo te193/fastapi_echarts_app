@@ -369,6 +369,57 @@ class DashboardDbService:
             "compare_days": payload["compare_days"],
         }
 
+    def get_opportunities_payload(
+        self,
+        filters: dict[str, Any],
+        opportunity_type: str = "all",
+        compare_days: int = 14,
+        stock_status: str = "all",
+        page: int = 1,
+        page_size: int = 20,
+    ) -> dict[str, Any]:
+        with self.connect() as conn:
+            window = self._resolve_opportunity_window(conn, filters, compare_days)
+            payload = self._fetch_opportunity_pool(
+                conn,
+                window,
+                filters,
+                compare_days=compare_days,
+                opportunity_type=opportunity_type,
+                stock_status=stock_status,
+            )
+
+        total = len(payload["items"])
+        safe_page_size = max(10, min(100, int(page_size or 20)))
+        total_pages = max(1, math.ceil(total / safe_page_size))
+        safe_page = min(max(1, int(page or 1)), total_pages)
+        start = (safe_page - 1) * safe_page_size
+        payload["total_count"] = total
+        payload["total"] = total
+        payload["page"] = safe_page
+        payload["page_size"] = safe_page_size
+        payload["total_pages"] = total_pages
+        payload["items"] = payload["items"][start:start + safe_page_size]
+        return payload
+
+    def get_opportunities_export_payload(
+        self,
+        filters: dict[str, Any],
+        opportunity_type: str = "all",
+        compare_days: int = 14,
+        stock_status: str = "all",
+    ) -> dict[str, Any]:
+        with self.connect() as conn:
+            window = self._resolve_opportunity_window(conn, filters, compare_days)
+            return self._fetch_opportunity_pool(
+                conn,
+                window,
+                filters,
+                compare_days=compare_days,
+                opportunity_type=opportunity_type,
+                stock_status=stock_status,
+            )
+
     def _monthly_goal_metric(
         self,
         target_value: Any,
@@ -595,6 +646,14 @@ class DashboardDbService:
             period_table=period_table,
             period_code=period_code,
         )
+
+    def _resolve_opportunity_window(self, conn, filters: dict[str, Any], compare_days: int) -> PeriodWindow:
+        bounds = self._get_daily_bounds(conn)
+        days = 30 if compare_days >= 30 else 14 if compare_days >= 14 else 7
+        scoped_filters = dict(filters)
+        scoped_filters["end_date"] = format_day(bounds["max_date"])
+        scoped_filters["start_date"] = format_day(max(bounds["min_date"], bounds["max_date"] - timedelta(days=days - 1)))
+        return self._resolve_window(conn, scoped_filters)
 
     def _get_period_snapshot_date(
         self,
@@ -1439,6 +1498,255 @@ class DashboardDbService:
             "compare_days": compare_days,
             "empty_text": "当前筛选下没有明显异常。",
         }
+
+    def _fetch_opportunity_pool(
+        self,
+        conn,
+        window: PeriodWindow,
+        filters: dict[str, Any],
+        compare_days: int = 14,
+        opportunity_type: str = "all",
+        stock_status: str = "all",
+    ) -> dict[str, Any]:
+        table = self._render_period_table(window.period_table)
+        scoped_filters = dict(filters)
+        scoped_filters["over_limit"] = scoped_filters.get("over_limit") or "no"
+        where_sql, params = self._period_where(window, scoped_filters, alias="p")
+        days = 30 if compare_days >= 30 else 14 if compare_days >= 14 else 7
+        recent_end = window.end_date
+        recent_start = recent_end - timedelta(days=days - 1)
+        previous_end = recent_start - timedelta(days=1)
+        previous_start = previous_end - timedelta(days=days - 1)
+        params.update(
+            {
+                "recent_start": recent_start,
+                "recent_end": recent_end,
+                "previous_start": previous_start,
+                "previous_end": previous_end,
+            }
+        )
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                select
+                    p.item_key,
+                    p.seller_sku_adj,
+                    p.seller_name_new,
+                    p.country,
+                    p.sales_qty,
+                    p.sales_amount,
+                    p.order_gross_profit,
+                    p.order_gross_margin,
+                    p.daily_sales,
+                    p.fba_sellable_inventory,
+                    p.current_price,
+                    p.limit_price,
+                    p.limit_price_10,
+                    p.over_limit_flag,
+                    p.ad_spend,
+                    p.ad_sales,
+                    p.acos,
+                    p.tacos,
+                    sum(case when d.dt_date between %(recent_start)s and %(recent_end)s then d.sales_qty else 0 end) as recent_sales_qty,
+                    sum(case when d.dt_date between %(previous_start)s and %(previous_end)s then d.sales_qty else 0 end) as previous_sales_qty,
+                    sum(case when d.dt_date between %(recent_start)s and %(recent_end)s then d.sessions_total else 0 end) as recent_sessions,
+                    sum(case when d.dt_date between %(previous_start)s and %(previous_end)s then d.sessions_total else 0 end) as previous_sessions,
+                    avg(case when d.dt_date between %(recent_start)s and %(recent_end)s and d.ranking > 0 then d.ranking end) as recent_rank,
+                    avg(case when d.dt_date between %(previous_start)s and %(previous_end)s and d.ranking > 0 then d.ranking end) as previous_rank
+                from {table} p
+                left join dashboard_product_performance_daily d
+                  on d.item_key = p.item_key
+                 and d.dt_date between %(previous_start)s and %(recent_end)s
+                where {where_sql}
+                  and coalesce(p.seller_sku_adj, '') <> ''
+                  and (coalesce(p.sales_qty, 0) > 0 or coalesce(p.sales_amount, 0) > 0)
+                group by p.item_key, p.seller_sku_adj, p.seller_name_new, p.country
+                """,
+                params,
+            )
+            rows = cursor.fetchall()
+
+        items = [self._build_opportunity_item(row, days) for row in rows]
+        items = [item for item in items if item["opportunity_types"]]
+        if opportunity_type != "all":
+            items = [item for item in items if opportunity_type in item["opportunity_types"]]
+        if stock_status == "enough":
+            items = [item for item in items if item["stock_status"] == "enough"]
+        elif stock_status == "short":
+            items = [item for item in items if item["stock_status"] == "short"]
+        items.sort(key=lambda item: (-item["score"], -item["scoped_revenue"], item["msku"]))
+
+        type_defs = self._opportunity_type_defs()
+        summary = {item["key"]: 0 for item in type_defs if item["key"] != "all"}
+        boost_revenue = 0.0
+        for item in items:
+            for key in item["opportunity_types"]:
+                if key in summary:
+                    summary[key] += 1
+            boost_revenue += item["estimated_boost_revenue"]
+
+        return {
+            "items": items,
+            "summary": summary,
+            "stats": {
+                "total": len(items),
+                "high_margin_scale": summary.get("high_margin_scale", 0),
+                "rank_improve": summary.get("rank_improve", 0),
+                "inventory_push": summary.get("inventory_push", 0),
+                "estimated_boost_revenue": round(boost_revenue, 2),
+            },
+            "types": type_defs,
+            "window": f"近{days}天 {format_day(recent_start)} ~ {format_day(recent_end)}",
+            "comparison_window": f"前{days}天 {format_day(previous_start)} ~ {format_day(previous_end)}",
+            "compare_days": days,
+            "empty_text": "当前筛选下没有符合加码条件的机会 SKU。",
+        }
+
+    def _opportunity_type_defs(self) -> list[dict[str, str]]:
+        return [
+            {"key": "all", "label": "全部机会", "rule": "展示所有满足机会规则的 SKU，按机会分从高到低排序。"},
+            {"key": "high_margin_scale", "label": "高毛利可放量", "rule": "毛利率不低于25%，日销不低于1，可售天数不低于21天，且未超限价。"},
+            {"key": "rank_improve", "label": "排名改善", "rule": "近 N 天平均排名较前 N 天改善至少5名，且改善幅度不低于20%。"},
+            {"key": "inventory_push", "label": "库存充足待推", "rule": "可售天数不低于30天，毛利率不低于15%，日销不低于0.5。"},
+            {"key": "low_sales_high_margin", "label": "低销高毛利", "rule": "毛利率不低于35%，日销低于1，可售天数不低于21天。"},
+            {"key": "ad_efficiency", "label": "广告效率可加码", "rule": "TACOS不高于8%或ACOS不高于25%，毛利率不低于20%，且有销售或广告表现。"},
+        ]
+
+    def _build_opportunity_item(self, row: dict[str, Any], compare_days: int) -> dict[str, Any]:
+        sales_qty = to_float(row.get("sales_qty"))
+        sales_amount = to_float(row.get("sales_amount"))
+        profit = to_float(row.get("order_gross_profit"))
+        margin = to_float(row.get("order_gross_margin"))
+        daily_sales = to_float(row.get("daily_sales"))
+        fba_sellable = to_float(row.get("fba_sellable_inventory"))
+        sellable_days = fba_sellable / daily_sales if daily_sales > 0 else 0.0
+        previous_qty = to_float(row.get("previous_sales_qty"))
+        recent_qty = to_float(row.get("recent_sales_qty"))
+        sales_change_rate = (recent_qty - previous_qty) / previous_qty if previous_qty else (1.0 if recent_qty > 0 else 0.0)
+        previous_sessions = to_float(row.get("previous_sessions"))
+        recent_sessions = to_float(row.get("recent_sessions"))
+        sessions_change_rate = (recent_sessions - previous_sessions) / previous_sessions if previous_sessions else (1.0 if recent_sessions > 0 else 0.0)
+        previous_rank_raw = row.get("previous_rank")
+        recent_rank_raw = row.get("recent_rank")
+        previous_rank = int(round(to_float(previous_rank_raw))) if previous_rank_raw is not None else None
+        recent_rank = int(round(to_float(recent_rank_raw))) if recent_rank_raw is not None else None
+        rank_delta = (previous_rank - recent_rank) if previous_rank is not None and recent_rank is not None else 0
+        rank_improve_ratio = (rank_delta / previous_rank) if previous_rank else 0.0
+        ad_spend = to_float(row.get("ad_spend"))
+        ad_sales = to_float(row.get("ad_sales"))
+        acos = to_float(row.get("acos"))
+        tacos = to_float(row.get("tacos"))
+        over_limit = bool(row.get("over_limit_flag"))
+
+        types: list[str] = []
+        if margin >= 0.25 and daily_sales >= 1 and sellable_days >= 21 and not over_limit:
+            types.append("high_margin_scale")
+        if rank_delta >= 5 and rank_improve_ratio >= 0.20 and sellable_days >= 14:
+            types.append("rank_improve")
+        if sellable_days >= 30 and margin >= 0.15 and daily_sales >= 0.5 and not over_limit:
+            types.append("inventory_push")
+        if margin >= 0.35 and daily_sales < 1 and sellable_days >= 21 and not over_limit:
+            types.append("low_sales_high_margin")
+        if (tacos <= 0.08 or (acos > 0 and acos <= 0.25)) and margin >= 0.20 and (sales_amount > 0 or ad_spend > 0):
+            types.append("ad_efficiency")
+
+        stock_status = "enough" if sellable_days >= 21 else "short"
+        score = self._opportunity_score(
+            margin=margin,
+            daily_sales=daily_sales,
+            sales_amount=sales_amount,
+            sales_change_rate=sales_change_rate,
+            rank_improve_ratio=rank_improve_ratio,
+            sessions_change_rate=sessions_change_rate,
+            sellable_days=sellable_days,
+            over_limit=over_limit,
+            tacos=tacos,
+        )
+        primary_type = types[0] if types else "observe"
+        avg_price = sales_amount / sales_qty if sales_qty else 0
+        estimated_boost_revenue = round(max(daily_sales, 0) * min(max(sellable_days, 0), 30) * 0.15 * avg_price, 2)
+        return {
+            "type": primary_type,
+            "opportunity_types": types,
+            "label": self._opportunity_label(primary_type),
+            "score": score,
+            "msku": str(row.get("seller_sku_adj") or "-"),
+            "store": str(row.get("seller_name_new") or "-"),
+            "country": str(row.get("country") or "-"),
+            "keyword": str(row.get("seller_sku_adj") or ""),
+            "daily_sales": round(daily_sales, 2),
+            "sales_change_rate": round(sales_change_rate, 4),
+            "sales_text": f"{recent_qty:.0f} / {previous_qty:.0f} ({sales_change_rate:+.1%})",
+            "scoped_revenue": round(sales_amount, 2),
+            "profit": round(profit, 2),
+            "margin": round(margin, 4),
+            "rank_text": f"{previous_rank or '—'} -> {recent_rank or '—'}",
+            "rank_delta": rank_delta,
+            "recent_sessions": round(recent_sessions),
+            "conversion": round(recent_qty / recent_sessions, 4) if recent_sessions else 0,
+            "fba_sellable_inventory": round(fba_sellable),
+            "sellable_days": round(sellable_days, 1),
+            "stock_status": stock_status,
+            "acos": round(acos, 4),
+            "tacos": round(tacos, 4),
+            "ad_spend": round(ad_spend, 2),
+            "current_price": round(to_float(row.get("current_price")), 2),
+            "limit_price_35": round(to_float(row.get("limit_price")), 2),
+            "limit_price_10": round(to_float(row.get("limit_price_10")), 2),
+            "over_limit": over_limit,
+            "estimated_boost_revenue": estimated_boost_revenue,
+            "suggested_action": self._opportunity_action(primary_type),
+        }
+
+    def _opportunity_score(
+        self,
+        margin: float,
+        daily_sales: float,
+        sales_amount: float,
+        sales_change_rate: float,
+        rank_improve_ratio: float,
+        sessions_change_rate: float,
+        sellable_days: float,
+        over_limit: bool,
+        tacos: float,
+    ) -> int:
+        margin_score = min(max(margin, 0) / 0.35, 1) * 25
+        sales_score = (min(max(sales_change_rate, 0), 1) * 0.4 + min(daily_sales / 5, 1) * 0.35 + min(sales_amount / 50000, 1) * 0.25) * 25
+        traffic_score = (min(max(rank_improve_ratio, 0), 0.5) / 0.5 * 0.55 + min(max(sessions_change_rate, 0), 1) * 0.45) * 20
+        if sellable_days < 14:
+            stock_score = 0
+        elif sellable_days <= 60:
+            stock_score = min((sellable_days - 14) / 46, 1) * 20
+        else:
+            stock_score = 18
+        risk_penalty = 0
+        if over_limit:
+            risk_penalty += 4
+        if tacos > 0.12:
+            risk_penalty += 3
+        if sellable_days < 14:
+            risk_penalty += 2
+        if margin < 0.15:
+            risk_penalty += 1
+        return max(0, min(100, int(round(margin_score + sales_score + traffic_score + stock_score - risk_penalty))))
+
+    def _opportunity_label(self, key: str) -> str:
+        return {
+            "high_margin_scale": "高毛利可放量",
+            "rank_improve": "排名改善",
+            "inventory_push": "库存充足待推",
+            "low_sales_high_margin": "低销高毛利",
+            "ad_efficiency": "广告效率可加码",
+        }.get(key, "机会观察")
+
+    def _opportunity_action(self, key: str) -> str:
+        return {
+            "high_margin_scale": "建议加广告或重点推款",
+            "rank_improve": "建议观察排名趋势并加资源承接",
+            "inventory_push": "建议做促销、广告或调价测试",
+            "low_sales_high_margin": "建议测试降价或提高曝光",
+            "ad_efficiency": "建议提高预算或扩词",
+        }.get(key, "建议人工复核后再处理")
 
     def _build_alert_metric_item(self, row: dict[str, Any], compare_days: int) -> dict[str, Any]:
         previous_qty = to_float(row.get("previous_sales_qty"))

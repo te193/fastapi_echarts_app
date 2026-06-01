@@ -1780,10 +1780,66 @@ span.flatpickr-weekday {
   color: #c23e52;
 }
 
+.alert-label.positive {
+  background: rgba(20, 184, 166, 0.12);
+  color: #078274;
+}
+
 .alert-detail-link {
   border: 0;
   background: transparent;
   cursor: pointer;
+}
+
+.opportunity-page-section {
+  margin-top: 28px;
+}
+
+.opportunity-stat-card.positive {
+  border-color: rgba(20, 184, 166, 0.32);
+  background: linear-gradient(180deg, rgba(239, 253, 249, 0.96), rgba(255, 255, 255, 0.96));
+}
+
+.opportunity-stat-card.warning {
+  border-color: rgba(217, 119, 6, 0.26);
+  background: linear-gradient(180deg, rgba(255, 249, 236, 0.96), rgba(255, 255, 255, 0.96));
+}
+
+.opportunity-table {
+  min-width: 1680px;
+}
+
+.opportunity-table td:nth-child(6),
+.opportunity-table td:nth-child(7),
+.opportunity-table td:nth-child(8),
+.opportunity-table td:nth-child(9),
+.opportunity-table td:nth-child(10),
+.opportunity-table td:nth-child(11),
+.opportunity-table td:nth-child(12) {
+  white-space: normal;
+  min-width: 150px;
+  color: #183456;
+  font-weight: 700;
+}
+
+.table-subtext {
+  display: block;
+  margin-top: 4px;
+  color: #6c819a;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.opportunity-score {
+  display: inline-grid;
+  min-width: 42px;
+  height: 30px;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(20, 184, 166, 0.12);
+  color: #078274;
+  font-weight: 900;
 }
 
 .monthly-goal-panel {
