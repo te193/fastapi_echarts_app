@@ -2393,12 +2393,24 @@ span.flatpickr-weekday {
   overflow: hidden;
 }
 
+body[data-page="matrix"] .matrix-panel {
+  padding: 20px 22px 22px;
+}
+
+body[data-page="matrix"] .matrix-panel .panel-head {
+  padding: 0;
+}
+
 .matrix-summary {
   margin: 0;
   padding: 0 24px 10px;
   color: var(--muted);
   font-size: 13px;
   line-height: 1.7;
+}
+
+body[data-page="matrix"] .matrix-summary {
+  padding: 4px 0 12px;
 }
 
 .matrix-toolbar {
@@ -2418,12 +2430,23 @@ span.flatpickr-weekday {
   overflow-x: auto;
 }
 
+body[data-page="matrix"] .matrix-wrap {
+  margin-top: 8px;
+  padding: 8px 0 0;
+  border: 0;
+  background: transparent;
+}
+
 .matrix-table {
   width: 100%;
   min-width: 920px;
   border-collapse: separate;
   border-spacing: 4px;
   table-layout: fixed;
+}
+
+body[data-page="matrix"] .matrix-table {
+  border-spacing: 8px;
 }
 
 .matrix-table th,
@@ -2441,6 +2464,12 @@ span.flatpickr-weekday {
   white-space: nowrap;
 }
 
+body[data-page="matrix"] .matrix-table thead th {
+  height: 30px;
+  color: #163457;
+  font-size: 15px;
+}
+
 .matrix-table thead th:first-child {
   width: 116px;
 }
@@ -2455,8 +2484,18 @@ span.flatpickr-weekday {
   white-space: nowrap;
 }
 
+body[data-page="matrix"] .matrix-table tbody th.matrix-axis {
+  padding-right: 8px;
+  color: #163457;
+  font-size: 14px;
+}
+
 .matrix-table tbody td {
   padding: 2px;
+}
+
+body[data-page="matrix"] .matrix-table tbody td {
+  padding: 0;
 }
 
 .matrix-list {
@@ -2595,9 +2634,23 @@ span.flatpickr-weekday {
   transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
 }
 
+body[data-page="matrix"] .matrix-cell-button {
+  min-height: 74px;
+  padding: 11px 14px;
+  border-color: rgba(185, 200, 220, 0.72);
+  border-radius: 13px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.58);
+}
+
 .matrix-cell-button:hover {
   transform: translateY(-2px);
   box-shadow: 0 14px 28px rgba(17, 33, 60, 0.08);
+}
+
+body[data-page="matrix"] .matrix-cell-button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(23, 105, 224, 0.34);
+  box-shadow: 0 10px 22px rgba(17, 33, 60, 0.07);
 }
 
 .matrix-cell-button.active {
@@ -2617,10 +2670,19 @@ span.flatpickr-weekday {
   font-weight: 800;
 }
 
+body[data-page="matrix"] .matrix-cell-count {
+  margin-bottom: 5px;
+  font-size: 18px;
+}
+
 .matrix-cell-meta {
   display: block;
   color: var(--muted);
   font-size: 13px;
+}
+
+body[data-page="matrix"] .matrix-cell-meta {
+  font-size: 12px;
 }
 
 .matrix-cell-compare {
