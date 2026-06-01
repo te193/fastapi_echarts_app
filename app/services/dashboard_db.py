@@ -1469,7 +1469,8 @@ class DashboardDbService:
 
         daily_sales = to_float(row.get("daily_sales"))
         sellable_days = to_float(row.get("sellable_days"))
-        stock_short = daily_sales >= 1 and to_float(row.get("fba_sellable_inventory")) > 0 and sellable_days < 14
+        has_sales_signal = daily_sales > 0 or previous_qty > 0 or recent_qty > 0
+        stock_short = has_sales_signal and sellable_days < 14
 
         alert_types: list[str] = []
         labels: list[str] = []
