@@ -25,6 +25,7 @@ TWO_DECIMAL_EXPORT_COLUMNS = {
     "margin_price_35",
     "margin_price_10",
 }
+CSV_FORMULA_PREFIXES = ("=", "+", "-", "@")
 
 app = FastAPI(title="产品分层看板", version="1.0.0")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
@@ -51,6 +52,10 @@ def csv_cell_value(value, column: str | None = None):
         return f"{Decimal(str(value)):.2f}"
     if isinstance(value, Decimal):
         return str(value)
+    if isinstance(value, str):
+        stripped = value.lstrip()
+        if stripped.startswith(CSV_FORMULA_PREFIXES):
+            return "\t" + value
     return value
 
 
