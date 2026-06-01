@@ -1609,7 +1609,7 @@ class DashboardDbService:
             {"key": "rank_improve", "label": "排名改善", "rule": "近 N 天平均排名较前 N 天改善至少5名，且改善幅度不低于20%。"},
             {"key": "inventory_push", "label": "库存充足待推", "rule": "可售天数不低于30天，毛利率不低于15%，日销不低于0.5。"},
             {"key": "low_sales_high_margin", "label": "低销高毛利", "rule": "毛利率不低于35%，日销低于1，可售天数不低于21天。"},
-            {"key": "ad_efficiency", "label": "广告效率可加码", "rule": "TACOS不高于8%或ACOS不高于25%，毛利率不低于20%，且有销售或广告表现。"},
+            {"key": "ad_efficiency", "label": "广告效率可加码", "rule": "TACOS不高于5%或ACOS不高于20%，毛利率不低于20%，且有销售或广告表现。"},
         ]
 
     def _build_opportunity_item(self, row: dict[str, Any], compare_days: int) -> dict[str, Any]:
@@ -1647,7 +1647,7 @@ class DashboardDbService:
             types.append("inventory_push")
         if margin >= 0.35 and daily_sales < 1 and sellable_days >= 21 and not over_limit:
             types.append("low_sales_high_margin")
-        if (tacos <= 0.08 or (acos > 0 and acos <= 0.25)) and margin >= 0.20 and (sales_amount > 0 or ad_spend > 0):
+        if (tacos <= 0.05 or (acos > 0 and acos <= 0.20)) and margin >= 0.20 and (sales_amount > 0 or ad_spend > 0):
             types.append("ad_efficiency")
 
         stock_status = "enough" if sellable_days >= 21 else "short"
