@@ -2418,6 +2418,47 @@ span.flatpickr-weekday {
   overflow-x: auto;
 }
 
+.matrix-table {
+  width: 100%;
+  min-width: 920px;
+  border-collapse: separate;
+  border-spacing: 4px;
+  table-layout: fixed;
+}
+
+.matrix-table th,
+.matrix-table td {
+  padding: 0;
+  vertical-align: middle;
+}
+
+.matrix-table thead th {
+  height: 34px;
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 900;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.matrix-table thead th:first-child {
+  width: 116px;
+}
+
+.matrix-table tbody th.matrix-axis {
+  width: 116px;
+  padding-right: 10px;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 900;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.matrix-table tbody td {
+  padding: 2px;
+}
+
 .matrix-list {
   width: 100%;
   min-width: 900px;
