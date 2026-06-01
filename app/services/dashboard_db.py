@@ -86,6 +86,16 @@ def compact_currency(value: float) -> str:
     return f"¥{amount:,.0f}"
 
 
+def compact_amount(value: float) -> str:
+    amount = to_float(value)
+    absolute = abs(amount)
+    if absolute >= 100000000:
+        return f"{amount / 100000000:.2f}亿"
+    if absolute >= 10000:
+        return f"{amount / 10000:.2f}万"
+    return f"{amount:,.0f}"
+
+
 def days_in_year(current: date) -> int:
     return (date(current.year + 1, 1, 1) - date(current.year, 1, 1)).days
 
@@ -1819,7 +1829,7 @@ class DashboardDbService:
             "stock_status": "short" if stock_short else "normal",
             "sales_text": f"近{compare_days}天 {recent_qty:.0f} / 前{compare_days}天 {previous_qty:.0f}（{sales_change:+.1%}）",
             "rank_text": f"{previous_rank or '—'} -> {recent_rank or '—'}",
-            "margin_text": f"{margin:.1%} / {compact_currency(sales_amount)}",
+            "margin_text": f"{margin:.1%} / {compact_amount(sales_amount)}",
             "stock_text": f"{sellable_days:.1f} 天 / 日销 {daily_sales:.1f}" if stock_short or daily_sales else "—",
         }
 
