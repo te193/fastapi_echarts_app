@@ -144,7 +144,7 @@
       ["高毛利可放量", stats.high_margin_scale || 0, "positive", "high_margin_scale"],
       ["排名改善", stats.rank_improve || 0, "positive", "rank_improve"],
       ["库存充足", stats.inventory_push || 0, "warning", "inventory_push"],
-      ["预计可加码销售额", app.formatCompactCurrency(stats.estimated_boost_revenue || 0), "positive", ""],
+      ["预计可加码销售额", app.formatCompactCurrency(stats.estimated_boost_revenue || 0), "positive", "", "日销 × min(可售天数,30) × 15% × 平均售价"],
     ];
     elements.opportunityStatsGrid.innerHTML = cards.map(function (item) {
       var type = item[3] || "";
@@ -154,6 +154,7 @@
         '<button type="button" class="alert-stat-card opportunity-stat-card ' + item[2] + active + '"' + dataAttr + '>',
         '  <span>' + app.escapeHtml(item[0]) + '</span>',
         '  <strong>' + (typeof item[1] === "number" ? item[1].toLocaleString("zh-CN") : app.escapeHtml(String(item[1]))) + '</strong>',
+        item[4] ? '  <em class="opportunity-stat-note">' + app.escapeHtml(item[4]) + '</em>' : '',
         '</button>'
       ].join("");
     }).join("");

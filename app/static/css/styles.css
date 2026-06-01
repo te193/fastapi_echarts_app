@@ -1842,6 +1842,16 @@ span.flatpickr-weekday {
   font-weight: 900;
 }
 
+.opportunity-stat-note {
+  display: block;
+  margin-top: 8px;
+  color: #6c819a;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
 .monthly-goal-panel {
   padding: 20px 24px;
   background: var(--panel-solid);
