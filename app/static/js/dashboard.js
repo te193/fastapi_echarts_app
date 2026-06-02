@@ -281,7 +281,7 @@
       '    <div>',
       '      <p class="section-kicker">目标管理</p>',
       '      <h3>月度目标完成情况</h3>',
-      '      <p class="goal-panel-copy">按全量数据展示每月目标、实际完成与达成率。当前月按截至最新数据日的进度目标计算。</p>',
+      '      <p class="goal-panel-copy">按全量数据展示每月整月目标、实际完成与达成率。当前月达成率按截至最新数据日的进度目标计算。</p>',
       '    </div>',
       '    <div id="monthlyGoalTabs" class="segmented-tabs monthly-goal-tabs">',
       monthlyGoalData.metrics.map(function (item) {
@@ -311,7 +311,7 @@
     return [
       '<div class="monthly-goal-legend" aria-label="月度目标图例">',
       '  <span><i class="monthly-legend-bars"><b></b><b></b><b></b></i>实际值：柱状，颜色随完成状态变化</span>',
-      '  <span><i class="monthly-legend-line target"></i>目标值：深色实线</span>',
+      '  <span><i class="monthly-legend-line target"></i>整月目标：深色实线</span>',
       '  <span><i class="monthly-legend-line rate"></i>完成率：蓝色虚线，右侧百分比轴</span>',
       '  <span><i class="monthly-legend-dot done"></i>已达标</span>',
       '  <span><i class="monthly-legend-dot near"></i>接近目标</span>',
@@ -386,7 +386,7 @@
     });
     var target = months.map(function (month) {
       var item = month.metrics[metric.key] || {};
-      return Number(item.progress_target || item.target || 0);
+      return Number(item.target || 0);
     });
     var ratios = months.map(function (month) {
       var item = month.metrics[metric.key] || {};
@@ -406,9 +406,10 @@
           return [
             '<strong>' + app.escapeHtml(month.label) + " " + app.escapeHtml(metric.label) + '</strong>',
             '实际：' + formatMonthlyMetricValue(item.actual, metric.type),
-            '目标：' + formatMonthlyMetricValue(item.progress_target, metric.type),
+            '整月目标：' + formatMonthlyMetricValue(item.target, metric.type),
+            month.is_current && metric.type !== "percent" ? '截至进度目标：' + formatMonthlyMetricValue(item.progress_target, metric.type) : null,
             '完成率：' + (item.ratio === null || item.ratio === undefined ? "—" : app.formatPercent(item.ratio)),
-          ].join("<br>");
+          ].filter(Boolean).join("<br>");
         }
       },
       xAxis: { type: "category", data: labels, axisLabel: { color: "#53657d" } },
