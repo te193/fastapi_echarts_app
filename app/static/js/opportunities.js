@@ -124,6 +124,7 @@
       renderTabs(payload);
       renderTable(payload);
       renderPagination(payload);
+      app.restoreReturnState();
     }).catch(function (error) {
       console.error(error);
       elements.opportunityTableCard.innerHTML = '<div class="empty-state compact">加载失败，请稍后重试。</div>';
@@ -213,7 +214,7 @@
         next.keyword = this.dataset.opportunityKeyword || "";
         next.source = "机会池 / " + (this.dataset.opportunityLabel || "");
         delete next.opportunity_type;
-        window.location.href = "/detail?" + new URLSearchParams(next).toString();
+        app.navigateWithReturnState("/detail?" + new URLSearchParams(next).toString());
       });
     });
   }

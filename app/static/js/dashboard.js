@@ -200,6 +200,7 @@
       if (elements.matrixChart && elements.matrixSummary) {
         renderMatrix(payload.matrix);
       }
+      app.restoreReturnState();
     }).catch(function (error) {
       console.error(error);
     }).then(function () {
@@ -543,7 +544,7 @@
         next.keyword = this.dataset.alertKeyword || "";
         next.source = "异常预警 / " + (this.dataset.alertLabel || "");
         next.page = 1;
-        window.location.href = "/detail?" + new URLSearchParams(next).toString();
+        app.navigateWithReturnState("/detail?" + new URLSearchParams(next).toString());
       });
     });
   }
@@ -751,7 +752,7 @@
         next.over_limit = this.dataset.overLimit === "yes" ? "yes" : "all";
         next.source = drillLabel + " / " + this.dataset.value + (next.over_limit === "yes" ? " / 超限价" : " / 全部 SKU");
         next.page = 1;
-        window.location.href = "/detail?" + new URLSearchParams(next).toString();
+        app.navigateWithReturnState("/detail?" + new URLSearchParams(next).toString());
       });
     });
   }
@@ -823,7 +824,7 @@
         next.margin_band = this.dataset.marginBand;
         next.source = "矩阵 / " + this.dataset.marginBand + " × " + this.dataset.dailyBand;
         next.page = 1;
-        window.location.href = "/detail?" + new URLSearchParams(next).toString();
+        app.navigateWithReturnState("/detail?" + new URLSearchParams(next).toString());
       });
     });
   }

@@ -88,6 +88,66 @@
     window.history.replaceState({}, "", window.location.pathname + (params.toString() ? ("?" + params.toString()) : ""));
   }
 
+  function returnStateKey() {
+    return "kanban:return-state:" + window.location.pathname + window.location.search;
+  }
+
+  function saveReturnState(extra) {
+    if (!window.sessionStorage) return;
+    try {
+      var payload = Object.assign({
+        scrollY: window.scrollY || window.pageYOffset || 0,
+        savedAt: Date.now()
+      }, extra || {});
+      window.sessionStorage.setItem(returnStateKey(), JSON.stringify(payload));
+    } catch (error) {
+      // Ignore storage failures; navigation should never be blocked by state capture.
+    }
+  }
+
+  function restoreReturnState(options) {
+    if (!window.sessionStorage) return;
+    var settings = Object.assign({ maxAgeMs: 30 * 60 * 1000, retries: 12, delayMs: 80 }, options || {});
+    var raw = null;
+    try {
+      raw = window.sessionStorage.getItem(returnStateKey());
+    } catch (error) {
+      return;
+    }
+    if (!raw) return;
+
+    var payload = null;
+    try {
+      payload = JSON.parse(raw);
+    } catch (error) {
+      window.sessionStorage.removeItem(returnStateKey());
+      return;
+    }
+    if (!payload || Date.now() - Number(payload.savedAt || 0) > settings.maxAgeMs) {
+      window.sessionStorage.removeItem(returnStateKey());
+      return;
+    }
+
+    var targetY = Math.max(0, Number(payload.scrollY || 0));
+    var attempts = 0;
+    function tryScroll() {
+      attempts += 1;
+      var maxScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+      if (maxScroll >= targetY || attempts >= settings.retries) {
+        window.scrollTo({ top: Math.min(targetY, maxScroll), left: 0, behavior: "auto" });
+        window.sessionStorage.removeItem(returnStateKey());
+        return;
+      }
+      window.setTimeout(tryScroll, settings.delayMs);
+    }
+    window.setTimeout(tryScroll, settings.delayMs);
+  }
+
+  function navigateWithReturnState(url, extra) {
+    saveReturnState(extra);
+    window.location.href = url;
+  }
+
   function apiGet(path, params) {
     var url = new URL(path, window.location.origin);
     Object.keys(params || {}).forEach(function (key) {
@@ -474,9 +534,12 @@
     formatPercent: toPercent,
     goalStatusLabel: goalStatusLabel,
     getQuickPeriodForRange: getQuickPeriodForRange,
+    navigateWithReturnState: navigateWithReturnState,
     readQueryState: readQueryState,
     renderFilterChips: renderFilterChips,
+    restoreReturnState: restoreReturnState,
     resolveQuickPeriodRange: resolveQuickPeriodRange,
+    saveReturnState: saveReturnState,
     setSelectOptions: setSelectOptions,
     toneFromRatio: toneFromRatio,
     writeQueryState: writeQueryState

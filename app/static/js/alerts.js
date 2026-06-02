@@ -143,6 +143,7 @@
       renderTabs(payload);
       renderTable(payload);
       renderPagination(payload);
+      app.restoreReturnState();
     }).catch(function (error) {
       console.error(error);
       elements.alertTableCard.innerHTML = '<div class="empty-state compact">加载失败，请稍后重试。</div>';
@@ -221,7 +222,7 @@
         next.keyword = this.dataset.alertKeyword || "";
         next.source = "异常预警 / " + (this.dataset.alertLabel || "");
         delete next.alert_type;
-        window.location.href = "/detail?" + new URLSearchParams(next).toString();
+        app.navigateWithReturnState("/detail?" + new URLSearchParams(next).toString());
       });
     });
   }
