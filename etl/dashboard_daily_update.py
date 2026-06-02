@@ -32,6 +32,7 @@ DEFAULT_STEP_ORDER = [
     "annual_goal_snapshot",
     "restock_snapshot",
     "inventory_snapshot",
+    "inventory_weekly_snapshot",
     "listing_price_snapshot",
     "limit_price_snapshot",
     "period_preset_snapshots",
@@ -228,6 +229,12 @@ create table if not exists etl_datasync.dashboard_restock_daily_snapshot (
     seller_sku_adj varchar(128) not null,
     seller_name_new varchar(128) not null,
     local_quantity decimal(18,4) not null default 0,
+    purchase_shipping_quantity decimal(18,4) not null default 0,
+    purchase_plan_quantity decimal(18,4) not null default 0,
+    local_valid_quantity decimal(18,4) not null default 0,
+    local_qc_quantity decimal(18,4) not null default 0,
+    purchase_cost decimal(18,4) not null default 0,
+    transport_cost decimal(18,4) not null default 0,
     created_at datetime not null default current_timestamp,
     updated_at datetime not null default current_timestamp on update current_timestamp,
     unique key uk_snapshot_item (snapshot_date, item_key),
@@ -255,6 +262,7 @@ create table if not exists etl_datasync.dashboard_inventory_daily_snapshot (
     afn_unsellable_quantity decimal(18,4) not null default 0,
     afn_inbound_working_quantity decimal(18,4) not null default 0,
     stock_up_num decimal(18,4) not null default 0,
+    stock_up_num_price decimal(18,4) not null default 0,
     afn_researching_quantity decimal(18,4) not null default 0,
     total_fulfillable_quantity decimal(18,4) not null default 0,
     created_at datetime not null default current_timestamp,
@@ -262,6 +270,33 @@ create table if not exists etl_datasync.dashboard_inventory_daily_snapshot (
     unique key uk_snapshot_item (snapshot_date, item_key),
     key idx_snapshot_store (snapshot_date, seller_name_new),
     key idx_snapshot_join (snapshot_date, country_category, seller_sku_adj, seller_name_new),
+    key idx_sku (seller_sku_adj)
+) engine=InnoDB default charset=utf8mb4;
+"""
+
+CREATE_INVENTORY_WEEKLY_SQL = """
+create table if not exists etl_datasync.dashboard_inventory_weekly_snapshot (
+    snapshot_date date not null,
+    week_start date not null,
+    week_end date not null,
+    item_key varchar(512) not null,
+    country_category varchar(64) not null,
+    seller_sku_adj varchar(128) not null,
+    seller_name_new varchar(128) not null,
+    available_quantity decimal(18,4) not null default 0,
+    available_cost decimal(18,4) not null default 0,
+    transit_quantity decimal(18,4) not null default 0,
+    transit_cost decimal(18,4) not null default 0,
+    warehouse_quantity decimal(18,4) not null default 0,
+    warehouse_cost decimal(18,4) not null default 0,
+    plan_quantity decimal(18,4) not null default 0,
+    plan_cost decimal(18,4) not null default 0,
+    created_at datetime not null default current_timestamp,
+    updated_at datetime not null default current_timestamp on update current_timestamp,
+    primary key (week_start, item_key),
+    key idx_snapshot_date (snapshot_date),
+    key idx_week_store (week_start, seller_name_new),
+    key idx_week_country (week_start, country_category),
     key idx_sku (seller_sku_adj)
 ) engine=InnoDB default charset=utf8mb4;
 """
@@ -501,6 +536,115 @@ where dt_date between makedate(year(%(biz_date)s), 1) and str_to_date(concat(yea
   and seller_name_new not regexp 'baihuiyi|Yuanoboo|Bailboo|Qianytyy'
   and char_length(seller_sku_adj) between 5 and 10
 group by year(dt_date), month(dt_date);
+"""
+
+DELETE_INVENTORY_WEEKLY_SNAPSHOT_SQL = """
+delete from etl_datasync.dashboard_inventory_weekly_snapshot;
+"""
+
+INSERT_INVENTORY_WEEKLY_SNAPSHOT_SQL = """
+insert into etl_datasync.dashboard_inventory_weekly_snapshot (
+    snapshot_date, week_start, week_end, item_key, country_category, seller_sku_adj, seller_name_new,
+    available_quantity, available_cost, transit_quantity, transit_cost,
+    warehouse_quantity, warehouse_cost, plan_quantity, plan_cost,
+    created_at, updated_at
+)
+with all_snapshot_dates as (
+    select snapshot_date, 'inventory' as source_type from etl_datasync.dashboard_inventory_daily_snapshot
+    union
+    select snapshot_date, 'restock' as source_type from etl_datasync.dashboard_restock_daily_snapshot
+),
+dated_snapshot_dates as (
+    select
+        snapshot_date,
+        source_type,
+        date_sub(snapshot_date, interval weekday(snapshot_date) day) as week_start,
+        date_add(date_sub(snapshot_date, interval weekday(snapshot_date) day), interval 6 day) as week_end
+    from all_snapshot_dates
+    where snapshot_date <= %(snapshot_date)s
+),
+week_dates as (
+    select
+        week_start,
+        max(week_end) as week_end,
+        max(snapshot_date) as snapshot_date
+    from dated_snapshot_dates
+    group by week_start
+),
+inventory_week_dates as (
+    select
+        week_start,
+        max(snapshot_date) as inventory_snapshot_date
+    from dated_snapshot_dates
+    where source_type = 'inventory'
+    group by week_start
+),
+restock_week_dates as (
+    select
+        week_start,
+        max(snapshot_date) as restock_snapshot_date
+    from dated_snapshot_dates
+    where source_type = 'restock'
+    group by week_start
+),
+base_keys as (
+    select
+        w.snapshot_date,
+        w.week_start,
+        w.week_end,
+        i.item_key,
+        i.country_category,
+        i.seller_sku_adj,
+        i.seller_name_new
+    from week_dates w
+    join inventory_week_dates iw
+      on iw.week_start = w.week_start
+    join etl_datasync.dashboard_inventory_daily_snapshot i
+      on i.snapshot_date = iw.inventory_snapshot_date
+    union
+    select
+        w.snapshot_date,
+        w.week_start,
+        w.week_end,
+        r.item_key,
+        r.country_category,
+        r.seller_sku_adj,
+        r.seller_name_new
+    from week_dates w
+    join restock_week_dates rw
+      on rw.week_start = w.week_start
+    join etl_datasync.dashboard_restock_daily_snapshot r
+      on r.snapshot_date = rw.restock_snapshot_date
+)
+select
+    b.snapshot_date,
+    b.week_start,
+    b.week_end,
+    b.item_key,
+    b.country_category,
+    b.seller_sku_adj,
+    b.seller_name_new,
+    coalesce(i.available_total, 0) as available_quantity,
+    coalesce(i.available_price, 0) as available_cost,
+    coalesce(r.purchase_shipping_quantity, 0) as transit_quantity,
+    coalesce(r.purchase_shipping_quantity, 0) * (coalesce(r.purchase_cost, 0) + coalesce(r.transport_cost, 0)) as transit_cost,
+    coalesce(r.local_valid_quantity, 0) + coalesce(r.local_qc_quantity, 0) as warehouse_quantity,
+    (coalesce(r.local_valid_quantity, 0) + coalesce(r.local_qc_quantity, 0)) * (coalesce(r.purchase_cost, 0) + coalesce(r.transport_cost, 0)) as warehouse_cost,
+    coalesce(r.purchase_plan_quantity, 0) as plan_quantity,
+    coalesce(r.purchase_plan_quantity, 0) * (coalesce(r.purchase_cost, 0) + coalesce(r.transport_cost, 0)) as plan_cost,
+    now() as created_at,
+    now() as updated_at
+from base_keys b
+left join inventory_week_dates iw
+  on iw.week_start = b.week_start
+left join restock_week_dates rw
+  on rw.week_start = b.week_start
+left join etl_datasync.dashboard_inventory_daily_snapshot i
+  on i.snapshot_date = iw.inventory_snapshot_date
+ and i.item_key = b.item_key
+left join etl_datasync.dashboard_restock_daily_snapshot r
+  on r.snapshot_date = rw.restock_snapshot_date
+ and r.item_key = b.item_key;
 """
 
 CREATE_GOAL_DIMENSION_SNAPSHOT_SQL = """
@@ -921,27 +1065,39 @@ where snapshot_date = %(snapshot_date)s;
 INSERT_RESTOCK_SQL = """
 insert into etl_datasync.dashboard_restock_daily_snapshot (
     snapshot_date, item_key, country_category, seller_sku_adj, seller_name_new,
-    local_quantity, created_at, updated_at
+    local_quantity, purchase_shipping_quantity, purchase_plan_quantity,
+    local_valid_quantity, local_qc_quantity, purchase_cost, transport_cost,
+    created_at, updated_at
 )
 select
-    date(create_time) as snapshot_date,
-    concat_ws('|', country_category, seller_name_new, seller_sku_adj) as item_key,
-    country_category,
-    seller_sku_adj,
-    seller_name_new,
-    coalesce(max(sc_quantity_local_valid), 0)
-      + coalesce(max(sc_quantity_purchase_shipping), 0)
-      + coalesce(max(sc_quantity_purchase_plan), 0)
-      + coalesce(max(sc_quantity_local_qc), 0) as local_quantity,
+    date(r.create_time) as snapshot_date,
+    concat_ws('|', r.country_category, r.seller_name_new, r.seller_sku_adj) as item_key,
+    r.country_category,
+    r.seller_sku_adj,
+    r.seller_name_new,
+    coalesce(max(r.sc_quantity_local_valid), 0)
+      + coalesce(max(r.sc_quantity_purchase_shipping), 0)
+      + coalesce(max(r.sc_quantity_purchase_plan), 0)
+      + coalesce(max(r.sc_quantity_local_qc), 0) as local_quantity,
+    coalesce(max(r.sc_quantity_purchase_shipping), 0) as purchase_shipping_quantity,
+    coalesce(max(r.sc_quantity_purchase_plan), 0) as purchase_plan_quantity,
+    coalesce(max(r.sc_quantity_local_valid), 0) as local_valid_quantity,
+    coalesce(max(r.sc_quantity_local_qc), 0) as local_qc_quantity,
+    coalesce(max(c.cg_price), 0) as purchase_cost,
+    coalesce(max(c.cg_transport_costs), 0) as transport_cost,
     now() as created_at,
     now() as updated_at
-from etl_datasync.etl_dispose_lx_replenishment_suggest_restocking
-where date(create_time) = %(snapshot_date)s
+from etl_datasync.etl_dispose_lx_replenishment_suggest_restocking r
+left join etl_datasync.etl_dispose_lx_product_local_product_info c
+  on substring_index(c.seller_sku, '-', 1) = r.seller_sku_adj
+ and c.country_category = r.country_category
+ and c.seller_name_new = r.seller_name_new
+where date(r.create_time) = %(snapshot_date)s
 group by
-    date(create_time),
-    country_category,
-    seller_sku_adj,
-    seller_name_new;
+    date(r.create_time),
+    r.country_category,
+    r.seller_sku_adj,
+    r.seller_name_new;
 """
 
 DELETE_INVENTORY_SQL = """
@@ -955,7 +1111,7 @@ insert into etl_datasync.dashboard_inventory_daily_snapshot (
     total, total_price, available_total, available_price, afn_fulfillable_quantity,
     reserved_fc_transfers, reserved_fc_processing, reserved_customerorders,
     afn_unsellable_quantity, afn_inbound_working_quantity, stock_up_num,
-    afn_researching_quantity, total_fulfillable_quantity,
+    stock_up_num_price, afn_researching_quantity, total_fulfillable_quantity,
     created_at, updated_at
 )
 select
@@ -975,6 +1131,7 @@ select
     sum(coalesce(afn_unsellable_quantity, 0)) as afn_unsellable_quantity,
     sum(coalesce(afn_inbound_working_quantity, 0)) as afn_inbound_working_quantity,
     sum(coalesce(stock_up_num, 0)) as stock_up_num,
+    sum(coalesce(stock_up_num_price, 0)) as stock_up_num_price,
     sum(coalesce(afn_researching_quantity, 0)) as afn_researching_quantity,
     sum(coalesce(total_fulfillable_quantity, 0)) as total_fulfillable_quantity,
     now() as created_at,
@@ -1364,6 +1521,7 @@ DDL_STATEMENTS = (
     CREATE_PRODUCT_DAILY_SQL,
     CREATE_RESTOCK_SQL,
     CREATE_INVENTORY_SQL,
+    CREATE_INVENTORY_WEEKLY_SQL,
     CREATE_LISTING_PRICE_SQL,
     CREATE_LIMIT_PRICE_SQL,
     CREATE_PERIOD_SNAPSHOT_SQL,
@@ -1393,6 +1551,7 @@ TABLE_COMMENTS = {
     "dashboard_monthly_goal_actual_snapshot": "月度目标实绩汇总快照",
     "dashboard_goal_dimension_snapshot": "目标差距维度拆解快照",
     "dashboard_annual_goal_snapshot": "年度目标达成快照",
+    "dashboard_inventory_weekly_snapshot": "库存周报周度聚合快照",
 }
 
 COLUMN_COMMENTS = {
@@ -1441,6 +1600,12 @@ COLUMN_COMMENTS = {
     "return_amount": "退货金额",
     "net_amount": "净销售额",
     "local_quantity": "本地可用及在途数量",
+    "purchase_shipping_quantity": "采购在途数量",
+    "purchase_plan_quantity": "采购计划数量",
+    "local_valid_quantity": "本地仓有效数量",
+    "local_qc_quantity": "本地仓质检数量",
+    "purchase_cost": "采购单价",
+    "transport_cost": "头程成本",
     "total": "库存总量",
     "total_price": "库存总成本",
     "available_total": "可用库存数量",
@@ -1451,6 +1616,17 @@ COLUMN_COMMENTS = {
     "afn_unsellable_quantity": "FBA不可售库存",
     "afn_inbound_working_quantity": "FBA入库处理中数量",
     "stock_up_num": "备货数量",
+    "stock_up_num_price": "备货成本",
+    "week_start": "周开始日期",
+    "week_end": "周结束日期",
+    "available_quantity": "可用数量",
+    "available_cost": "可用成本",
+    "transit_quantity": "在途数量",
+    "transit_cost": "在途成本",
+    "warehouse_quantity": "在仓数量",
+    "warehouse_cost": "在仓成本",
+    "plan_quantity": "计划数量",
+    "plan_cost": "计划成本",
     "afn_researching_quantity": "FBA调查中数量",
     "total_fulfillable_quantity": "总可售数量",
     "price": "当前售价",
@@ -1544,14 +1720,16 @@ PRODUCT_DAILY_COLUMNS = (
 
 RESTOCK_COLUMNS = (
     "snapshot_date", "item_key", "country_category", "seller_sku_adj", "seller_name_new",
-    "local_quantity", "created_at", "updated_at",
+    "local_quantity", "purchase_shipping_quantity", "purchase_plan_quantity",
+    "local_valid_quantity", "local_qc_quantity", "purchase_cost", "transport_cost",
+    "created_at", "updated_at",
 )
 
 INVENTORY_COLUMNS = (
     "snapshot_date", "item_key", "country_category", "seller_sku_adj", "seller_name_new",
     "total", "total_price", "available_total", "available_price", "afn_fulfillable_quantity",
     "reserved_fc_transfers", "reserved_fc_processing", "reserved_customerorders",
-    "afn_unsellable_quantity", "afn_inbound_working_quantity", "stock_up_num",
+    "afn_unsellable_quantity", "afn_inbound_working_quantity", "stock_up_num", "stock_up_num_price",
     "afn_researching_quantity", "total_fulfillable_quantity",
     "created_at", "updated_at",
 )
@@ -1597,6 +1775,10 @@ STEPS = {
     "annual_goal_snapshot": SqlStep(
         "annual_goal_snapshot",
         (DELETE_ANNUAL_GOAL_SNAPSHOT_SQL, INSERT_ANNUAL_GOAL_SNAPSHOT_SQL),
+    ),
+    "inventory_weekly_snapshot": SqlStep(
+        "inventory_weekly_snapshot",
+        (DELETE_INVENTORY_WEEKLY_SNAPSHOT_SQL, INSERT_INVENTORY_WEEKLY_SNAPSHOT_SQL),
     ),
     "restock_snapshot": SourceLoadStep(
         "restock_snapshot",
@@ -1683,7 +1865,48 @@ def ensure_tables(conn, schemas: SchemaConfig) -> None:
     with conn.cursor() as cursor:
         for sql in DDL_STATEMENTS:
             cursor.execute(with_mysql_comments(render_sql(sql, schemas)))
+        ensure_inventory_weekly_columns(cursor, schemas)
     conn.commit()
+
+
+def ensure_inventory_weekly_columns(cursor, schemas: SchemaConfig) -> None:
+    column_specs = {
+        "dashboard_restock_daily_snapshot": [
+            ("purchase_shipping_quantity", "decimal(18,4) not null default 0", "local_quantity"),
+            ("purchase_plan_quantity", "decimal(18,4) not null default 0", "purchase_shipping_quantity"),
+            ("local_valid_quantity", "decimal(18,4) not null default 0", "purchase_plan_quantity"),
+            ("local_qc_quantity", "decimal(18,4) not null default 0", "local_valid_quantity"),
+            ("purchase_cost", "decimal(18,4) not null default 0", "local_qc_quantity"),
+            ("transport_cost", "decimal(18,4) not null default 0", "purchase_cost"),
+        ],
+        "dashboard_inventory_daily_snapshot": [
+            ("stock_up_num_price", "decimal(18,4) not null default 0", "stock_up_num"),
+        ],
+    }
+    for table_name, specs in column_specs.items():
+        cursor.execute(
+            """
+            select column_name
+            from information_schema.columns
+            where table_schema = %(schema)s
+              and table_name = %(table)s
+            """,
+            {"schema": schemas.target_schema, "table": table_name},
+        )
+        existing = {
+            next(iter(row.values())) if isinstance(row, dict) else row[0]
+            for row in cursor.fetchall()
+        }
+        for column_name, definition, after_column in specs:
+            if column_name in existing:
+                continue
+            comment = COLUMN_COMMENTS.get(column_name)
+            comment_sql = f" comment '{escape_sql_comment(comment)}'" if comment else ""
+            cursor.execute(
+                f"alter table `{schemas.target_schema}`.`{table_name}` "
+                f"add column `{column_name}` {definition}{comment_sql} after `{after_column}`"
+            )
+            existing.add(column_name)
 
 
 def log_task(
@@ -2058,7 +2281,7 @@ def main() -> None:
         "--steps",
         default="all",
         help="Comma separated step names or all. "
-        "Available: product_performance_daily, monthly_goal_actual_snapshot, goal_dimension_snapshot, annual_goal_snapshot, restock_snapshot, inventory_snapshot, "
+        "Available: product_performance_daily, monthly_goal_actual_snapshot, goal_dimension_snapshot, annual_goal_snapshot, restock_snapshot, inventory_snapshot, inventory_weekly_snapshot, "
         "listing_price_snapshot, limit_price_snapshot, period_snapshot, period_preset_snapshots, "
         "price_review_source_load, price_review_tracking.",
     )

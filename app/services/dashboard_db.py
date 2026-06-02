@@ -430,6 +430,350 @@ class DashboardDbService:
                 stock_status=stock_status,
             )
 
+    def get_inventory_weekly_overview(self, filters: dict[str, Any]) -> dict[str, Any]:
+        with self.connect() as conn:
+            weeks = self._fetch_inventory_weekly_trends(conn, filters)
+        return self._build_inventory_weekly_overview(weeks)
+
+    def get_inventory_weekly_trends(self, filters: dict[str, Any]) -> dict[str, Any]:
+        with self.connect() as conn:
+            weeks = self._fetch_inventory_weekly_trends(conn, filters)
+        return {
+            "metrics": self._inventory_metric_defs(),
+            "weeks": weeks,
+            "overview": self._build_inventory_weekly_overview(weeks),
+        }
+
+    def get_inventory_weekly_details(
+        self,
+        filters: dict[str, Any],
+        warning_status: str = "all",
+        metric: str = "all",
+        page: int = 1,
+        page_size: int = 20,
+    ) -> dict[str, Any]:
+        with self.connect() as conn:
+            weeks = self._fetch_inventory_weekly_trends(conn, filters)
+            warning_weeks = {
+                week["week_start"]
+                for week in weeks
+                if week.get("warning")
+                and (metric == "all" or metric in week.get("warning_metrics", []))
+            }
+            rows, total = self._fetch_inventory_weekly_detail_rows(
+                conn,
+                filters,
+                warning_status=warning_status,
+                warning_weeks=warning_weeks,
+                page=page,
+                page_size=page_size,
+            )
+
+        total_pages = max(1, math.ceil(total / max(page_size, 1)))
+        safe_page = min(max(page, 1), total_pages)
+        return {
+            "metrics": self._inventory_metric_defs(),
+            "items": [self._build_inventory_weekly_detail_item(row, weeks, metric) for row in rows],
+            "total": total,
+            "page": safe_page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "warning_status": warning_status,
+            "metric": metric,
+            "overview": self._build_inventory_weekly_overview(weeks),
+        }
+
+    def get_inventory_weekly_export_payload(
+        self,
+        filters: dict[str, Any],
+        warning_status: str = "all",
+        metric: str = "all",
+    ) -> dict[str, Any]:
+        with self.connect() as conn:
+            weeks = self._fetch_inventory_weekly_trends(conn, filters)
+            warning_weeks = {
+                week["week_start"]
+                for week in weeks
+                if week.get("warning")
+                and (metric == "all" or metric in week.get("warning_metrics", []))
+            }
+            rows, total = self._fetch_inventory_weekly_detail_rows(
+                conn,
+                filters,
+                warning_status=warning_status,
+                warning_weeks=warning_weeks,
+                page=1,
+                page_size=50000,
+            )
+        return {
+            "items": [self._build_inventory_weekly_detail_item(row, weeks, metric) for row in rows],
+            "total": total,
+            "overview": self._build_inventory_weekly_overview(weeks),
+        }
+
+    def _inventory_metric_defs(self) -> list[dict[str, str]]:
+        return [
+            {"key": "available", "label": "可用", "color": "#2563eb"},
+            {"key": "transit", "label": "在途", "color": "#14a386"},
+            {"key": "warehouse", "label": "在仓", "color": "#d97706"},
+            {"key": "plan", "label": "计划", "color": "#7c3aed"},
+        ]
+
+    def _inventory_weekly_table(self) -> str:
+        return render_sql("etl_datasync.dashboard_inventory_weekly_snapshot", self.schemas)
+
+    def _inventory_weekly_where(
+        self,
+        filters: dict[str, Any],
+        alias: str = "w",
+        prefix: str = "",
+    ) -> tuple[str, dict[str, Any]]:
+        conditions = ["1=1"]
+        params: dict[str, Any] = {}
+        start_date = parse_day(filters.get("start_date"))
+        end_date = parse_day(filters.get("end_date"))
+        if start_date:
+            conditions.append(f"{alias}.week_start >= %({prefix}start_date)s")
+            params[f"{prefix}start_date"] = start_date
+        if end_date:
+            conditions.append(f"{alias}.week_start <= %({prefix}end_date)s")
+            params[f"{prefix}end_date"] = end_date
+        site = filters.get("site")
+        if site and site != "all":
+            conditions.append(f"{alias}.country_category = %({prefix}site)s")
+            params[f"{prefix}site"] = site
+        store = filters.get("store")
+        if store and store != "all":
+            conditions.append(f"{alias}.seller_name_new = %({prefix}store)s")
+            params[f"{prefix}store"] = store
+        keyword = str(filters.get("keyword") or "").strip()
+        if keyword:
+            conditions.append(
+                f"({alias}.seller_sku_adj like %({prefix}keyword_like)s "
+                f"or {alias}.seller_name_new like %({prefix}keyword_like)s "
+                f"or {alias}.country_category like %({prefix}keyword_like)s)"
+            )
+            params[f"{prefix}keyword_like"] = f"%{keyword}%"
+        return " and ".join(conditions), params
+
+    def _fetch_inventory_weekly_trends(self, conn, filters: dict[str, Any]) -> list[dict[str, Any]]:
+        table = self._inventory_weekly_table()
+        where_sql, params = self._inventory_weekly_where(filters, alias="w")
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                select
+                    w.week_start,
+                    w.week_end,
+                    max(w.snapshot_date) as snapshot_date,
+                    sum(w.available_quantity) as available_quantity,
+                    sum(w.available_cost) as available_cost,
+                    sum(w.transit_quantity) as transit_quantity,
+                    sum(w.transit_cost) as transit_cost,
+                    sum(w.warehouse_quantity) as warehouse_quantity,
+                    sum(w.warehouse_cost) as warehouse_cost,
+                    sum(w.plan_quantity) as plan_quantity,
+                    sum(w.plan_cost) as plan_cost,
+                    count(*) as sku_count
+                from {table} w
+                where {where_sql}
+                group by w.week_start, w.week_end
+                order by w.week_start
+                """,
+                params,
+            )
+            rows = cursor.fetchall()
+
+        weeks: list[dict[str, Any]] = []
+        rate_history: dict[str, list[float]] = {}
+        for row in rows:
+            week = {
+                "week_start": format_day(row["week_start"]),
+                "week_end": format_day(row["week_end"]),
+                "snapshot_date": format_day(row["snapshot_date"]),
+                "sku_count": to_int(row.get("sku_count")),
+                "metrics": {},
+                "warning": False,
+                "warning_metrics": [],
+            }
+            for metric in self._inventory_metric_defs():
+                key = metric["key"]
+                quantity = to_float(row.get(f"{key}_quantity"))
+                cost = to_float(row.get(f"{key}_cost"))
+                previous_week = weeks[-1] if weeks else None
+                previous_quantity = (
+                    to_float(previous_week["metrics"][key]["quantity"])
+                    if previous_week and key in previous_week["metrics"]
+                    else None
+                )
+                previous_cost = (
+                    to_float(previous_week["metrics"][key]["cost"])
+                    if previous_week and key in previous_week["metrics"]
+                    else None
+                )
+                quantity_rate = self._safe_rate(quantity, previous_quantity)
+                cost_rate = self._safe_rate(cost, previous_cost)
+                history = rate_history.setdefault(key, [])
+                historical_volatility = sum(history) / len(history) if history else 0
+                warning = any(
+                    abs(rate) > historical_volatility + 0.05
+                    for rate in (quantity_rate, cost_rate)
+                    if rate is not None
+                )
+                if quantity_rate is not None:
+                    history.append(abs(quantity_rate))
+                if cost_rate is not None:
+                    history.append(abs(cost_rate))
+                if warning:
+                    week["warning"] = True
+                    week["warning_metrics"].append(key)
+                week["metrics"][key] = {
+                    "quantity": round(quantity, 2),
+                    "cost": round(cost, 2),
+                    "previous_quantity": round(previous_quantity, 2) if previous_quantity is not None else None,
+                    "previous_cost": round(previous_cost, 2) if previous_cost is not None else None,
+                    "quantity_rate": round(quantity_rate, 4) if quantity_rate is not None else None,
+                    "cost_rate": round(cost_rate, 4) if cost_rate is not None else None,
+                    "historical_volatility": round(historical_volatility, 4),
+                    "warning": warning,
+                }
+            weeks.append(week)
+        return weeks
+
+    def _safe_rate(self, current: float, previous: float | None) -> float | None:
+        if previous is None or abs(previous) < 0.000001:
+            return None
+        return (current - previous) / abs(previous)
+
+    def _build_inventory_weekly_overview(self, weeks: list[dict[str, Any]]) -> dict[str, Any]:
+        if not weeks:
+            return {"latest_week": None, "cards": [], "warning_count": 0, "warning_metrics": []}
+        latest = weeks[-1]
+        cards = []
+        for metric in self._inventory_metric_defs():
+            key = metric["key"]
+            value = latest["metrics"].get(key, {})
+            cards.append(
+                {
+                    "key": key,
+                    "label": metric["label"],
+                    "color": metric["color"],
+                    "quantity": value.get("quantity", 0),
+                    "cost": value.get("cost", 0),
+                    "quantity_rate": value.get("quantity_rate"),
+                    "cost_rate": value.get("cost_rate"),
+                    "warning": bool(value.get("warning")),
+                }
+            )
+        return {
+            "latest_week": {
+                "week_start": latest["week_start"],
+                "week_end": latest["week_end"],
+                "snapshot_date": latest["snapshot_date"],
+                "sku_count": latest.get("sku_count", 0),
+            },
+            "cards": cards,
+            "warning_count": sum(1 for week in weeks if week.get("warning")),
+            "warning_metrics": latest.get("warning_metrics", []),
+        }
+
+    def _fetch_inventory_weekly_detail_rows(
+        self,
+        conn,
+        filters: dict[str, Any],
+        warning_status: str,
+        warning_weeks: set[str],
+        page: int,
+        page_size: int,
+    ) -> tuple[list[dict[str, Any]], int]:
+        table = self._inventory_weekly_table()
+        where_sql, params = self._inventory_weekly_where(filters, alias="w")
+        where_sql += """
+            and (
+                coalesce(w.available_quantity, 0) <> 0
+                or coalesce(w.available_cost, 0) <> 0
+                or coalesce(w.transit_quantity, 0) <> 0
+                or coalesce(w.transit_cost, 0) <> 0
+                or coalesce(w.warehouse_quantity, 0) <> 0
+                or coalesce(w.warehouse_cost, 0) <> 0
+                or coalesce(w.plan_quantity, 0) <> 0
+                or coalesce(w.plan_cost, 0) <> 0
+            )
+        """
+        if warning_status == "warning":
+            if not warning_weeks:
+                return [], 0
+            placeholders = []
+            for index, week_start in enumerate(sorted(warning_weeks)):
+                key = f"warning_week_{index}"
+                placeholders.append(f"%({key})s")
+                params[key] = week_start
+            where_sql += f" and w.week_start in ({', '.join(placeholders)})"
+        safe_page_size = max(10, min(100, int(page_size or 20)))
+        safe_page = max(1, int(page or 1))
+        params["limit"] = safe_page_size
+        params["offset"] = (safe_page - 1) * safe_page_size
+        with conn.cursor() as cursor:
+            cursor.execute(f"select count(*) as total from {table} w where {where_sql}", params)
+            total = to_int((cursor.fetchone() or {}).get("total"))
+            cursor.execute(
+                f"""
+                select
+                    w.week_start,
+                    w.week_end,
+                    w.snapshot_date,
+                    w.country_category,
+                    w.seller_name_new,
+                    w.seller_sku_adj,
+                    w.available_quantity,
+                    w.available_cost,
+                    w.transit_quantity,
+                    w.transit_cost,
+                    w.warehouse_quantity,
+                    w.warehouse_cost,
+                    w.plan_quantity,
+                    w.plan_cost
+                from {table} w
+                where {where_sql}
+                order by w.week_start desc, w.seller_name_new, w.seller_sku_adj
+                limit %(limit)s offset %(offset)s
+                """,
+                params,
+            )
+            rows = cursor.fetchall()
+        return rows, total
+
+    def _build_inventory_weekly_detail_item(
+        self,
+        row: dict[str, Any],
+        weeks: list[dict[str, Any]],
+        selected_metric: str,
+    ) -> dict[str, Any]:
+        week_start = format_day(row["week_start"])
+        week_lookup = {week["week_start"]: week for week in weeks}
+        week = week_lookup.get(week_start, {})
+        warning_metrics = week.get("warning_metrics", [])
+        if selected_metric != "all":
+            warning_metrics = [key for key in warning_metrics if key == selected_metric]
+        return {
+            "week_start": week_start,
+            "week_end": format_day(row["week_end"]),
+            "snapshot_date": format_day(row["snapshot_date"]),
+            "site": str(row.get("country_category") or "-"),
+            "store": str(row.get("seller_name_new") or "-"),
+            "msku": str(row.get("seller_sku_adj") or "-"),
+            "available_quantity": round(to_float(row.get("available_quantity")), 2),
+            "available_cost": round(to_float(row.get("available_cost")), 2),
+            "transit_quantity": round(to_float(row.get("transit_quantity")), 2),
+            "transit_cost": round(to_float(row.get("transit_cost")), 2),
+            "warehouse_quantity": round(to_float(row.get("warehouse_quantity")), 2),
+            "warehouse_cost": round(to_float(row.get("warehouse_cost")), 2),
+            "plan_quantity": round(to_float(row.get("plan_quantity")), 2),
+            "plan_cost": round(to_float(row.get("plan_cost")), 2),
+            "warning": bool(warning_metrics),
+            "warning_metrics": warning_metrics,
+        }
+
     def _monthly_goal_metric(
         self,
         target_value: Any,

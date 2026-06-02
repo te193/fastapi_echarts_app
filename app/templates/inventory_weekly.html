@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block content %}
+<header class="hero hero-compact inventory-hero">
+  <p class="section-kicker">库存结构</p>
+  <h1>库存周报</h1>
+</header>
+
+<section class="panel filters-panel">
+  <div class="panel-head compact">
+    <div>
+      <p class="section-kicker">筛选区</p>
+      <h2>周度库存观察口径</h2>
+    </div>
+    <button id="clearFiltersBtn" class="ghost-button" type="button">一键清空</button>
+  </div>
+
+  <div class="filters-grid alert-filters inventory-filters">
+    <label class="filter-control">
+      <span>开始周</span>
+      <input id="startDateInput" type="date">
+    </label>
+    <label class="filter-control">
+      <span>结束周</span>
+      <input id="endDateInput" type="date">
+    </label>
+    <label class="filter-control">
+      <span>站点</span>
+      <select id="siteSelect"></select>
+    </label>
+    <label class="filter-control">
+      <span>店铺</span>
+      <select id="storeSelect"></select>
+    </label>
+    <label class="filter-control">
+      <span>预警状态</span>
+      <select id="warningStatusSelect">
+        <option value="all">全部</option>
+        <option value="warning">仅看预警周</option>
+      </select>
+    </label>
+    <label class="filter-control">
+      <span>关键词</span>
+      <input id="keywordInput" type="search" placeholder="搜索 MSKU / 店铺 / 站点">
+    </label>
+  </div>
+</section>
+
+<section class="alerts-page-section inventory-weekly-section">
+  <div class="section-head">
+    <div>
+      <p class="section-kicker">库存周报</p>
+      <h2>周末快照与库存成本趋势</h2>
+    </div>
+    <p id="inventoryPeriodHint" class="summary-hint"></p>
+  </div>
+
+  <div id="inventoryStatsGrid" class="alert-stats-grid inventory-stats-grid"></div>
+
+  <section class="panel inventory-trend-panel">
+    <div class="inventory-panel-head">
+      <div>
+        <p class="section-kicker">趋势图</p>
+        <h3>每周库存趋势</h3>
+      </div>
+      <div id="valueTypeTabs" class="segmented-tabs inventory-value-tabs">
+        <button type="button" class="active" data-value-type="quantity">数量</button>
+        <button type="button" data-value-type="cost">成本</button>
+      </div>
+    </div>
+    <div class="inventory-chart-grid">
+      <div id="inventoryTrendChart" class="inventory-chart"></div>
+      <div id="inventoryStructureChart" class="inventory-structure-chart"></div>
+    </div>
+  </section>
+
+  <div id="inventoryWarningCards" class="inventory-warning-grid"></div>
+
+  <div id="inventoryTableCard" class="panel alert-table-card inventory-table-card"></div>
+  <div class="pagination-bar">
+    <div id="paginationInfo" class="pagination-info"></div>
+    <div class="pagination-controls">
+      <button id="prevPageBtn" class="ghost-button" type="button">上一页</button>
+      <div id="paginationNumbers" class="pagination-numbers"></div>
+      <button id="nextPageBtn" class="ghost-button" type="button">下一页</button>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', path='js/inventory_weekly.js') }}?v=20260602b"></script>
+{% endblock %}

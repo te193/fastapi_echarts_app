@@ -139,6 +139,15 @@ def opportunities_page(request: Request) -> HTMLResponse:
     )
 
 
+@app.get("/inventory-weekly", response_class=HTMLResponse)
+def inventory_weekly_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "inventory_weekly.html",
+        {"page": "inventory_weekly", "title": "库存周报"},
+    )
+
+
 @app.get("/api/meta")
 def api_meta() -> dict:
     return dashboard_service.get_meta()
@@ -379,6 +388,100 @@ def api_opportunities_export(
         ])
 
     filename = f"opportunities_{payload['compare_days']}d_{date.today().isoformat()}.csv"
+    headers = {"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"}
+    return StreamingResponse(iter([output.getvalue()]), media_type="text/csv; charset=utf-8", headers=headers)
+
+
+@app.get("/api/inventory-weekly/overview")
+def api_inventory_weekly_overview(
+    start_date: Optional[str] = Query(default=None),
+    end_date: Optional[str] = Query(default=None),
+    site: str = Query(default="all"),
+    store: str = Query(default="all"),
+    keyword: str = Query(default=""),
+) -> dict:
+    filters = build_filters(start_date=start_date, end_date=end_date, site=site, store=store, keyword=keyword)
+    return dashboard_service.get_inventory_weekly_overview(filters)
+
+
+@app.get("/api/inventory-weekly/trends")
+def api_inventory_weekly_trends(
+    start_date: Optional[str] = Query(default=None),
+    end_date: Optional[str] = Query(default=None),
+    site: str = Query(default="all"),
+    store: str = Query(default="all"),
+    keyword: str = Query(default=""),
+) -> dict:
+    filters = build_filters(start_date=start_date, end_date=end_date, site=site, store=store, keyword=keyword)
+    return dashboard_service.get_inventory_weekly_trends(filters)
+
+
+@app.get("/api/inventory-weekly/details")
+def api_inventory_weekly_details(
+    start_date: Optional[str] = Query(default=None),
+    end_date: Optional[str] = Query(default=None),
+    site: str = Query(default="all"),
+    store: str = Query(default="all"),
+    keyword: str = Query(default=""),
+    warning_status: str = Query(default="all"),
+    metric: str = Query(default="all"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=10, le=100),
+) -> dict:
+    filters = build_filters(start_date=start_date, end_date=end_date, site=site, store=store, keyword=keyword)
+    return dashboard_service.get_inventory_weekly_details(
+        filters,
+        warning_status=warning_status,
+        metric=metric,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@app.get("/api/inventory-weekly/export")
+def api_inventory_weekly_export(
+    start_date: Optional[str] = Query(default=None),
+    end_date: Optional[str] = Query(default=None),
+    site: str = Query(default="all"),
+    store: str = Query(default="all"),
+    keyword: str = Query(default=""),
+    warning_status: str = Query(default="all"),
+    metric: str = Query(default="all"),
+) -> StreamingResponse:
+    filters = build_filters(start_date=start_date, end_date=end_date, site=site, store=store, keyword=keyword)
+    payload = dashboard_service.get_inventory_weekly_export_payload(
+        filters,
+        warning_status=warning_status,
+        metric=metric,
+    )
+    output = io.StringIO(newline="")
+    output.write("\ufeff")
+    writer = csv.writer(output)
+    writer.writerow([
+        "周开始", "周结束", "快照日期", "站点", "店铺", "MSKU", "可用数量", "可用成本",
+        "在途数量", "在途成本", "在仓数量", "在仓成本", "计划数量", "计划成本", "是否预警", "预警指标",
+    ])
+    metric_labels = {"available": "可用", "transit": "在途", "warehouse": "在仓", "plan": "计划"}
+    for item in payload["items"]:
+        writer.writerow([
+            csv_cell_value(item.get("week_start")),
+            csv_cell_value(item.get("week_end")),
+            csv_cell_value(item.get("snapshot_date")),
+            csv_cell_value(item.get("site")),
+            csv_cell_value(item.get("store")),
+            csv_cell_value(item.get("msku")),
+            csv_cell_value(item.get("available_quantity")),
+            csv_cell_value(item.get("available_cost")),
+            csv_cell_value(item.get("transit_quantity")),
+            csv_cell_value(item.get("transit_cost")),
+            csv_cell_value(item.get("warehouse_quantity")),
+            csv_cell_value(item.get("warehouse_cost")),
+            csv_cell_value(item.get("plan_quantity")),
+            csv_cell_value(item.get("plan_cost")),
+            "是" if item.get("warning") else "否",
+            "、".join(metric_labels.get(key, key) for key in item.get("warning_metrics", [])),
+        ])
+    filename = f"inventory_weekly_{date.today().isoformat()}.csv"
     headers = {"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"}
     return StreamingResponse(iter([output.getvalue()]), media_type="text/csv; charset=utf-8", headers=headers)
 
