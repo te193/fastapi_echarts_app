@@ -17,7 +17,7 @@
     { key: "available", label: "可用", color: "#2563eb" },
     { key: "transit", label: "在途", color: "#14a386" },
     { key: "warehouse", label: "在仓", color: "#d97706" },
-    { key: "plan", label: "计划", color: "#7c3aed" }
+    { key: "plan", label: "采购", color: "#7c3aed" }
   ];
 
   document.addEventListener("DOMContentLoaded", init);
@@ -294,7 +294,7 @@
       '</div>',
       '<div class="alert-table-wrap inventory-table-wrap">',
       '<table class="alert-table inventory-table">',
-      '<thead><tr><th>周</th><th>站点</th><th>店铺</th><th>MSKU</th><th>可用</th><th>在途</th><th>在仓</th><th>计划</th><th>预警</th></tr></thead>',
+      '<thead><tr><th>周</th><th>站点</th><th>店铺</th><th>MSKU</th><th>可用</th><th>在途</th><th>在仓</th><th>采购</th><th>预警</th></tr></thead>',
       '<tbody>', items.map(renderRow).join(""), '</tbody></table></div>'
     ].join("");
     document.getElementById("exportInventoryBtn").addEventListener("click", exportInventory);

@@ -516,7 +516,7 @@ class DashboardDbService:
             {"key": "available", "label": "可用", "color": "#2563eb"},
             {"key": "transit", "label": "在途", "color": "#14a386"},
             {"key": "warehouse", "label": "在仓", "color": "#d97706"},
-            {"key": "plan", "label": "计划", "color": "#7c3aed"},
+            {"key": "plan", "label": "采购", "color": "#7c3aed"},
         ]
 
     def _inventory_weekly_table(self) -> str:

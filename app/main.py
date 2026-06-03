@@ -459,9 +459,9 @@ def api_inventory_weekly_export(
     writer = csv.writer(output)
     writer.writerow([
         "周开始", "周结束", "快照日期", "站点", "店铺", "MSKU", "可用数量", "可用成本",
-        "在途数量", "在途成本", "在仓数量", "在仓成本", "计划数量", "计划成本", "是否预警", "预警指标",
+        "在途数量", "在途成本", "在仓数量", "在仓成本", "采购数量", "采购成本", "是否预警", "预警指标",
     ])
-    metric_labels = {"available": "可用", "transit": "在途", "warehouse": "在仓", "plan": "计划"}
+    metric_labels = {"available": "可用", "transit": "在途", "warehouse": "在仓", "plan": "采购"}
     for item in payload["items"]:
         writer.writerow([
             csv_cell_value(item.get("week_start")),

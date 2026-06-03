@@ -627,12 +627,12 @@ select
     b.seller_name_new,
     coalesce(i.available_total, 0) as available_quantity,
     coalesce(i.available_price, 0) as available_cost,
-    coalesce(r.purchase_shipping_quantity, 0) as transit_quantity,
-    coalesce(r.purchase_shipping_quantity, 0) * (coalesce(r.purchase_cost, 0) + coalesce(r.transport_cost, 0)) as transit_cost,
-    coalesce(r.local_valid_quantity, 0) + coalesce(r.local_qc_quantity, 0) as warehouse_quantity,
-    (coalesce(r.local_valid_quantity, 0) + coalesce(r.local_qc_quantity, 0)) * (coalesce(r.purchase_cost, 0) + coalesce(r.transport_cost, 0)) as warehouse_cost,
-    coalesce(r.purchase_plan_quantity, 0) as plan_quantity,
-    coalesce(r.purchase_plan_quantity, 0) * (coalesce(r.purchase_cost, 0) + coalesce(r.transport_cost, 0)) as plan_cost,
+    coalesce(i.stock_up_num, 0) as transit_quantity,
+    coalesce(i.stock_up_num_price, 0) as transit_cost,
+    coalesce(r.local_quantity, 0) as warehouse_quantity,
+    coalesce(r.local_quantity, 0) * (coalesce(r.purchase_cost, 0) + coalesce(r.transport_cost, 0)) as warehouse_cost,
+    coalesce(r.purchase_shipping_quantity, 0) as plan_quantity,
+    coalesce(r.purchase_shipping_quantity, 0) * (coalesce(r.purchase_cost, 0) + coalesce(r.transport_cost, 0)) as plan_cost,
     now() as created_at,
     now() as updated_at
 from base_keys b
@@ -661,7 +661,9 @@ with inventory as (
         seller_sku_adj,
         seller_name_new,
         sum(coalesce(available_total, 0)) as available_quantity,
-        sum(coalesce(available_total_price, 0)) as available_cost
+        sum(coalesce(available_total_price, 0)) as available_cost,
+        sum(coalesce(stock_up_num, 0)) as transit_quantity,
+        sum(coalesce(stock_up_num_price, 0)) as transit_cost
     from etl_datasync.etl_dispose_lx_storage_fba_warehouse_detail
     where create_time >= %(snapshot_date)s
       and create_time < date_add(%(snapshot_date)s, interval 1 day)
@@ -673,12 +675,18 @@ restock as (
         r.country_category,
         r.seller_sku_adj,
         r.seller_name_new,
-        coalesce(max(r.sc_quantity_purchase_shipping), 0) as transit_quantity,
-        coalesce(max(r.sc_quantity_purchase_shipping), 0) * (coalesce(max(c.cg_price), 0) + coalesce(max(c.cg_transport_costs), 0)) as transit_cost,
-        coalesce(max(r.sc_quantity_local_valid), 0) + coalesce(max(r.sc_quantity_local_qc), 0) as warehouse_quantity,
-        (coalesce(max(r.sc_quantity_local_valid), 0) + coalesce(max(r.sc_quantity_local_qc), 0)) * (coalesce(max(c.cg_price), 0) + coalesce(max(c.cg_transport_costs), 0)) as warehouse_cost,
-        coalesce(max(r.sc_quantity_purchase_plan), 0) as plan_quantity,
-        coalesce(max(r.sc_quantity_purchase_plan), 0) * (coalesce(max(c.cg_price), 0) + coalesce(max(c.cg_transport_costs), 0)) as plan_cost
+        coalesce(max(r.sc_quantity_local_valid), 0)
+          + coalesce(max(r.sc_quantity_purchase_shipping), 0)
+          + coalesce(max(r.sc_quantity_purchase_plan), 0)
+          + coalesce(max(r.sc_quantity_local_qc), 0) as warehouse_quantity,
+        (
+          coalesce(max(r.sc_quantity_local_valid), 0)
+          + coalesce(max(r.sc_quantity_purchase_shipping), 0)
+          + coalesce(max(r.sc_quantity_purchase_plan), 0)
+          + coalesce(max(r.sc_quantity_local_qc), 0)
+        ) * (coalesce(max(c.cg_price), 0) + coalesce(max(c.cg_transport_costs), 0)) as warehouse_cost,
+        coalesce(max(r.sc_quantity_purchase_shipping), 0) as plan_quantity,
+        coalesce(max(r.sc_quantity_purchase_shipping), 0) * (coalesce(max(c.cg_price), 0) + coalesce(max(c.cg_transport_costs), 0)) as plan_cost
     from etl_datasync.etl_dispose_lx_replenishment_suggest_restocking r
     left join etl_datasync.etl_dispose_lx_product_local_product_info c
       on substring_index(c.seller_sku, '-', 1) = r.seller_sku_adj
@@ -703,8 +711,8 @@ select
     b.seller_name_new,
     coalesce(i.available_quantity, 0) as available_quantity,
     coalesce(i.available_cost, 0) as available_cost,
-    coalesce(r.transit_quantity, 0) as transit_quantity,
-    coalesce(r.transit_cost, 0) as transit_cost,
+    coalesce(i.transit_quantity, 0) as transit_quantity,
+    coalesce(i.transit_cost, 0) as transit_cost,
     coalesce(r.warehouse_quantity, 0) as warehouse_quantity,
     coalesce(r.warehouse_cost, 0) as warehouse_cost,
     coalesce(r.plan_quantity, 0) as plan_quantity,
@@ -1696,8 +1704,8 @@ COLUMN_COMMENTS = {
     "transit_cost": "在途成本",
     "warehouse_quantity": "在仓数量",
     "warehouse_cost": "在仓成本",
-    "plan_quantity": "计划数量",
-    "plan_cost": "计划成本",
+    "plan_quantity": "采购数量",
+    "plan_cost": "采购成本",
     "afn_researching_quantity": "FBA调查中数量",
     "total_fulfillable_quantity": "总可售数量",
     "price": "当前售价",
