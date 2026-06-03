@@ -195,7 +195,7 @@
       },
       legend: { top: 0, right: 10 },
       grid: { left: 58, right: 28, top: 52, bottom: 40 },
-      xAxis: { type: "category", data: weeks.map(function (item) { return item.week_end; }), axisLabel: { color: "#526783" } },
+      xAxis: { type: "category", data: weeks.map(function (item) { return item.snapshot_date; }), axisLabel: { color: "#526783" } },
       yAxis: { type: "value", axisLabel: { color: "#526783", formatter: function (value) { return formatAxisValue(value, valueType); } }, splitLine: { lineStyle: { color: "#e4edf7" } } },
       series: metricDefs.map(function (metric) {
         return {
@@ -231,7 +231,7 @@
       tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: function (value) { return formatChartValue(value, valueType); } },
       legend: { top: 0, right: 10 },
       grid: { left: 58, right: 24, top: 52, bottom: 40 },
-      xAxis: { type: "category", data: weeks.map(function (item) { return item.week_end; }), axisLabel: { color: "#526783" } },
+      xAxis: { type: "category", data: weeks.map(function (item) { return item.snapshot_date; }), axisLabel: { color: "#526783" } },
       yAxis: { type: "value", axisLabel: { color: "#526783", formatter: function (value) { return formatAxisValue(value, valueType); } }, splitLine: { lineStyle: { color: "#e4edf7" } } },
       series: metricDefs.map(function (metric) {
         return {
