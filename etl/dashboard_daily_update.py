@@ -33,6 +33,7 @@ DEFAULT_STEP_ORDER = [
     "restock_snapshot",
     "inventory_snapshot",
     "inventory_weekly_snapshot",
+    "inventory_weekly_remote_snapshot",
     "listing_price_snapshot",
     "limit_price_snapshot",
     "period_preset_snapshots",
@@ -645,6 +646,76 @@ left join etl_datasync.dashboard_inventory_daily_snapshot i
 left join etl_datasync.dashboard_restock_daily_snapshot r
   on r.snapshot_date = rw.restock_snapshot_date
  and r.item_key = b.item_key;
+"""
+
+DELETE_INVENTORY_WEEKLY_REMOTE_SQL = """
+delete from etl_datasync.dashboard_inventory_weekly_snapshot
+where week_start = date_sub(%(snapshot_date)s, interval weekday(%(snapshot_date)s) day);
+"""
+
+SELECT_INVENTORY_WEEKLY_REMOTE_SQL = """
+with inventory as (
+    select
+        concat_ws('|', country_category, seller_name_new, seller_sku_adj) as item_key,
+        country_category,
+        seller_sku_adj,
+        seller_name_new,
+        sum(coalesce(available_total, 0)) as available_quantity,
+        sum(coalesce(available_total_price, 0)) as available_cost
+    from etl_datasync.etl_dispose_lx_storage_fba_warehouse_detail
+    where create_time >= %(snapshot_date)s
+      and create_time < date_add(%(snapshot_date)s, interval 1 day)
+    group by country_category, seller_sku_adj, seller_name_new
+),
+restock as (
+    select
+        concat_ws('|', r.country_category, r.seller_name_new, r.seller_sku_adj) as item_key,
+        r.country_category,
+        r.seller_sku_adj,
+        r.seller_name_new,
+        coalesce(max(r.sc_quantity_purchase_shipping), 0) as transit_quantity,
+        coalesce(max(r.sc_quantity_purchase_shipping), 0) * (coalesce(max(c.cg_price), 0) + coalesce(max(c.cg_transport_costs), 0)) as transit_cost,
+        coalesce(max(r.sc_quantity_local_valid), 0) + coalesce(max(r.sc_quantity_local_qc), 0) as warehouse_quantity,
+        (coalesce(max(r.sc_quantity_local_valid), 0) + coalesce(max(r.sc_quantity_local_qc), 0)) * (coalesce(max(c.cg_price), 0) + coalesce(max(c.cg_transport_costs), 0)) as warehouse_cost,
+        coalesce(max(r.sc_quantity_purchase_plan), 0) as plan_quantity,
+        coalesce(max(r.sc_quantity_purchase_plan), 0) * (coalesce(max(c.cg_price), 0) + coalesce(max(c.cg_transport_costs), 0)) as plan_cost
+    from etl_datasync.etl_dispose_lx_replenishment_suggest_restocking r
+    left join etl_datasync.etl_dispose_lx_product_local_product_info c
+      on substring_index(c.seller_sku, '-', 1) = r.seller_sku_adj
+     and c.country_category = r.country_category
+     and c.seller_name_new = r.seller_name_new
+    where r.create_time >= %(snapshot_date)s
+      and r.create_time < date_add(%(snapshot_date)s, interval 1 day)
+    group by r.country_category, r.seller_sku_adj, r.seller_name_new
+),
+base_keys as (
+    select item_key, country_category, seller_sku_adj, seller_name_new from inventory
+    union
+    select item_key, country_category, seller_sku_adj, seller_name_new from restock
+)
+select
+    %(snapshot_date)s as snapshot_date,
+    date_sub(%(snapshot_date)s, interval weekday(%(snapshot_date)s) day) as week_start,
+    date_add(date_sub(%(snapshot_date)s, interval weekday(%(snapshot_date)s) day), interval 6 day) as week_end,
+    b.item_key,
+    b.country_category,
+    b.seller_sku_adj,
+    b.seller_name_new,
+    coalesce(i.available_quantity, 0) as available_quantity,
+    coalesce(i.available_cost, 0) as available_cost,
+    coalesce(r.transit_quantity, 0) as transit_quantity,
+    coalesce(r.transit_cost, 0) as transit_cost,
+    coalesce(r.warehouse_quantity, 0) as warehouse_quantity,
+    coalesce(r.warehouse_cost, 0) as warehouse_cost,
+    coalesce(r.plan_quantity, 0) as plan_quantity,
+    coalesce(r.plan_cost, 0) as plan_cost,
+    now() as created_at,
+    now() as updated_at
+from base_keys b
+left join inventory i
+  on i.item_key = b.item_key
+left join restock r
+  on r.item_key = b.item_key;
 """
 
 CREATE_GOAL_DIMENSION_SNAPSHOT_SQL = """
@@ -1734,6 +1805,13 @@ INVENTORY_COLUMNS = (
     "created_at", "updated_at",
 )
 
+INVENTORY_WEEKLY_COLUMNS = (
+    "snapshot_date", "week_start", "week_end", "item_key", "country_category", "seller_sku_adj", "seller_name_new",
+    "available_quantity", "available_cost", "transit_quantity", "transit_cost",
+    "warehouse_quantity", "warehouse_cost", "plan_quantity", "plan_cost",
+    "created_at", "updated_at",
+)
+
 LISTING_PRICE_COLUMNS = (
     "snapshot_date", "item_key", "seller_name_new", "seller_name", "seller_sku",
     "country_category", "country", "price", "org_currency_icon", "price_cny",
@@ -1779,6 +1857,13 @@ STEPS = {
     "inventory_weekly_snapshot": SqlStep(
         "inventory_weekly_snapshot",
         (DELETE_INVENTORY_WEEKLY_SNAPSHOT_SQL, INSERT_INVENTORY_WEEKLY_SNAPSHOT_SQL),
+    ),
+    "inventory_weekly_remote_snapshot": SourceLoadStep(
+        "inventory_weekly_remote_snapshot",
+        DELETE_INVENTORY_WEEKLY_REMOTE_SQL,
+        SELECT_INVENTORY_WEEKLY_REMOTE_SQL,
+        "etl_datasync.dashboard_inventory_weekly_snapshot",
+        INVENTORY_WEEKLY_COLUMNS,
     ),
     "restock_snapshot": SourceLoadStep(
         "restock_snapshot",
@@ -2281,7 +2366,7 @@ def main() -> None:
         "--steps",
         default="all",
         help="Comma separated step names or all. "
-        "Available: product_performance_daily, monthly_goal_actual_snapshot, goal_dimension_snapshot, annual_goal_snapshot, restock_snapshot, inventory_snapshot, inventory_weekly_snapshot, "
+        "Available: product_performance_daily, monthly_goal_actual_snapshot, goal_dimension_snapshot, annual_goal_snapshot, restock_snapshot, inventory_snapshot, inventory_weekly_snapshot, inventory_weekly_remote_snapshot, "
         "listing_price_snapshot, limit_price_snapshot, period_snapshot, period_preset_snapshots, "
         "price_review_source_load, price_review_tracking.",
     )
