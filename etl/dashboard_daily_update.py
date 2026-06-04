@@ -37,6 +37,7 @@ DEFAULT_STEP_ORDER = [
     "listing_price_snapshot",
     "limit_price_snapshot",
     "period_preset_snapshots",
+    "alert_comparison_snapshots",
     "price_review_source_load",
     "price_review_tracking",
 ]
@@ -59,6 +60,11 @@ class SourceLoadStep:
 
 @dataclass(frozen=True)
 class PeriodPresetStep:
+    name: str
+
+
+@dataclass(frozen=True)
+class AlertComparisonStep:
     name: str
 
 
@@ -455,6 +461,93 @@ create table if not exists etl_datasync.dashboard_product_matrix_period_snapshot
 ) engine=InnoDB default charset=utf8mb4;
 """
 
+CREATE_ALERT_COMPARISON_SNAPSHOT_SQL = """
+create table if not exists etl_datasync.dashboard_alert_comparison_snapshot (
+    snapshot_date date not null,
+    comparison_code varchar(64) not null,
+    comparison_type varchar(32) not null,
+    comparison_label varchar(128) not null,
+    recent_start date not null,
+    recent_end date not null,
+    previous_start date not null,
+    previous_end date not null,
+    recent_days int not null,
+    previous_days int not null,
+    item_key varchar(512) not null,
+    seller_name_new varchar(128) not null,
+    seller_name varchar(255) null,
+    seller_sku_adj varchar(128) not null,
+    country_category varchar(64) not null,
+    country varchar(64) not null,
+    local_sku varchar(128) null,
+    filter_flag tinyint not null default 1,
+    over_limit_flag tinyint not null default 0,
+    daily_sales_band varchar(64) not null,
+    margin_band varchar(64) not null,
+    recent_sales_qty decimal(18,4) not null default 0,
+    previous_sales_qty decimal(18,4) not null default 0,
+    recent_daily_sales decimal(18,6) not null default 0,
+    previous_daily_sales decimal(18,6) not null default 0,
+    sales_change_rate decimal(12,6) not null default 0,
+    recent_sales_amount decimal(18,4) not null default 0,
+    previous_sales_amount decimal(18,4) not null default 0,
+    recent_daily_sales_amount decimal(18,6) not null default 0,
+    previous_daily_sales_amount decimal(18,6) not null default 0,
+    recent_order_gross_profit decimal(18,4) not null default 0,
+    previous_order_gross_profit decimal(18,4) not null default 0,
+    recent_margin decimal(10,4) null,
+    previous_margin decimal(10,4) null,
+    recent_rank decimal(18,4) null,
+    previous_rank decimal(18,4) null,
+    rank_delta decimal(18,4) not null default 0,
+    fba_sellable_inventory decimal(18,4) not null default 0,
+    sellable_days decimal(18,4) not null default 0,
+    sales_trend varchar(16) not null,
+    rank_trend varchar(16) not null,
+    margin_status varchar(16) not null,
+    stock_status varchar(16) not null,
+    sales_drop_flag tinyint not null default 0,
+    sales_up_flag tinyint not null default 0,
+    margin_low_flag tinyint not null default 0,
+    rank_drop_flag tinyint not null default 0,
+    stock_short_flag tinyint not null default 0,
+    alert_types varchar(128) not null,
+    alert_labels varchar(128) not null,
+    primary_type varchar(32) not null,
+    priority int not null default 9,
+    has_alert tinyint not null default 0,
+    created_at datetime not null default current_timestamp,
+    updated_at datetime not null default current_timestamp on update current_timestamp,
+    unique key uk_alert_comparison_item (snapshot_date, comparison_code, item_key),
+    key idx_alert_lookup (snapshot_date, comparison_code, has_alert, country, seller_name_new),
+    key idx_alert_filters (snapshot_date, comparison_code, sales_trend, rank_trend, margin_status, stock_status),
+    key idx_alert_sku (seller_sku_adj)
+) engine=InnoDB default charset=utf8mb4;
+"""
+
+CREATE_ALERT_COMPARISON_SUMMARY_SQL = """
+create table if not exists etl_datasync.dashboard_alert_comparison_summary (
+    snapshot_date date not null,
+    comparison_code varchar(64) not null,
+    country varchar(64) not null default '__ALL__',
+    seller_name_new varchar(128) not null default '__ALL__',
+    alert_type varchar(32) not null default '__ALL__',
+    sales_trend varchar(16) not null default '__ALL__',
+    rank_trend varchar(16) not null default '__ALL__',
+    margin_status varchar(16) not null default '__ALL__',
+    stock_status varchar(16) not null default '__ALL__',
+    alert_count int not null default 0,
+    total_sales_amount decimal(18,4) not null default 0,
+    created_at datetime not null default current_timestamp,
+    updated_at datetime not null default current_timestamp on update current_timestamp,
+    unique key uk_alert_summary (
+        snapshot_date, comparison_code, country, seller_name_new,
+        alert_type, sales_trend, rank_trend, margin_status, stock_status
+    ),
+    key idx_alert_summary_lookup (snapshot_date, comparison_code, alert_type)
+) engine=InnoDB default charset=utf8mb4;
+"""
+
 CREATE_ANNUAL_GOAL_SNAPSHOT_SQL = """
 create table if not exists etl_datasync.dashboard_annual_goal_snapshot (
     snapshot_date date not null,
@@ -540,7 +633,19 @@ group by year(dt_date), month(dt_date);
 """
 
 DELETE_INVENTORY_WEEKLY_SNAPSHOT_SQL = """
-delete from etl_datasync.dashboard_inventory_weekly_snapshot;
+delete from etl_datasync.dashboard_inventory_weekly_snapshot
+where week_start in (
+    select week_start
+    from (
+        select distinct date_sub(snapshot_date, interval weekday(snapshot_date) day) as week_start
+        from etl_datasync.dashboard_inventory_daily_snapshot
+        where snapshot_date <= %(snapshot_date)s
+        union
+        select distinct date_sub(snapshot_date, interval weekday(snapshot_date) day) as week_start
+        from etl_datasync.dashboard_restock_daily_snapshot
+        where snapshot_date <= %(snapshot_date)s
+    ) refresh_weeks
+);
 """
 
 INSERT_INVENTORY_WEEKLY_SNAPSHOT_SQL = """
@@ -851,6 +956,336 @@ where snapshot_date not in (
     from (
         select distinct snapshot_date
         from etl_datasync.dashboard_product_matrix_period_snapshot
+        order by snapshot_date desc
+        limit %(period_snapshot_retention_days)s
+    ) keep_dates
+);
+"""
+
+DELETE_ALERT_COMPARISON_SNAPSHOT_SQL = """
+delete from etl_datasync.dashboard_alert_comparison_snapshot
+where snapshot_date = %(snapshot_date)s
+  and comparison_code = %(comparison_code)s;
+"""
+
+INSERT_ALERT_COMPARISON_SNAPSHOT_SQL = """
+insert into etl_datasync.dashboard_alert_comparison_snapshot (
+    snapshot_date, comparison_code, comparison_type, comparison_label,
+    recent_start, recent_end, previous_start, previous_end, recent_days, previous_days,
+    item_key, seller_name_new, seller_name, seller_sku_adj, country_category, country, local_sku,
+    filter_flag, over_limit_flag, daily_sales_band, margin_band,
+    recent_sales_qty, previous_sales_qty, recent_daily_sales, previous_daily_sales, sales_change_rate,
+    recent_sales_amount, previous_sales_amount, recent_daily_sales_amount, previous_daily_sales_amount,
+    recent_order_gross_profit, previous_order_gross_profit, recent_margin, previous_margin,
+    recent_rank, previous_rank, rank_delta, fba_sellable_inventory, sellable_days,
+    sales_trend, rank_trend, margin_status, stock_status,
+    sales_drop_flag, sales_up_flag, margin_low_flag, rank_drop_flag, stock_short_flag,
+    alert_types, alert_labels, primary_type, priority, has_alert,
+    created_at, updated_at
+)
+with recent as (
+    select
+        item_key,
+        max(seller_name_new) as seller_name_new,
+        max(seller_name) as seller_name,
+        max(seller_sku_adj) as seller_sku_adj,
+        max(country_category) as country_category,
+        max(country) as country,
+        max(local_sku) as local_sku,
+        sum(sales_qty) as sales_qty,
+        sum(sales_amount) as sales_amount,
+        sum(order_gross_profit) as order_gross_profit,
+        avg(case when ranking > 0 then ranking end) as avg_rank,
+        max(afn_fulfillable_quantity) as fba_sellable_inventory
+    from etl_datasync.dashboard_product_performance_daily
+    where dt_date between %(recent_start)s and %(recent_end)s
+      and seller_name_new not regexp 'baihuiyi|Yuanoboo|Bailboo|Qianytyy'
+      and char_length(seller_sku_adj) between 5 and 10
+    group by item_key
+),
+previous as (
+    select
+        item_key,
+        max(seller_name_new) as seller_name_new,
+        max(seller_name) as seller_name,
+        max(seller_sku_adj) as seller_sku_adj,
+        max(country_category) as country_category,
+        max(country) as country,
+        max(local_sku) as local_sku,
+        sum(sales_qty) as sales_qty,
+        sum(sales_amount) as sales_amount,
+        sum(order_gross_profit) as order_gross_profit,
+        avg(case when ranking > 0 then ranking end) as avg_rank,
+        max(afn_fulfillable_quantity) as fba_sellable_inventory
+    from etl_datasync.dashboard_product_performance_daily
+    where dt_date between %(previous_start)s and %(previous_end)s
+      and seller_name_new not regexp 'baihuiyi|Yuanoboo|Bailboo|Qianytyy'
+      and char_length(seller_sku_adj) between 5 and 10
+    group by item_key
+),
+period_flags as (
+    select item_key, max(over_limit_flag) as over_limit_flag, max(filter_flag) as filter_flag
+    from etl_datasync.dashboard_product_period_90d_snapshot
+    where snapshot_date = %(snapshot_date)s
+    group by item_key
+),
+joined as (
+    select
+        coalesce(r.item_key, p.item_key) as item_key,
+        coalesce(r.seller_name_new, p.seller_name_new) as seller_name_new,
+        coalesce(r.seller_name, p.seller_name) as seller_name,
+        coalesce(r.seller_sku_adj, p.seller_sku_adj) as seller_sku_adj,
+        coalesce(r.country_category, p.country_category) as country_category,
+        coalesce(r.country, p.country) as country,
+        coalesce(r.local_sku, p.local_sku) as local_sku,
+        coalesce(f.filter_flag, 1) as filter_flag,
+        coalesce(f.over_limit_flag, 0) as over_limit_flag,
+        coalesce(r.sales_qty, 0) as recent_sales_qty,
+        coalesce(p.sales_qty, 0) as previous_sales_qty,
+        coalesce(r.sales_amount, 0) as recent_sales_amount,
+        coalesce(p.sales_amount, 0) as previous_sales_amount,
+        coalesce(r.order_gross_profit, 0) as recent_order_gross_profit,
+        coalesce(p.order_gross_profit, 0) as previous_order_gross_profit,
+        r.avg_rank as recent_rank,
+        p.avg_rank as previous_rank,
+        coalesce(r.fba_sellable_inventory, p.fba_sellable_inventory, 0) as fba_sellable_inventory
+    from recent r
+    left join previous p on p.item_key = r.item_key
+    left join period_flags f on f.item_key = r.item_key
+    union all
+    select
+        p.item_key,
+        p.seller_name_new,
+        p.seller_name,
+        p.seller_sku_adj,
+        p.country_category,
+        p.country,
+        p.local_sku,
+        coalesce(f.filter_flag, 1) as filter_flag,
+        coalesce(f.over_limit_flag, 0) as over_limit_flag,
+        0 as recent_sales_qty,
+        coalesce(p.sales_qty, 0) as previous_sales_qty,
+        0 as recent_sales_amount,
+        coalesce(p.sales_amount, 0) as previous_sales_amount,
+        0 as recent_order_gross_profit,
+        coalesce(p.order_gross_profit, 0) as previous_order_gross_profit,
+        null as recent_rank,
+        p.avg_rank as previous_rank,
+        coalesce(p.fba_sellable_inventory, 0) as fba_sellable_inventory
+    from previous p
+    left join recent r on r.item_key = p.item_key
+    left join period_flags f on f.item_key = p.item_key
+    where r.item_key is null
+),
+metrics as (
+    select
+        j.*,
+        %(recent_days)s as recent_days,
+        %(previous_days)s as previous_days,
+        j.recent_sales_qty / nullif(%(recent_days)s, 0) as recent_daily_sales,
+        j.previous_sales_qty / nullif(%(previous_days)s, 0) as previous_daily_sales,
+        j.recent_sales_amount / nullif(%(recent_days)s, 0) as recent_daily_sales_amount,
+        j.previous_sales_amount / nullif(%(previous_days)s, 0) as previous_daily_sales_amount,
+        round(j.recent_order_gross_profit / nullif(j.recent_sales_amount, 0), 4) as recent_margin,
+        round(j.previous_order_gross_profit / nullif(j.previous_sales_amount, 0), 4) as previous_margin
+    from joined j
+),
+classified as (
+    select
+        m.*,
+        case
+            when %(comparison_type)s = 'month_to_date'
+                then case
+                    when m.previous_daily_sales <> 0 then (m.recent_daily_sales - m.previous_daily_sales) / abs(m.previous_daily_sales)
+                    when m.recent_daily_sales > 0 then 1
+                    else 0
+                end
+            else case
+                when m.previous_sales_qty <> 0 then (m.recent_sales_qty - m.previous_sales_qty) / abs(m.previous_sales_qty)
+                when m.recent_sales_qty > 0 then 1
+                else 0
+            end
+        end as sales_change_rate,
+        case
+            when %(comparison_type)s = 'month_to_date'
+                then m.previous_sales_qty >= 10 and m.recent_daily_sales <= m.previous_daily_sales * 0.7
+            else m.previous_sales_qty >= 10 and m.recent_sales_qty <= m.previous_sales_qty * 0.7
+        end as sales_drop_flag,
+        case
+            when %(comparison_type)s = 'month_to_date'
+                then m.recent_sales_qty >= 10 and m.recent_daily_sales >= m.previous_daily_sales * 1.3
+            else m.recent_sales_qty >= 10 and m.recent_sales_qty >= m.previous_sales_qty * 1.3
+        end as sales_up_flag,
+        (
+            m.previous_rank is not null
+            and m.recent_rank is not null
+            and m.recent_rank >= m.previous_rank + 5
+            and m.recent_rank >= m.previous_rank * 1.2
+        ) as rank_drop_flag,
+        (
+            m.previous_rank is not null
+            and m.recent_rank is not null
+            and m.recent_rank <= greatest(m.previous_rank - 5, m.previous_rank * 0.8)
+        ) as rank_up_flag,
+        (m.recent_sales_amount >= 1000 and coalesce(m.recent_margin, 0) < 0.08) as margin_low_flag,
+        (
+            m.recent_daily_sales >= 1
+            and m.fba_sellable_inventory > 0
+            and m.fba_sellable_inventory / nullif(m.recent_daily_sales, 0) < 14
+        ) as stock_short_flag
+    from metrics m
+)
+select
+    %(snapshot_date)s,
+    %(comparison_code)s,
+    %(comparison_type)s,
+    %(comparison_label)s,
+    %(recent_start)s,
+    %(recent_end)s,
+    %(previous_start)s,
+    %(previous_end)s,
+    recent_days,
+    previous_days,
+    item_key,
+    seller_name_new,
+    seller_name,
+    seller_sku_adj,
+    country_category,
+    country,
+    local_sku,
+    filter_flag,
+    over_limit_flag,
+    case
+        when recent_daily_sales < 1 and recent_daily_sales > 0 then '日销 <1'
+        when recent_daily_sales >= 1 and recent_daily_sales < 5 then '日销 1-5'
+        when recent_daily_sales >= 5 then '日销 >5'
+        else '日销 0'
+    end as daily_sales_band,
+    case
+        when recent_margin >= 0.35 then '毛利率 >35%%'
+        when recent_margin >= 0.25 and recent_margin < 0.35 then '毛利率 25-35%%'
+        when recent_margin >= 0.15 and recent_margin < 0.25 then '毛利率 15-25%%'
+        when recent_margin >= 0.10 and recent_margin < 0.15 then '毛利率 10-15%%'
+        when recent_margin >= 0 and recent_margin < 0.10 then '毛利率 0-10%%'
+        else '毛利率 <0%%'
+    end as margin_band,
+    recent_sales_qty,
+    previous_sales_qty,
+    recent_daily_sales,
+    previous_daily_sales,
+    sales_change_rate,
+    recent_sales_amount,
+    previous_sales_amount,
+    recent_daily_sales_amount,
+    previous_daily_sales_amount,
+    recent_order_gross_profit,
+    previous_order_gross_profit,
+    recent_margin,
+    previous_margin,
+    recent_rank,
+    previous_rank,
+    case when previous_rank is not null and recent_rank is not null then previous_rank - recent_rank else 0 end,
+    fba_sellable_inventory,
+    case when recent_daily_sales > 0 then fba_sellable_inventory / recent_daily_sales else 0 end,
+    case when sales_drop_flag then 'down' when sales_up_flag then 'up' else 'stable' end,
+    case when rank_drop_flag then 'down' when rank_up_flag then 'up' else 'stable' end,
+    case when margin_low_flag then 'low' else 'normal' end,
+    case when stock_short_flag then 'short' else 'normal' end,
+    sales_drop_flag,
+    sales_up_flag,
+    margin_low_flag,
+    rank_drop_flag,
+    stock_short_flag,
+    concat_ws(',', if(sales_drop_flag, 'sales_drop', null), if(margin_low_flag, 'margin_low', null), if(rank_drop_flag, 'rank_drop', null), if(stock_short_flag, 'stock_short', null)),
+    concat_ws(' / ', if(sales_drop_flag, '销量下滑', null), if(margin_low_flag, '低毛利', null), if(rank_drop_flag, '排名下滑', null), if(stock_short_flag, '库存偏低', null)),
+    case
+        when sales_drop_flag then 'sales_drop'
+        when margin_low_flag then 'margin_low'
+        when rank_drop_flag then 'rank_drop'
+        when stock_short_flag then 'stock_short'
+        else 'observe'
+    end,
+    case
+        when sales_drop_flag then 0
+        when margin_low_flag then 1
+        when rank_drop_flag then 2
+        when stock_short_flag then 3
+        else 9
+    end,
+    (sales_drop_flag or margin_low_flag or rank_drop_flag or stock_short_flag),
+    now(),
+    now()
+from classified;
+"""
+
+DELETE_ALERT_COMPARISON_SUMMARY_SQL = """
+delete from etl_datasync.dashboard_alert_comparison_summary
+where snapshot_date = %(snapshot_date)s
+  and comparison_code = %(comparison_code)s;
+"""
+
+INSERT_ALERT_COMPARISON_SUMMARY_SQL = """
+insert into etl_datasync.dashboard_alert_comparison_summary (
+    snapshot_date, comparison_code, country, seller_name_new,
+    alert_type, sales_trend, rank_trend, margin_status, stock_status,
+    alert_count, total_sales_amount, created_at, updated_at
+)
+select
+    snapshot_date,
+    comparison_code,
+    country,
+    seller_name_new,
+    alert_type,
+    sales_trend,
+    rank_trend,
+    margin_status,
+    stock_status,
+    count(*) as alert_count,
+    sum(recent_sales_amount) as total_sales_amount,
+    now(),
+    now()
+from (
+    select snapshot_date, comparison_code, country, seller_name_new, 'sales_drop' as alert_type, sales_trend, rank_trend, margin_status, stock_status, recent_sales_amount
+    from etl_datasync.dashboard_alert_comparison_snapshot
+    where snapshot_date = %(snapshot_date)s and comparison_code = %(comparison_code)s and sales_drop_flag = 1
+    union all
+    select snapshot_date, comparison_code, country, seller_name_new, 'margin_low' as alert_type, sales_trend, rank_trend, margin_status, stock_status, recent_sales_amount
+    from etl_datasync.dashboard_alert_comparison_snapshot
+    where snapshot_date = %(snapshot_date)s and comparison_code = %(comparison_code)s and margin_low_flag = 1
+    union all
+    select snapshot_date, comparison_code, country, seller_name_new, 'rank_drop' as alert_type, sales_trend, rank_trend, margin_status, stock_status, recent_sales_amount
+    from etl_datasync.dashboard_alert_comparison_snapshot
+    where snapshot_date = %(snapshot_date)s and comparison_code = %(comparison_code)s and rank_drop_flag = 1
+    union all
+    select snapshot_date, comparison_code, country, seller_name_new, 'stock_short' as alert_type, sales_trend, rank_trend, margin_status, stock_status, recent_sales_amount
+    from etl_datasync.dashboard_alert_comparison_snapshot
+    where snapshot_date = %(snapshot_date)s and comparison_code = %(comparison_code)s and stock_short_flag = 1
+) alerts
+group by
+    snapshot_date, comparison_code, country, seller_name_new,
+    alert_type, sales_trend, rank_trend, margin_status, stock_status;
+"""
+
+DELETE_OLD_ALERT_COMPARISON_SNAPSHOT_SQL = """
+delete from etl_datasync.dashboard_alert_comparison_snapshot
+where snapshot_date not in (
+    select snapshot_date
+    from (
+        select distinct snapshot_date
+        from etl_datasync.dashboard_alert_comparison_snapshot
+        order by snapshot_date desc
+        limit %(period_snapshot_retention_days)s
+    ) keep_dates
+);
+"""
+
+DELETE_OLD_ALERT_COMPARISON_SUMMARY_SQL = """
+delete from etl_datasync.dashboard_alert_comparison_summary
+where snapshot_date not in (
+    select snapshot_date
+    from (
+        select distinct snapshot_date
+        from etl_datasync.dashboard_alert_comparison_summary
         order by snapshot_date desc
         limit %(period_snapshot_retention_days)s
     ) keep_dates
@@ -1606,6 +2041,8 @@ DDL_STATEMENTS = (
     CREATE_PERIOD_SNAPSHOT_SQL,
     *(period_create_sql(table_name) for table_name in PERIOD_PRESET_TABLES.values()),
     CREATE_MATRIX_PERIOD_SNAPSHOT_SQL,
+    CREATE_ALERT_COMPARISON_SNAPSHOT_SQL,
+    CREATE_ALERT_COMPARISON_SUMMARY_SQL,
     CREATE_MONTHLY_GOAL_SQL,
     CREATE_MONTHLY_GOAL_ACTUAL_SNAPSHOT_SQL,
     CREATE_GOAL_DIMENSION_SNAPSHOT_SQL,
@@ -1626,6 +2063,8 @@ TABLE_COMMENTS = {
     "dashboard_product_period_90d_snapshot": "最近90天产品表现快照",
     "dashboard_product_period_last_month_snapshot": "上月产品表现快照",
     "dashboard_product_matrix_period_snapshot": "日销与毛利率矩阵周期汇总快照",
+    "dashboard_alert_comparison_snapshot": "异常预警对比明细快照",
+    "dashboard_alert_comparison_summary": "异常预警对比汇总快照",
     "dashboard_monthly_goal": "月度经营目标表",
     "dashboard_monthly_goal_actual_snapshot": "月度目标实绩汇总快照",
     "dashboard_goal_dimension_snapshot": "目标差距维度拆解快照",
@@ -1906,6 +2345,7 @@ STEPS = {
         (DELETE_PERIOD_SNAPSHOT_SQL, INSERT_PERIOD_SNAPSHOT_SQL),
     ),
     "period_preset_snapshots": PeriodPresetStep("period_preset_snapshots"),
+    "alert_comparison_snapshots": AlertComparisonStep("alert_comparison_snapshots"),
     "price_review_source_load": PriceReviewStep("price_review_source_load"),
     "price_review_tracking": PriceReviewStep("price_review_tracking"),
 }
@@ -2122,6 +2562,60 @@ def build_previous_period_params(preset_name: str, preset_params: dict[str, obje
     return previous_params
 
 
+def build_alert_comparison_params(params: dict[str, object]) -> list[dict[str, object]]:
+    biz_date = params["biz_date"]
+    if not isinstance(biz_date, date):
+        raise RuntimeError("biz_date must be a date")
+
+    comparisons: list[dict[str, object]] = []
+    for days in (7, 14, 30, 60, 90):
+        recent_end = biz_date
+        recent_start = recent_end - timedelta(days=days - 1)
+        previous_end = recent_start - timedelta(days=1)
+        previous_start = previous_end - timedelta(days=days - 1)
+        next_params = dict(params)
+        next_params.update(
+            {
+                "comparison_code": f"d{days}",
+                "comparison_type": "days",
+                "comparison_label": f"近{days}天 vs 前{days}天",
+                "recent_start": recent_start,
+                "recent_end": recent_end,
+                "previous_start": previous_start,
+                "previous_end": previous_end,
+                "recent_days": days,
+                "previous_days": days,
+            }
+        )
+        comparisons.append(next_params)
+
+    mtd_start = date(biz_date.year, biz_date.month, 1)
+    mtd_days = (biz_date - mtd_start).days + 1
+    history_month = date(biz_date.year, 1, 1)
+    while history_month < mtd_start:
+        next_month = date(history_month.year + (1 if history_month.month == 12 else 0), 1 if history_month.month == 12 else history_month.month + 1, 1)
+        month_end = next_month - timedelta(days=1)
+        month_days = (month_end - history_month).days + 1
+        next_params = dict(params)
+        next_params.update(
+            {
+                "comparison_code": f"m{history_month.year}_{history_month.month:02d}_vs_mtd",
+                "comparison_type": "month_to_date",
+                "comparison_label": f"{history_month.year}-{history_month.month:02d} vs 当前月至今",
+                "recent_start": mtd_start,
+                "recent_end": biz_date,
+                "previous_start": history_month,
+                "previous_end": month_end,
+                "recent_days": mtd_days,
+                "previous_days": month_days,
+            }
+        )
+        comparisons.append(next_params)
+        history_month = next_month
+
+    return comparisons
+
+
 def execute_period_preset_step(
     conn,
     schemas: SchemaConfig,
@@ -2154,6 +2648,26 @@ def execute_period_preset_step(
             )
             execute_target_step(conn, schemas, sub_step, run_params)
     cleanup_period_snapshot_retention(conn, schemas, touched_tables, params)
+
+
+def execute_alert_comparison_step(
+    conn,
+    schemas: SchemaConfig,
+    step: AlertComparisonStep,
+    params: dict[str, object],
+) -> None:
+    for comparison_params in build_alert_comparison_params(params):
+        sub_step = SqlStep(
+            f"{step.name}.{comparison_params['comparison_code']}",
+            (
+                DELETE_ALERT_COMPARISON_SNAPSHOT_SQL,
+                INSERT_ALERT_COMPARISON_SNAPSHOT_SQL,
+                DELETE_ALERT_COMPARISON_SUMMARY_SQL,
+                INSERT_ALERT_COMPARISON_SUMMARY_SQL,
+            ),
+        )
+        execute_target_step(conn, schemas, sub_step, comparison_params)
+    cleanup_alert_comparison_retention(conn, schemas, params)
 
 
 def cleanup_period_snapshot_retention(
@@ -2193,6 +2707,40 @@ def cleanup_period_snapshot_retention(
             error,
         )
         print("[failed] period_preset_snapshots.retention_cleanup", file=sys.stderr)
+        raise
+
+
+def cleanup_alert_comparison_retention(conn, schemas: SchemaConfig, params: dict[str, object]) -> None:
+    cleanup_params = dict(params)
+    cleanup_params["period_snapshot_retention_days"] = PERIOD_SNAPSHOT_RETENTION_DAYS
+    started_at = datetime.now()
+    affected_rows = 0
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(render_sql(DELETE_OLD_ALERT_COMPARISON_SNAPSHOT_SQL, schemas), cleanup_params)
+            affected_rows += max(cursor.rowcount, 0)
+            cursor.execute(render_sql(DELETE_OLD_ALERT_COMPARISON_SUMMARY_SQL, schemas), cleanup_params)
+            affected_rows += max(cursor.rowcount, 0)
+        conn.commit()
+        log_task(conn, schemas, "alert_comparison_snapshots.retention_cleanup", params, "success", affected_rows, started_at)
+        print(
+            "[success] alert_comparison_snapshots.retention_cleanup: "
+            f"kept_latest_snapshot_dates={PERIOD_SNAPSHOT_RETENTION_DAYS}, affected_rows={affected_rows}"
+        )
+    except Exception:
+        conn.rollback()
+        error = traceback.format_exc()
+        log_task(
+            conn,
+            schemas,
+            "alert_comparison_snapshots.retention_cleanup",
+            params,
+            "failed",
+            affected_rows,
+            started_at,
+            error,
+        )
+        print("[failed] alert_comparison_snapshots.retention_cleanup", file=sys.stderr)
         raise
 
 
@@ -2376,7 +2924,7 @@ def main() -> None:
         help="Comma separated step names or all. "
         "Available: product_performance_daily, monthly_goal_actual_snapshot, goal_dimension_snapshot, annual_goal_snapshot, restock_snapshot, inventory_snapshot, inventory_weekly_snapshot, inventory_weekly_remote_snapshot, "
         "listing_price_snapshot, limit_price_snapshot, period_snapshot, period_preset_snapshots, "
-        "price_review_source_load, price_review_tracking.",
+        "alert_comparison_snapshots, price_review_source_load, price_review_tracking.",
     )
     parser.add_argument("--skip-ddl", action="store_true", help="Do not create target tables before running.")
     parser.add_argument("--batch-size", type=int, default=1000, help="Rows per local bulk insert from read-only source.")
@@ -2425,6 +2973,8 @@ def main() -> None:
                 execute_source_load_step(target_conn, source_conn, schemas, step, params, args.batch_size)
             elif isinstance(step, PeriodPresetStep):
                 execute_period_preset_step(target_conn, schemas, step, params)
+            elif isinstance(step, AlertComparisonStep):
+                execute_alert_comparison_step(target_conn, schemas, step, params)
             elif isinstance(step, PriceReviewStep):
                 if step.name != "price_review_tracking":
                     if source_conn is None:

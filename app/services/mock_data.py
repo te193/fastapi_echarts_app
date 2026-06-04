@@ -121,7 +121,14 @@ class MockDashboardService:
             "matrix": self._build_matrix(scoped),
         }
 
-    def get_detail_payload(self, filters: dict[str, Any], page: int, page_size: int) -> dict[str, Any]:
+    def get_detail_payload(
+        self,
+        filters: dict[str, Any],
+        page: int,
+        page_size: int,
+        sort_field: str = "",
+        sort_dir: str = "",
+    ) -> dict[str, Any]:
         scoped = self._get_filtered_items(filters)
         scoped.sort(key=lambda item: (-item["revenue_30d"], -item["daily_sales"], item["sku"]))
         total = len(scoped)

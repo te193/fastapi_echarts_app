@@ -74,7 +74,20 @@
     </div>
   </section>
 
-  <div id="inventoryWarningCards" class="inventory-warning-grid"></div>
+  <section class="inventory-warning-section" aria-label="库存波动预警说明">
+    <div class="inventory-warning-head">
+      <div>
+        <p class="section-kicker">波动监控</p>
+        <h3>库存波动预警</h3>
+        <span>展示最近库存指标变化异常的周，点击卡片可筛选到对应周明细。</span>
+      </div>
+      <div class="inventory-warning-rule">
+        <span>判断规则</span>
+        <strong>本周环比变化幅度 &gt; 历史平均波动 + 5 个百分点</strong>
+      </div>
+    </div>
+    <div id="inventoryWarningCards" class="inventory-warning-grid"></div>
+  </section>
 
   <div id="inventoryTableCard" class="panel alert-table-card inventory-table-card"></div>
   <div class="pagination-bar">
@@ -89,5 +102,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', path='js/inventory_weekly.js') }}?v=20260603b"></script>
+<script src="{{ url_for('static', path='js/inventory_weekly.js') }}?v=20260604a"></script>
 {% endblock %}

@@ -131,19 +131,8 @@
       <div id="secondAdjustGapChart" class="chart-host chart-host-echarts"></div>
     </article>
   </div>
-  <div class="table-wrap" style="margin-top: 18px;">
-    <table class="sku-table">
-      <thead>
-        <tr>
-          <th>上次调价日期</th>
-          <th>二次调价 SKU</th>
-          <th>平均间隔天数</th>
-          <th>涉及店铺</th>
-          <th>涉及国家</th>
-        </tr>
-      </thead>
-      <tbody id="secondAdjustTableBody"></tbody>
-    </table>
+  <div class="table-wrap ag-grid-shell compact" style="margin-top: 18px;">
+    <div id="secondAdjustGrid"></div>
   </div>
 </section>
 
@@ -188,14 +177,14 @@
     <div id="countryChart" class="chart-host chart-host-echarts"></div>
   </article>
   <div class="table-wrap" style="margin-top: 18px;">
-    <table class="sku-table">
+    <table>
       <thead>
         <tr>
           <th>国家</th>
           <th>SKU 数</th>
-          <th>销量变化 <span class="color-dot" style="background:#1769e0"></span></th>
-          <th>销售额变化 <span class="color-dot" style="background:#d97706"></span></th>
-          <th>毛利润变化 <span class="color-dot" style="background:#18a17d"></span></th>
+          <th>销量变化</th>
+          <th>销售额变化</th>
+          <th>毛利润变化</th>
           <th>后毛利率</th>
           <th>排名恶化</th>
           <th>排名改善</th>
@@ -256,28 +245,8 @@
       <button id="exportTopListBtn" class="ghost-button" type="button">导出当前榜单</button>
     </div>
   </div>
-  <div class="table-wrap">
-    <table class="sku-table">
-      <thead>
-        <tr>
-          <th>国家</th>
-          <th>店铺</th>
-          <th>MSKU</th>
-          <th>前销量</th>
-          <th>后销量</th>
-          <th>销量变化</th>
-          <th>前日销</th>
-          <th>后日销</th>
-          <th>日销变化</th>
-          <th>毛利润变化</th>
-          <th>前毛利率</th>
-          <th>后毛利率</th>
-          <th>排名变化</th>
-          <th>最后一天排名</th>
-        </tr>
-      </thead>
-      <tbody id="topListTableBody"></tbody>
-    </table>
+  <div class="table-wrap ag-grid-shell">
+    <div id="topListGrid"></div>
   </div>
 </section>
 
@@ -293,31 +262,8 @@
     </div>
   </div>
 
-  <div class="table-wrap">
-    <table class="sku-table">
-      <thead>
-        <tr>
-          <th><span class="column-filter-head"><span>国家</span><button class="column-filter-btn" type="button" data-sku-filter-key="country" data-sku-filter-type="text">筛</button></span></th>
-          <th><span class="column-filter-head"><span>店铺</span><button class="column-filter-btn" type="button" data-sku-filter-key="store" data-sku-filter-type="text">筛</button></span></th>
-          <th><span class="column-filter-head"><span>MSKU</span><button class="column-filter-btn" type="button" data-sku-filter-key="msku" data-sku-filter-type="text">筛</button></span></th>
-          <th><span class="column-filter-head"><span>调价类型</span><button class="column-filter-btn" type="button" data-sku-filter-key="adjustment_type" data-sku-filter-type="text">筛</button></span></th>
-          <th><span class="column-filter-head"><span>上次调价</span><button class="column-filter-btn" type="button" data-sku-filter-key="previous_adjust_date" data-sku-filter-type="text">筛</button></span></th>
-          <th><span class="column-filter-head"><span>调价前价格</span><button class="column-filter-btn" type="button" data-sku-filter-key="price_before" data-sku-filter-type="number">筛</button></span></th>
-          <th><span class="column-filter-head"><span>调价后价格</span><button class="column-filter-btn" type="button" data-sku-filter-key="price_after" data-sku-filter-type="number">筛</button></span></th>
-          <th><span class="column-filter-head"><span>调价幅度</span><button class="column-filter-btn" type="button" data-sku-filter-key="drop_ratio" data-sku-filter-type="number">筛</button></span></th>
-          <th><span class="column-filter-head"><span>前销量</span><button class="column-filter-btn" type="button" data-sku-filter-key="sales_before" data-sku-filter-type="number">筛</button></span></th>
-          <th><span class="column-filter-head"><span>后销量</span><button class="column-filter-btn" type="button" data-sku-filter-key="sales_after" data-sku-filter-type="number">筛</button></span></th>
-          <th><span class="column-filter-head"><span>销量变化</span><button class="column-filter-btn" type="button" data-sku-filter-key="sales_change" data-sku-filter-type="number">筛</button></span></th>
-          <th><span class="column-filter-head"><span>前日销</span><button class="column-filter-btn" type="button" data-sku-filter-key="daily_sales_before" data-sku-filter-type="number">筛</button></span></th>
-          <th><span class="column-filter-head"><span>后日销</span><button class="column-filter-btn" type="button" data-sku-filter-key="daily_sales_after" data-sku-filter-type="number">筛</button></span></th>
-          <th><span class="column-filter-head"><span>日销变化</span><button class="column-filter-btn" type="button" data-sku-filter-key="daily_sales_change" data-sku-filter-type="number">筛</button></span></th>
-          <th><span class="column-filter-head"><span>前毛利率</span><button class="column-filter-btn" type="button" data-sku-filter-key="margin_before" data-sku-filter-type="number">筛</button></span></th>
-          <th><span class="column-filter-head"><span>后毛利率</span><button class="column-filter-btn" type="button" data-sku-filter-key="margin_after" data-sku-filter-type="number">筛</button></span></th>
-          <th><span class="column-filter-head"><span>毛利率变化</span><button class="column-filter-btn" type="button" data-sku-filter-key="margin_change" data-sku-filter-type="number">筛</button></span></th>
-        </tr>
-      </thead>
-      <tbody id="skuTableBody"></tbody>
-    </table>
+  <div class="table-wrap ag-grid-shell">
+    <div id="priceReviewSkuGrid"></div>
   </div>
 
   <div class="pagination-bar">
@@ -347,5 +293,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', path='js/price_review.js') }}?v=20260601b"></script>
+<script src="{{ url_for('static', path='js/price_review.js') }}?v=20260604note2"></script>
 {% endblock %}

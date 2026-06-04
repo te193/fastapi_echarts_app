@@ -20,6 +20,8 @@
     keyword: "",
     page: 1,
     page_size: 20,
+    sort_field: "",
+    sort_dir: "",
   };
 
   var currentMatrix = "daily_sales";
@@ -75,14 +77,14 @@
       "dropRangeSkuChart", "dropRangeEffectChart",
       "matrixTabs", "matrixPanelTitle", "matrixChart",
       "countryChart", "countryTableBody",
-      "secondAdjustSummary", "secondAdjustDateChart", "secondAdjustGapChart", "secondAdjustTableBody",
-      "topListTabs", "topListTableBody",
+      "secondAdjustSummary", "secondAdjustDateChart", "secondAdjustGapChart", "secondAdjustGrid",
+      "topListTabs", "topListGrid",
       // Filters
       "adjustDateInput", "compareDaysSelect",
       "countrySelect", "storeSelect", "dropRangeSelect", "riskLevelSelect", "priceBandSelect", "adjustmentTypeSelect", "keywordInput",
       "applyFiltersBtn", "resetFiltersBtn",
       // SKU table
-      "skuTableCountText", "skuTableBody", "paginationInfo", "paginationNumbers", "prevPageBtn", "nextPageBtn",
+      "skuTableCountText", "priceReviewSkuGrid", "paginationInfo", "paginationNumbers", "prevPageBtn", "nextPageBtn",
       // Export buttons
       "exportTopListBtn", "exportSkuListBtn",
       // Calendar
@@ -195,6 +197,8 @@
         filterState.adjustment_type = elements.adjustmentTypeSelect ? elements.adjustmentTypeSelect.value : "all";
         filterState.keyword = elements.keywordInput ? elements.keywordInput.value.trim() : "";
         filterState.page = 1;
+        filterState.sort_field = "";
+        filterState.sort_dir = "";
         expandedMatrixBand = "";
         expandedCountry = "";
         refreshAll();
@@ -225,6 +229,8 @@
         filterState.adjustment_type = "all";
         filterState.keyword = "";
         filterState.page = 1;
+        filterState.sort_field = "";
+        filterState.sort_dir = "";
         skuColumnFilters = {};
         expandedMatrixBand = "";
         expandedCountry = "";
@@ -278,6 +284,23 @@
         if (isHidden && !elements.calendarBody.dataset.loaded) {
           elements.calendarBody.dataset.loaded = "1";
           loadCalendar();
+        }
+      });
+    }
+
+    if (elements.calendarGrid) {
+      elements.calendarGrid.addEventListener("click", function (event) {
+        var noteButton = event.target.closest("[data-calendar-note-action='edit']");
+        if (noteButton) {
+          event.preventDefault();
+          event.stopPropagation();
+          openCalendarNoteEditor(noteButton);
+          return;
+        }
+
+        var body = event.target.closest("[data-calendar-action='open']");
+        if (body && body.dataset.href) {
+          window.location.href = body.dataset.href;
         }
       });
     }
@@ -348,21 +371,110 @@
       var todayClass = item.is_today ? " today" : "";
       var weekendClass = item.is_weekend ? " weekend" : "";
       var href = "/price-review?adjust_date=" + encodeURIComponent(item.date);
-      var tag = item.clickable ? "a" : "div";
-      var hrefAttr = item.clickable ? ' href="' + href + '"' : "";
+      var hrefAttr = item.clickable ? ' data-href="' + app.escapeHtml(href) + '"' : "";
       var disabledClass = item.clickable ? "" : " disabled";
+      var note = item.note || "";
+      var noteClass = note ? " has-note" : "";
+      var noteTitle = note ? ("调价说明：" + note) : "点击输入调价说明";
+      var cardTitle = item.date + " 调价 " + item.count + " 个产品" + (note ? ("\n调价说明：" + note) : "");
 
       html.push(
-        '<' + tag + ' class="calendar-card ' + hClass + todayClass + weekendClass + disabledClass + '"' + hrefAttr + ' title="' + item.date + ' 调价 ' + item.count + ' 个产品">' +
-        '  <span class="calendar-date">' + item.display_date + '</span>' +
-        '  <span class="calendar-weekday">' + item.weekday + '</span>' +
+        '<div class="calendar-card ' + hClass + todayClass + weekendClass + disabledClass + noteClass + '" data-date="' + app.escapeHtml(item.date) + '" data-note="' + app.escapeHtml(note) + '" title="' + app.escapeHtml(cardTitle) + '">' +
+        '  <div class="calendar-card-body" data-calendar-action="open"' + hrefAttr + '>' +
+        '  <span class="calendar-date">' + app.escapeHtml(item.display_date) + '</span>' +
+        '  <span class="calendar-weekday">' + app.escapeHtml(item.weekday) + '</span>' +
         '  <span class="calendar-count">' + item.count + '</span>' +
         '  <span class="calendar-label">个产品调价</span>' +
-        '</' + tag + '>'
+        '  </div>' +
+        '  <button class="calendar-note-trigger" type="button" data-calendar-note-action="edit" title="' + app.escapeHtml(noteTitle) + '">' + (note ? "说明" : "+ 说明") + '</button>' +
+        '</div>'
       );
     });
 
     elements.calendarGrid.innerHTML = html.join("");
+  }
+
+  function openCalendarNoteEditor(button) {
+    var card = button.closest(".calendar-card");
+    if (!card) return;
+    closeCalendarNoteEditor();
+    card.classList.add("editing-note");
+
+    var dateValue = card.dataset.date || "";
+    var currentNote = card.dataset.note || "";
+    var editor = document.createElement("div");
+    editor.className = "calendar-note-editor";
+    editor.innerHTML = [
+      '<label class="calendar-note-editor-label">调价说明</label>',
+      '<textarea maxlength="1000" rows="4" placeholder="输入调价原因，留空保存则清除说明">' + app.escapeHtml(currentNote) + '</textarea>',
+      '<div class="calendar-note-editor-footer">',
+      '  <span class="calendar-note-editor-status"></span>',
+      '  <button class="ghost-button calendar-note-cancel" type="button">取消</button>',
+      '  <button class="primary-button calendar-note-save" type="button">保存</button>',
+      '</div>',
+    ].join("");
+    card.appendChild(editor);
+
+    var textarea = editor.querySelector("textarea");
+    var status = editor.querySelector(".calendar-note-editor-status");
+    var saveBtn = editor.querySelector(".calendar-note-save");
+    var cancelBtn = editor.querySelector(".calendar-note-cancel");
+    if (textarea) {
+      textarea.focus();
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    }
+    if (cancelBtn) cancelBtn.addEventListener("click", closeCalendarNoteEditor);
+    if (saveBtn) {
+      saveBtn.addEventListener("click", function () {
+        var nextNote = (textarea ? textarea.value : "").trim();
+        saveBtn.disabled = true;
+        if (status) status.textContent = "保存中...";
+        putJson("/api/price-adjustments/daily-notes/" + encodeURIComponent(dateValue), { note: nextNote })
+          .then(function (payload) {
+            updateCalendarCardNote(card, payload.note || "");
+            closeCalendarNoteEditor();
+          })
+          .catch(function (err) {
+            console.error("Failed to save calendar note:", err);
+            if (status) status.textContent = "保存失败，请重试";
+            saveBtn.disabled = false;
+          });
+      });
+    }
+  }
+
+  function closeCalendarNoteEditor() {
+    if (!elements.calendarGrid) return;
+    var editor = elements.calendarGrid.querySelector(".calendar-note-editor");
+    if (editor && editor.parentNode) {
+      editor.parentNode.classList.remove("editing-note");
+      editor.parentNode.removeChild(editor);
+    }
+  }
+
+  function updateCalendarCardNote(card, note) {
+    var dateValue = card.dataset.date || "";
+    var countEl = card.querySelector(".calendar-count");
+    var count = countEl ? countEl.textContent : "0";
+    var button = card.querySelector(".calendar-note-trigger");
+    card.dataset.note = note;
+    card.classList.toggle("has-note", !!note);
+    card.title = dateValue + " 调价 " + count + " 个产品" + (note ? ("\n调价说明：" + note) : "");
+    if (button) {
+      button.textContent = note ? "说明" : "+ 说明";
+      button.title = note ? ("调价说明：" + note) : "点击输入调价说明";
+    }
+  }
+
+  function putJson(path, payload) {
+    return fetch(path, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload || {}),
+    }).then(function (response) {
+      if (!response.ok) throw new Error("Request failed: " + response.status);
+      return response.json();
+    });
   }
 
   // ===== Overview / KPIs =====
@@ -1065,23 +1177,21 @@
   }
 
   function renderSecondAdjustTable(items) {
-    if (!elements.secondAdjustTableBody) return;
-    if (!items.length) {
-      elements.secondAdjustTableBody.innerHTML = '<tr><td colspan="5"><div class="empty-state">当前筛选条件下没有二次调价数据</div></td></tr>';
-      return;
-    }
-    elements.secondAdjustTableBody.innerHTML = items.map(function (item) {
-      return [
-        '<tr>',
-        '<td><strong>' + app.escapeHtml(item.previous_adjust_date) + '</strong></td>',
-        '<td>' + item.sku_count + '</td>',
-        '<td>' + Number(item.avg_gap_days || 0).toFixed(1) + '</td>',
-        '<td>' + item.store_count + '</td>',
-        '<td>' + item.country_count + '</td>',
-        '</tr>'
-      ].join("");
-    }).join("");
+    if (!elements.secondAdjustGrid) return;
+    window.kanbanGrid.makeGrid("secondAdjustGrid", {
+      rowData: items || [],
+      overlayNoRowsTemplate: '<span class="ag-empty-copy">当前筛选条件下没有二次调价数据</span>',
+      rowHeight: 44,
+      columnDefs: [
+        { headerName: "上次调价日期", field: "previous_adjust_date", pinned: "left", minWidth: 150, cellRenderer: function (params) { return window.kanbanGrid.textCell(params.value, true); } },
+        { headerName: "二次调价 SKU", field: "sku_count", width: 140, cellClass: "ag-grid-number-cell" },
+        { headerName: "平均间隔天数", field: "avg_gap_days", width: 150, cellClass: "ag-grid-number-cell", valueFormatter: function (params) { return window.kanbanGrid.decimal(params.value, 1); } },
+        { headerName: "涉及店铺", field: "store_count", width: 120, cellClass: "ag-grid-number-cell" },
+        { headerName: "涉及国家", field: "country_count", width: 120, cellClass: "ag-grid-number-cell" }
+      ]
+    });
   }
+
 
   // ===== Top Lists =====
 
@@ -1094,34 +1204,29 @@
 
   function renderTopList(tab) {
     var items = topListData[tab] || [];
-    if (!elements.topListTableBody) return;
-    if (!items.length) {
-      elements.topListTableBody.innerHTML = '<tr><td colspan="14"><div class="empty-state">暂无数据</div></td></tr>';
-      return;
-    }
-    elements.topListTableBody.innerHTML = items.map(function (item) {
-      var salesChangeClass = item.sales_change > 0 ? "positive" : item.sales_change < 0 ? "negative" : "neutral";
-      var rankChangeClass = item.rank_change < 0 ? "positive" : item.rank_change > 0 ? "negative" : "neutral";
-      return [
-        '<tr>',
-        '<td>' + app.escapeHtml(item.country) + '</td>',
-        '<td>' + app.escapeHtml(item.store) + '</td>',
-        '<td><strong>' + app.escapeHtml(item.msku) + '</strong></td>',
-        '<td>' + item.sales_before + '</td>',
-        '<td>' + item.sales_after + '</td>',
-        '<td><span class="' + salesChangeClass + '" style="font-weight:800">' + (item.sales_change > 0 ? "+" : "") + item.sales_change + '</span></td>',
-        '<td>' + Number(item.daily_sales_before).toFixed(2) + '</td>',
-        '<td>' + Number(item.daily_sales_after).toFixed(2) + '</td>',
-        '<td>' + (item.daily_sales_change > 0 ? "+" : "") + Number(item.daily_sales_change).toFixed(2) + '</td>',
-        '<td>' + formatMetricValue(item.profit_change, "currency") + '</td>',
-        '<td>' + (item.margin_before ? app.formatPercent(item.margin_before, 1) : "—") + '</td>',
-        '<td>' + (item.margin_after ? app.formatPercent(item.margin_after, 1) : "—") + '</td>',
-        '<td><span class="' + rankChangeClass + '" style="font-weight:800">' + (item.rank_change > 0 ? "+" : "") + item.rank_change + '</span></td>',
-        '<td>' + (item.rank_after || '—') + '</td>',
-        '</tr>'
-      ].join("");
-    }).join("");
+    if (!elements.topListGrid) return;
+    window.kanbanGrid.makeGrid("topListGrid", {
+      rowData: items,
+      overlayNoRowsTemplate: '<span class="ag-empty-copy">暂无数据</span>',
+      columnDefs: [
+        { headerName: "国家", field: "country", pinned: "left", width: 110 },
+        { headerName: "店铺", field: "store", width: 128 },
+        { headerName: "MSKU", field: "msku", pinned: "left", width: 128, cellRenderer: function (params) { return window.kanbanGrid.textCell(params.value, true); } },
+        { headerName: "前销量", field: "sales_before", width: 100, cellClass: "ag-grid-number-cell" },
+        { headerName: "后销量", field: "sales_after", width: 100, cellClass: "ag-grid-number-cell" },
+        { headerName: "销量变化", field: "sales_change", width: 116, cellClass: "ag-grid-number-cell", cellRenderer: function (params) { return '<span class="' + window.kanbanGrid.toneClass(params.value) + '" style="font-weight:800">' + window.kanbanGrid.signed(params.value, 0) + '</span>'; } },
+        { headerName: "前日销", field: "daily_sales_before", width: 105, cellClass: "ag-grid-number-cell", valueFormatter: function (params) { return window.kanbanGrid.decimal(params.value, 2); } },
+        { headerName: "后日销", field: "daily_sales_after", width: 105, cellClass: "ag-grid-number-cell", valueFormatter: function (params) { return window.kanbanGrid.decimal(params.value, 2); } },
+        { headerName: "日销变化", field: "daily_sales_change", width: 116, cellClass: "ag-grid-number-cell", valueFormatter: function (params) { return window.kanbanGrid.signed(params.value, 2); } },
+        { headerName: "毛利润变化", field: "profit_change", width: 130, cellClass: "ag-grid-number-cell", valueFormatter: function (params) { return formatMetricValue(params.value, "currency"); } },
+        { headerName: "前毛利率", field: "margin_before", width: 112, cellClass: "ag-grid-number-cell", valueFormatter: function (params) { return params.value ? window.kanbanGrid.percent(params.value, 1) : "—"; } },
+        { headerName: "后毛利率", field: "margin_after", width: 112, cellClass: "ag-grid-number-cell", valueFormatter: function (params) { return params.value ? window.kanbanGrid.percent(params.value, 1) : "—"; } },
+        { headerName: "排名变化", field: "rank_change", width: 112, cellClass: "ag-grid-number-cell", cellRenderer: function (params) { return '<span class="' + window.kanbanGrid.toneClass(params.value, true) + '" style="font-weight:800">' + window.kanbanGrid.signed(params.value, 0) + '</span>'; } },
+        { headerName: "最后一天排名", field: "rank_after", width: 132, cellClass: "ag-grid-number-cell", valueFormatter: function (params) { return params.value || "—"; } }
+      ]
+    });
   }
+
 
   function riskTagHtml(level) {
     if (!level) return '—';
@@ -1314,42 +1419,52 @@
     el.innerHTML = html;
   }
 
+  function skuColSort(colId) {
+    return filterState.sort_field === colId ? filterState.sort_dir : null;
+  }
+
+  function handleSkuGridSortChanged(event) {
+    var sortedColumn = (event.api.getColumnState() || []).find(function (column) { return column.sort; });
+    var nextField = sortedColumn ? sortedColumn.colId : "";
+    var nextDir = sortedColumn ? sortedColumn.sort : "";
+    if ((filterState.sort_field || "") === nextField && (filterState.sort_dir || "") === nextDir) return;
+    filterState.sort_field = nextField;
+    filterState.sort_dir = nextDir;
+    filterState.page = 1;
+    loadSkuList();
+  }
+
   function renderSkuTable(rows, total) {
     if (elements.skuTableCountText) {
       elements.skuTableCountText.textContent = "共 " + total + " 条";
     }
-    if (!elements.skuTableBody) return;
-    if (!rows.length) {
-      elements.skuTableBody.innerHTML = '<tr><td colspan="17"><div class="empty-state">当前筛选条件下无数据</div></td></tr>';
-      return;
-    }
-    elements.skuTableBody.innerHTML = rows.map(function (item) {
-      var salesChangeClass = item.sales_change > 0 ? "positive" : item.sales_change < 0 ? "negative" : "neutral";
-      var marginChangeClass = item.margin_change > 0 ? "positive" : item.margin_change < 0 ? "negative" : "neutral";
-      var dailySalesChangeClass = item.daily_sales_change > 0 ? "positive" : item.daily_sales_change < 0 ? "negative" : "neutral";
-      return [
-        '<tr>',
-        '<td>' + app.escapeHtml(item.country) + '</td>',
-        '<td>' + app.escapeHtml(item.store) + '</td>',
-        '<td><strong>' + app.escapeHtml(item.msku) + '</strong></td>',
-        '<td>' + adjustmentTypeTag(item.adjustment_type) + '</td>',
-        '<td>' + (item.previous_adjust_date || '—') + '</td>',
-        '<td>' + item.price_before + '</td>',
-        '<td>' + item.price_after + '</td>',
-        '<td>' + app.formatPercent(item.drop_ratio, 1) + '</td>',
-        '<td>' + item.sales_before + '</td>',
-        '<td>' + item.sales_after + '</td>',
-        '<td><span class="' + salesChangeClass + '" style="font-weight:800">' + (item.sales_change > 0 ? "+" : "") + item.sales_change + '</span></td>',
-        '<td>' + Number(item.daily_sales_before || 0).toFixed(2) + '</td>',
-        '<td>' + Number(item.daily_sales_after || 0).toFixed(2) + '</td>',
-        '<td><span class="' + dailySalesChangeClass + '" style="font-weight:800">' + (item.daily_sales_change > 0 ? "+" : "") + Number(item.daily_sales_change || 0).toFixed(2) + '</span></td>',
-        '<td>' + (item.margin_before ? app.formatPercent(item.margin_before, 1) : "—") + '</td>',
-        '<td>' + (item.margin_after ? app.formatPercent(item.margin_after, 1) : "—") + '</td>',
-        '<td><span class="' + marginChangeClass + '" style="font-weight:800">' + (item.margin_change > 0 ? "+" : "") + app.formatPercent(item.margin_change, 1) + '</span></td>',
-        '</tr>'
-      ].join("");
-    }).join("");
+    if (!elements.priceReviewSkuGrid) return;
+    window.kanbanGrid.makeGrid("priceReviewSkuGrid", {
+      rowData: rows || [],
+      overlayNoRowsTemplate: '<span class="ag-empty-copy">当前筛选条件下无数据</span>',
+      columnDefs: [
+        { headerName: "国家", field: "country", pinned: "left", width: 110, sort: skuColSort("country") },
+        { headerName: "店铺", field: "store", pinned: "left", width: 128, sort: skuColSort("store") },
+        { headerName: "MSKU", field: "msku", pinned: "left", width: 128, sort: skuColSort("msku"), cellRenderer: function (params) { return window.kanbanGrid.textCell(params.value, true); } },
+        { headerName: "调价类型", field: "adjustment_type", width: 130, sort: skuColSort("adjustment_type"), cellRenderer: function (params) { return adjustmentTypeTag(params.value); } },
+        { headerName: "上次调价", field: "previous_adjust_date", width: 120, sort: skuColSort("previous_adjust_date"), valueFormatter: function (params) { return params.value || "—"; } },
+        { headerName: "调价前价格", field: "price_before", width: 128, sort: skuColSort("price_before"), cellClass: "ag-grid-number-cell" },
+        { headerName: "调价后价格", field: "price_after", width: 128, sort: skuColSort("price_after"), cellClass: "ag-grid-number-cell" },
+        { headerName: "调价幅度", field: "drop_ratio", width: 116, sort: skuColSort("drop_ratio"), cellClass: "ag-grid-number-cell", valueFormatter: function (params) { return window.kanbanGrid.percent(params.value, 1); } },
+        { headerName: "前销量", field: "sales_before", width: 100, sort: skuColSort("sales_before"), cellClass: "ag-grid-number-cell" },
+        { headerName: "后销量", field: "sales_after", width: 100, sort: skuColSort("sales_after"), cellClass: "ag-grid-number-cell" },
+        { headerName: "销量变化", field: "sales_change", width: 116, sort: skuColSort("sales_change"), cellClass: "ag-grid-number-cell", cellRenderer: function (params) { return '<span class="' + window.kanbanGrid.toneClass(params.value) + '" style="font-weight:800">' + window.kanbanGrid.signed(params.value, 0) + '</span>'; } },
+        { headerName: "前日销", field: "daily_sales_before", width: 105, sort: skuColSort("daily_sales_before"), cellClass: "ag-grid-number-cell", valueFormatter: function (params) { return window.kanbanGrid.decimal(params.value, 2); } },
+        { headerName: "后日销", field: "daily_sales_after", width: 105, sort: skuColSort("daily_sales_after"), cellClass: "ag-grid-number-cell", valueFormatter: function (params) { return window.kanbanGrid.decimal(params.value, 2); } },
+        { headerName: "日销变化", field: "daily_sales_change", width: 116, sort: skuColSort("daily_sales_change"), cellClass: "ag-grid-number-cell", cellRenderer: function (params) { return '<span class="' + window.kanbanGrid.toneClass(params.value) + '" style="font-weight:800">' + window.kanbanGrid.signed(params.value, 2) + '</span>'; } },
+        { headerName: "前毛利率", field: "margin_before", width: 112, sort: skuColSort("margin_before"), cellClass: "ag-grid-number-cell", valueFormatter: function (params) { return params.value ? window.kanbanGrid.percent(params.value, 1) : "—"; } },
+        { headerName: "后毛利率", field: "margin_after", width: 112, sort: skuColSort("margin_after"), cellClass: "ag-grid-number-cell", valueFormatter: function (params) { return params.value ? window.kanbanGrid.percent(params.value, 1) : "—"; } },
+        { headerName: "毛利率变化", field: "margin_change", width: 128, sort: skuColSort("margin_change"), cellClass: "ag-grid-number-cell", cellRenderer: function (params) { return '<span class="' + window.kanbanGrid.toneClass(params.value) + '" style="font-weight:800">' + window.kanbanGrid.signedPercent(params.value, 1) + '</span>'; } }
+      ],
+      onSortChanged: handleSkuGridSortChanged
+    });
   }
+
 
   function renderPagination(payload) {
     if (!elements.paginationInfo) return;

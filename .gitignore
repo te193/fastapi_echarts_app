@@ -9,6 +9,8 @@ backups/
 logs/
 uvicorn.out.log
 uvicorn.err.log
+.worktrees/
 
 scripts/dashboard_env.ps1
 scripts/dashboard_env.local.ps1
+scripts/dashboard_env.test.ps1

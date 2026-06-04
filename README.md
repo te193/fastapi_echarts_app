@@ -22,6 +22,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy_windows.ps1
 
 更多参数见 [Windows 部署说明](docs/windows_deploy.md)。
 
+## 开发与测试依赖
+
+运行测试前安装开发依赖：
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+```
+
 ## 手动启动
 
 启动局域网看板服务：
@@ -41,6 +49,24 @@ http://127.0.0.1:8000
 ```text
 http://你的本机局域网IP:8000
 ```
+
+## 测试版启动
+
+新需求先在测试版预览，默认端口 `8001`：
+
+```powershell
+.\scripts\run_web_server_test.ps1
+```
+
+完整隔离开发建议先创建测试 worktree，再在测试目录启动测试版：
+
+```powershell
+.\scripts\setup_test_worktree.ps1 -BaseBranch release -BranchName test\summary-page
+cd .worktrees\dashboard-test
+.\scripts\run_web_server_test.ps1
+```
+
+版本控制和发布流程见 [应用版 / 测试版版本控制流程](docs/version_control_workflow.md)。
 
 ## 手动更新数据
 

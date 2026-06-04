@@ -28,7 +28,7 @@
     [
       "startDateInput", "endDateInput", "siteSelect", "storeSelect", "overLimitSelect",
       "dailySalesBandSelect", "marginBandSelect", "keywordInput",
-      "clearFiltersBtn", "periodQuickButtons", "activeFilterChips", "tableCountText", "skuTableBody", "paginationInfo",
+      "clearFiltersBtn", "periodQuickButtons", "activeFilterChips", "tableCountText", "skuGrid", "paginationInfo",
       "paginationNumbers", "prevPageBtn", "nextPageBtn", "detailSourceText", "detailDrawer",
       "drawerMask", "closeDrawerBtn", "drawerTitle", "drawerContent", "exportRawCsvBtn"
     ].forEach(function (id) {
@@ -40,6 +40,8 @@
     if (!state.start_date) state.start_date = meta.default_start_date;
     if (!state.end_date) state.end_date = meta.default_end_date;
     if (!state.page) state.page = 1;
+    if (!state.sort_field) state.sort_field = "";
+    if (!state.sort_dir) state.sort_dir = "";
   }
 
   function populateFilters() {
@@ -112,6 +114,8 @@
       state.margin_band = "all";
       state.keyword = "";
       state.page = 1;
+      state.sort_field = "";
+      state.sort_dir = "";
       detailColumnFilters = {};
       closeColumnFilterPopover();
       syncControls();
@@ -333,6 +337,23 @@
     });
   }
 
+  function colSort(colId) {
+    return state.sort_field === colId ? state.sort_dir : null;
+  }
+
+  function handleGridSortChanged(event) {
+    var sortedColumn = (event.api.getColumnState() || []).find(function (column) {
+      return column.sort;
+    });
+    var nextField = sortedColumn ? sortedColumn.colId : "";
+    var nextDir = sortedColumn ? sortedColumn.sort : "";
+    if ((state.sort_field || "") === nextField && (state.sort_dir || "") === nextDir) return;
+    state.sort_field = nextField;
+    state.sort_dir = nextDir;
+    state.page = 1;
+    renderTable();
+  }
+
   function formatOriginalPrice(value) {
     return Number(value || 0).toLocaleString("zh-CN", {
       minimumFractionDigits: 0,
@@ -357,39 +378,33 @@
   }
 
   function renderRows(rows) {
-    if (!rows.length) {
-      elements.skuTableBody.innerHTML = '<tr><td colspan="17"><div class="empty-state">当前筛选条件下没有产品，请调整条件后再查看。</div></td></tr>';
-      return;
-    }
-
-    elements.skuTableBody.innerHTML = rows.map(function (item) {
-      return [
-        '<tr data-id="' + item.id + '">',
-        "<td>" + item.country + "</td>",
-        "<td>" + item.store + "</td>",
-        "<td><strong>" + item.msku + "</strong></td>",
-        "<td>" + item.daily_sales + "</td>",
-        "<td>" + item.daily_sales_band + "</td>",
-        "<td>" + app.formatPercent(item.order_gross_margin) + "</td>",
-        "<td>" + item.margin_band + "</td>",
-        "<td>" + item.sales_7d + "</td>",
-        "<td>" + item.sales_30d + "</td>",
-        "<td>" + app.formatCurrency(item.revenue_30d) + "</td>",
-        "<td>" + formatOriginalPrice(item.current_price) + "</td>",
-        "<td>" + formatOriginalPrice(item.limit_price_35 == null ? item.limit_price : item.limit_price_35) + "</td>",
-        "<td>" + formatOriginalPrice(item.limit_price_10) + "</td>",
-        "<td>" + formatOriginalPrice(item.price_gap) + "</td>",
-        "<td>" + (item.over_limit ? "是" : "否") + "</td>",
-        "<td>" + item.fba_sellable_inventory + "</td>",
-        "<td>" + item.stock_days + "</td>",
-        "</tr>"
-      ].join("");
-    }).join("");
-
-    Array.from(elements.skuTableBody.querySelectorAll("[data-id]")).forEach(function (row) {
-      row.addEventListener("click", function () {
-        openDrawer(this.dataset.id, 30);
-      });
+    window.kanbanGrid.makeGrid("skuGrid", {
+      rowData: rows || [],
+      overlayNoRowsTemplate: '<span class="ag-empty-copy">当前筛选条件下没有产品，请调整条件后再查看。</span>',
+      columnDefs: [
+        { headerName: "国家", field: "country", pinned: "left", width: 110, sort: colSort("country") },
+        { headerName: "店铺", field: "store", pinned: "left", width: 128, sort: colSort("store") },
+        { headerName: "MSKU", field: "msku", pinned: "left", width: 128, sort: colSort("msku"), cellRenderer: function (params) { return window.kanbanGrid.textCell(params.value, true); } },
+        { headerName: "日销", field: "daily_sales", width: 100, sort: colSort("daily_sales"), cellClass: "ag-grid-number-cell" },
+        { headerName: "日销分层", field: "daily_sales_band", width: 130, sort: colSort("daily_sales_band") },
+        { headerName: "订单毛利率", field: "order_gross_margin", width: 130, sort: colSort("order_gross_margin"), cellClass: "ag-grid-number-cell", valueFormatter: function (params) { return window.kanbanGrid.percent(params.value, 1); } },
+        { headerName: "毛利率分层", field: "margin_band", width: 130, sort: colSort("margin_band") },
+        { headerName: "近 7 天销量", field: "sales_7d", width: 128, sort: colSort("sales_7d"), cellClass: "ag-grid-number-cell" },
+        { headerName: "近 30 天销量", field: "sales_30d", width: 138, sort: colSort("sales_30d"), cellClass: "ag-grid-number-cell" },
+        { headerName: "30 天销售额", field: "revenue_30d", width: 140, sort: colSort("revenue_30d"), cellClass: "ag-grid-number-cell", valueFormatter: function (params) { return window.kanbanGrid.compactAmount(params.value); } },
+        { headerName: "售价", field: "current_price", width: 110, sort: colSort("current_price"), cellClass: "ag-grid-number-cell", valueFormatter: function (params) { return formatOriginalPrice(params.value); } },
+        { headerName: "35毛利定价", colId: "limit_price_35_display", width: 136, sort: colSort("limit_price_35_display"), cellClass: "ag-grid-number-cell", valueGetter: function (params) { return params.data.limit_price_35 == null ? params.data.limit_price : params.data.limit_price_35; }, valueFormatter: function (params) { return formatOriginalPrice(params.value); } },
+        { headerName: "10毛利定价", field: "limit_price_10", width: 136, sort: colSort("limit_price_10"), cellClass: "ag-grid-number-cell", valueFormatter: function (params) { return formatOriginalPrice(params.value); } },
+        { headerName: "价差", field: "price_gap", width: 110, sort: colSort("price_gap"), cellClass: "ag-grid-number-cell", valueFormatter: function (params) { return formatOriginalPrice(params.value); } },
+        { headerName: "超限价", colId: "over_limit", width: 106, sort: colSort("over_limit"), filter: "agSetColumnFilter", valueGetter: function (params) { return params.data && params.data.over_limit ? "是" : "否"; }, filterParams: { values: ["是", "否"] } },
+        { headerName: "FBA 可售", field: "fba_sellable_inventory", width: 118, sort: colSort("fba_sellable_inventory"), cellClass: "ag-grid-number-cell" },
+        { headerName: "库存周转天数", field: "stock_days", width: 142, sort: colSort("stock_days"), cellClass: "ag-grid-number-cell" }
+      ],
+      onSortChanged: handleGridSortChanged,
+      onRowClicked: function (event) {
+        if (!event.data || !event.data.id) return;
+        openDrawer(event.data.id, 30);
+      }
     });
   }
 

@@ -77,31 +77,8 @@
       <span id="tableCountText"></span>
     </div>
   </div>
-  <div class="table-wrap">
-    <table class="sku-table">
-      <thead>
-        <tr>
-          <th><span class="column-filter-head"><span>国家</span><button class="column-filter-btn" type="button" data-detail-filter-key="country" data-detail-filter-type="text">筛</button></span></th>
-          <th><span class="column-filter-head"><span>店铺</span><button class="column-filter-btn" type="button" data-detail-filter-key="store" data-detail-filter-type="text">筛</button></span></th>
-          <th><span class="column-filter-head"><span>MSKU</span><button class="column-filter-btn" type="button" data-detail-filter-key="msku" data-detail-filter-type="text">筛</button></span></th>
-          <th><span class="column-filter-head"><span>日销</span><button class="column-filter-btn" type="button" data-detail-filter-key="daily_sales" data-detail-filter-type="number">筛</button></span></th>
-          <th><span class="column-filter-head"><span>日销分层</span><button class="column-filter-btn" type="button" data-detail-filter-key="daily_sales_band" data-detail-filter-type="text">筛</button></span></th>
-          <th><span class="column-filter-head"><span>订单毛利率</span><button class="column-filter-btn" type="button" data-detail-filter-key="order_gross_margin" data-detail-filter-type="number">筛</button></span></th>
-          <th><span class="column-filter-head"><span>毛利率分层</span><button class="column-filter-btn" type="button" data-detail-filter-key="margin_band" data-detail-filter-type="text">筛</button></span></th>
-          <th><span class="column-filter-head"><span>近 7 天销量</span><button class="column-filter-btn" type="button" data-detail-filter-key="sales_7d" data-detail-filter-type="number">筛</button></span></th>
-          <th><span class="column-filter-head"><span>近 30 天销量</span><button class="column-filter-btn" type="button" data-detail-filter-key="sales_30d" data-detail-filter-type="number">筛</button></span></th>
-          <th><span class="column-filter-head"><span>30 天销售额</span><button class="column-filter-btn" type="button" data-detail-filter-key="revenue_30d" data-detail-filter-type="number">筛</button></span></th>
-          <th><span class="column-filter-head"><span>售价</span><button class="column-filter-btn" type="button" data-detail-filter-key="current_price" data-detail-filter-type="number">筛</button></span></th>
-          <th><span class="column-filter-head"><span>35毛利定价</span><button class="column-filter-btn" type="button" data-detail-filter-key="limit_price_35" data-detail-filter-type="number">筛</button></span></th>
-          <th><span class="column-filter-head"><span>10毛利定价</span><button class="column-filter-btn" type="button" data-detail-filter-key="limit_price_10" data-detail-filter-type="number">筛</button></span></th>
-          <th><span class="column-filter-head"><span>价差</span><button class="column-filter-btn" type="button" data-detail-filter-key="price_gap" data-detail-filter-type="number">筛</button></span></th>
-          <th><span class="column-filter-head"><span>超限价</span><button class="column-filter-btn" type="button" data-detail-filter-key="over_limit" data-detail-filter-type="text">筛</button></span></th>
-          <th><span class="column-filter-head"><span>FBA 可售</span><button class="column-filter-btn" type="button" data-detail-filter-key="fba_sellable_inventory" data-detail-filter-type="number">筛</button></span></th>
-          <th><span class="column-filter-head"><span>库存周转天数</span><button class="column-filter-btn" type="button" data-detail-filter-key="stock_days" data-detail-filter-type="number">筛</button></span></th>
-        </tr>
-      </thead>
-      <tbody id="skuTableBody"></tbody>
-    </table>
+  <div class="table-wrap ag-grid-shell">
+    <div id="skuGrid"></div>
   </div>
 
   <div class="pagination-bar">
@@ -130,5 +107,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', path='js/detail.js') }}?v=20260528a"></script>
+<script src="{{ url_for('static', path='js/detail.js') }}?v=20260604b"></script>
 {% endblock %}

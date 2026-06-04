@@ -851,6 +851,7 @@ def _build_risk_levels(skus: list[dict[str, Any]]) -> tuple[list[dict[str, Any]]
 class PriceReviewService:
     def __init__(self):
         self._cache: dict[str, PriceReviewData] = {}
+        self._day_notes_table_ready = False
 
     def connect(self):
         return pymysql.connect(
@@ -863,6 +864,67 @@ class PriceReviewService:
             cursorclass=pymysql.cursors.DictCursor,
             autocommit=True,
         )
+
+    def _ensure_adjustment_day_notes_table(self, conn) -> None:
+        if self._day_notes_table_ready:
+            return
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                create table if not exists price_review_adjustment_day_notes (
+                    adjust_date date not null,
+                    note text not null,
+                    created_at datetime not null default current_timestamp,
+                    updated_at datetime not null default current_timestamp on update current_timestamp,
+                    primary key (adjust_date)
+                ) engine=InnoDB default charset=utf8mb4
+                """
+            )
+        self._day_notes_table_ready = True
+
+    def _get_adjustment_day_notes(self, start_date: date, end_date: date) -> dict[date, str]:
+        try:
+            with self.connect() as conn:
+                self._ensure_adjustment_day_notes_table(conn)
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        select adjust_date, note
+                        from price_review_adjustment_day_notes
+                        where adjust_date between %(start_date)s and %(end_date)s
+                        """,
+                        {"start_date": start_date, "end_date": end_date},
+                    )
+                    return {row["adjust_date"]: safe_str(row.get("note")).strip() for row in cursor.fetchall()}
+        except pymysql.MySQLError:
+            return {}
+
+    def save_adjustment_day_note(self, adjust_date: date, note: str) -> str:
+        clean_note = safe_str(note).strip()
+        if len(clean_note) > 1000:
+            raise ValueError("note must be 1000 characters or fewer")
+
+        with self.connect() as conn:
+            self._ensure_adjustment_day_notes_table(conn)
+            with conn.cursor() as cursor:
+                if clean_note:
+                    cursor.execute(
+                        """
+                        insert into price_review_adjustment_day_notes (adjust_date, note)
+                        values (%(adjust_date)s, %(note)s)
+                        on duplicate key update note = values(note), updated_at = current_timestamp
+                        """,
+                        {"adjust_date": adjust_date, "note": clean_note},
+                    )
+                else:
+                    cursor.execute(
+                        """
+                        delete from price_review_adjustment_day_notes
+                        where adjust_date = %(adjust_date)s
+                        """,
+                        {"adjust_date": adjust_date},
+                    )
+        return clean_note
 
     def load(self, adjust_date: date | None = None, compare_days: int = 14) -> PriceReviewData:
         adjust_date = adjust_date or self._latest_available_adjust_date(compare_days) or date.today()
@@ -1266,6 +1328,8 @@ class PriceReviewService:
         adjustment_type: str = "",
         keyword: str = "",
         column_filters: dict[str, str] | None = None,
+        sort_field: str = "",
+        sort_dir: str = "",
         adjust_date: date | None = None,
         compare_days: int = 14,
     ) -> dict[str, Any]:
@@ -1294,6 +1358,7 @@ class PriceReviewService:
                 or kw in r["product_name"].lower()
             ]
         rows = self._filter_sku_columns(rows, column_filters)
+        self._sort_sku_rows(rows, sort_field, sort_dir)
 
         total = len(rows)
         total_pages = max(1, math.ceil(total / page_size))
@@ -1311,6 +1376,40 @@ class PriceReviewService:
             "period_incomplete": data.period_incomplete,
             "latest_data_date": data.latest_data_date.isoformat() if data.latest_data_date else None,
         }
+
+    def _sort_sku_rows(self, rows: list[dict[str, Any]], sort_field: str, sort_dir: str) -> None:
+        sort_key = str(sort_field or "").strip()
+        descending = str(sort_dir or "").lower() == "desc"
+        sortable_fields = {
+            "country": "country",
+            "store": "store",
+            "msku": "msku",
+            "adjustment_type": "adjustment_type",
+            "previous_adjust_date": "previous_adjust_date",
+            "price_before": "price_before",
+            "price_after": "price_after",
+            "drop_ratio": "drop_ratio",
+            "sales_before": "sales_before",
+            "sales_after": "sales_after",
+            "sales_change": "sales_change",
+            "daily_sales_before": "daily_sales_before",
+            "daily_sales_after": "daily_sales_after",
+            "daily_sales_change": "daily_sales_change",
+            "margin_before": "margin_before",
+            "margin_after": "margin_after",
+            "margin_change": "margin_change",
+        }
+        mapped_key = sortable_fields.get(sort_key)
+
+        def normalized(value: Any) -> tuple[int, Any]:
+            if value is None or value == "":
+                return (1, "")
+            if isinstance(value, (int, float)):
+                return (0, float(value))
+            return (0, str(value))
+
+        if mapped_key:
+            rows.sort(key=lambda row: normalized(row.get(mapped_key)), reverse=descending)
 
     def get_top_lists_export_payload(self, adjust_date: date | None = None, compare_days: int = 14, country: str = "", drop_range: str = "", risk_level: str = "", store: str = "", price_band: str = "", adjustment_type: str = "", keyword: str = "") -> list[dict[str, Any]]:
         data = self.load(adjust_date, compare_days)
@@ -1382,6 +1481,7 @@ class PriceReviewService:
         today = date.today()
         start_date = today - timedelta(days=days - 1)
         counts: dict[date, int] = {}
+        notes = self._get_adjustment_day_notes(start_date, today)
         latest_data_date = self._latest_product_data_date()
         try:
             with self.connect() as conn:
@@ -1409,6 +1509,7 @@ class PriceReviewService:
                 "display_date": f"{d.month}月{d.day}日",
                 "weekday": ["周一", "周二", "周三", "周四", "周五", "周六", "周日"][d.weekday()],
                 "count": count,
+                "note": notes.get(d, ""),
                 "clickable": clickable,
                 "is_today": d == today,
                 "is_weekend": d.weekday() >= 5,

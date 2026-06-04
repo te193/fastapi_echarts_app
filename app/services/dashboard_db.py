@@ -4,6 +4,7 @@ import base64
 import hashlib
 import math
 import os
+import re
 import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -32,6 +33,8 @@ MARGIN_GOAL = 0.20
 DEFAULT_DASHBOARD_DAYS = int(os.getenv("DASHBOARD_DEFAULT_PERIOD_DAYS", "90"))
 MATRIX_ALL_VALUE = "__ALL__"
 MATRIX_PERIOD_TABLE = "etl_datasync.dashboard_product_matrix_period_snapshot"
+ALERT_COMPARISON_TABLE = "etl_datasync.dashboard_alert_comparison_snapshot"
+ALERT_DAY_COMPARISONS = {7: "d7", 14: "d14", 30: "d30", 60: "d60", 90: "d90"}
 
 
 @dataclass(frozen=True)
@@ -58,6 +61,33 @@ def parse_day(value: str | None) -> date | None:
 
 def format_day(value: date) -> str:
     return value.strftime("%Y-%m-%d")
+
+
+def normalize_alert_comparison_code(comparison_code: str | None, compare_days: int | None = 7) -> str:
+    code = str(comparison_code or "").strip()
+    if code.startswith("d") and code[1:].isdigit() and int(code[1:]) in ALERT_DAY_COMPARISONS:
+        return code
+    if re.fullmatch(r"m\d{4}_\d{2}_vs_mtd", code):
+        return code
+    try:
+        days = int(compare_days or 7)
+    except (TypeError, ValueError):
+        days = 7
+    if days >= 90:
+        return "d90"
+    if days >= 60:
+        return "d60"
+    if days >= 30:
+        return "d30"
+    if days >= 14:
+        return "d14"
+    return "d7"
+
+
+def alert_compare_days_from_code(comparison_code: str) -> int:
+    if comparison_code.startswith("d") and comparison_code[1:].isdigit():
+        return int(comparison_code[1:])
+    return 0
 
 
 def to_float(value: Any) -> float:
@@ -302,15 +332,45 @@ class DashboardDbService:
             "months": months,
         }
 
+    def _sort_items(
+        self,
+        items: list[dict[str, Any]],
+        sort_field: str,
+        sort_dir: str,
+        field_map: dict[str, str],
+        default: list[tuple[str, bool]],
+    ) -> None:
+        sort_key = str(sort_field or "").strip()
+        descending = str(sort_dir or "").lower() == "desc"
+        mapped_key = field_map.get(sort_key)
+
+        def normalized(value: Any) -> tuple[int, Any]:
+            if value is None or value == "":
+                return (1, "")
+            if isinstance(value, (int, float)):
+                return (0, float(value))
+            return (0, str(value))
+
+        if mapped_key:
+            items.sort(key=lambda item: normalized(item.get(mapped_key)), reverse=descending)
+            return
+
+        for key, is_desc in reversed(default):
+            items.sort(key=lambda item: normalized(item.get(key)), reverse=is_desc)
+
     def get_alerts_payload(
         self,
         filters: dict[str, Any],
         alert_type: str = "all",
         compare_days: int = 7,
+        comparison_code: str = "",
         sales_trend: str = "all",
         rank_trend: str = "all",
         margin_status: str = "all",
         stock_status: str = "all",
+        transition_filter: str = "",
+        sort_field: str = "",
+        sort_dir: str = "",
         page: int = 1,
         page_size: int = 20,
     ) -> dict[str, Any]:
@@ -321,14 +381,36 @@ class DashboardDbService:
                 window,
                 filters,
                 compare_days=compare_days,
+                comparison_code=comparison_code,
                 alert_type=alert_type,
                 sales_trend=sales_trend,
                 rank_trend=rank_trend,
                 margin_status=margin_status,
                 stock_status=stock_status,
+                transition_filter=transition_filter,
             )
 
         payload["total_count"] = len(payload["items"])
+        self._sort_items(
+            payload["items"],
+            sort_field,
+            sort_dir,
+            {
+                "label": "label",
+                "title": "title",
+                "store": "store",
+                "country": "country",
+                "sales_text": "recent_qty",
+                "recent_qty": "recent_qty",
+                "recent_daily_sales": "recent_daily_sales",
+                "previous_qty": "previous_qty",
+                "previous_daily_sales": "previous_daily_sales",
+                "rank_text": "rank_delta",
+                "margin_text": "recent_margin",
+                "stock_text": "sellable_days",
+            },
+            default=[("priority", False), ("title", False)],
+        )
         total = len(payload["items"])
         safe_page_size = max(10, min(100, int(page_size or 20)))
         total_pages = max(1, math.ceil(total / safe_page_size))
@@ -354,10 +436,12 @@ class DashboardDbService:
         filters: dict[str, Any],
         alert_type: str = "all",
         compare_days: int = 7,
+        comparison_code: str = "",
         sales_trend: str = "all",
         rank_trend: str = "all",
         margin_status: str = "all",
         stock_status: str = "all",
+        transition_filter: str = "",
     ) -> dict[str, Any]:
         with self.connect() as conn:
             window = self._resolve_window(conn, filters)
@@ -366,17 +450,22 @@ class DashboardDbService:
                 window,
                 filters,
                 compare_days=compare_days,
+                comparison_code=comparison_code,
                 alert_type=alert_type,
                 sales_trend=sales_trend,
                 rank_trend=rank_trend,
                 margin_status=margin_status,
                 stock_status=stock_status,
+                transition_filter=transition_filter,
             )
         return {
             "items": payload["items"],
             "window": payload["window"],
             "comparison_window": payload["comparison_window"],
             "compare_days": payload["compare_days"],
+            "comparison_code": payload.get("comparison_code"),
+            "comparison_type": payload.get("comparison_type"),
+            "comparison_label": payload.get("comparison_label"),
         }
 
     def get_opportunities_payload(
@@ -385,6 +474,9 @@ class DashboardDbService:
         opportunity_type: str = "all",
         compare_days: int = 14,
         stock_status: str = "all",
+        transition_filter: str = "",
+        sort_field: str = "",
+        sort_dir: str = "",
         page: int = 1,
         page_size: int = 20,
     ) -> dict[str, Any]:
@@ -397,9 +489,29 @@ class DashboardDbService:
                 compare_days=compare_days,
                 opportunity_type=opportunity_type,
                 stock_status=stock_status,
+                transition_filter=transition_filter,
             )
 
         total = len(payload["items"])
+        self._sort_items(
+            payload["items"],
+            sort_field,
+            sort_dir,
+            {
+                "label": "label",
+                "score": "score",
+                "msku": "msku",
+                "store": "store",
+                "country": "country",
+                "daily_sales": "daily_sales",
+                "scoped_revenue": "scoped_revenue",
+                "rank_sessions": "rank_delta",
+                "stock": "sellable_days",
+                "ad": "tacos",
+                "price": "current_price",
+            },
+            default=[("score", True), ("scoped_revenue", True), ("msku", False)],
+        )
         safe_page_size = max(10, min(100, int(page_size or 20)))
         total_pages = max(1, math.ceil(total / safe_page_size))
         safe_page = min(max(1, int(page or 1)), total_pages)
@@ -418,6 +530,7 @@ class DashboardDbService:
         opportunity_type: str = "all",
         compare_days: int = 14,
         stock_status: str = "all",
+        transition_filter: str = "",
     ) -> dict[str, Any]:
         with self.connect() as conn:
             window = self._resolve_opportunity_window(conn, filters, compare_days)
@@ -428,6 +541,7 @@ class DashboardDbService:
                 compare_days=compare_days,
                 opportunity_type=opportunity_type,
                 stock_status=stock_status,
+                transition_filter=transition_filter,
             )
 
     def get_inventory_weekly_overview(self, filters: dict[str, Any]) -> dict[str, Any]:
@@ -449,6 +563,8 @@ class DashboardDbService:
         filters: dict[str, Any],
         warning_status: str = "all",
         metric: str = "all",
+        sort_field: str = "",
+        sort_dir: str = "",
         page: int = 1,
         page_size: int = 20,
     ) -> dict[str, Any]:
@@ -465,6 +581,8 @@ class DashboardDbService:
                 filters,
                 warning_status=warning_status,
                 warning_weeks=warning_weeks,
+                sort_field=sort_field,
+                sort_dir=sort_dir,
                 page=page,
                 page_size=page_size,
             )
@@ -683,6 +801,8 @@ class DashboardDbService:
         filters: dict[str, Any],
         warning_status: str,
         warning_weeks: set[str],
+        sort_field: str,
+        sort_dir: str,
         page: int,
         page_size: int,
     ) -> tuple[list[dict[str, Any]], int]:
@@ -713,6 +833,7 @@ class DashboardDbService:
         safe_page = max(1, int(page or 1))
         params["limit"] = safe_page_size
         params["offset"] = (safe_page - 1) * safe_page_size
+        order_sql = self._inventory_weekly_order_sql(sort_field, sort_dir)
         with conn.cursor() as cursor:
             cursor.execute(f"select count(*) as total from {table} w where {where_sql}", params)
             total = to_int((cursor.fetchone() or {}).get("total"))
@@ -735,13 +856,35 @@ class DashboardDbService:
                     w.plan_cost
                 from {table} w
                 where {where_sql}
-                order by w.week_start desc, w.seller_name_new, w.seller_sku_adj
+                order by {order_sql}
                 limit %(limit)s offset %(offset)s
                 """,
                 params,
             )
             rows = cursor.fetchall()
         return rows, total
+
+    def _inventory_weekly_order_sql(self, sort_field: str, sort_dir: str) -> str:
+        direction = "asc" if str(sort_dir or "").lower() == "asc" else "desc"
+        sort_key = str(sort_field or "").strip()
+        sortable_fields = {
+            "week_start": "w.week_start",
+            "site": "coalesce(w.country_category, '')",
+            "store": "coalesce(w.seller_name_new, '')",
+            "msku": "coalesce(w.seller_sku_adj, '')",
+            "available": "coalesce(w.available_quantity, 0)",
+            "transit": "coalesce(w.transit_quantity, 0)",
+            "warehouse": "coalesce(w.warehouse_quantity, 0)",
+            "plan": "coalesce(w.plan_quantity, 0)",
+            "available_cost": "coalesce(w.available_cost, 0)",
+            "transit_cost": "coalesce(w.transit_cost, 0)",
+            "warehouse_cost": "coalesce(w.warehouse_cost, 0)",
+            "plan_cost": "coalesce(w.plan_cost, 0)",
+        }
+        expression = sortable_fields.get(sort_key)
+        if not expression:
+            return "w.week_start desc, w.seller_name_new asc, w.seller_sku_adj asc"
+        return f"{expression} {direction}, w.week_start desc, w.seller_name_new asc, w.seller_sku_adj asc"
 
     def _build_inventory_weekly_detail_item(
         self,
@@ -805,7 +948,14 @@ class DashboardDbService:
             "type": metric_type,
         }
 
-    def get_detail_payload(self, filters: dict[str, Any], page: int, page_size: int) -> dict[str, Any]:
+    def get_detail_payload(
+        self,
+        filters: dict[str, Any],
+        page: int,
+        page_size: int,
+        sort_field: str = "",
+        sort_dir: str = "",
+    ) -> dict[str, Any]:
         with self.connect() as conn:
             window = self._resolve_window(conn, filters)
             self._ensure_period_snapshot(conn, window)
@@ -818,6 +968,8 @@ class DashboardDbService:
                 filters,
                 limit=page_size,
                 offset=(safe_page - 1) * page_size,
+                sort_field=sort_field,
+                sort_dir=sort_dir,
             )
 
         return {
@@ -1254,6 +1406,34 @@ class DashboardDbService:
 
         return (" and " + " and ".join(clauses) if clauses else ""), needs_recent_join
 
+    def _detail_order_sql(self, sort_field: str, sort_dir: str) -> tuple[str, bool]:
+        direction = "asc" if str(sort_dir or "").lower() == "asc" else "desc"
+        sort_key = str(sort_field or "").strip()
+        sortable_fields = {
+            "country": ("coalesce(p.country, '')", False),
+            "store": ("coalesce(p.seller_name_new, '')", False),
+            "msku": ("coalesce(p.seller_sku_adj, '')", False),
+            "daily_sales": ("coalesce(p.daily_sales, 0)", False),
+            "daily_sales_band": ("coalesce(p.daily_sales_band, '')", False),
+            "order_gross_margin": ("coalesce(p.order_gross_margin, 0)", False),
+            "margin_band": ("coalesce(p.margin_band, '')", False),
+            "sales_7d": ("coalesce(r.sales_7d, 0)", True),
+            "sales_30d": ("coalesce(r.sales_30d, 0)", True),
+            "revenue_30d": ("coalesce(r.revenue_30d, 0)", True),
+            "current_price": ("coalesce(p.current_price, 0)", False),
+            "limit_price_35_display": ("coalesce(p.limit_price, 0)", False),
+            "limit_price_10": ("coalesce(p.limit_price_10, 0)", False),
+            "price_gap": ("(coalesce(p.current_price, 0) - coalesce(p.limit_price, 0))", False),
+            "over_limit": ("coalesce(p.over_limit_flag, 0)", False),
+            "fba_sellable_inventory": ("coalesce(p.fba_sellable_inventory, 0)", False),
+            "stock_days": ("coalesce(p.local_stock_sellable_days, 0)", False),
+        }
+        if not sort_key or sort_key not in sortable_fields:
+            return "p.sales_amount desc, p.daily_sales desc, p.seller_sku_adj asc", False
+
+        expression, needs_recent_join = sortable_fields[sort_key]
+        return f"{expression} {direction}, p.seller_sku_adj asc, p.country asc, p.seller_name_new asc", needs_recent_join
+
     def _fetch_dashboard_stats(self, conn, window: PeriodWindow, filters: dict[str, Any]) -> dict[str, float]:
         where_sql, params = self._period_where(window, filters)
         with conn.cursor() as cursor:
@@ -1528,6 +1708,8 @@ class DashboardDbService:
         filters: dict[str, Any],
         limit: int | None = None,
         offset: int = 0,
+        sort_field: str = "",
+        sort_dir: str = "",
     ) -> list[dict[str, Any]]:
         where_sql, params = self._period_where(window, filters)
         limit_sql = ""
@@ -1536,7 +1718,8 @@ class DashboardDbService:
             params["offset"] = offset
             limit_sql = "limit %(limit)s offset %(offset)s"
         column_filter_sql, needs_recent_join = self._detail_column_filter_clause(filters, params)
-        recent_join_sql = self._detail_recent_join_sql(window, params) if needs_recent_join else ""
+        order_sql, sort_needs_recent_join = self._detail_order_sql(sort_field, sort_dir)
+        recent_join_sql = self._detail_recent_join_sql(window, params) if needs_recent_join or sort_needs_recent_join else ""
 
         with conn.cursor() as cursor:
             cursor.execute(
@@ -1545,7 +1728,7 @@ class DashboardDbService:
                 from {self._render_period_table(window.period_table)} p
                 {recent_join_sql}
                 where {where_sql}{column_filter_sql}
-                order by p.sales_amount desc, p.daily_sales desc, p.seller_sku_adj
+                order by {order_sql}
                 {limit_sql}
                 """,
                 params,
@@ -1773,11 +1956,132 @@ class DashboardDbService:
         window: PeriodWindow,
         filters: dict[str, Any],
         compare_days: int = 7,
+        comparison_code: str = "",
         alert_type: str = "all",
         sales_trend: str = "all",
         rank_trend: str = "all",
         margin_status: str = "all",
         stock_status: str = "all",
+        transition_filter: str = "",
+    ) -> dict[str, Any]:
+        selected_code = normalize_alert_comparison_code(comparison_code, compare_days)
+        rendered_table = render_sql(ALERT_COMPARISON_TABLE, self.schemas)
+        snapshot_date = self._latest_alert_comparison_snapshot(conn, selected_code)
+        options = self._fetch_alert_comparison_options(conn, snapshot_date)
+        compare_days = alert_compare_days_from_code(selected_code) or compare_days
+        empty_summary = {"sales_drop": 0, "margin_low": 0, "rank_drop": 0, "stock_short": 0}
+        if not snapshot_date:
+            return {
+                "items": [],
+                "summary": empty_summary,
+                "analysis": self._build_alert_analysis([], empty_summary),
+                "window": "",
+                "comparison_window": "",
+                "compare_days": compare_days,
+                "comparison_code": selected_code,
+                "comparison_type": "days" if selected_code.startswith("d") else "month_to_date",
+                "comparison_label": selected_code,
+                "available_comparisons": options,
+                "empty_text": "当前还没有预警预计算数据，请先运行每日 ETL。",
+            }
+
+        filter_sql, params = self._filter_clause(filters, alias="a")
+        params.update({"snapshot_date": snapshot_date, "comparison_code": selected_code})
+        items: list[dict[str, Any]] = []
+        first_row: dict[str, Any] = {}
+
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    select a.*
+                    from {rendered_table} a
+                    where a.snapshot_date = %(snapshot_date)s
+                      and a.comparison_code = %(comparison_code)s
+                      and a.has_alert = 1
+                      and {filter_sql}
+                    """,
+                    params,
+                )
+                for row in cursor.fetchall():
+                    if not first_row:
+                        first_row = row
+                    items.append(self._build_precomputed_alert_item(row))
+
+                if not first_row:
+                    cursor.execute(
+                        f"""
+                        select a.*
+                        from {rendered_table} a
+                        where a.snapshot_date = %(snapshot_date)s
+                          and a.comparison_code = %(comparison_code)s
+                        limit 1
+                        """,
+                        {"snapshot_date": snapshot_date, "comparison_code": selected_code},
+                    )
+                    first_row = cursor.fetchone() or {}
+        except pymysql.err.ProgrammingError as exc:
+            if exc.args and exc.args[0] == 1146:
+                return self._fetch_alert_center_legacy(
+                    conn,
+                    window,
+                    filters,
+                    compare_days=compare_days,
+                    alert_type=alert_type,
+                    sales_trend=sales_trend,
+                    rank_trend=rank_trend,
+                    margin_status=margin_status,
+                    stock_status=stock_status,
+                    transition_filter=transition_filter,
+                )
+            raise
+
+        priority = {"sales_drop": 0, "margin_low": 1, "rank_drop": 2, "stock_short": 3}
+        filtered = [
+            item
+            for item in items
+            if self._alert_item_matches(
+                item,
+                alert_type=alert_type,
+                sales_trend=sales_trend,
+                rank_trend=rank_trend,
+                margin_status=margin_status,
+                stock_status=stock_status,
+            )
+        ]
+        filtered = self._apply_transition_filter(filtered, transition_filter)
+        filtered.sort(key=lambda item: (item["priority"], item["title"]))
+        summary = {key: 0 for key in priority}
+        for item in filtered:
+            for key in item["alert_types"]:
+                if key in summary:
+                    summary[key] += 1
+        return {
+            "items": filtered,
+            "summary": summary,
+            "analysis": self._build_alert_analysis(filtered, summary),
+            "window": self._alert_window_text(first_row, recent=True),
+            "comparison_window": self._alert_window_text(first_row, recent=False),
+            "compare_days": compare_days,
+            "comparison_code": selected_code,
+            "comparison_type": str(first_row.get("comparison_type") or ("days" if selected_code.startswith("d") else "month_to_date")),
+            "comparison_label": str(first_row.get("comparison_label") or selected_code),
+            "available_comparisons": options,
+            "empty_text": "当前筛选下没有明显异常。",
+        }
+
+    def _fetch_alert_center_legacy(
+        self,
+        conn,
+        window: PeriodWindow,
+        filters: dict[str, Any],
+        compare_days: int = 7,
+        alert_type: str = "all",
+        sales_trend: str = "all",
+        rank_trend: str = "all",
+        margin_status: str = "all",
+        stock_status: str = "all",
+        transition_filter: str = "",
     ) -> dict[str, Any]:
         table = self._render_period_table(window.period_table)
         where_sql, params = self._period_where(window, filters, alias="p")
@@ -1809,6 +2113,9 @@ class DashboardDbService:
                     sum(case when d.dt_date between %(recent_start)s and %(recent_end)s then d.sales_qty else 0 end) as recent_sales_qty,
                     sum(case when d.dt_date between %(previous_start)s and %(previous_end)s then d.sales_qty else 0 end) as previous_sales_qty,
                     sum(case when d.dt_date between %(recent_start)s and %(recent_end)s then d.sales_amount else 0 end) as recent_sales_amount,
+                    sum(case when d.dt_date between %(previous_start)s and %(previous_end)s then d.sales_amount else 0 end) as previous_sales_amount,
+                    sum(case when d.dt_date between %(recent_start)s and %(recent_end)s then d.order_gross_profit else 0 end) as recent_order_gross_profit,
+                    sum(case when d.dt_date between %(previous_start)s and %(previous_end)s then d.order_gross_profit else 0 end) as previous_order_gross_profit,
                     avg(case when d.dt_date between %(recent_start)s and %(recent_end)s and d.ranking > 0 then d.ranking end) as recent_rank,
                     avg(case when d.dt_date between %(previous_start)s and %(previous_end)s and d.ranking > 0 then d.ranking end) as previous_rank
                 from {table} p
@@ -1838,6 +2145,7 @@ class DashboardDbService:
                 stock_status=stock_status,
             )
         ]
+        filtered = self._apply_transition_filter(filtered, transition_filter)
         filtered.sort(key=lambda item: (item["priority"], item["title"]))
         summary = {key: 0 for key in priority}
         for item in filtered:
@@ -1847,10 +2155,168 @@ class DashboardDbService:
         return {
             "items": filtered,
             "summary": summary,
+            "analysis": self._build_alert_analysis(filtered, summary),
             "window": f"近{compare_days}天 {format_day(recent_start)} ~ {format_day(recent_end)}",
             "comparison_window": f"前{compare_days}天 {format_day(previous_start)} ~ {format_day(previous_end)}",
             "compare_days": compare_days,
             "empty_text": "当前筛选下没有明显异常。",
+        }
+
+    def _latest_alert_comparison_snapshot(self, conn, comparison_code: str) -> date | None:
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select max(snapshot_date) as snapshot_date
+                    from dashboard_alert_comparison_snapshot
+                    where comparison_code = %(comparison_code)s
+                    """,
+                    {"comparison_code": comparison_code},
+                )
+                row = cursor.fetchone() or {}
+            return row.get("snapshot_date")
+        except pymysql.err.ProgrammingError as exc:
+            if exc.args and exc.args[0] == 1146:
+                return None
+            raise
+
+    def _fetch_alert_comparison_options(self, conn, snapshot_date: date | None) -> list[dict[str, Any]]:
+        if not snapshot_date:
+            return []
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select
+                        comparison_code,
+                        max(comparison_type) as comparison_type,
+                        max(comparison_label) as comparison_label,
+                        min(recent_start) as recent_start,
+                        max(recent_end) as recent_end,
+                        min(previous_start) as previous_start,
+                        max(previous_end) as previous_end,
+                        max(recent_days) as recent_days,
+                        max(previous_days) as previous_days
+                    from dashboard_alert_comparison_snapshot
+                    where snapshot_date = %(snapshot_date)s
+                    group by comparison_code
+                    order by
+                        case
+                            when comparison_code = 'd7' then 1
+                            when comparison_code = 'd14' then 2
+                            when comparison_code = 'd30' then 3
+                            when comparison_code = 'd60' then 4
+                            when comparison_code = 'd90' then 5
+                            else 20
+                        end,
+                        comparison_code
+                    """,
+                    {"snapshot_date": snapshot_date},
+                )
+                rows = cursor.fetchall()
+        except pymysql.err.ProgrammingError as exc:
+            if exc.args and exc.args[0] == 1146:
+                return []
+            raise
+        return [
+            {
+                "code": str(row.get("comparison_code") or ""),
+                "type": str(row.get("comparison_type") or ""),
+                "label": str(row.get("comparison_label") or row.get("comparison_code") or ""),
+                "recent_start": format_day(row.get("recent_start")),
+                "recent_end": format_day(row.get("recent_end")),
+                "previous_start": format_day(row.get("previous_start")),
+                "previous_end": format_day(row.get("previous_end")),
+                "recent_days": to_int(row.get("recent_days")),
+                "previous_days": to_int(row.get("previous_days")),
+            }
+            for row in rows
+            if row.get("comparison_code")
+        ]
+
+    def _alert_window_text(self, row: dict[str, Any], recent: bool) -> str:
+        if not row:
+            return ""
+        prefix = "当前" if recent else "对比"
+        start_key = "recent_start" if recent else "previous_start"
+        end_key = "recent_end" if recent else "previous_end"
+        days_key = "recent_days" if recent else "previous_days"
+        start = row.get(start_key)
+        end = row.get(end_key)
+        if not start or not end:
+            return ""
+        return f"{prefix} {format_day(start)} ~ {format_day(end)}（{to_int(row.get(days_key))}天）"
+
+    def _build_precomputed_alert_item(self, row: dict[str, Any]) -> dict[str, Any]:
+        alert_types = [item for item in str(row.get("alert_types") or "").split(",") if item]
+        labels = [item for item in str(row.get("alert_labels") or "").split(" / ") if item]
+        recent_qty = to_float(row.get("recent_sales_qty"))
+        previous_qty = to_float(row.get("previous_sales_qty"))
+        recent_daily_sales = to_float(row.get("recent_daily_sales"))
+        previous_daily_sales = to_float(row.get("previous_daily_sales"))
+        sales_change = to_float(row.get("sales_change_rate"))
+        previous_rank_raw = row.get("previous_rank")
+        recent_rank_raw = row.get("recent_rank")
+        previous_rank = int(round(to_float(previous_rank_raw))) if previous_rank_raw is not None else None
+        recent_rank = int(round(to_float(recent_rank_raw))) if recent_rank_raw is not None else None
+        previous_margin_raw = row.get("previous_margin")
+        recent_margin_raw = row.get("recent_margin")
+        previous_margin = to_float(previous_margin_raw) if previous_margin_raw is not None else None
+        recent_margin = to_float(recent_margin_raw) if recent_margin_raw is not None else None
+        comparison_type = str(row.get("comparison_type") or "days")
+        sales_text = (
+            f"日均 {recent_daily_sales:.2f} / {previous_daily_sales:.2f}（总量 {recent_qty:.0f} / {previous_qty:.0f}，{sales_change:+.1%}）"
+            if comparison_type == "month_to_date"
+            else f"{recent_qty:.0f} / {previous_qty:.0f}（{sales_change:+.1%}）"
+        )
+        sellable_days = to_float(row.get("sellable_days"))
+        daily_sales = recent_daily_sales
+        primary_type = str(row.get("primary_type") or "observe")
+        tone = "negative" if primary_type in {"sales_drop", "stock_short"} else "warning"
+        return {
+            "type": primary_type,
+            "alert_types": alert_types,
+            "label": " / ".join(labels) if labels else "观察",
+            "labels": labels,
+            "tone": tone,
+            "title": str(row.get("seller_sku_adj") or "-"),
+            "subtitle": f"{row.get('seller_name_new') or '-'} / {row.get('country') or '-'}",
+            "store": str(row.get("seller_name_new") or "-"),
+            "country": str(row.get("country") or "-"),
+            "detail": "；".join(labels) if labels else "未触发预警",
+            "keyword": str(row.get("seller_sku_adj") or ""),
+            "priority": to_int(row.get("priority")),
+            "has_alert": bool(row.get("has_alert")),
+            "sales_trend": str(row.get("sales_trend") or "stable"),
+            "rank_trend": str(row.get("rank_trend") or "stable"),
+            "margin_status": str(row.get("margin_status") or "normal"),
+            "stock_status": str(row.get("stock_status") or "normal"),
+            "recent_qty": round(recent_qty, 2),
+            "previous_qty": round(previous_qty, 2),
+            "recent_daily_sales": round(recent_daily_sales, 2),
+            "previous_daily_sales": round(previous_daily_sales, 2),
+            "sales_change_rate": round(sales_change, 4),
+            "sales_amount": round(to_float(row.get("recent_sales_amount")), 2),
+            "recent_sales_amount": round(to_float(row.get("recent_sales_amount")), 2),
+            "previous_sales_amount": round(to_float(row.get("previous_sales_amount")), 2),
+            "recent_daily_sales_amount": round(to_float(row.get("recent_daily_sales_amount")), 2),
+            "previous_daily_sales_amount": round(to_float(row.get("previous_daily_sales_amount")), 2),
+            "previous_rank": previous_rank,
+            "recent_rank": recent_rank,
+            "rank_delta": round(to_float(row.get("rank_delta")), 2),
+            "previous_margin": round(previous_margin, 4) if previous_margin is not None else None,
+            "recent_margin": round(recent_margin, 4) if recent_margin is not None else None,
+            "previous_margin_layer": self._margin_layer(previous_margin),
+            "recent_margin_layer": self._margin_layer(recent_margin),
+            "previous_rank_layer": self._rank_layer(previous_rank),
+            "recent_rank_layer": self._rank_layer(recent_rank),
+            "sellable_days": round(sellable_days, 1),
+            "daily_sales": round(daily_sales, 2),
+            "comparison_type": comparison_type,
+            "sales_text": sales_text,
+            "rank_text": f"{previous_rank or '—'} -> {recent_rank or '—'}",
+            "margin_text": f"{(recent_margin or 0):.1%} / {compact_amount(to_float(row.get('recent_sales_amount')))}",
+            "stock_text": f"{sellable_days:.1f} 天 / 日销 {daily_sales:.1f}" if sellable_days or daily_sales else "—",
         }
 
     def _fetch_opportunity_pool(
@@ -1861,6 +2327,7 @@ class DashboardDbService:
         compare_days: int = 14,
         opportunity_type: str = "all",
         stock_status: str = "all",
+        transition_filter: str = "",
     ) -> dict[str, Any]:
         table = self._render_period_table(window.period_table)
         scoped_filters = dict(filters)
@@ -1903,6 +2370,10 @@ class DashboardDbService:
                     p.tacos,
                     sum(case when d.dt_date between %(recent_start)s and %(recent_end)s then d.sales_qty else 0 end) as recent_sales_qty,
                     sum(case when d.dt_date between %(previous_start)s and %(previous_end)s then d.sales_qty else 0 end) as previous_sales_qty,
+                    sum(case when d.dt_date between %(recent_start)s and %(recent_end)s then d.sales_amount else 0 end) as recent_sales_amount,
+                    sum(case when d.dt_date between %(previous_start)s and %(previous_end)s then d.sales_amount else 0 end) as previous_sales_amount,
+                    sum(case when d.dt_date between %(recent_start)s and %(recent_end)s then d.order_gross_profit else 0 end) as recent_order_gross_profit,
+                    sum(case when d.dt_date between %(previous_start)s and %(previous_end)s then d.order_gross_profit else 0 end) as previous_order_gross_profit,
                     sum(case when d.dt_date between %(recent_start)s and %(recent_end)s then d.sessions_total else 0 end) as recent_sessions,
                     sum(case when d.dt_date between %(previous_start)s and %(previous_end)s then d.sessions_total else 0 end) as previous_sessions,
                     avg(case when d.dt_date between %(recent_start)s and %(recent_end)s and d.ranking > 0 then d.ranking end) as recent_rank,
@@ -1928,6 +2399,7 @@ class DashboardDbService:
             items = [item for item in items if item["stock_status"] == "enough"]
         elif stock_status == "short":
             items = [item for item in items if item["stock_status"] == "short"]
+        items = self._apply_transition_filter(items, transition_filter)
         items.sort(key=lambda item: (-item["score"], -item["scoped_revenue"], item["msku"]))
 
         type_defs = self._opportunity_type_defs()
@@ -1942,6 +2414,7 @@ class DashboardDbService:
         return {
             "items": items,
             "summary": summary,
+            "analysis": self._build_opportunity_analysis(items, summary),
             "stats": {
                 "total": len(items),
                 "high_margin_scale": summary.get("high_margin_scale", 0),
@@ -1954,6 +2427,209 @@ class DashboardDbService:
             "comparison_window": f"前{days}天 {format_day(previous_start)} ~ {format_day(previous_end)}",
             "compare_days": days,
             "empty_text": "当前筛选下没有符合加码条件的机会 SKU。",
+        }
+
+    def _margin_layer(self, margin: float | None) -> str:
+        if margin is None:
+            return "无毛利"
+        if margin < 0:
+            return "<0%"
+        if margin < 0.10:
+            return "0-10%"
+        if margin < 0.15:
+            return "10-15%"
+        if margin < 0.25:
+            return "15-25%"
+        if margin < 0.35:
+            return "25-35%"
+        return ">35%"
+
+    def _rank_layer(self, rank: int | None) -> str:
+        if not rank or rank <= 0:
+            return "无排名"
+        if rank <= 50:
+            return "1-50"
+        if rank <= 100:
+            return "51-100"
+        if rank <= 200:
+            return "101-200"
+        if rank <= 500:
+            return "201-500"
+        return ">500"
+
+    def _apply_transition_filter(self, items: list[dict[str, Any]], raw_filter: str | None) -> list[dict[str, Any]]:
+        if not raw_filter or ":" not in raw_filter or "|" not in raw_filter:
+            return items
+        kind, value = raw_filter.split(":", 1)
+        previous_layer, recent_layer = value.split("|", 1)
+        if kind == "margin":
+            return [
+                item for item in items
+                if item.get("previous_margin_layer") == previous_layer
+                and item.get("recent_margin_layer") == recent_layer
+            ]
+        if kind == "rank":
+            return [
+                item for item in items
+                if item.get("previous_rank_layer") == previous_layer
+                and item.get("recent_rank_layer") == recent_layer
+            ]
+        return items
+
+    def _transition_analysis(
+        self,
+        items: list[dict[str, Any]],
+        previous_key: str,
+        recent_key: str,
+        layers: list[str],
+        improvement_order: list[str],
+    ) -> dict[str, Any]:
+        previous_counts = {layer: 0 for layer in layers}
+        recent_counts = {layer: 0 for layer in layers}
+        link_counts: dict[tuple[str, str], int] = {}
+        improvement_index = {layer: index for index, layer in enumerate(improvement_order)}
+        summary = {"improved": 0, "worsened": 0, "stable": 0, "missing": 0}
+
+        for item in items:
+            previous_layer = item.get(previous_key) or layers[0]
+            recent_layer = item.get(recent_key) or layers[0]
+            previous_counts.setdefault(previous_layer, 0)
+            recent_counts.setdefault(recent_layer, 0)
+            previous_counts[previous_layer] += 1
+            recent_counts[recent_layer] += 1
+            link_counts[(previous_layer, recent_layer)] = link_counts.get((previous_layer, recent_layer), 0) + 1
+
+            if previous_layer not in improvement_index or recent_layer not in improvement_index:
+                summary["missing"] += 1
+            elif improvement_index[recent_layer] > improvement_index[previous_layer]:
+                summary["improved"] += 1
+            elif improvement_index[recent_layer] < improvement_index[previous_layer]:
+                summary["worsened"] += 1
+            else:
+                summary["stable"] += 1
+
+        total = max(len(items), 1)
+        rows = []
+        for layer in layers:
+            previous_count = previous_counts.get(layer, 0)
+            recent_count = recent_counts.get(layer, 0)
+            rows.append(
+                {
+                    "layer": layer,
+                    "previous_count": previous_count,
+                    "recent_count": recent_count,
+                    "delta": recent_count - previous_count,
+                    "share": round(recent_count / total, 4),
+                }
+            )
+
+        nodes = (
+            [{"name": f"前期 {layer}", "layer": layer, "period": "previous"} for layer in layers]
+            + [{"name": f"当前 {layer}", "layer": layer, "period": "recent"} for layer in layers]
+        )
+        links = [
+            {
+                "source": f"前期 {source}",
+                "target": f"当前 {target}",
+                "value": value,
+                "transition_filter": f"{source}|{target}",
+            }
+            for (source, target), value in sorted(link_counts.items(), key=lambda pair: (-pair[1], pair[0][0], pair[0][1]))
+            if value > 0
+        ]
+        return {"nodes": nodes, "links": links, "rows": rows, "summary": summary}
+
+    def _top_dimension(self, items: list[dict[str, Any]], key: str, value_key: str | None = None, limit: int = 10) -> list[dict[str, Any]]:
+        grouped: dict[str, dict[str, Any]] = {}
+        for item in items:
+            name = str(item.get(key) or "-")
+            bucket = grouped.setdefault(name, {"name": name, "count": 0, "value": 0.0})
+            bucket["count"] += 1
+            if value_key:
+                bucket["value"] += to_float(item.get(value_key))
+        return sorted(grouped.values(), key=lambda row: (-row["value"], -row["count"], row["name"]))[:limit]
+
+    def _type_distribution(self, summary: dict[str, int], labels: dict[str, str], total: int) -> list[dict[str, Any]]:
+        denominator = max(total, 1)
+        return [
+            {
+                "key": key,
+                "label": labels.get(key, key),
+                "count": count,
+                "share": round(count / denominator, 4),
+            }
+            for key, count in summary.items()
+        ]
+
+    def _build_alert_analysis(self, items: list[dict[str, Any]], summary: dict[str, int]) -> dict[str, Any]:
+        alert_labels = {
+            "sales_drop": "销量下滑",
+            "margin_low": "低毛利",
+            "rank_drop": "排名下滑",
+            "stock_short": "库存偏低",
+        }
+        sales_states = [("down", "销量下降"), ("stable", "销量稳定"), ("up", "销量上涨")]
+        rank_states = [("down", "排名下降"), ("stable", "排名稳定"), ("up", "排名上涨")]
+        matrix = []
+        for sales_key, sales_label in sales_states:
+            for rank_key, rank_label in rank_states:
+                count = sum(1 for item in items if item.get("sales_trend") == sales_key and item.get("rank_trend") == rank_key)
+                matrix.append({"sales_trend": sales_key, "rank_trend": rank_key, "label": f"{sales_label} / {rank_label}", "count": count})
+
+        margin_layers = ["<0%", "0-10%", "10-15%", "15-25%", "25-35%", ">35%", "无毛利"]
+        rank_layers = ["无排名", "1-50", "51-100", "101-200", "201-500", ">500"]
+        return {
+            "type_distribution": self._type_distribution(summary, alert_labels, len(items)),
+            "site_ranking": self._top_dimension(items, "country"),
+            "store_ranking": self._top_dimension(items, "store"),
+            "margin_transition": self._transition_analysis(items, "previous_margin_layer", "recent_margin_layer", margin_layers, margin_layers),
+            "rank_transition": self._transition_analysis(items, "previous_rank_layer", "recent_rank_layer", rank_layers, list(reversed(rank_layers))),
+            "risk_matrix": matrix,
+            "risk_scatter": [
+                {
+                    "name": item.get("title"),
+                    "type": item.get("type"),
+                    "type_label": item.get("label"),
+                    "sales_change_rate": item.get("sales_change_rate", 0),
+                    "rank_delta": item.get("rank_delta", 0),
+                    "sales_amount": item.get("sales_amount", 0),
+                }
+                for item in items[:1000]
+            ],
+        }
+
+    def _build_opportunity_analysis(self, items: list[dict[str, Any]], summary: dict[str, int]) -> dict[str, Any]:
+        labels = {item["key"]: item["label"] for item in self._opportunity_type_defs()}
+        margin_layers = ["<0%", "0-10%", "10-15%", "15-25%", "25-35%", ">35%", "无毛利"]
+        rank_layers = ["无排名", "1-50", "51-100", "101-200", "201-500", ">500"]
+        score_bands = [("0-40", 0, 40), ("40-60", 40, 60), ("60-80", 60, 80), ("80-100", 80, 101)]
+        stock_bands = [("<14天", 0, 14), ("14-21天", 14, 21), ("21-60天", 21, 60), (">60天", 60, float("inf"))]
+        return {
+            "type_distribution": self._type_distribution(summary, labels, len(items)),
+            "site_ranking": self._top_dimension(items, "country", "estimated_boost_revenue"),
+            "store_ranking": self._top_dimension(items, "store", "estimated_boost_revenue"),
+            "margin_transition": self._transition_analysis(items, "previous_margin_layer", "recent_margin_layer", margin_layers, margin_layers),
+            "rank_transition": self._transition_analysis(items, "previous_rank_layer", "recent_rank_layer", rank_layers, list(reversed(rank_layers))),
+            "score_distribution": [
+                {"label": label, "count": sum(1 for item in items if low <= to_float(item.get("score")) < high)}
+                for label, low, high in score_bands
+            ],
+            "boost_ranking": self._top_dimension(items, "country", "estimated_boost_revenue"),
+            "stock_distribution": [
+                {"label": label, "count": sum(1 for item in items if low <= to_float(item.get("sellable_days")) < high)}
+                for label, low, high in stock_bands
+            ],
+            "opportunity_scatter": [
+                {
+                    "name": item.get("msku"),
+                    "type": item.get("type"),
+                    "type_label": item.get("label"),
+                    "margin": item.get("margin", 0),
+                    "daily_sales": item.get("daily_sales", 0),
+                    "estimated_boost_revenue": item.get("estimated_boost_revenue", 0),
+                }
+                for item in items[:1000]
+            ],
         }
 
     def _opportunity_type_defs(self) -> list[dict[str, str]]:
@@ -1984,6 +2660,18 @@ class DashboardDbService:
         recent_rank_raw = row.get("recent_rank")
         previous_rank = int(round(to_float(previous_rank_raw))) if previous_rank_raw is not None else None
         recent_rank = int(round(to_float(recent_rank_raw))) if recent_rank_raw is not None else None
+        previous_sales_amount = to_float(row.get("previous_sales_amount"))
+        recent_sales_amount = to_float(row.get("recent_sales_amount"))
+        previous_margin = (
+            to_float(row.get("previous_order_gross_profit")) / previous_sales_amount
+            if previous_sales_amount
+            else None
+        )
+        recent_margin = (
+            to_float(row.get("recent_order_gross_profit")) / recent_sales_amount
+            if recent_sales_amount
+            else None
+        )
         rank_delta = (previous_rank - recent_rank) if previous_rank is not None and recent_rank is not None else 0
         rank_improve_ratio = (rank_delta / previous_rank) if previous_rank else 0.0
         ad_spend = to_float(row.get("ad_spend"))
@@ -2030,10 +2718,20 @@ class DashboardDbService:
             "keyword": str(row.get("seller_sku_adj") or ""),
             "daily_sales": round(daily_sales, 2),
             "sales_change_rate": round(sales_change_rate, 4),
+            "recent_qty": round(recent_qty, 2),
+            "previous_qty": round(previous_qty, 2),
             "sales_text": f"{recent_qty:.0f} / {previous_qty:.0f} ({sales_change_rate:+.1%})",
             "scoped_revenue": round(sales_amount, 2),
             "profit": round(profit, 2),
             "margin": round(margin, 4),
+            "previous_margin": round(previous_margin, 4) if previous_margin is not None else None,
+            "recent_margin": round(recent_margin, 4) if recent_margin is not None else None,
+            "previous_margin_layer": self._margin_layer(previous_margin),
+            "recent_margin_layer": self._margin_layer(recent_margin),
+            "previous_rank": previous_rank,
+            "recent_rank": recent_rank,
+            "previous_rank_layer": self._rank_layer(previous_rank),
+            "recent_rank_layer": self._rank_layer(recent_rank),
             "rank_text": f"{previous_rank or '—'} -> {recent_rank or '—'}",
             "rank_delta": rank_delta,
             "recent_sessions": round(recent_sessions),
@@ -2113,6 +2811,18 @@ class DashboardDbService:
         recent_rank_raw = row.get("recent_rank")
         previous_rank = int(round(to_float(previous_rank_raw))) if previous_rank_raw is not None else None
         recent_rank = int(round(to_float(recent_rank_raw))) if recent_rank_raw is not None else None
+        previous_sales_amount = to_float(row.get("previous_sales_amount"))
+        recent_sales_amount = to_float(row.get("recent_sales_amount"))
+        previous_margin = (
+            to_float(row.get("previous_order_gross_profit")) / previous_sales_amount
+            if previous_sales_amount
+            else None
+        )
+        recent_margin = (
+            to_float(row.get("recent_order_gross_profit")) / recent_sales_amount
+            if recent_sales_amount
+            else None
+        )
         rank_down = (
             previous_rank is not None
             and recent_rank is not None
@@ -2171,6 +2881,21 @@ class DashboardDbService:
             "rank_trend": "down" if rank_down else "up" if rank_up else "stable",
             "margin_status": "low" if margin_low else "normal",
             "stock_status": "short" if stock_short else "normal",
+            "recent_qty": round(recent_qty, 2),
+            "previous_qty": round(previous_qty, 2),
+            "sales_change_rate": round(sales_change, 4),
+            "sales_amount": round(sales_amount, 2),
+            "previous_rank": previous_rank,
+            "recent_rank": recent_rank,
+            "rank_delta": (previous_rank - recent_rank) if previous_rank is not None and recent_rank is not None else 0,
+            "previous_margin": round(previous_margin, 4) if previous_margin is not None else None,
+            "recent_margin": round(recent_margin, 4) if recent_margin is not None else None,
+            "previous_margin_layer": self._margin_layer(previous_margin),
+            "recent_margin_layer": self._margin_layer(recent_margin),
+            "previous_rank_layer": self._rank_layer(previous_rank),
+            "recent_rank_layer": self._rank_layer(recent_rank),
+            "sellable_days": round(sellable_days, 1),
+            "daily_sales": round(daily_sales, 2),
             "sales_text": f"近{compare_days}天 {recent_qty:.0f} / 前{compare_days}天 {previous_qty:.0f}（{sales_change:+.1%}）",
             "rank_text": f"{previous_rank or '—'} -> {recent_rank or '—'}",
             "margin_text": f"{margin:.1%} / {compact_amount(sales_amount)}",

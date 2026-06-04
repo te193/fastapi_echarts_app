@@ -6,10 +6,11 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import quote
 
-from fastapi import Depends, FastAPI, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
 
 from etl.dashboard_daily_update import COLUMN_COMMENTS
 
@@ -30,6 +31,10 @@ CSV_FORMULA_PREFIXES = ("=", "+", "-", "@")
 app = FastAPI(title="产品分层看板", version="1.0.0")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+
+
+class AdjustmentDayNotePayload(BaseModel):
+    note: str = ""
 
 
 def _parse_date(value: str | None) -> date | None:
@@ -193,11 +198,15 @@ def api_alerts(
     margin_band: str = Query(default="all"),
     keyword: str = Query(default=""),
     alert_type: str = Query(default="all"),
-    compare_days: int = Query(default=7, ge=7, le=30),
+    compare_days: int = Query(default=7, ge=7, le=90),
+    comparison_code: str = Query(default=""),
     sales_trend: str = Query(default="all"),
     rank_trend: str = Query(default="all"),
     margin_status: str = Query(default="all"),
     stock_status: str = Query(default="all"),
+    transition_filter: str = Query(default=""),
+    sort_field: str = Query(default=""),
+    sort_dir: str = Query(default=""),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=10, le=100),
 ) -> dict:
@@ -215,10 +224,14 @@ def api_alerts(
         filters,
         alert_type=alert_type,
         compare_days=compare_days,
+        comparison_code=comparison_code,
         sales_trend=sales_trend,
         rank_trend=rank_trend,
         margin_status=margin_status,
         stock_status=stock_status,
+        transition_filter=transition_filter,
+        sort_field=sort_field,
+        sort_dir=sort_dir,
         page=page,
         page_size=page_size,
     )
@@ -235,11 +248,13 @@ def api_alerts_export(
     margin_band: str = Query(default="all"),
     keyword: str = Query(default=""),
     alert_type: str = Query(default="all"),
-    compare_days: int = Query(default=7, ge=7, le=30),
+    compare_days: int = Query(default=7, ge=7, le=90),
+    comparison_code: str = Query(default=""),
     sales_trend: str = Query(default="all"),
     rank_trend: str = Query(default="all"),
     margin_status: str = Query(default="all"),
     stock_status: str = Query(default="all"),
+    transition_filter: str = Query(default=""),
 ) -> StreamingResponse:
     filters = build_filters(
         start_date=start_date,
@@ -255,16 +270,23 @@ def api_alerts_export(
         filters,
         alert_type=alert_type,
         compare_days=compare_days,
+        comparison_code=comparison_code,
         sales_trend=sales_trend,
         rank_trend=rank_trend,
         margin_status=margin_status,
         stock_status=stock_status,
+        transition_filter=transition_filter,
     )
 
     output = io.StringIO(newline="")
     output.write("\ufeff")
     writer = csv.writer(output)
-    writer.writerow(["统计周期", "对比周期", "类型", "MSKU", "店铺", "国家", "销量趋势", "排名趋势", "毛利", "库存"])
+    writer.writerow([
+        "统计周期", "对比周期", "类型", "MSKU", "店铺", "国家",
+        "销量趋势", "近期总销量", "近期日均销量", "对比总销量", "对比日均销量",
+        "近期销售额", "近期日均销售额", "对比销售额", "对比日均销售额",
+        "排名趋势", "毛利", "库存",
+    ])
     for item in payload["items"]:
         writer.writerow(
             [
@@ -275,13 +297,21 @@ def api_alerts_export(
                 csv_cell_value(item.get("store")),
                 csv_cell_value(item.get("country")),
                 csv_cell_value(item.get("sales_text")),
+                csv_cell_value(item.get("recent_qty")),
+                csv_cell_value(item.get("recent_daily_sales")),
+                csv_cell_value(item.get("previous_qty")),
+                csv_cell_value(item.get("previous_daily_sales")),
+                csv_cell_value(item.get("recent_sales_amount")),
+                csv_cell_value(item.get("recent_daily_sales_amount")),
+                csv_cell_value(item.get("previous_sales_amount")),
+                csv_cell_value(item.get("previous_daily_sales_amount")),
                 csv_cell_value(item.get("rank_text")),
                 csv_cell_value(item.get("margin_text")),
                 csv_cell_value(item.get("stock_text")),
             ]
         )
 
-    filename = f"alerts_{payload['compare_days']}d_{date.today().isoformat()}.csv"
+    filename = f"alerts_{payload.get('comparison_code') or str(payload['compare_days']) + 'd'}_{date.today().isoformat()}.csv"
     headers = {
         "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}",
     }
@@ -298,6 +328,9 @@ def api_opportunities(
     opportunity_type: str = Query(default="all"),
     compare_days: int = Query(default=14, ge=7, le=30),
     stock_status: str = Query(default="all"),
+    transition_filter: str = Query(default=""),
+    sort_field: str = Query(default=""),
+    sort_dir: str = Query(default=""),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=10, le=100),
 ) -> dict:
@@ -316,6 +349,9 @@ def api_opportunities(
         opportunity_type=opportunity_type,
         compare_days=compare_days,
         stock_status=stock_status,
+        transition_filter=transition_filter,
+        sort_field=sort_field,
+        sort_dir=sort_dir,
         page=page,
         page_size=page_size,
     )
@@ -331,6 +367,7 @@ def api_opportunities_export(
     opportunity_type: str = Query(default="all"),
     compare_days: int = Query(default=14, ge=7, le=30),
     stock_status: str = Query(default="all"),
+    transition_filter: str = Query(default=""),
 ) -> StreamingResponse:
     filters = build_filters(
         start_date=None,
@@ -347,6 +384,7 @@ def api_opportunities_export(
         opportunity_type=opportunity_type,
         compare_days=compare_days,
         stock_status=stock_status,
+        transition_filter=transition_filter,
     )
 
     output = io.StringIO(newline="")
@@ -425,6 +463,8 @@ def api_inventory_weekly_details(
     keyword: str = Query(default=""),
     warning_status: str = Query(default="all"),
     metric: str = Query(default="all"),
+    sort_field: str = Query(default=""),
+    sort_dir: str = Query(default=""),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=10, le=100),
 ) -> dict:
@@ -433,6 +473,8 @@ def api_inventory_weekly_details(
         filters,
         warning_status=warning_status,
         metric=metric,
+        sort_field=sort_field,
+        sort_dir=sort_dir,
         page=page,
         page_size=page_size,
     )
@@ -497,6 +539,8 @@ def api_detail(
     daily_sales_band: str = Query(default="all"),
     margin_band: str = Query(default="all"),
     keyword: str = Query(default=""),
+    sort_field: str = Query(default=""),
+    sort_dir: str = Query(default=""),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=15, ge=1, le=100),
 ) -> dict:
@@ -511,7 +555,13 @@ def api_detail(
         keyword=keyword,
     )
     filters["column_filters"] = price_review_column_filters(request)
-    return dashboard_service.get_detail_payload(filters, page=page, page_size=page_size)
+    return dashboard_service.get_detail_payload(
+        filters,
+        page=page,
+        page_size=page_size,
+        sort_field=sort_field,
+        sort_dir=sort_dir,
+    )
 
 
 @app.get("/api/detail/export")
@@ -587,6 +637,21 @@ def api_price_adjustments_daily_counts(
     return {"items": price_review_service.get_daily_adjustment_counts(days=days)}
 
 
+@app.put("/api/price-adjustments/daily-notes/{adjust_date}")
+def api_price_adjustments_daily_note(
+    adjust_date: str,
+    payload: AdjustmentDayNotePayload,
+) -> dict:
+    parsed_date = _parse_date(adjust_date)
+    if parsed_date is None:
+        raise HTTPException(status_code=400, detail="Invalid adjust_date")
+    try:
+        note = price_review_service.save_adjustment_day_note(parsed_date, payload.note)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"date": parsed_date.isoformat(), "note": note}
+
+
 def price_review_filters(
     adjust_date: Optional[str] = Query(default=None),
     compare_days: int = Query(default=14, ge=7, le=28),
@@ -654,11 +719,19 @@ def api_price_review_skus(
     request: Request,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
+    sort_field: str = Query(default=""),
+    sort_dir: str = Query(default=""),
     filters: dict = Depends(price_review_filters),
 ) -> dict:
     filters = dict(filters)
     filters["column_filters"] = price_review_column_filters(request)
-    return price_review_service.get_sku_list_payload(page=page, page_size=page_size, **filters)
+    return price_review_service.get_sku_list_payload(
+        page=page,
+        page_size=page_size,
+        sort_field=sort_field,
+        sort_dir=sort_dir,
+        **filters,
+    )
 
 
 _TOP_LIST_COLUMNS = [

@@ -43,6 +43,20 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy_windows.ps1
 .\scripts\run_web_server.ps1
 ```
 
+启动测试版服务，默认使用 `8001` 端口：
+
+```powershell
+.\scripts\run_web_server_test.ps1
+```
+
+如需让应用版和测试版代码完全隔离，先创建测试 worktree：
+
+```powershell
+.\scripts\setup_test_worktree.ps1 -BaseBranch release -BranchName test\summary-page
+cd .worktrees\dashboard-test
+.\scripts\run_web_server_test.ps1
+```
+
 如果需要自动放行 8000 端口，使用管理员 PowerShell 执行：
 
 ```powershell
@@ -62,7 +76,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy_windows.ps1
 ## 脚本目录
 
 - `scripts\dashboard_env.ps1`：统一环境变量和数据库连接配置
+- `scripts\dashboard_env.test.example.ps1`：测试版环境变量覆盖示例
 - `scripts\deploy_windows.ps1`：Windows 部署入口
 - `scripts\run_daily_update_task.ps1`：定时任务执行入口
 - `scripts\run_web_server.ps1`：局域网服务启动入口
+- `scripts\run_web_server_test.ps1`：测试版服务启动入口，默认端口 `8001`
+- `scripts\setup_test_worktree.ps1`：创建隔离测试工作区
+- `scripts\release_app_version.ps1`：应用版发布前测试和打 tag
 - `logs\`：数据更新日志目录

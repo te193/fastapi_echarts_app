@@ -6,6 +6,8 @@
   state.metric = query.get("metric") || "all";
   state.value_type = query.get("value_type") || "quantity";
   state.page_size = 20;
+  state.sort_field = state.sort_field || "";
+  state.sort_dir = state.sort_dir || "";
 
   var meta = null;
   var elements = {};
@@ -91,6 +93,8 @@
       state.metric = "all";
       state.keyword = "";
       state.page = 1;
+      state.sort_field = "";
+      state.sort_dir = "";
       syncControls();
       render();
     });
@@ -278,12 +282,23 @@
     });
   }
 
+  function colSort(colId) {
+    return state.sort_field === colId ? state.sort_dir : null;
+  }
+
+  function handleGridSortChanged(event) {
+    var sortedColumn = (event.api.getColumnState() || []).find(function (column) { return column.sort; });
+    var nextField = sortedColumn ? sortedColumn.colId : "";
+    var nextDir = sortedColumn ? sortedColumn.sort : "";
+    if ((state.sort_field || "") === nextField && (state.sort_dir || "") === nextDir) return;
+    state.sort_field = nextField;
+    state.sort_dir = nextDir;
+    state.page = 1;
+    render();
+  }
+
   function renderTable(payload) {
     var items = payload.items || [];
-    if (!items.length) {
-      elements.inventoryTableCard.innerHTML = '<div class="empty-state compact">当前筛选下没有库存周报明细。</div>';
-      return;
-    }
     elements.inventoryTableCard.innerHTML = [
       '<div class="alert-table-head">',
       '  <div><p class="section-kicker">明细表</p><h3>周度 SKU 库存明细</h3></div>',
@@ -292,37 +307,46 @@
       '    <button id="exportInventoryBtn" class="ghost-button" type="button">导出当前明细</button>',
       '  </div>',
       '</div>',
-      '<div class="alert-table-wrap inventory-table-wrap">',
-      '<table class="alert-table inventory-table">',
-      '<thead><tr><th>周</th><th>站点</th><th>店铺</th><th>MSKU</th><th>可用</th><th>在途</th><th>在仓</th><th>采购</th><th>预警</th></tr></thead>',
-      '<tbody>', items.map(renderRow).join(""), '</tbody></table></div>'
+      '<div class="alert-table-wrap inventory-table-wrap ag-grid-shell">',
+      '  <div id="inventoryAgGrid"></div>',
+      '</div>'
     ].join("");
     document.getElementById("exportInventoryBtn").addEventListener("click", exportInventory);
+    window.kanbanGrid.makeGrid("inventoryAgGrid", {
+      rowData: items,
+      overlayNoRowsTemplate: '<span class="ag-empty-copy">当前筛选条件下没有库存周报明细。</span>',
+      columnDefs: [
+        { headerName: "周", field: "week_start", pinned: "left", minWidth: 170, sort: colSort("week_start"), cellRenderer: function (params) { return window.kanbanGrid.subCell(params.data.week_start || "-", "快照 " + (params.data.snapshot_date || "-")); } },
+        { headerName: "站点", field: "site", width: 110, sort: colSort("site") },
+        { headerName: "店铺", field: "store", width: 128, sort: colSort("store") },
+        { headerName: "MSKU", field: "msku", pinned: "left", width: 128, sort: colSort("msku"), cellRenderer: function (params) { return window.kanbanGrid.textCell(params.value, true); } },
+        metricColumn("可用", "available"),
+        metricColumn("在途", "transit"),
+        metricColumn("在仓", "warehouse"),
+        metricColumn("采购", "plan"),
+        { headerName: "异常指标", field: "warning", minWidth: 170, pinned: "right", cellRenderer: function (params) { return renderWarningLabel(params.data || {}); } }
+      ],
+      onSortChanged: handleGridSortChanged
+    });
   }
 
-  function renderRow(item) {
-    return [
-      '<tr>',
-      '  <td><strong>' + app.escapeHtml(item.week_start || "-") + '</strong><span class="table-subtext">快照 ' + app.escapeHtml(item.snapshot_date || "-") + '</span></td>',
-      '  <td>' + app.escapeHtml(item.site || "-") + '</td>',
-      '  <td>' + app.escapeHtml(item.store || "-") + '</td>',
-      '  <td><strong>' + app.escapeHtml(item.msku || "-") + '</strong></td>',
-      renderMetricCell(item, "available"),
-      renderMetricCell(item, "transit"),
-      renderMetricCell(item, "warehouse"),
-      renderMetricCell(item, "plan"),
-      '  <td>' + renderWarningLabel(item) + '</td>',
-      '</tr>'
-    ].join("");
-  }
-
-  function renderMetricCell(item, key) {
-    return '<td><strong>' + formatQuantity(item[key + "_quantity"]) + '</strong><span class="table-subtext">成本 ' + formatAmount(item[key + "_cost"]) + '</span></td>';
+  function metricColumn(label, key) {
+    return {
+      headerName: label,
+      colId: key,
+      minWidth: 150,
+      sort: colSort(key),
+      valueGetter: function (params) { return params.data[key + "_quantity"] || 0; },
+      cellRenderer: function (params) {
+        return window.kanbanGrid.subCell(formatQuantity(params.data[key + "_quantity"]), "成本 " + formatAmount(params.data[key + "_cost"]));
+      }
+    };
   }
 
   function renderWarningLabel(item) {
     if (!item.warning) return '<span class="alert-label positive">正常</span>';
-    return '<span class="alert-label warning">' + app.escapeHtml((item.warning_metrics || []).map(metricLabel).join("、") || "预警") + '</span>';
+    var labels = (item.warning_metrics || []).map(metricWarningLabel).join("、") || "波动预警";
+    return '<span class="alert-label warning" title="该指标本周波动超过历史阈值">' + app.escapeHtml(labels) + '</span>';
   }
 
   function renderPagination(payload) {
@@ -369,6 +393,10 @@
   function metricLabel(key) {
     var metric = metricDefs.find(function (item) { return item.key === key; });
     return metric ? metric.label : key;
+  }
+
+  function metricWarningLabel(key) {
+    return metricLabel(key) + "波动";
   }
 
   function formatQuantity(value) {
