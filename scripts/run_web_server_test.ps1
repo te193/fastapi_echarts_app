@@ -2,9 +2,6 @@ $ErrorActionPreference = "Stop"
 
 . "$PSScriptRoot\dashboard_env.ps1"
 
-$ProjectRoot = Get-DashboardProjectRoot
-$PythonExe = Get-DashboardPython
-
 # Keep the test server off the application port. A local override may change
 # the host, database, or port after the shared environment has loaded.
 $env:DASHBOARD_PORT = "8001"
@@ -13,6 +10,8 @@ if (Test-Path -LiteralPath $TestEnvScript) {
     . $TestEnvScript
 }
 
+$ProjectRoot = Get-DashboardProjectRoot
+$PythonExe = Get-DashboardPython
 $HostAddress = $env:DASHBOARD_HOST
 $Port = [int]$env:DASHBOARD_PORT
 
