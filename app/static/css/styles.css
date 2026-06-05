@@ -319,6 +319,10 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .month-compare-popover {
+    width: min(390px, calc(100vw - 44px));
+  }
+
   .calendar-grid {
     grid-template-columns: repeat(5, 1fr);
   }
@@ -735,6 +739,7 @@ input {
 }
 
 .filter-control {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -775,6 +780,248 @@ input {
 
 .filter-control input[type="date"]::-webkit-calendar-picker-indicator {
   cursor: pointer;
+}
+
+.dimension-picker-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.dimension-picker-row select {
+  min-width: 0;
+}
+
+.month-compare-toggle {
+  height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--text);
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.month-compare-toggle:hover,
+.month-compare-toggle:focus {
+  border-color: rgba(23, 105, 224, 0.6);
+  box-shadow: 0 0 0 4px rgba(23, 105, 224, 0.1);
+  outline: none;
+}
+
+.month-compare-toggle.active {
+  border-color: #1769e0;
+  background: #1769e0;
+  color: #ffffff;
+}
+
+.month-compare-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 20;
+  width: min(430px, calc(100vw - 44px));
+  padding: 14px;
+  border: 1px solid rgba(187, 203, 226, 0.92);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 18px 45px rgba(17, 33, 60, 0.16);
+}
+
+.month-compare-popover[hidden] {
+  display: none;
+}
+
+.month-compare-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 220px;
+}
+
+.month-compare-title {
+  font-weight: 800;
+  color: var(--text);
+}
+
+.month-compare-hint {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.month-compare-fields {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.month-picker-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.month-picker-value {
+  width: 156px;
+  min-height: 54px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  outline: none;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+}
+
+.month-picker-value strong,
+.month-picker-value small {
+  display: block;
+}
+
+.month-picker-value strong {
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.month-picker-value small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.month-picker-value:hover,
+.month-picker-value:focus,
+.month-picker-value.active {
+  border-color: rgba(23, 105, 224, 0.6);
+  box-shadow: 0 0 0 4px rgba(23, 105, 224, 0.12);
+}
+
+.month-compare-arrow {
+  padding-bottom: 18px;
+  color: var(--muted);
+  font-weight: 900;
+}
+
+.month-picker-panel {
+  margin-top: 14px;
+  padding: 12px;
+  border-radius: 8px;
+  background: #f8fbff;
+  border: 1px solid rgba(215, 225, 239, 0.86);
+}
+
+.month-picker-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.month-picker-note {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.month-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.month-picker-option {
+  min-height: 54px;
+  padding: 8px 6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+.month-picker-option strong,
+.month-picker-option small {
+  display: block;
+}
+
+.month-picker-option strong {
+  font-size: 14px;
+  line-height: 1.15;
+}
+
+.month-picker-option small {
+  min-height: 16px;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.month-picker-option:hover,
+.month-picker-option:focus {
+  border-color: rgba(23, 105, 224, 0.42);
+  box-shadow: 0 8px 20px rgba(17, 33, 60, 0.08);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.month-picker-option.selected {
+  border-color: rgba(23, 105, 224, 0.44);
+  background: rgba(23, 105, 224, 0.08);
+}
+
+.month-picker-option.selected small {
+  color: #1769e0;
+}
+
+.month-picker-option.active {
+  border-color: #1769e0;
+  background: #1769e0;
+  color: #ffffff;
+}
+
+.month-picker-option.active small {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.month-picker-empty {
+  grid-column: 1 / -1;
+  padding: 16px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.month-compare-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.month-compare-actions button {
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 8px;
+  box-shadow: none;
 }
 
 .period-quick-buttons {

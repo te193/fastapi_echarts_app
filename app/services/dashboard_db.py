@@ -34,6 +34,7 @@ DEFAULT_DASHBOARD_DAYS = int(os.getenv("DASHBOARD_DEFAULT_PERIOD_DAYS", "90"))
 MATRIX_ALL_VALUE = "__ALL__"
 MATRIX_PERIOD_TABLE = "etl_datasync.dashboard_product_matrix_period_snapshot"
 ALERT_COMPARISON_TABLE = "etl_datasync.dashboard_alert_comparison_snapshot"
+ALERT_MONTHLY_METRIC_TABLE = "etl_datasync.dashboard_alert_monthly_metric_snapshot"
 ALERT_DAY_COMPARISONS = {7: "d7", 14: "d14", 30: "d30", 60: "d60", 90: "d90"}
 
 
@@ -67,8 +68,6 @@ def normalize_alert_comparison_code(comparison_code: str | None, compare_days: i
     code = str(comparison_code or "").strip()
     if code.startswith("d") and code[1:].isdigit() and int(code[1:]) in ALERT_DAY_COMPARISONS:
         return code
-    if re.fullmatch(r"m\d{4}_\d{2}_vs_mtd", code):
-        return code
     try:
         days = int(compare_days or 7)
     except (TypeError, ValueError):
@@ -82,6 +81,20 @@ def normalize_alert_comparison_code(comparison_code: str | None, compare_days: i
     if days >= 14:
         return "d14"
     return "d7"
+
+
+def normalize_alert_month_code(month_code: str | None) -> str:
+    code = str(month_code or "").strip()
+    if not re.fullmatch(r"\d{4}-\d{2}", code):
+        return ""
+    year, month = code.split("-", 1)
+    if 1 <= int(month) <= 12:
+        return f"{int(year):04d}-{int(month):02d}"
+    return ""
+
+
+def is_alert_month_mode(comparison_mode: str | None) -> bool:
+    return str(comparison_mode or "").strip().lower() == "month"
 
 
 def alert_compare_days_from_code(comparison_code: str) -> int:
@@ -364,6 +377,9 @@ class DashboardDbService:
         alert_type: str = "all",
         compare_days: int = 7,
         comparison_code: str = "",
+        comparison_mode: str = "days",
+        previous_month: str = "",
+        recent_month: str = "",
         sales_trend: str = "all",
         rank_trend: str = "all",
         margin_status: str = "all",
@@ -382,6 +398,9 @@ class DashboardDbService:
                 filters,
                 compare_days=compare_days,
                 comparison_code=comparison_code,
+                comparison_mode=comparison_mode,
+                previous_month=previous_month,
+                recent_month=recent_month,
                 alert_type=alert_type,
                 sales_trend=sales_trend,
                 rank_trend=rank_trend,
@@ -437,6 +456,9 @@ class DashboardDbService:
         alert_type: str = "all",
         compare_days: int = 7,
         comparison_code: str = "",
+        comparison_mode: str = "days",
+        previous_month: str = "",
+        recent_month: str = "",
         sales_trend: str = "all",
         rank_trend: str = "all",
         margin_status: str = "all",
@@ -451,6 +473,9 @@ class DashboardDbService:
                 filters,
                 compare_days=compare_days,
                 comparison_code=comparison_code,
+                comparison_mode=comparison_mode,
+                previous_month=previous_month,
+                recent_month=recent_month,
                 alert_type=alert_type,
                 sales_trend=sales_trend,
                 rank_trend=rank_trend,
@@ -466,6 +491,9 @@ class DashboardDbService:
             "comparison_code": payload.get("comparison_code"),
             "comparison_type": payload.get("comparison_type"),
             "comparison_label": payload.get("comparison_label"),
+            "comparison_mode": payload.get("comparison_mode"),
+            "previous_month": payload.get("previous_month"),
+            "recent_month": payload.get("recent_month"),
         }
 
     def get_opportunities_payload(
@@ -1957,6 +1985,9 @@ class DashboardDbService:
         filters: dict[str, Any],
         compare_days: int = 7,
         comparison_code: str = "",
+        comparison_mode: str = "days",
+        previous_month: str = "",
+        recent_month: str = "",
         alert_type: str = "all",
         sales_trend: str = "all",
         rank_trend: str = "all",
@@ -1964,17 +1995,33 @@ class DashboardDbService:
         stock_status: str = "all",
         transition_filter: str = "",
     ) -> dict[str, Any]:
+        if is_alert_month_mode(comparison_mode):
+            return self._fetch_alert_center_monthly(
+                conn,
+                filters,
+                previous_month=previous_month,
+                recent_month=recent_month,
+                alert_type=alert_type,
+                sales_trend=sales_trend,
+                rank_trend=rank_trend,
+                margin_status=margin_status,
+                stock_status=stock_status,
+                transition_filter=transition_filter,
+            )
+
+        analysis_focus_type = self._alert_analysis_focus_type(alert_type, sales_trend, rank_trend, margin_status, stock_status)
         selected_code = normalize_alert_comparison_code(comparison_code, compare_days)
         rendered_table = render_sql(ALERT_COMPARISON_TABLE, self.schemas)
         snapshot_date = self._latest_alert_comparison_snapshot(conn, selected_code)
         options = self._fetch_alert_comparison_options(conn, snapshot_date)
+        available_months = self._fetch_alert_month_options(conn)
         compare_days = alert_compare_days_from_code(selected_code) or compare_days
         empty_summary = {"sales_drop": 0, "margin_low": 0, "rank_drop": 0, "stock_short": 0}
         if not snapshot_date:
             return {
                 "items": [],
                 "summary": empty_summary,
-                "analysis": self._build_alert_analysis([], empty_summary),
+                "analysis": self._build_alert_analysis([], empty_summary, analysis_focus_type),
                 "window": "",
                 "comparison_window": "",
                 "compare_days": compare_days,
@@ -1982,6 +2029,8 @@ class DashboardDbService:
                 "comparison_type": "days" if selected_code.startswith("d") else "month_to_date",
                 "comparison_label": selected_code,
                 "available_comparisons": options,
+                "comparison_mode": "days",
+                "available_months": available_months,
                 "empty_text": "当前还没有预警预计算数据，请先运行每日 ETL。",
             }
 
@@ -2059,7 +2108,7 @@ class DashboardDbService:
         return {
             "items": filtered,
             "summary": summary,
-            "analysis": self._build_alert_analysis(filtered, summary),
+            "analysis": self._build_alert_analysis(filtered, summary, analysis_focus_type),
             "window": self._alert_window_text(first_row, recent=True),
             "comparison_window": self._alert_window_text(first_row, recent=False),
             "compare_days": compare_days,
@@ -2067,6 +2116,8 @@ class DashboardDbService:
             "comparison_type": str(first_row.get("comparison_type") or ("days" if selected_code.startswith("d") else "month_to_date")),
             "comparison_label": str(first_row.get("comparison_label") or selected_code),
             "available_comparisons": options,
+            "comparison_mode": "days",
+            "available_months": available_months,
             "empty_text": "当前筛选下没有明显异常。",
         }
 
@@ -2085,6 +2136,7 @@ class DashboardDbService:
     ) -> dict[str, Any]:
         table = self._render_period_table(window.period_table)
         where_sql, params = self._period_where(window, filters, alias="p")
+        analysis_focus_type = self._alert_analysis_focus_type(alert_type, sales_trend, rank_trend, margin_status, stock_status)
         compare_days = 30 if compare_days >= 30 else 14 if compare_days >= 14 else 7
         recent_end = window.end_date
         recent_start = recent_end - timedelta(days=compare_days - 1)
@@ -2155,7 +2207,7 @@ class DashboardDbService:
         return {
             "items": filtered,
             "summary": summary,
-            "analysis": self._build_alert_analysis(filtered, summary),
+            "analysis": self._build_alert_analysis(filtered, summary, analysis_focus_type),
             "window": f"近{compare_days}天 {format_day(recent_start)} ~ {format_day(recent_end)}",
             "comparison_window": f"前{compare_days}天 {format_day(previous_start)} ~ {format_day(previous_end)}",
             "compare_days": compare_days,
@@ -2199,6 +2251,7 @@ class DashboardDbService:
                         max(previous_days) as previous_days
                     from dashboard_alert_comparison_snapshot
                     where snapshot_date = %(snapshot_date)s
+                      and comparison_type = 'days'
                     group by comparison_code
                     order by
                         case
@@ -2234,6 +2287,315 @@ class DashboardDbService:
             if row.get("comparison_code")
         ]
 
+    def _latest_alert_monthly_snapshot(self, conn) -> date | None:
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("select max(snapshot_date) as snapshot_date from dashboard_alert_monthly_metric_snapshot")
+                row = cursor.fetchone() or {}
+            return row.get("snapshot_date")
+        except pymysql.err.ProgrammingError as exc:
+            if exc.args and exc.args[0] == 1146:
+                return None
+            raise
+
+    def _fetch_alert_month_options(self, conn, snapshot_date: date | None = None) -> list[dict[str, Any]]:
+        snapshot_date = snapshot_date or self._latest_alert_monthly_snapshot(conn)
+        if not snapshot_date:
+            return []
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select
+                        month_code,
+                        min(data_start) as data_start,
+                        max(data_end) as data_end,
+                        max(stat_days) as stat_days,
+                        max(is_month_complete) as is_month_complete
+                    from dashboard_alert_monthly_metric_snapshot
+                    where snapshot_date = %(snapshot_date)s
+                    group by month_code
+                    order by month_code
+                    """,
+                    {"snapshot_date": snapshot_date},
+                )
+                rows = cursor.fetchall()
+        except pymysql.err.ProgrammingError as exc:
+            if exc.args and exc.args[0] == 1146:
+                return []
+            raise
+        return [
+            {
+                "code": str(row.get("month_code") or ""),
+                "label": str(row.get("month_code") or ""),
+                "data_start": format_day(row.get("data_start")),
+                "data_end": format_day(row.get("data_end")),
+                "stat_days": to_int(row.get("stat_days")),
+                "is_month_complete": bool(row.get("is_month_complete")),
+            }
+            for row in rows
+            if row.get("month_code")
+        ]
+
+    def _resolve_alert_month_pair(
+        self,
+        available_months: list[dict[str, Any]],
+        previous_month: str,
+        recent_month: str,
+    ) -> tuple[str, str]:
+        codes = [item["code"] for item in available_months]
+        if not codes:
+            return "", ""
+        recent = normalize_alert_month_code(recent_month)
+        previous = normalize_alert_month_code(previous_month)
+        if recent not in codes:
+            recent = codes[-1]
+        if previous not in codes or previous == recent:
+            recent_index = codes.index(recent)
+            previous = codes[recent_index - 1] if recent_index > 0 else codes[0]
+        return previous, recent
+
+    def _fetch_alert_center_monthly(
+        self,
+        conn,
+        filters: dict[str, Any],
+        previous_month: str = "",
+        recent_month: str = "",
+        alert_type: str = "all",
+        sales_trend: str = "all",
+        rank_trend: str = "all",
+        margin_status: str = "all",
+        stock_status: str = "all",
+        transition_filter: str = "",
+    ) -> dict[str, Any]:
+        snapshot_date = self._latest_alert_monthly_snapshot(conn)
+        available_months = self._fetch_alert_month_options(conn, snapshot_date)
+        previous_month, recent_month = self._resolve_alert_month_pair(available_months, previous_month, recent_month)
+        analysis_focus_type = self._alert_analysis_focus_type(alert_type, sales_trend, rank_trend, margin_status, stock_status)
+        empty_summary = {"sales_drop": 0, "margin_low": 0, "rank_drop": 0, "stock_short": 0}
+        if not snapshot_date or not previous_month or not recent_month:
+            return {
+                "items": [],
+                "summary": empty_summary,
+                "analysis": self._build_alert_analysis([], empty_summary, analysis_focus_type),
+                "window": "",
+                "comparison_window": "",
+                "compare_days": 0,
+                "comparison_code": "",
+                "comparison_mode": "month",
+                "comparison_type": "month",
+                "comparison_label": "",
+                "previous_month": previous_month,
+                "recent_month": recent_month,
+                "available_comparisons": [],
+                "available_months": available_months,
+                "empty_text": "Month comparison data is not ready.",
+            }
+
+        filter_sql, params = self._filter_clause(filters, alias="a")
+        params.update(
+            {
+                "snapshot_date": snapshot_date,
+                "previous_month": previous_month,
+                "recent_month": recent_month,
+            }
+        )
+        rendered_table = render_sql(ALERT_MONTHLY_METRIC_TABLE, self.schemas)
+        items: list[dict[str, Any]] = []
+        first_row: dict[str, Any] = {}
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                with joined as (
+                    select
+                        coalesce(r.item_key, p.item_key) as item_key,
+                        coalesce(r.seller_name_new, p.seller_name_new) as seller_name_new,
+                        coalesce(r.seller_name, p.seller_name) as seller_name,
+                        coalesce(r.seller_sku_adj, p.seller_sku_adj) as seller_sku_adj,
+                        coalesce(r.country_category, p.country_category) as country_category,
+                        coalesce(r.country, p.country) as country,
+                        coalesce(r.local_sku, p.local_sku) as local_sku,
+                        coalesce(r.filter_flag, p.filter_flag, 1) as filter_flag,
+                        coalesce(r.over_limit_flag, p.over_limit_flag, 0) as over_limit_flag,
+                        coalesce(r.daily_sales_band, '日销 0') as daily_sales_band,
+                        coalesce(r.margin_band, p.margin_band, '毛利率<0%%') as margin_band,
+                        coalesce(r.data_start, p.data_start) as recent_start,
+                        coalesce(r.data_end, p.data_end) as recent_end,
+                        coalesce(r.stat_days, 0) as recent_days,
+                        coalesce(p.data_start, r.data_start) as previous_start,
+                        coalesce(p.data_end, r.data_end) as previous_end,
+                        coalesce(p.stat_days, 0) as previous_days,
+                        coalesce(r.sales_qty, 0) as recent_sales_qty,
+                        coalesce(p.sales_qty, 0) as previous_sales_qty,
+                        coalesce(r.daily_sales, 0) as recent_daily_sales,
+                        coalesce(p.daily_sales, 0) as previous_daily_sales,
+                        coalesce(r.sales_amount, 0) as recent_sales_amount,
+                        coalesce(p.sales_amount, 0) as previous_sales_amount,
+                        coalesce(r.daily_sales_amount, 0) as recent_daily_sales_amount,
+                        coalesce(p.daily_sales_amount, 0) as previous_daily_sales_amount,
+                        coalesce(r.order_gross_profit, 0) as recent_order_gross_profit,
+                        coalesce(p.order_gross_profit, 0) as previous_order_gross_profit,
+                        r.margin as recent_margin,
+                        p.margin as previous_margin,
+                        r.avg_rank as recent_rank,
+                        p.avg_rank as previous_rank,
+                        coalesce(r.fba_sellable_inventory, p.fba_sellable_inventory, 0) as fba_sellable_inventory,
+                        coalesce(r.sellable_days, 0) as sellable_days
+                    from {rendered_table} r
+                    left join {rendered_table} p
+                      on p.snapshot_date = r.snapshot_date
+                     and p.item_key = r.item_key
+                     and p.month_code = %(previous_month)s
+                    where r.snapshot_date = %(snapshot_date)s
+                      and r.month_code = %(recent_month)s
+                    union all
+                    select
+                        p.item_key, p.seller_name_new, p.seller_name, p.seller_sku_adj, p.country_category, p.country, p.local_sku,
+                        p.filter_flag, p.over_limit_flag, '日销 0', p.margin_band,
+                        p.data_start, p.data_end, 0,
+                        p.data_start, p.data_end, p.stat_days,
+                        0, p.sales_qty, 0, p.daily_sales, 0, p.sales_amount, 0, p.daily_sales_amount,
+                        0, p.order_gross_profit, null, p.margin, null, p.avg_rank,
+                        p.fba_sellable_inventory, 0
+                    from {rendered_table} p
+                    left join {rendered_table} r
+                      on r.snapshot_date = p.snapshot_date
+                     and r.item_key = p.item_key
+                     and r.month_code = %(recent_month)s
+                    where p.snapshot_date = %(snapshot_date)s
+                      and p.month_code = %(previous_month)s
+                      and r.item_key is null
+                ),
+                classified as (
+                    select
+                        j.*,
+                        case
+                            when j.previous_daily_sales <> 0 then (j.recent_daily_sales - j.previous_daily_sales) / abs(j.previous_daily_sales)
+                            when j.recent_daily_sales > 0 then 1
+                            else 0
+                        end as sales_change_rate,
+                        (j.previous_sales_qty >= 10 and j.recent_daily_sales <= j.previous_daily_sales * 0.7) as sales_drop_flag,
+                        (j.recent_sales_qty >= 10 and j.recent_daily_sales >= j.previous_daily_sales * 1.3) as sales_up_flag,
+                        (
+                            j.previous_rank is not null
+                            and j.recent_rank is not null
+                            and j.recent_rank >= j.previous_rank + 5
+                            and j.recent_rank >= j.previous_rank * 1.2
+                        ) as rank_drop_flag,
+                        (
+                            j.previous_rank is not null
+                            and j.recent_rank is not null
+                            and j.recent_rank <= greatest(j.previous_rank - 5, j.previous_rank * 0.8)
+                        ) as rank_up_flag,
+                        (j.recent_sales_amount >= 1000 and coalesce(j.recent_margin, 0) < 0.08) as margin_low_flag,
+                        (
+                            j.recent_daily_sales >= 1
+                            and j.fba_sellable_inventory > 0
+                            and j.fba_sellable_inventory / nullif(j.recent_daily_sales, 0) < 14
+                        ) as stock_short_flag
+                    from joined j
+                )
+                select
+                    %(snapshot_date)s as snapshot_date,
+                    concat(%(previous_month)s, '_vs_', %(recent_month)s) as comparison_code,
+                    'month' as comparison_type,
+                    concat(%(previous_month)s, ' vs ', %(recent_month)s) as comparison_label,
+                    a.*,
+                    case when a.previous_rank is not null and a.recent_rank is not null then a.previous_rank - a.recent_rank else 0 end as rank_delta,
+                    case when sales_drop_flag then 'down' when sales_up_flag then 'up' else 'stable' end as sales_trend,
+                    case when rank_drop_flag then 'down' when rank_up_flag then 'up' else 'stable' end as rank_trend,
+                    case when margin_low_flag then 'low' else 'normal' end as margin_status,
+                    case when stock_short_flag then 'short' else 'normal' end as stock_status,
+                    concat_ws(',', if(sales_drop_flag, 'sales_drop', null), if(margin_low_flag, 'margin_low', null), if(rank_drop_flag, 'rank_drop', null), if(stock_short_flag, 'stock_short', null)) as alert_types,
+                    concat_ws(' / ', if(sales_drop_flag, '销量下滑', null), if(margin_low_flag, '低毛利', null), if(rank_drop_flag, '排名下滑', null), if(stock_short_flag, '库存偏低', null)) as alert_labels,
+                    case
+                        when sales_drop_flag then 'sales_drop'
+                        when margin_low_flag then 'margin_low'
+                        when rank_drop_flag then 'rank_drop'
+                        when stock_short_flag then 'stock_short'
+                        else 'observe'
+                    end as primary_type,
+                    case
+                        when sales_drop_flag then 0
+                        when margin_low_flag then 1
+                        when rank_drop_flag then 2
+                        when stock_short_flag then 3
+                        else 9
+                    end as priority,
+                    (sales_drop_flag or margin_low_flag or rank_drop_flag or stock_short_flag) as has_alert
+                from classified a
+                where a.filter_flag = 1
+                  and (sales_drop_flag or margin_low_flag or rank_drop_flag or stock_short_flag)
+                  and {filter_sql}
+                """,
+                params,
+            )
+            for row in cursor.fetchall():
+                if not first_row:
+                    first_row = row
+                items.append(self._build_precomputed_alert_item(row))
+
+            if not first_row:
+                cursor.execute(
+                    f"""
+                    select
+                        %(snapshot_date)s as snapshot_date,
+                        'month' as comparison_type,
+                        %(recent_month)s as comparison_code,
+                        %(recent_month)s as comparison_label,
+                        data_start as recent_start,
+                        data_end as recent_end,
+                        stat_days as recent_days,
+                        data_start as previous_start,
+                        data_end as previous_end,
+                        stat_days as previous_days
+                    from {rendered_table}
+                    where snapshot_date = %(snapshot_date)s
+                      and month_code = %(recent_month)s
+                    limit 1
+                    """,
+                    params,
+                )
+                first_row = cursor.fetchone() or {}
+
+        priority = {"sales_drop": 0, "margin_low": 1, "rank_drop": 2, "stock_short": 3}
+        filtered = [
+            item
+            for item in items
+            if self._alert_item_matches(
+                item,
+                alert_type=alert_type,
+                sales_trend=sales_trend,
+                rank_trend=rank_trend,
+                margin_status=margin_status,
+                stock_status=stock_status,
+            )
+        ]
+        filtered = self._apply_transition_filter(filtered, transition_filter)
+        filtered.sort(key=lambda item: (item["priority"], item["title"]))
+        summary = {key: 0 for key in priority}
+        for item in filtered:
+            for key in item["alert_types"]:
+                if key in summary:
+                    summary[key] += 1
+        return {
+            "items": filtered,
+            "summary": summary,
+            "analysis": self._build_alert_analysis(filtered, summary, analysis_focus_type),
+            "window": self._alert_window_text(first_row, recent=True),
+            "comparison_window": self._alert_window_text(first_row, recent=False),
+            "compare_days": 0,
+            "comparison_code": f"{previous_month}_vs_{recent_month}",
+            "comparison_mode": "month",
+            "comparison_type": "month",
+            "comparison_label": f"{previous_month} vs {recent_month}",
+            "previous_month": previous_month,
+            "recent_month": recent_month,
+            "available_comparisons": self._fetch_alert_comparison_options(conn, self._latest_alert_comparison_snapshot(conn, "d7")),
+            "available_months": available_months,
+            "empty_text": "当前筛选下没有明显异常。",
+        }
+
     def _alert_window_text(self, row: dict[str, Any], recent: bool) -> str:
         if not row:
             return ""
@@ -2266,7 +2628,7 @@ class DashboardDbService:
         comparison_type = str(row.get("comparison_type") or "days")
         sales_text = (
             f"日均 {recent_daily_sales:.2f} / {previous_daily_sales:.2f}（总量 {recent_qty:.0f} / {previous_qty:.0f}，{sales_change:+.1%}）"
-            if comparison_type == "month_to_date"
+            if comparison_type in {"month_to_date", "month"}
             else f"{recent_qty:.0f} / {previous_qty:.0f}（{sales_change:+.1%}）"
         )
         sellable_days = to_float(row.get("sellable_days"))
@@ -2561,25 +2923,77 @@ class DashboardDbService:
             for key, count in summary.items()
         ]
 
-    def _build_alert_analysis(self, items: list[dict[str, Any]], summary: dict[str, int]) -> dict[str, Any]:
+    def _alert_analysis_focus_type(
+        self,
+        alert_type: str,
+        sales_trend: str,
+        rank_trend: str,
+        margin_status: str,
+        stock_status: str,
+    ) -> str:
+        if alert_type in {"sales_drop", "margin_low", "rank_drop", "stock_short"}:
+            return alert_type
+        if sales_trend == "down":
+            return "sales_drop"
+        if rank_trend == "down":
+            return "rank_drop"
+        if margin_status == "low":
+            return "margin_low"
+        if stock_status == "short":
+            return "stock_short"
+        return "all"
+
+    def _alert_combo_distribution(
+        self,
+        items: list[dict[str, Any]],
+        selected_alert_type: str,
+        labels: dict[str, str],
+    ) -> list[dict[str, Any]]:
+        grouped: dict[tuple[str, ...], int] = {}
+        ordered_types = ("sales_drop", "margin_low", "rank_drop", "stock_short")
+        for item in items:
+            types = tuple(key for key in ordered_types if key in item.get("alert_types", []))
+            if selected_alert_type not in types:
+                continue
+            grouped[types] = grouped.get(types, 0) + 1
+
+        denominator = max(sum(grouped.values()), 1)
+        rows = []
+        for types, count in grouped.items():
+            other_types = [key for key in types if key != selected_alert_type]
+            label = "\u4ec5" + labels.get(selected_alert_type, selected_alert_type) if not other_types else " + ".join(labels.get(key, key) for key in types)
+            rows.append(
+                {
+                    "key": "combo:" + ",".join(types),
+                    "label": label,
+                    "count": count,
+                    "share": round(count / denominator, 4),
+                }
+            )
+        return sorted(rows, key=lambda row: (-row["count"], row["label"]))
+
+    def _build_alert_analysis(self, items: list[dict[str, Any]], summary: dict[str, int], selected_alert_type: str = "all") -> dict[str, Any]:
         alert_labels = {
-            "sales_drop": "销量下滑",
-            "margin_low": "低毛利",
-            "rank_drop": "排名下滑",
-            "stock_short": "库存偏低",
+            "sales_drop": "\u9500\u91cf\u4e0b\u6ed1",
+            "margin_low": "\u4f4e\u6bdb\u5229",
+            "rank_drop": "\u6392\u540d\u4e0b\u6ed1",
+            "stock_short": "\u5e93\u5b58\u504f\u4f4e",
         }
-        sales_states = [("down", "销量下降"), ("stable", "销量稳定"), ("up", "销量上涨")]
-        rank_states = [("down", "排名下降"), ("stable", "排名稳定"), ("up", "排名上涨")]
+        sales_states = [("down", "\u9500\u91cf\u4e0b\u964d"), ("stable", "\u9500\u91cf\u7a33\u5b9a"), ("up", "\u9500\u91cf\u4e0a\u6da8")]
+        rank_states = [("down", "\u6392\u540d\u4e0b\u964d"), ("stable", "\u6392\u540d\u7a33\u5b9a"), ("up", "\u6392\u540d\u4e0a\u6da8")]
         matrix = []
         for sales_key, sales_label in sales_states:
             for rank_key, rank_label in rank_states:
                 count = sum(1 for item in items if item.get("sales_trend") == sales_key and item.get("rank_trend") == rank_key)
                 matrix.append({"sales_trend": sales_key, "rank_trend": rank_key, "label": f"{sales_label} / {rank_label}", "count": count})
 
-        margin_layers = ["<0%", "0-10%", "10-15%", "15-25%", "25-35%", ">35%", "无毛利"]
-        rank_layers = ["无排名", "1-50", "51-100", "101-200", "201-500", ">500"]
+        margin_layers = ["<0%", "0-10%", "10-15%", "15-25%", "25-35%", ">35%", "\u65e0\u6bdb\u5229"]
+        rank_layers = ["\u65e0\u6392\u540d", "1-50", "51-100", "101-200", "201-500", ">500"]
         return {
-            "type_distribution": self._type_distribution(summary, alert_labels, len(items)),
+            "type_distribution": self._alert_combo_distribution(items, selected_alert_type, alert_labels)
+            if selected_alert_type in alert_labels
+            else self._type_distribution(summary, alert_labels, len(items)),
+            "type_distribution_mode": "combo" if selected_alert_type in alert_labels else "type",
             "site_ranking": self._top_dimension(items, "country"),
             "store_ranking": self._top_dimension(items, "store"),
             "margin_transition": self._transition_analysis(items, "previous_margin_layer", "recent_margin_layer", margin_layers, margin_layers),

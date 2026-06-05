@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import os
@@ -38,6 +38,7 @@ DEFAULT_STEP_ORDER = [
     "limit_price_snapshot",
     "period_preset_snapshots",
     "alert_comparison_snapshots",
+    "alert_monthly_metric_snapshots",
     "price_review_source_load",
     "price_review_tracking",
 ]
@@ -65,6 +66,11 @@ class PeriodPresetStep:
 
 @dataclass(frozen=True)
 class AlertComparisonStep:
+    name: str
+
+
+@dataclass(frozen=True)
+class AlertMonthlyMetricStep:
     name: str
 
 
@@ -545,6 +551,45 @@ create table if not exists etl_datasync.dashboard_alert_comparison_summary (
         alert_type, sales_trend, rank_trend, margin_status, stock_status
     ),
     key idx_alert_summary_lookup (snapshot_date, comparison_code, alert_type)
+) engine=InnoDB default charset=utf8mb4;
+"""
+
+CREATE_ALERT_MONTHLY_METRIC_SNAPSHOT_SQL = """
+create table if not exists etl_datasync.dashboard_alert_monthly_metric_snapshot (
+    snapshot_date date not null,
+    month_code char(7) not null,
+    month_start date not null,
+    month_end date not null,
+    data_start date not null,
+    data_end date not null,
+    stat_days int not null,
+    is_month_complete tinyint not null default 0,
+    item_key varchar(512) not null,
+    seller_name_new varchar(128) not null,
+    seller_name varchar(255) null,
+    seller_sku_adj varchar(128) not null,
+    country_category varchar(64) not null,
+    country varchar(64) not null,
+    local_sku varchar(128) null,
+    filter_flag tinyint not null default 1,
+    over_limit_flag tinyint not null default 0,
+    daily_sales_band varchar(64) not null,
+    margin_band varchar(64) not null,
+    sales_qty decimal(18,4) not null default 0,
+    daily_sales decimal(18,6) not null default 0,
+    sales_amount decimal(18,4) not null default 0,
+    daily_sales_amount decimal(18,6) not null default 0,
+    order_gross_profit decimal(18,4) not null default 0,
+    margin decimal(10,4) null,
+    avg_rank decimal(18,4) null,
+    fba_sellable_inventory decimal(18,4) not null default 0,
+    sellable_days decimal(18,4) not null default 0,
+    created_at datetime not null default current_timestamp,
+    updated_at datetime not null default current_timestamp on update current_timestamp,
+    unique key uk_alert_monthly_item (snapshot_date, month_code, item_key),
+    key idx_alert_monthly_lookup (snapshot_date, month_code, country, seller_name_new),
+    key idx_alert_monthly_filters (snapshot_date, month_code, filter_flag, daily_sales_band, margin_band),
+    key idx_alert_monthly_sku (seller_sku_adj)
 ) engine=InnoDB default charset=utf8mb4;
 """
 
@@ -1156,18 +1201,18 @@ select
     filter_flag,
     over_limit_flag,
     case
-        when recent_daily_sales < 1 and recent_daily_sales > 0 then '日销 <1'
-        when recent_daily_sales >= 1 and recent_daily_sales < 5 then '日销 1-5'
-        when recent_daily_sales >= 5 then '日销 >5'
-        else '日销 0'
+        when recent_daily_sales < 1 and recent_daily_sales > 0 then '鏃ラ攢 <1'
+        when recent_daily_sales >= 1 and recent_daily_sales < 5 then '鏃ラ攢 1-5'
+        when recent_daily_sales >= 5 then '鏃ラ攢 >5'
+        else '鏃ラ攢 0'
     end as daily_sales_band,
     case
-        when recent_margin >= 0.35 then '毛利率 >35%%'
-        when recent_margin >= 0.25 and recent_margin < 0.35 then '毛利率 25-35%%'
-        when recent_margin >= 0.15 and recent_margin < 0.25 then '毛利率 15-25%%'
-        when recent_margin >= 0.10 and recent_margin < 0.15 then '毛利率 10-15%%'
-        when recent_margin >= 0 and recent_margin < 0.10 then '毛利率 0-10%%'
-        else '毛利率 <0%%'
+        when recent_margin >= 0.35 then '姣涘埄鐜?>35%%'
+        when recent_margin >= 0.25 and recent_margin < 0.35 then '姣涘埄鐜?25-35%%'
+        when recent_margin >= 0.15 and recent_margin < 0.25 then '姣涘埄鐜?15-25%%'
+        when recent_margin >= 0.10 and recent_margin < 0.15 then '姣涘埄鐜?10-15%%'
+        when recent_margin >= 0 and recent_margin < 0.10 then '姣涘埄鐜?0-10%%'
+        else '姣涘埄鐜?<0%%'
     end as margin_band,
     recent_sales_qty,
     previous_sales_qty,
@@ -1197,7 +1242,7 @@ select
     rank_drop_flag,
     stock_short_flag,
     concat_ws(',', if(sales_drop_flag, 'sales_drop', null), if(margin_low_flag, 'margin_low', null), if(rank_drop_flag, 'rank_drop', null), if(stock_short_flag, 'stock_short', null)),
-    concat_ws(' / ', if(sales_drop_flag, '销量下滑', null), if(margin_low_flag, '低毛利', null), if(rank_drop_flag, '排名下滑', null), if(stock_short_flag, '库存偏低', null)),
+    concat_ws(' / ', if(sales_drop_flag, '閿€閲忎笅婊?, null), if(margin_low_flag, '浣庢瘺鍒?, null), if(rank_drop_flag, '鎺掑悕涓嬫粦', null), if(stock_short_flag, '搴撳瓨鍋忎綆', null)),
     case
         when sales_drop_flag then 'sales_drop'
         when margin_low_flag then 'margin_low'
@@ -1286,6 +1331,117 @@ where snapshot_date not in (
     from (
         select distinct snapshot_date
         from etl_datasync.dashboard_alert_comparison_summary
+        order by snapshot_date desc
+        limit %(period_snapshot_retention_days)s
+    ) keep_dates
+);
+"""
+
+DELETE_ALERT_MONTHLY_METRIC_SNAPSHOT_SQL = """
+delete from etl_datasync.dashboard_alert_monthly_metric_snapshot
+where snapshot_date = %(snapshot_date)s
+  and month_code = %(month_code)s;
+"""
+
+INSERT_ALERT_MONTHLY_METRIC_SNAPSHOT_SQL = """
+insert into etl_datasync.dashboard_alert_monthly_metric_snapshot (
+    snapshot_date, month_code, month_start, month_end, data_start, data_end, stat_days, is_month_complete,
+    item_key, seller_name_new, seller_name, seller_sku_adj, country_category, country, local_sku,
+    filter_flag, over_limit_flag, daily_sales_band, margin_band,
+    sales_qty, daily_sales, sales_amount, daily_sales_amount, order_gross_profit, margin,
+    avg_rank, fba_sellable_inventory, sellable_days,
+    created_at, updated_at
+)
+with monthly as (
+    select
+        item_key,
+        max(seller_name_new) as seller_name_new,
+        max(seller_name) as seller_name,
+        max(seller_sku_adj) as seller_sku_adj,
+        max(country_category) as country_category,
+        max(country) as country,
+        max(local_sku) as local_sku,
+        sum(sales_qty) as sales_qty,
+        sum(sales_amount) as sales_amount,
+        sum(order_gross_profit) as order_gross_profit,
+        avg(case when ranking > 0 then ranking end) as avg_rank,
+        max(afn_fulfillable_quantity) as fba_sellable_inventory
+    from etl_datasync.dashboard_product_performance_daily
+    where dt_date between %(data_start)s and %(data_end)s
+      and seller_name_new not regexp 'baihuiyi|Yuanoboo|Bailboo|Qianytyy'
+      and char_length(seller_sku_adj) between 5 and 10
+    group by item_key
+),
+period_flags as (
+    select item_key, max(over_limit_flag) as over_limit_flag, max(filter_flag) as filter_flag
+    from etl_datasync.dashboard_product_period_90d_snapshot
+    where snapshot_date = %(snapshot_date)s
+    group by item_key
+),
+metrics as (
+    select
+        m.*,
+        coalesce(f.filter_flag, 1) as filter_flag,
+        coalesce(f.over_limit_flag, 0) as over_limit_flag,
+        m.sales_qty / nullif(%(stat_days)s, 0) as daily_sales,
+        m.sales_amount / nullif(%(stat_days)s, 0) as daily_sales_amount,
+        round(m.order_gross_profit / nullif(m.sales_amount, 0), 4) as margin
+    from monthly m
+    left join period_flags f on f.item_key = m.item_key
+)
+select
+    %(snapshot_date)s,
+    %(month_code)s,
+    %(month_start)s,
+    %(month_end)s,
+    %(data_start)s,
+    %(data_end)s,
+    %(stat_days)s,
+    %(is_month_complete)s,
+    item_key,
+    seller_name_new,
+    seller_name,
+    seller_sku_adj,
+    country_category,
+    country,
+    local_sku,
+    filter_flag,
+    over_limit_flag,
+    case
+        when daily_sales < 1 and daily_sales > 0 then '鏃ラ攢 <1'
+        when daily_sales >= 1 and daily_sales < 5 then '鏃ラ攢 1-5'
+        when daily_sales >= 5 then '鏃ラ攢 >5'
+        else '鏃ラ攢 0'
+    end as daily_sales_band,
+    case
+        when margin >= 0.35 then '姣涘埄鐜?35%%'
+        when margin >= 0.25 and margin < 0.35 then '姣涘埄鐜?5-35%%'
+        when margin >= 0.15 and margin < 0.25 then '姣涘埄鐜?5-25%%'
+        when margin >= 0.10 and margin < 0.15 then '姣涘埄鐜?0-15%%'
+        when margin >= 0 and margin < 0.10 then '姣涘埄鐜?-10%%'
+        else '姣涘埄鐜?0%%'
+    end as margin_band,
+    sales_qty,
+    daily_sales,
+    sales_amount,
+    daily_sales_amount,
+    order_gross_profit,
+    margin,
+    avg_rank,
+    fba_sellable_inventory,
+    case when daily_sales > 0 then fba_sellable_inventory / daily_sales else 0 end,
+    now(),
+    now()
+from metrics;
+"""
+
+DELETE_OLD_ALERT_MONTHLY_METRIC_SNAPSHOT_SQL = """
+delete from etl_datasync.dashboard_alert_monthly_metric_snapshot
+where snapshot_date not in (
+    select snapshot_date
+    from (
+        select distinct snapshot_date
+        from etl_datasync.dashboard_alert_monthly_metric_snapshot
         order by snapshot_date desc
         limit %(period_snapshot_retention_days)s
     ) keep_dates
@@ -1471,9 +1627,9 @@ with src as (
         date(start_date) as dt_date,
         country,
         case
-            when country = '英国' then '英国站'
-            when country in ('美国', '加拿大', '巴西', '墨西哥') then '北美站'
-            else '欧洲站'
+            when country = '鑻卞浗' then '鑻卞浗绔?
+            when country in ('缇庡浗', '鍔犳嬁澶?, '宸磋タ', '澧ㄨタ鍝?) then '鍖楃編绔?
+            else '娆ф床绔?
         end as country_category,
         local_sku,
         seller_name,
@@ -1489,18 +1645,18 @@ with src as (
         coalesce(volume, 0) as volume,
         coalesce(amount, 0) as amount,
         case
-            when country = '德国' then coalesce(amount, 0) / 1.19
-            when country = '法国' then coalesce(amount, 0) / 1.2
-            when country = '瑞典' then coalesce(amount, 0) / 1.25
-            when country = '西班牙' then coalesce(amount, 0) / 1.21
-            when country = '意大利' then coalesce(amount, 0) / 1.22
-            when country = '英国' then coalesce(amount, 0) / 1.2
-            when country = '比利时' then coalesce(amount, 0) / 1.21
-            when country = '荷兰' then coalesce(amount, 0) / 1.21
-            when country = '爱尔兰' then coalesce(amount, 0) / 1.23
-            when country = '波兰' then coalesce(amount, 0) / 1.23
-            when country = '墨西哥' then coalesce(amount, 0) / 1.16
-            when country = '土耳其' then coalesce(amount, 0) / 1.20
+            when country = '寰峰浗' then coalesce(amount, 0) / 1.19
+            when country = '娉曞浗' then coalesce(amount, 0) / 1.2
+            when country = '鐟炲吀' then coalesce(amount, 0) / 1.25
+            when country = '瑗跨彮鐗? then coalesce(amount, 0) / 1.21
+            when country = '鎰忓ぇ鍒? then coalesce(amount, 0) / 1.22
+            when country = '鑻卞浗' then coalesce(amount, 0) / 1.2
+            when country = '姣斿埄鏃? then coalesce(amount, 0) / 1.21
+            when country = '鑽峰叞' then coalesce(amount, 0) / 1.21
+            when country = '鐖卞皵鍏? then coalesce(amount, 0) / 1.23
+            when country = '娉㈠叞' then coalesce(amount, 0) / 1.23
+            when country = '澧ㄨタ鍝? then coalesce(amount, 0) / 1.16
+            when country = '鍦熻€冲叾' then coalesce(amount, 0) / 1.20
             else coalesce(amount, 0)
         end as amount_ex_tax,
         coalesce(predict_gross_profit, 0) as predict_gross_profit,
@@ -1693,22 +1849,22 @@ from (
         seller_name,
         seller_sku,
         case
-            when marketplace = '英国' then '英国站'
-            when marketplace in ('美国', '加拿大', '巴西', '墨西哥') then '北美站'
-            else '欧洲站'
+            when marketplace = '鑻卞浗' then '鑻卞浗绔?
+            when marketplace in ('缇庡浗', '鍔犳嬁澶?, '宸磋タ', '澧ㄨタ鍝?) then '鍖楃編绔?
+            else '娆ф床绔?
         end as country_category,
         marketplace,
         cast(nullif(landed_price, '') as decimal(18,4)) as price,
         case
-            when marketplace in ('德国', '法国', '荷兰', '比利时', '西班牙', '意大利', '爱尔兰') then '欧元'
-            when marketplace = '波兰' then '波兰兹罗提'
-            when marketplace = '瑞典' then '瑞典'
-            when marketplace = '土耳其' then '土耳其里拉'
-            when marketplace = '英国' then '英镑'
-            when marketplace = '美国' then '美元'
-            when marketplace = '加拿大' then '加元'
-            when marketplace = '墨西哥' then '墨西哥比索'
-            when marketplace = '巴西' then '巴西雷亚尔'
+            when marketplace in ('寰峰浗', '娉曞浗', '鑽峰叞', '姣斿埄鏃?, '瑗跨彮鐗?, '鎰忓ぇ鍒?, '鐖卞皵鍏?) then '娆у厓'
+            when marketplace = '娉㈠叞' then '娉㈠叞鍏圭綏鎻?
+            when marketplace = '鐟炲吀' then '鐟炲吀'
+            when marketplace = '鍦熻€冲叾' then '鍦熻€冲叾閲屾媺'
+            when marketplace = '鑻卞浗' then '鑻遍晳'
+            when marketplace = '缇庡浗' then '缇庡厓'
+            when marketplace = '鍔犳嬁澶? then '鍔犲厓'
+            when marketplace = '澧ㄨタ鍝? then '澧ㄨタ鍝ユ瘮绱?
+            when marketplace = '宸磋タ' then '宸磋タ闆蜂簹灏?
             else null
         end as org_currency_icon
     from dwd_datasync.lx_sales_mws_listing
@@ -1766,14 +1922,14 @@ from (
     select
         sku as local_sku,
         msku as seller_sku,
-        新店铺 as seller_name_new,
-        国家 as country,
-        国家类别 as country_category,
-        币种 as currency,
-        listing价格 as listing_price,
-        `35毛利润价格` as margin_price_35,
-        `10毛利润价格` as margin_price_10
-    from temporary_dwd.`在库节点_输出定价表`
+        鏂板簵閾?as seller_name_new,
+        鍥藉 as country,
+        鍥藉绫诲埆 as country_category,
+        甯佺 as currency,
+        listing浠锋牸 as listing_price,
+        `35姣涘埄娑︿环鏍糮 as margin_price_35,
+        `10姣涘埄娑︿环鏍糮 as margin_price_10
+    from temporary_dwd.`鍦ㄥ簱鑺傜偣_杈撳嚭瀹氫环琛╜
 ) limit_price_source
 where seller_sku is not null
   and seller_sku <> ''
@@ -1952,12 +2108,12 @@ select
     raw_order_gross_profit,
     order_gross_margin,
     case
-        when order_gross_margin >= 0.35 then '毛利率 >35%%'
-        when order_gross_margin >= 0.25 and order_gross_margin < 0.35 then '毛利率 25-35%%'
-        when order_gross_margin >= 0.15 and order_gross_margin < 0.25 then '毛利率 15-25%%'
-        when order_gross_margin >= 0.10 and order_gross_margin < 0.15 then '毛利率 10-15%%'
-        when order_gross_margin >= 0 and order_gross_margin < 0.10 then '毛利率 0-10%%'
-        else '毛利率 <0%%'
+        when order_gross_margin >= 0.35 then '姣涘埄鐜?>35%%'
+        when order_gross_margin >= 0.25 and order_gross_margin < 0.35 then '姣涘埄鐜?25-35%%'
+        when order_gross_margin >= 0.15 and order_gross_margin < 0.25 then '姣涘埄鐜?15-25%%'
+        when order_gross_margin >= 0.10 and order_gross_margin < 0.15 then '姣涘埄鐜?10-15%%'
+        when order_gross_margin >= 0 and order_gross_margin < 0.10 then '姣涘埄鐜?0-10%%'
+        else '姣涘埄鐜?<0%%'
     end as margin_band,
     settlement_gross_profit,
     case
@@ -1981,16 +2137,16 @@ select
     daily_sales,
     daily_sales_in_stock_days,
     case
-        when daily_sales_in_stock_days < 1 and daily_sales_in_stock_days > 0 then '日销 <1'
-        when daily_sales_in_stock_days >= 1 and daily_sales_in_stock_days < 5 then '日销 1-5'
-        when daily_sales_in_stock_days >= 5 then '日销 >5'
-        else '日销 0'
+        when daily_sales_in_stock_days < 1 and daily_sales_in_stock_days > 0 then '鏃ラ攢 <1'
+        when daily_sales_in_stock_days >= 1 and daily_sales_in_stock_days < 5 then '鏃ラ攢 1-5'
+        when daily_sales_in_stock_days >= 5 then '鏃ラ攢 >5'
+        else '鏃ラ攢 0'
     end as daily_sales_in_stock_band,
     case
-        when daily_sales < 1 and daily_sales > 0 then '日销 <1'
-        when daily_sales >= 1 and daily_sales < 5 then '日销 1-5'
-        when daily_sales >= 5 then '日销 >5'
-        else '日销 0'
+        when daily_sales < 1 and daily_sales > 0 then '鏃ラ攢 <1'
+        when daily_sales >= 1 and daily_sales < 5 then '鏃ラ攢 1-5'
+        when daily_sales >= 5 then '鏃ラ攢 >5'
+        else '鏃ラ攢 0'
     end as daily_sales_band,
     ad_spend,
     ad_orders,
@@ -2043,187 +2199,15 @@ DDL_STATEMENTS = (
     CREATE_MATRIX_PERIOD_SNAPSHOT_SQL,
     CREATE_ALERT_COMPARISON_SNAPSHOT_SQL,
     CREATE_ALERT_COMPARISON_SUMMARY_SQL,
+    CREATE_ALERT_MONTHLY_METRIC_SNAPSHOT_SQL,
     CREATE_MONTHLY_GOAL_SQL,
     CREATE_MONTHLY_GOAL_ACTUAL_SNAPSHOT_SQL,
     CREATE_GOAL_DIMENSION_SNAPSHOT_SQL,
     CREATE_ANNUAL_GOAL_SNAPSHOT_SQL,
 )
 
-TABLE_COMMENTS = {
-    "dashboard_etl_task_log": "看板ETL执行日志",
-    "dashboard_product_performance_daily": "产品日销明细基础表",
-    "dashboard_restock_daily_snapshot": "补货建议每日快照",
-    "dashboard_inventory_daily_snapshot": "FBA库存每日快照",
-    "dashboard_listing_price_daily_snapshot": "Listing售价每日快照",
-    "dashboard_limit_price_daily_snapshot": "产品限价每日快照",
-    "dashboard_product_period_snapshot": "自定义周期产品表现快照",
-    "dashboard_product_period_7d_snapshot": "最近7天产品表现快照",
-    "dashboard_product_period_14d_snapshot": "最近14天产品表现快照",
-    "dashboard_product_period_30d_snapshot": "最近30天产品表现快照",
-    "dashboard_product_period_90d_snapshot": "最近90天产品表现快照",
-    "dashboard_product_period_last_month_snapshot": "上月产品表现快照",
-    "dashboard_product_matrix_period_snapshot": "日销与毛利率矩阵周期汇总快照",
-    "dashboard_alert_comparison_snapshot": "异常预警对比明细快照",
-    "dashboard_alert_comparison_summary": "异常预警对比汇总快照",
-    "dashboard_monthly_goal": "月度经营目标表",
-    "dashboard_monthly_goal_actual_snapshot": "月度目标实绩汇总快照",
-    "dashboard_goal_dimension_snapshot": "目标差距维度拆解快照",
-    "dashboard_annual_goal_snapshot": "年度目标达成快照",
-    "dashboard_inventory_weekly_snapshot": "库存周报周度聚合快照",
-}
-
-COLUMN_COMMENTS = {
-    "id": "自增主键",
-    "task_name": "任务名称",
-    "biz_date": "业务日期",
-    "snapshot_date": "快照日期",
-    "period_start": "统计开始日期",
-    "period_end": "统计结束日期",
-    "status": "执行状态",
-    "affected_rows": "影响行数",
-    "started_at": "开始时间",
-    "finished_at": "结束时间",
-    "error_message": "错误信息",
-    "created_at": "创建时间",
-    "updated_at": "更新时间",
-    "dt_year": "年份",
-    "dt_week": "年周",
-    "dt_month": "月份",
-    "dt_date": "销售日期",
-    "item_key": "商品维度唯一键",
-    "country": "国家站点",
-    "country_category": "站点分组",
-    "local_sku": "本地SKU/ASIN",
-    "seller_name": "店铺原始名称",
-    "seller_name_new": "店铺",
-    "seller_sku_adj": "MSKU",
-    "seller_sku": "MSKU",
-    "sales_qty": "销量",
-    "sales_amount": "销售额",
-    "sales_amount_ex_tax": "不含税销售额",
-    "raw_order_gross_profit": "原始订单毛利",
-    "order_gross_profit": "订单毛利",
-    "order_gross_margin": "订单毛利率",
-    "abnormal_flag_count": "异常标记数",
-    "settlement_gross_profit": "结算毛利",
-    "afn_fulfillable_quantity": "FBA可售库存",
-    "ad_spend": "广告花费",
-    "ad_orders": "广告订单量",
-    "ad_sales": "广告销售额",
-    "ad_clicks": "广告点击量",
-    "ad_impressions": "广告曝光量",
-    "sessions_total": "会话数",
-    "ranking": "排名",
-    "return_count": "退货数量",
-    "return_amount": "退货金额",
-    "net_amount": "净销售额",
-    "local_quantity": "本地可用及在途数量",
-    "purchase_shipping_quantity": "采购在途数量",
-    "purchase_plan_quantity": "采购计划数量",
-    "local_valid_quantity": "本地仓有效数量",
-    "local_qc_quantity": "本地仓质检数量",
-    "purchase_cost": "采购单价",
-    "transport_cost": "头程成本",
-    "total": "库存总量",
-    "total_price": "库存总成本",
-    "available_total": "可用库存数量",
-    "available_price": "可用库存成本",
-    "reserved_fc_transfers": "FC调拨预留数量",
-    "reserved_fc_processing": "FC处理中预留数量",
-    "reserved_customerorders": "客户订单预留数量",
-    "afn_unsellable_quantity": "FBA不可售库存",
-    "afn_inbound_working_quantity": "FBA入库处理中数量",
-    "stock_up_num": "备货数量",
-    "stock_up_num_price": "备货成本",
-    "week_start": "周开始日期",
-    "week_end": "周结束日期",
-    "available_quantity": "可用数量",
-    "available_cost": "可用成本",
-    "transit_quantity": "在途数量",
-    "transit_cost": "在途成本",
-    "warehouse_quantity": "在仓数量",
-    "warehouse_cost": "在仓成本",
-    "plan_quantity": "采购数量",
-    "plan_cost": "采购成本",
-    "afn_researching_quantity": "FBA调查中数量",
-    "total_fulfillable_quantity": "总可售数量",
-    "price": "当前售价",
-    "org_currency_icon": "原始币种",
-    "price_cny": "人民币售价",
-    "shipping_method": "运输方式",
-    "target_margin": "限价目标毛利率",
-    "currency": "币种",
-    "tax_inclusive_price": "35毛利限价",
-    "tax_inclusive_price_noad": "35毛利限价兼容字段",
-    "tax_inclusive_price_adj": "35毛利限价兼容字段",
-    "margin_price_35": "35毛利定价",
-    "margin_price_10": "10毛利定价",
-    "stat_period": "统计周期",
-    "margin_band": "毛利率分层",
-    "filter_flag": "看板筛选标记",
-    "current_price_cny": "当前人民币售价",
-    "price_currency": "售价币种",
-    "current_price": "当前售价",
-    "limit_price": "35毛利定价",
-    "limit_price_10": "10毛利定价",
-    "limit_price_adj": "35毛利限价兼容字段",
-    "over_limit_flag": "是否超限价",
-    "limit_price_without_ad": "35毛利限价兼容字段",
-    "in_stock_days": "有库存天数",
-    "stat_days": "统计天数",
-    "abnormal_days": "异常天数",
-    "all_abnormal_flag": "是否全周期异常",
-    "daily_sales": "日均销量",
-    "daily_sales_in_stock_days": "有库存日均销量",
-    "daily_sales_in_stock_band": "有库存日销分层",
-    "daily_sales_band": "日销分层",
-    "acos": "广告销售成本比",
-    "tacos": "总销售广告成本比",
-    "ctr": "广告点击率",
-    "fba_total_inventory": "FBA总库存",
-    "fba_total_inventory_cost": "FBA总库存成本",
-    "fba_available_inventory": "FBA可用库存",
-    "fba_available_inventory_cost": "FBA可用库存成本",
-    "fba_sellable_inventory": "FBA可售库存",
-    "pending_transfer": "待调拨数量",
-    "transferring_qty": "调拨中数量",
-    "pending_shipment": "待发货数量",
-    "unsellable_inventory": "不可售库存",
-    "planned_inbound": "计划入库数量",
-    "actual_in_transit": "实际在途数量",
-    "under_investigation": "调查中数量",
-    "total_available_inventory": "总可用库存",
-    "local_sellable_inventory": "本地可售库存",
-    "local_stock_sellable_days": "本地库存可售天数",
-    "period_code": "预设周期代码",
-    "over_limit_scope": "超限价筛选范围",
-    "sku_count": "SKU数量",
-    "over_limit_count": "超限价数量",
-    "goal_year": "目标年份",
-    "goal_month": "目标月份",
-    "month_start": "月份开始日期",
-    "year_start": "年份开始日期",
-    "data_end_date": "数据截止日期",
-    "sales_goal": "销售额目标",
-    "margin_goal": "毛利率目标",
-    "gross_profit_goal": "毛利润目标",
-    "sales_volume_goal": "销量目标",
-    "source_file": "来源文件",
-    "sales_actual": "销售额实际完成值",
-    "volume_actual": "销量实际完成值",
-    "profit_actual": "毛利润实际完成值",
-    "margin_actual": "毛利率实际完成值",
-    "dimension_type": "拆解维度类型",
-    "dimension_name": "拆解维度名称",
-    "sales_goal_buffer": "销售目标缓冲系数",
-    "sales_amount_ytd": "年初至今销售额",
-    "sales_amount_ex_tax_ytd": "年初至今不含税销售额",
-    "order_gross_profit_ytd": "年初至今订单毛利",
-    "order_gross_margin_ytd": "年初至今订单毛利率",
-    "target_amount_to_date": "截至当前日期销售目标",
-    "sales_goal_ratio": "年度销售目标完成率",
-    "current_goal_ratio": "当前进度完成率",
-}
+TABLE_COMMENTS = {}
+COLUMN_COMMENTS = {}
 
 PRODUCT_DAILY_COLUMNS = (
     "dt_year", "dt_week", "dt_month", "dt_date", "item_key", "country", "country_category",
@@ -2346,10 +2330,10 @@ STEPS = {
     ),
     "period_preset_snapshots": PeriodPresetStep("period_preset_snapshots"),
     "alert_comparison_snapshots": AlertComparisonStep("alert_comparison_snapshots"),
+    "alert_monthly_metric_snapshots": AlertMonthlyMetricStep("alert_monthly_metric_snapshots"),
     "price_review_source_load": PriceReviewStep("price_review_source_load"),
     "price_review_tracking": PriceReviewStep("price_review_tracking"),
 }
-
 
 def escape_sql_comment(value: str) -> str:
     return value.replace("\\", "\\\\").replace("'", "''")
@@ -2589,31 +2573,43 @@ def build_alert_comparison_params(params: dict[str, object]) -> list[dict[str, o
         )
         comparisons.append(next_params)
 
-    mtd_start = date(biz_date.year, biz_date.month, 1)
-    mtd_days = (biz_date - mtd_start).days + 1
-    history_month = date(biz_date.year, 1, 1)
-    while history_month < mtd_start:
-        next_month = date(history_month.year + (1 if history_month.month == 12 else 0), 1 if history_month.month == 12 else history_month.month + 1, 1)
-        month_end = next_month - timedelta(days=1)
-        month_days = (month_end - history_month).days + 1
+    return comparisons
+
+
+def next_month_start(month_start: date) -> date:
+    if month_start.month == 12:
+        return date(month_start.year + 1, 1, 1)
+    return date(month_start.year, month_start.month + 1, 1)
+
+
+def build_alert_monthly_metric_params(params: dict[str, object]) -> list[dict[str, object]]:
+    biz_date = params["biz_date"]
+    if not isinstance(biz_date, date):
+        raise RuntimeError("biz_date must be a date")
+
+    result: list[dict[str, object]] = []
+    month_start = date(biz_date.year, 1, 1)
+    current_month_start = date(biz_date.year, biz_date.month, 1)
+    while month_start <= current_month_start:
+        month_end = next_month_start(month_start) - timedelta(days=1)
+        data_start = month_start
+        data_end = min(month_end, biz_date)
         next_params = dict(params)
         next_params.update(
             {
-                "comparison_code": f"m{history_month.year}_{history_month.month:02d}_vs_mtd",
-                "comparison_type": "month_to_date",
-                "comparison_label": f"{history_month.year}-{history_month.month:02d} vs 当前月至今",
-                "recent_start": mtd_start,
-                "recent_end": biz_date,
-                "previous_start": history_month,
-                "previous_end": month_end,
-                "recent_days": mtd_days,
-                "previous_days": month_days,
+                "month_code": f"{month_start.year}-{month_start.month:02d}",
+                "month_start": month_start,
+                "month_end": month_end,
+                "data_start": data_start,
+                "data_end": data_end,
+                "stat_days": (data_end - data_start).days + 1,
+                "is_month_complete": 1 if data_end == month_end else 0,
             }
         )
-        comparisons.append(next_params)
-        history_month = next_month
+        result.append(next_params)
+        month_start = next_month_start(month_start)
 
-    return comparisons
+    return result
 
 
 def execute_period_preset_step(
@@ -2668,6 +2664,24 @@ def execute_alert_comparison_step(
         )
         execute_target_step(conn, schemas, sub_step, comparison_params)
     cleanup_alert_comparison_retention(conn, schemas, params)
+
+
+def execute_alert_monthly_metric_step(
+    conn,
+    schemas: SchemaConfig,
+    step: AlertMonthlyMetricStep,
+    params: dict[str, object],
+) -> None:
+    for month_params in build_alert_monthly_metric_params(params):
+        sub_step = SqlStep(
+            f"{step.name}.{month_params['month_code']}",
+            (
+                DELETE_ALERT_MONTHLY_METRIC_SNAPSHOT_SQL,
+                INSERT_ALERT_MONTHLY_METRIC_SNAPSHOT_SQL,
+            ),
+        )
+        execute_target_step(conn, schemas, sub_step, month_params)
+    cleanup_alert_monthly_metric_retention(conn, schemas, params)
 
 
 def cleanup_period_snapshot_retention(
@@ -2741,6 +2755,38 @@ def cleanup_alert_comparison_retention(conn, schemas: SchemaConfig, params: dict
             error,
         )
         print("[failed] alert_comparison_snapshots.retention_cleanup", file=sys.stderr)
+        raise
+
+
+def cleanup_alert_monthly_metric_retention(conn, schemas: SchemaConfig, params: dict[str, object]) -> None:
+    cleanup_params = dict(params)
+    cleanup_params["period_snapshot_retention_days"] = PERIOD_SNAPSHOT_RETENTION_DAYS
+    started_at = datetime.now()
+    affected_rows = 0
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(render_sql(DELETE_OLD_ALERT_MONTHLY_METRIC_SNAPSHOT_SQL, schemas), cleanup_params)
+            affected_rows += max(cursor.rowcount, 0)
+        conn.commit()
+        log_task(conn, schemas, "alert_monthly_metric_snapshots.retention_cleanup", params, "success", affected_rows, started_at)
+        print(
+            "[success] alert_monthly_metric_snapshots.retention_cleanup: "
+            f"kept_latest_snapshot_dates={PERIOD_SNAPSHOT_RETENTION_DAYS}, affected_rows={affected_rows}"
+        )
+    except Exception:
+        conn.rollback()
+        error = traceback.format_exc()
+        log_task(
+            conn,
+            schemas,
+            "alert_monthly_metric_snapshots.retention_cleanup",
+            params,
+            "failed",
+            affected_rows,
+            started_at,
+            error,
+        )
+        print("[failed] alert_monthly_metric_snapshots.retention_cleanup", file=sys.stderr)
         raise
 
 
@@ -2924,7 +2970,7 @@ def main() -> None:
         help="Comma separated step names or all. "
         "Available: product_performance_daily, monthly_goal_actual_snapshot, goal_dimension_snapshot, annual_goal_snapshot, restock_snapshot, inventory_snapshot, inventory_weekly_snapshot, inventory_weekly_remote_snapshot, "
         "listing_price_snapshot, limit_price_snapshot, period_snapshot, period_preset_snapshots, "
-        "alert_comparison_snapshots, price_review_source_load, price_review_tracking.",
+        "alert_comparison_snapshots, alert_monthly_metric_snapshots, price_review_source_load, price_review_tracking.",
     )
     parser.add_argument("--skip-ddl", action="store_true", help="Do not create target tables before running.")
     parser.add_argument("--batch-size", type=int, default=1000, help="Rows per local bulk insert from read-only source.")
@@ -2975,6 +3021,8 @@ def main() -> None:
                 execute_period_preset_step(target_conn, schemas, step, params)
             elif isinstance(step, AlertComparisonStep):
                 execute_alert_comparison_step(target_conn, schemas, step, params)
+            elif isinstance(step, AlertMonthlyMetricStep):
+                execute_alert_monthly_metric_step(target_conn, schemas, step, params)
             elif isinstance(step, PriceReviewStep):
                 if step.name != "price_review_tracking":
                     if source_conn is None:
@@ -3008,3 +3056,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
