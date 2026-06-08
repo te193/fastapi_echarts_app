@@ -1201,18 +1201,18 @@ select
     filter_flag,
     over_limit_flag,
     case
-        when recent_daily_sales < 1 and recent_daily_sales > 0 then '鏃ラ攢 <1'
-        when recent_daily_sales >= 1 and recent_daily_sales < 5 then '鏃ラ攢 1-5'
-        when recent_daily_sales >= 5 then '鏃ラ攢 >5'
-        else '鏃ラ攢 0'
+        when recent_daily_sales < 1 and recent_daily_sales > 0 then '日销 <1'
+        when recent_daily_sales >= 1 and recent_daily_sales < 5 then '日销 1-5'
+        when recent_daily_sales >= 5 then '日销 >5'
+        else '日销 0'
     end as daily_sales_band,
     case
-        when recent_margin >= 0.35 then '姣涘埄鐜?>35%%'
-        when recent_margin >= 0.25 and recent_margin < 0.35 then '姣涘埄鐜?25-35%%'
-        when recent_margin >= 0.15 and recent_margin < 0.25 then '姣涘埄鐜?15-25%%'
-        when recent_margin >= 0.10 and recent_margin < 0.15 then '姣涘埄鐜?10-15%%'
-        when recent_margin >= 0 and recent_margin < 0.10 then '姣涘埄鐜?0-10%%'
-        else '姣涘埄鐜?<0%%'
+        when recent_margin >= 0.35 then '毛利率 >35%%'
+        when recent_margin >= 0.25 and recent_margin < 0.35 then '毛利率 25-35%%'
+        when recent_margin >= 0.15 and recent_margin < 0.25 then '毛利率 15-25%%'
+        when recent_margin >= 0.10 and recent_margin < 0.15 then '毛利率 10-15%%'
+        when recent_margin >= 0 and recent_margin < 0.10 then '毛利率 0-10%%'
+        else '毛利率 <0%%'
     end as margin_band,
     recent_sales_qty,
     previous_sales_qty,
@@ -1242,7 +1242,7 @@ select
     rank_drop_flag,
     stock_short_flag,
     concat_ws(',', if(sales_drop_flag, 'sales_drop', null), if(margin_low_flag, 'margin_low', null), if(rank_drop_flag, 'rank_drop', null), if(stock_short_flag, 'stock_short', null)),
-    concat_ws(' / ', if(sales_drop_flag, '閿€閲忎笅婊?, null), if(margin_low_flag, '浣庢瘺鍒?, null), if(rank_drop_flag, '鎺掑悕涓嬫粦', null), if(stock_short_flag, '搴撳瓨鍋忎綆', null)),
+    concat_ws(' / ', if(sales_drop_flag, '销量下滑', null), if(margin_low_flag, '低毛利', null), if(rank_drop_flag, '排名下滑', null), if(stock_short_flag, '库存偏低', null)),
     case
         when sales_drop_flag then 'sales_drop'
         when margin_low_flag then 'margin_low'
@@ -1408,18 +1408,18 @@ select
     filter_flag,
     over_limit_flag,
     case
-        when daily_sales < 1 and daily_sales > 0 then '鏃ラ攢 <1'
-        when daily_sales >= 1 and daily_sales < 5 then '鏃ラ攢 1-5'
-        when daily_sales >= 5 then '鏃ラ攢 >5'
-        else '鏃ラ攢 0'
+        when daily_sales < 1 and daily_sales > 0 then '日销 <1'
+        when daily_sales >= 1 and daily_sales < 5 then '日销 1-5'
+        when daily_sales >= 5 then '日销 >5'
+        else '日销 0'
     end as daily_sales_band,
     case
-        when margin >= 0.35 then '姣涘埄鐜?35%%'
-        when margin >= 0.25 and margin < 0.35 then '姣涘埄鐜?5-35%%'
-        when margin >= 0.15 and margin < 0.25 then '姣涘埄鐜?5-25%%'
-        when margin >= 0.10 and margin < 0.15 then '姣涘埄鐜?0-15%%'
-        when margin >= 0 and margin < 0.10 then '姣涘埄鐜?-10%%'
-        else '姣涘埄鐜?0%%'
+        when margin >= 0.35 then '毛利率 >35%%'
+        when margin >= 0.25 and margin < 0.35 then '毛利率 25-35%%'
+        when margin >= 0.15 and margin < 0.25 then '毛利率 15-25%%'
+        when margin >= 0.10 and margin < 0.15 then '毛利率 10-15%%'
+        when margin >= 0 and margin < 0.10 then '毛利率 0-10%%'
+        else '毛利率 <0%%'
     end as margin_band,
     sales_qty,
     daily_sales,
@@ -1627,9 +1627,9 @@ with src as (
         date(start_date) as dt_date,
         country,
         case
-            when country = '鑻卞浗' then '鑻卞浗绔?
-            when country in ('缇庡浗', '鍔犳嬁澶?, '宸磋タ', '澧ㄨタ鍝?) then '鍖楃編绔?
-            else '娆ф床绔?
+            when country = '英国' then '英国站'
+            when country in ('美国', '加拿大', '巴西', '墨西哥') then '北美站'
+            else '欧洲站'
         end as country_category,
         local_sku,
         seller_name,
@@ -1645,18 +1645,18 @@ with src as (
         coalesce(volume, 0) as volume,
         coalesce(amount, 0) as amount,
         case
-            when country = '寰峰浗' then coalesce(amount, 0) / 1.19
-            when country = '娉曞浗' then coalesce(amount, 0) / 1.2
-            when country = '鐟炲吀' then coalesce(amount, 0) / 1.25
-            when country = '瑗跨彮鐗? then coalesce(amount, 0) / 1.21
-            when country = '鎰忓ぇ鍒? then coalesce(amount, 0) / 1.22
-            when country = '鑻卞浗' then coalesce(amount, 0) / 1.2
-            when country = '姣斿埄鏃? then coalesce(amount, 0) / 1.21
-            when country = '鑽峰叞' then coalesce(amount, 0) / 1.21
-            when country = '鐖卞皵鍏? then coalesce(amount, 0) / 1.23
-            when country = '娉㈠叞' then coalesce(amount, 0) / 1.23
-            when country = '澧ㄨタ鍝? then coalesce(amount, 0) / 1.16
-            when country = '鍦熻€冲叾' then coalesce(amount, 0) / 1.20
+            when country = '德国' then coalesce(amount, 0) / 1.19
+            when country = '法国' then coalesce(amount, 0) / 1.2
+            when country = '瑞典' then coalesce(amount, 0) / 1.25
+            when country = '西班牙' then coalesce(amount, 0) / 1.21
+            when country = '意大利' then coalesce(amount, 0) / 1.22
+            when country = '英国' then coalesce(amount, 0) / 1.2
+            when country = '比利时' then coalesce(amount, 0) / 1.21
+            when country = '荷兰' then coalesce(amount, 0) / 1.21
+            when country = '爱尔兰' then coalesce(amount, 0) / 1.23
+            when country = '波兰' then coalesce(amount, 0) / 1.23
+            when country = '墨西哥' then coalesce(amount, 0) / 1.16
+            when country = '土耳其' then coalesce(amount, 0) / 1.20
             else coalesce(amount, 0)
         end as amount_ex_tax,
         coalesce(predict_gross_profit, 0) as predict_gross_profit,
@@ -1849,22 +1849,22 @@ from (
         seller_name,
         seller_sku,
         case
-            when marketplace = '鑻卞浗' then '鑻卞浗绔?
-            when marketplace in ('缇庡浗', '鍔犳嬁澶?, '宸磋タ', '澧ㄨタ鍝?) then '鍖楃編绔?
-            else '娆ф床绔?
+            when marketplace = '英国' then '英国站'
+            when marketplace in ('美国', '加拿大', '巴西', '墨西哥') then '北美站'
+            else '欧洲站'
         end as country_category,
         marketplace,
         cast(nullif(landed_price, '') as decimal(18,4)) as price,
         case
-            when marketplace in ('寰峰浗', '娉曞浗', '鑽峰叞', '姣斿埄鏃?, '瑗跨彮鐗?, '鎰忓ぇ鍒?, '鐖卞皵鍏?) then '娆у厓'
-            when marketplace = '娉㈠叞' then '娉㈠叞鍏圭綏鎻?
-            when marketplace = '鐟炲吀' then '鐟炲吀'
-            when marketplace = '鍦熻€冲叾' then '鍦熻€冲叾閲屾媺'
-            when marketplace = '鑻卞浗' then '鑻遍晳'
-            when marketplace = '缇庡浗' then '缇庡厓'
-            when marketplace = '鍔犳嬁澶? then '鍔犲厓'
-            when marketplace = '澧ㄨタ鍝? then '澧ㄨタ鍝ユ瘮绱?
-            when marketplace = '宸磋タ' then '宸磋タ闆蜂簹灏?
+            when marketplace in ('德国', '法国', '荷兰', '比利时', '西班牙', '意大利', '爱尔兰') then '欧元'
+            when marketplace = '波兰' then '波兰兹罗提'
+            when marketplace = '瑞典' then '瑞典克朗'
+            when marketplace = '土耳其' then '土耳其里拉'
+            when marketplace = '英国' then '英镑'
+            when marketplace = '美国' then '美元'
+            when marketplace = '加拿大' then '加元'
+            when marketplace = '墨西哥' then '墨西哥比索'
+            when marketplace = '巴西' then '巴西雷亚尔'
             else null
         end as org_currency_icon
     from dwd_datasync.lx_sales_mws_listing
@@ -1913,7 +1913,7 @@ select
     max(currency) as currency,
     round(max(margin_price_35), 2) as tax_inclusive_price,
     round(max(margin_price_35), 2) as tax_inclusive_price_noad,
-    round(max(margin_price_35), 2) as tax_inclusive_price_adj,
+    round(max(margin_price_35_adj), 2) as tax_inclusive_price_adj,
     round(max(margin_price_35), 2) as margin_price_35,
     round(max(margin_price_10), 2) as margin_price_10,
     now() as created_at,
@@ -1922,14 +1922,15 @@ from (
     select
         sku as local_sku,
         msku as seller_sku,
-        鏂板簵閾?as seller_name_new,
-        鍥藉 as country,
-        鍥藉绫诲埆 as country_category,
-        甯佺 as currency,
-        listing浠锋牸 as listing_price,
-        `35姣涘埄娑︿环鏍糮 as margin_price_35,
-        `10姣涘埄娑︿环鏍糮 as margin_price_10
-    from temporary_dwd.`鍦ㄥ簱鑺傜偣_杈撳嚭瀹氫环琛╜
+        新店铺 as seller_name_new,
+        国家 as country,
+        国家类别 as country_category,
+        币种 as currency,
+        listing价格 as listing_price,
+        `35毛利润价格` as margin_price_35,
+        `10毛利润价格` as margin_price_10,
+        `35毛利润含广告定价` as margin_price_35_adj
+    from temporary_dwd.`在库节点_输出定价表`
 ) limit_price_source
 where seller_sku is not null
   and seller_sku <> ''
@@ -2108,12 +2109,12 @@ select
     raw_order_gross_profit,
     order_gross_margin,
     case
-        when order_gross_margin >= 0.35 then '姣涘埄鐜?>35%%'
-        when order_gross_margin >= 0.25 and order_gross_margin < 0.35 then '姣涘埄鐜?25-35%%'
-        when order_gross_margin >= 0.15 and order_gross_margin < 0.25 then '姣涘埄鐜?15-25%%'
-        when order_gross_margin >= 0.10 and order_gross_margin < 0.15 then '姣涘埄鐜?10-15%%'
-        when order_gross_margin >= 0 and order_gross_margin < 0.10 then '姣涘埄鐜?0-10%%'
-        else '姣涘埄鐜?<0%%'
+        when order_gross_margin >= 0.35 then '毛利率 >35%%'
+        when order_gross_margin >= 0.25 and order_gross_margin < 0.35 then '毛利率 25-35%%'
+        when order_gross_margin >= 0.15 and order_gross_margin < 0.25 then '毛利率 15-25%%'
+        when order_gross_margin >= 0.10 and order_gross_margin < 0.15 then '毛利率 10-15%%'
+        when order_gross_margin >= 0 and order_gross_margin < 0.10 then '毛利率 0-10%%'
+        else '毛利率 <0%%'
     end as margin_band,
     settlement_gross_profit,
     case
@@ -2137,16 +2138,16 @@ select
     daily_sales,
     daily_sales_in_stock_days,
     case
-        when daily_sales_in_stock_days < 1 and daily_sales_in_stock_days > 0 then '鏃ラ攢 <1'
-        when daily_sales_in_stock_days >= 1 and daily_sales_in_stock_days < 5 then '鏃ラ攢 1-5'
-        when daily_sales_in_stock_days >= 5 then '鏃ラ攢 >5'
-        else '鏃ラ攢 0'
+        when daily_sales_in_stock_days < 1 and daily_sales_in_stock_days > 0 then '日销 <1'
+        when daily_sales_in_stock_days >= 1 and daily_sales_in_stock_days < 5 then '日销 1-5'
+        when daily_sales_in_stock_days >= 5 then '日销 >5'
+        else '日销 0'
     end as daily_sales_in_stock_band,
     case
-        when daily_sales < 1 and daily_sales > 0 then '鏃ラ攢 <1'
-        when daily_sales >= 1 and daily_sales < 5 then '鏃ラ攢 1-5'
-        when daily_sales >= 5 then '鏃ラ攢 >5'
-        else '鏃ラ攢 0'
+        when daily_sales < 1 and daily_sales > 0 then '日销 <1'
+        when daily_sales >= 1 and daily_sales < 5 then '日销 1-5'
+        when daily_sales >= 5 then '日销 >5'
+        else '日销 0'
     end as daily_sales_band,
     ad_spend,
     ad_orders,
