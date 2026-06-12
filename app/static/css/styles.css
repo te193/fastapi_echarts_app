@@ -2733,6 +2733,17 @@ span.flatpickr-weekday {
   width: 100%;
 }
 
+.price-review-grid-shell {
+  max-width: 100%;
+}
+
+.price-review-grid-shell .kanban-ag-grid,
+.price-review-grid-shell .ag-root-wrapper,
+.price-review-grid-shell .ag-root,
+.price-review-grid-shell .ag-body-viewport {
+  width: 100%;
+}
+
 .ag-grid-shell.compact .kanban-ag-grid {
   --ag-row-height: 44px;
   --ag-header-height: 42px;
@@ -3971,6 +3982,58 @@ body[data-page="matrix"] .matrix-cell-meta {
   border: 1px solid rgba(188, 200, 217, 0.45);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.88);
+}
+
+.price-review-country-table {
+  width: 100%;
+  min-width: 1120px;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+}
+
+.price-review-country-table th,
+.price-review-country-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #e8eff7;
+  color: #10233d;
+  font-size: 13px;
+  line-height: 1.35;
+  text-align: right;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.price-review-country-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f5f8fc;
+  color: #526783;
+  font-weight: 900;
+}
+
+.price-review-country-table th:first-child,
+.price-review-country-table td:first-child {
+  text-align: left;
+  width: 92px;
+}
+
+.price-review-country-table th:nth-child(2),
+.price-review-country-table td:nth-child(2) {
+  width: 78px;
+}
+
+.price-review-country-table th:last-child,
+.price-review-country-table td:last-child {
+  width: 110px;
+  text-align: center;
+}
+
+.price-review-country-table .country-detail-row td {
+  padding: 12px;
+  text-align: left;
+  white-space: normal;
 }
 
 .pagination-bar {

@@ -131,7 +131,7 @@
       <div id="secondAdjustGapChart" class="chart-host chart-host-echarts"></div>
     </article>
   </div>
-  <div class="table-wrap ag-grid-shell compact" style="margin-top: 18px;">
+  <div class="table-wrap ag-grid-shell price-review-grid-shell compact" style="margin-top: 18px;">
     <div id="secondAdjustGrid"></div>
   </div>
 </section>
@@ -176,8 +176,8 @@
     </div>
     <div id="countryChart" class="chart-host chart-host-echarts"></div>
   </article>
-  <div class="table-wrap" style="margin-top: 18px;">
-    <table>
+  <div class="table-wrap price-review-country-table-wrap" style="margin-top: 18px;">
+    <table class="price-review-country-table">
       <thead>
         <tr>
           <th>国家</th>
@@ -245,7 +245,7 @@
       <button id="exportTopListBtn" class="ghost-button" type="button">导出当前榜单</button>
     </div>
   </div>
-  <div class="table-wrap ag-grid-shell">
+  <div class="table-wrap ag-grid-shell price-review-grid-shell">
     <div id="topListGrid"></div>
   </div>
 </section>
@@ -293,5 +293,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', path='js/price_review.js') }}?v=20260604note2"></script>
+<script src="{{ url_for('static', path='js/price_review.js') }}?v=20260605tables"></script>
 {% endblock %}

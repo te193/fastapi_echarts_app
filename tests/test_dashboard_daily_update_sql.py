@@ -1,12 +1,20 @@
 import unittest
+from argparse import Namespace
+from datetime import date
 
 from etl.dashboard_daily_update import (
     INSERT_ALERT_COMPARISON_SNAPSHOT_SQL,
     INSERT_ALERT_MONTHLY_METRIC_SNAPSHOT_SQL,
+    INSERT_INVENTORY_SQL,
     INSERT_LIMIT_PRICE_SQL,
     INSERT_LISTING_PRICE_SQL,
     INSERT_PERIOD_SNAPSHOT_SQL,
     INSERT_PRODUCT_DAILY_SQL,
+    INSERT_RESTOCK_SQL,
+    SchemaConfig,
+    SourceLoadStep,
+    build_params,
+    execute_source_load_step,
 )
 
 
@@ -45,6 +53,141 @@ class DashboardDailyUpdateSqlTests(unittest.TestCase):
         self.assertIn("'销量下滑'", combined_sql)
         for mojibake in ["鏃ラ攢", "姣涘埄", "浣庢瘺", "鎺掑悕", "搴撳瓨"]:
             self.assertNotIn(mojibake, combined_sql)
+
+    def test_source_snapshot_sql_uses_range_filters_without_wrapping_indexed_columns(self):
+        self.assertIn("r.create_time >= %(snapshot_date)s", INSERT_RESTOCK_SQL)
+        self.assertIn("r.create_time < %(next_snapshot_date)s", INSERT_RESTOCK_SQL)
+        self.assertNotIn("where date(r.create_time) = %(snapshot_date)s", INSERT_RESTOCK_SQL)
+
+        self.assertIn("create_time >= %(snapshot_date)s", INSERT_INVENTORY_SQL)
+        self.assertIn("create_time < %(next_snapshot_date)s", INSERT_INVENTORY_SQL)
+        self.assertNotIn("where date(create_time) = %(snapshot_date)s", INSERT_INVENTORY_SQL)
+
+        self.assertIn("create_time >= %(snapshot_date)s", INSERT_LISTING_PRICE_SQL)
+        self.assertIn("create_time < %(next_snapshot_date)s", INSERT_LISTING_PRICE_SQL)
+        self.assertNotIn("where date(create_time) = %(snapshot_date)s", INSERT_LISTING_PRICE_SQL)
+
+    def test_build_params_includes_exclusive_next_day_bounds(self):
+        args = Namespace(
+            biz_date="2026-06-09",
+            snapshot_date="2026-06-10",
+            period_end=None,
+            period_start=None,
+            period_days=90,
+            product_refresh_days=50,
+            product_full_load=False,
+        )
+
+        params = build_params(args)
+
+        self.assertEqual(date(2026, 6, 10), params["snapshot_date"])
+        self.assertEqual(date(2026, 6, 11), params["next_snapshot_date"])
+        self.assertEqual(date(2026, 6, 9), params["product_end_date"])
+        self.assertEqual(date(2026, 6, 10), params["next_product_end_date"])
+
+    def test_source_load_reconnects_and_retries_after_source_timeout(self):
+        step = SourceLoadStep(
+            "retry_test",
+            "delete from etl_datasync.retry_target where snapshot_date = %(snapshot_date)s;",
+            "select %(snapshot_date)s as snapshot_date, 'sku1' as sku;",
+            "etl_datasync.retry_target",
+            ("snapshot_date", "sku"),
+        )
+        params = {
+            "biz_date": date(2026, 6, 9),
+            "snapshot_date": date(2026, 6, 10),
+            "period_start": date(2026, 3, 12),
+            "period_end": date(2026, 6, 9),
+        }
+        schemas = SchemaConfig(
+            target_schema="etl_datasync",
+            etl_source_schema="etl_datasync",
+            dwd_source_schema="dwd_datasync",
+            pricing_source_schema="temporary_dwd",
+        )
+        target_conn = FakeTargetConnection()
+        source_conn = FakeSourceConnection()
+
+        execute_source_load_step(target_conn, source_conn, schemas, step, params, batch_size=1000)
+
+        self.assertEqual(2, source_conn.execute_attempts)
+        self.assertEqual([True], source_conn.ping_reconnect_values)
+        self.assertEqual(1, target_conn.rollback_count)
+        self.assertEqual(2, target_conn.commit_count)
+        self.assertEqual([[{"snapshot_date": date(2026, 6, 10), "sku": "sku1"}]], target_conn.inserted_batches)
+
+
+class FakeSourceCursor:
+    def __init__(self, conn):
+        self.conn = conn
+        self.rows = []
+        self.fetched = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def execute(self, sql, params):
+        self.conn.execute_attempts += 1
+        if self.conn.execute_attempts == 1:
+            raise TimeoutError("timed out")
+        self.rows = [{"snapshot_date": params["snapshot_date"], "sku": "sku1"}]
+
+    def fetchmany(self, batch_size):
+        if self.fetched:
+            return []
+        self.fetched = True
+        return self.rows
+
+
+class FakeSourceConnection:
+    def __init__(self):
+        self.execute_attempts = 0
+        self.ping_reconnect_values = []
+
+    def cursor(self):
+        return FakeSourceCursor(self)
+
+    def ping(self, reconnect=False):
+        self.ping_reconnect_values.append(reconnect)
+
+
+class FakeTargetCursor:
+    def __init__(self, conn):
+        self.conn = conn
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def execute(self, sql, params=None):
+        self.conn.executed.append((sql, params))
+        return 1
+
+    def executemany(self, sql, rows):
+        self.conn.inserted_batches.append(list(rows))
+        return len(rows)
+
+
+class FakeTargetConnection:
+    def __init__(self):
+        self.executed = []
+        self.inserted_batches = []
+        self.rollback_count = 0
+        self.commit_count = 0
+
+    def cursor(self):
+        return FakeTargetCursor(self)
+
+    def rollback(self):
+        self.rollback_count += 1
+
+    def commit(self):
+        self.commit_count += 1
 
 
 if __name__ == "__main__":

@@ -36,6 +36,7 @@ MATRIX_PERIOD_TABLE = "etl_datasync.dashboard_product_matrix_period_snapshot"
 ALERT_COMPARISON_TABLE = "etl_datasync.dashboard_alert_comparison_snapshot"
 ALERT_MONTHLY_METRIC_TABLE = "etl_datasync.dashboard_alert_monthly_metric_snapshot"
 ALERT_DAY_COMPARISONS = {7: "d7", 14: "d14", 30: "d30", 60: "d60", 90: "d90"}
+MARGIN_TRANSITION_LAYERS = ["\u65e0\u6bdb\u5229", "<0%", "0-10%", "10-15%", "15-25%", "25-35%", ">35%"]
 
 
 @dataclass(frozen=True)
@@ -2793,7 +2794,9 @@ class DashboardDbService:
 
     def _margin_layer(self, margin: float | None) -> str:
         if margin is None:
-            return "无毛利"
+            return "\u65e0\u6bdb\u5229"
+        if margin == 0:
+            return "\u65e0\u6bdb\u5229"
         if margin < 0:
             return "<0%"
         if margin < 0.10:
@@ -2886,13 +2889,14 @@ class DashboardDbService:
             )
 
         nodes = (
-            [{"name": f"前期 {layer}", "layer": layer, "period": "previous"} for layer in layers]
-            + [{"name": f"当前 {layer}", "layer": layer, "period": "recent"} for layer in layers]
+            [{"name": f"\u200b{layer}", "layer": layer, "period": "previous", "value": previous_counts.get(layer, 0)} for layer in layers]
+            + [{"name": f"\u200c{layer}", "layer": layer, "period": "recent", "value": recent_counts.get(layer, 0)} for layer in layers]
         )
+        nodes = [node for node in nodes if node["value"] > 0]
         links = [
             {
-                "source": f"前期 {source}",
-                "target": f"当前 {target}",
+                "source": f"\u200b{source}",
+                "target": f"\u200c{target}",
                 "value": value,
                 "transition_filter": f"{source}|{target}",
             }
@@ -2987,7 +2991,7 @@ class DashboardDbService:
                 count = sum(1 for item in items if item.get("sales_trend") == sales_key and item.get("rank_trend") == rank_key)
                 matrix.append({"sales_trend": sales_key, "rank_trend": rank_key, "label": f"{sales_label} / {rank_label}", "count": count})
 
-        margin_layers = ["<0%", "0-10%", "10-15%", "15-25%", "25-35%", ">35%", "\u65e0\u6bdb\u5229"]
+        margin_layers = MARGIN_TRANSITION_LAYERS
         rank_layers = ["\u65e0\u6392\u540d", "1-50", "51-100", "101-200", "201-500", ">500"]
         return {
             "type_distribution": self._alert_combo_distribution(items, selected_alert_type, alert_labels)
@@ -3014,7 +3018,7 @@ class DashboardDbService:
 
     def _build_opportunity_analysis(self, items: list[dict[str, Any]], summary: dict[str, int]) -> dict[str, Any]:
         labels = {item["key"]: item["label"] for item in self._opportunity_type_defs()}
-        margin_layers = ["<0%", "0-10%", "10-15%", "15-25%", "25-35%", ">35%", "无毛利"]
+        margin_layers = MARGIN_TRANSITION_LAYERS
         rank_layers = ["无排名", "1-50", "51-100", "101-200", "201-500", ">500"]
         score_bands = [("0-40", 0, 40), ("40-60", 40, 60), ("60-80", 60, 80), ("80-100", 80, 101)]
         stock_bands = [("<14天", 0, 14), ("14-21天", 14, 21), ("21-60天", 21, 60), (">60天", 60, float("inf"))]

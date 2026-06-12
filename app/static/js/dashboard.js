@@ -8,6 +8,7 @@
   var renderToken = 0;
   var monthlyGoalData = null;
   var currentMonthlyMetric = "sales";
+  var useLinkCountLabel = ["layers", "matrix"].indexOf(document.body.dataset.page || "") >= 0;
 
   document.addEventListener("DOMContentLoaded", init);
 
@@ -176,9 +177,7 @@
     setLoading(true);
     app.writeQueryState(state);
     app.apiGet("/api/dashboard", state).then(function (payload) {
-      if (elements.summaryHint) {
-        elements.summaryHint.textContent = payload.summary_hint;
-      }
+      if (elements.summaryHint) elements.summaryHint.textContent = displaySummaryHint(payload.summary_hint);
       if (elements.goalOverviewCard) {
         renderGoalOverview(payload.goal_overview);
       }
@@ -700,6 +699,42 @@
     };
   }
 
+  function displaySummaryHint(text) {
+    var value = String(text || "");
+    if (!useLinkCountLabel) return value;
+    return value.replace(/个 SKU/g, "个链接数").replace(/SKU/g, "链接数");
+  }
+
+  function countMetricLabel(count) {
+    if (useLinkCountLabel) {
+      return '<span>链接数 <strong>' + count + '</strong></span>';
+    }
+    return '<strong>' + count + '</strong> 个 SKU';
+  }
+
+  function itemCountHeader() {
+    return useLinkCountLabel ? "链接数" : "SKU 数";
+  }
+
+  function itemCountCellLabel() {
+    return useLinkCountLabel ? "该层链接数" : "该层 SKU";
+  }
+
+  function overLimitCellLabel() {
+    return useLinkCountLabel ? "超限价链接数" : "超限价 SKU";
+  }
+
+  function chartCaptionLabel() {
+    if (useLinkCountLabel) {
+      return "点击“该层链接数”查看该分层全部明细；点击“超限价链接数”只查看该分层中超限价的明细。";
+    }
+    return "点击“该层 SKU”查看该分层全部明细；点击“超限价 SKU”只查看该分层中超限价的明细。";
+  }
+
+  function allItemsSourceLabel() {
+    return useLinkCountLabel ? " / 全部链接数" : " / 全部 SKU";
+  }
+
   function renderBandListChart(hostKey, summaryKey, counts, activeValue, stateKey, drillLabel) {
     var summaryHost = elements[summaryKey];
     var host = elements[hostKey];
@@ -718,7 +753,7 @@
     var maxOverLimit = Math.max.apply(null, counts.map(function (item) { return item.over_limit; }).concat([1]));
 
     summaryHost.innerHTML = [
-      '<span class="summary-badge"><strong>' + totalItems + '</strong> 个 SKU</span>',
+      '<span class="summary-badge">' + countMetricLabel(totalItems) + '</span>',
       '<span class="summary-badge"><strong>' + totalOverLimit + '</strong> 个超限价</span>',
       '<span class="summary-badge">问题最集中：<strong>' + app.escapeHtml(highestBand ? highestBand.name : "-") + "</strong></span>"
     ].join("");
@@ -729,21 +764,21 @@
       '  <span><i class="legend-swatch risk"></i>风险指标看“超限价数 / 超限价率”</span>',
       "</div>",
       '<div class="heatmap-table">',
-      '  <div class="heatmap-head"><div>分层</div><div>SKU 数</div><div>超限价数</div><div>超限价率</div></div>',
+      '  <div class="heatmap-head"><div>分层</div><div>' + itemCountHeader() + '</div><div>超限价数</div><div>超限价率</div></div>',
       counts.map(function (item) {
         var active = item.name === activeValue;
         var rate = item.value ? item.over_limit / item.value : 0;
         return [
           '<div class="heatmap-row ' + (active ? "active" : "") + '">',
           '  <div class="heatmap-label"><strong>' + app.escapeHtml(item.name) + '</strong><span>点击右侧数字查看明细</span></div>',
-          '  <button type="button" class="heatmap-cell heatmap-action neutral" data-value="' + app.escapeHtml(item.name) + '" data-over-limit="all" style="background:' + heatCellColor(item.value / maxCount, "count") + '"><strong>' + item.value + '</strong><span>该层 SKU</span></button>',
-          '  <button type="button" class="heatmap-cell heatmap-action risk" data-value="' + app.escapeHtml(item.name) + '" data-over-limit="yes" style="background:' + heatCellColor(item.over_limit / maxOverLimit, "risk") + '"><strong>' + item.over_limit + '</strong><span>超限价 SKU</span></button>',
+          '  <button type="button" class="heatmap-cell heatmap-action neutral" data-value="' + app.escapeHtml(item.name) + '" data-over-limit="all" style="background:' + heatCellColor(item.value / maxCount, "count") + '"><strong>' + item.value + '</strong><span>' + itemCountCellLabel() + '</span></button>',
+          '  <button type="button" class="heatmap-cell heatmap-action risk" data-value="' + app.escapeHtml(item.name) + '" data-over-limit="yes" style="background:' + heatCellColor(item.over_limit / maxOverLimit, "risk") + '"><strong>' + item.over_limit + '</strong><span>' + overLimitCellLabel() + '</span></button>',
           '  <div class="heatmap-cell risk" style="background:' + heatCellColor(rate, "rate") + '"><strong>' + app.formatPercent(rate) + '</strong><span>层内超限价率</span></div>',
           "</div>"
         ].join("");
       }).join(""),
       "</div>",
-      '<p class="chart-caption">点击“该层 SKU”查看该分层全部明细；点击“超限价 SKU”只查看该分层中超限价的明细。</p>'
+      '<p class="chart-caption">' + chartCaptionLabel() + '</p>'
     ].join("");
 
     Array.from(host.querySelectorAll("[data-value][data-over-limit]")).forEach(function (node) {
@@ -751,7 +786,7 @@
         var next = Object.assign({}, state);
         next[stateKey] = this.dataset.value;
         next.over_limit = this.dataset.overLimit === "yes" ? "yes" : "all";
-        next.source = drillLabel + " / " + this.dataset.value + (next.over_limit === "yes" ? " / 超限价" : " / 全部 SKU");
+        next.source = drillLabel + " / " + this.dataset.value + (next.over_limit === "yes" ? " / 超限价" : allItemsSourceLabel());
         next.page = 1;
         app.navigateWithReturnState("/detail?" + new URLSearchParams(next).toString());
       });

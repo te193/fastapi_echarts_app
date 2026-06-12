@@ -587,6 +587,9 @@
     var chart = getChart(id);
     if (!chart) return;
     var total = (data.links || []).reduce(function (sum, item) { return sum + Number(item.value || 0); }, 0) || 1;
+    function displayLayerName(value) {
+      return String(value || "").replace(/^[\u200b\u200c]+/, "").replace(/^previous\s+/, "").replace(/^recent\s+/, "").replace(/^前期\s+/, "").replace(/^当前\s+/, "");
+    }
     chart.setOption({
       tooltip: {
         trigger: "item",
@@ -595,14 +598,14 @@
           if (params.dataType === "edge") {
             var share = Number(params.data.value || 0) / total;
             return [
-              app.escapeHtml(params.data.source || ""),
-              "→ " + app.escapeHtml(params.data.target || ""),
+              app.escapeHtml(displayLayerName(params.data.source || "")),
+              "→" + app.escapeHtml(displayLayerName(params.data.target || "")),
               "SKU：" + Number(params.data.value || 0).toLocaleString("zh-CN"),
               "占比：" + app.formatPercent(share, 1)
             ].join("<br>");
           }
           return [
-            app.escapeHtml(params.name || ""),
+            app.escapeHtml((params.data && params.data.layer) || displayLayerName(params.name || "")),
             "SKU：" + Number(params.value || 0).toLocaleString("zh-CN"),
             "占比：" + app.formatPercent(Number(params.value || 0) / total, 1)
           ].join("<br>");
@@ -616,14 +619,14 @@
         right: 86,
         nodeWidth: 14,
         nodeGap: 14,
-        layoutIterations: 24,
+        layoutIterations: 0,
         emphasis: { focus: "adjacency" },
         label: {
           width: 112,
           overflow: "truncate",
           lineHeight: 16,
           formatter: function (params) {
-            var name = String(params.name || "").replace(/^前期\s+/, "").replace(/^当前\s+/, "");
+            var name = (params.data && params.data.layer) || displayLayerName(params.name);
             var count = Number(params.value || 0);
             return name + "\n" + count.toLocaleString("zh-CN") + " · " + app.formatPercent(count / total, 1);
           }

@@ -1183,11 +1183,11 @@
       overlayNoRowsTemplate: '<span class="ag-empty-copy">当前筛选条件下没有二次调价数据</span>',
       rowHeight: 44,
       columnDefs: [
-        { headerName: "上次调价日期", field: "previous_adjust_date", pinned: "left", minWidth: 150, cellRenderer: function (params) { return window.kanbanGrid.textCell(params.value, true); } },
-        { headerName: "二次调价 SKU", field: "sku_count", width: 140, cellClass: "ag-grid-number-cell" },
-        { headerName: "平均间隔天数", field: "avg_gap_days", width: 150, cellClass: "ag-grid-number-cell", valueFormatter: function (params) { return window.kanbanGrid.decimal(params.value, 1); } },
-        { headerName: "涉及店铺", field: "store_count", width: 120, cellClass: "ag-grid-number-cell" },
-        { headerName: "涉及国家", field: "country_count", width: 120, cellClass: "ag-grid-number-cell" }
+        { headerName: "上次调价日期", field: "previous_adjust_date", pinned: "left", minWidth: 170, flex: 1.25, cellRenderer: function (params) { return window.kanbanGrid.textCell(params.value, true); } },
+        { headerName: "二次调价 SKU", field: "sku_count", minWidth: 150, flex: 1, cellClass: "ag-grid-number-cell" },
+        { headerName: "平均间隔天数", field: "avg_gap_days", minWidth: 170, flex: 1, cellClass: "ag-grid-number-cell", valueFormatter: function (params) { return window.kanbanGrid.decimal(params.value, 1); } },
+        { headerName: "涉及店铺", field: "store_count", minWidth: 135, flex: 0.85, cellClass: "ag-grid-number-cell" },
+        { headerName: "涉及国家", field: "country_count", minWidth: 135, flex: 0.85, cellClass: "ag-grid-number-cell" }
       ]
     });
   }

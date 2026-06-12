@@ -143,6 +143,14 @@ def ensure_live_source_connection(source_conn) -> None:
     source_conn.ping(reconnect=True)
 
 
+def source_load_retry_attempts() -> int:
+    raw_attempts = os.getenv("DASHBOARD_SOURCE_LOAD_ATTEMPTS", "2")
+    try:
+        return max(1, int(raw_attempts))
+    except ValueError:
+        return 2
+
+
 def clean_identifier(value: str, fallback: str) -> str:
     name = (value or fallback).strip()
     if not re.fullmatch(r"[A-Za-z0-9_]+", name):
@@ -816,7 +824,7 @@ with inventory as (
         sum(coalesce(stock_up_num_price, 0)) as transit_cost
     from etl_datasync.etl_dispose_lx_storage_fba_warehouse_detail
     where create_time >= %(snapshot_date)s
-      and create_time < date_add(%(snapshot_date)s, interval 1 day)
+      and create_time < %(next_snapshot_date)s
     group by country_category, seller_sku_adj, seller_name_new
 ),
 restock as (
@@ -843,7 +851,7 @@ restock as (
      and c.country_category = r.country_category
      and c.seller_name_new = r.seller_name_new
     where r.create_time >= %(snapshot_date)s
-      and r.create_time < date_add(%(snapshot_date)s, interval 1 day)
+      and r.create_time < %(next_snapshot_date)s
     group by r.country_category, r.seller_sku_adj, r.seller_name_new
 ),
 base_keys as (
@@ -1677,7 +1685,7 @@ with src as (
         %(product_full_load)s = 1
         or (
             start_date >= %(product_start_date)s
-            and start_date < date_add(%(product_end_date)s, interval 1 day)
+            and start_date < %(next_product_end_date)s
         )
     )
       and seller_sku not like 'Amazon.Found%%'
@@ -1762,7 +1770,8 @@ left join etl_datasync.etl_dispose_lx_product_local_product_info c
   on substring_index(c.seller_sku, '-', 1) = r.seller_sku_adj
  and c.country_category = r.country_category
  and c.seller_name_new = r.seller_name_new
-where date(r.create_time) = %(snapshot_date)s
+where r.create_time >= %(snapshot_date)s
+  and r.create_time < %(next_snapshot_date)s
 group by
     date(r.create_time),
     r.country_category,
@@ -1807,7 +1816,8 @@ select
     now() as created_at,
     now() as updated_at
 from etl_datasync.etl_dispose_lx_storage_fba_warehouse_detail
-where date(create_time) = %(snapshot_date)s
+where create_time >= %(snapshot_date)s
+  and create_time < %(next_snapshot_date)s
 group by
     date(create_time),
     country_category,
@@ -1868,7 +1878,8 @@ from (
             else null
         end as org_currency_icon
     from dwd_datasync.lx_sales_mws_listing
-    where date(create_time) = %(snapshot_date)s
+    where create_time >= %(snapshot_date)s
+      and create_time < %(next_snapshot_date)s
 ) l
 left join dwd_datasync.lx_basic_currency c
   on l.org_currency_icon = c.name
@@ -2800,31 +2811,41 @@ def execute_source_load_step(
     batch_size: int,
 ) -> None:
     started_at = datetime.now()
-    affected_rows = 0
-    try:
-        source_sql = render_sql(step.source_select_statement, schemas)
-        assert_source_select_only(source_sql)
-        target_insert_sql = build_target_insert_sql(step.target_table, step.target_columns, schemas)
+    attempts = source_load_retry_attempts()
+    last_error = ""
+    for attempt in range(1, attempts + 1):
+        affected_rows = 0
+        try:
+            source_sql = render_sql(step.source_select_statement, schemas)
+            assert_source_select_only(source_sql)
+            target_insert_sql = build_target_insert_sql(step.target_table, step.target_columns, schemas)
 
-        with source_conn.cursor() as source_cursor, target_conn.cursor() as target_cursor:
-            target_cursor.execute(render_sql(step.delete_statement, schemas), params)
-            source_cursor.execute(source_sql, params)
-            while True:
-                rows = source_cursor.fetchmany(batch_size)
-                if not rows:
-                    break
-                target_cursor.executemany(target_insert_sql, rows)
-                affected_rows += len(rows)
+            with source_conn.cursor() as source_cursor, target_conn.cursor() as target_cursor:
+                target_cursor.execute(render_sql(step.delete_statement, schemas), params)
+                source_cursor.execute(source_sql, params)
+                while True:
+                    rows = source_cursor.fetchmany(batch_size)
+                    if not rows:
+                        break
+                    target_cursor.executemany(target_insert_sql, rows)
+                    affected_rows += len(rows)
 
-        target_conn.commit()
-        log_task(target_conn, schemas, step.name, params, "success", affected_rows, started_at)
-        print(f"[success] {step.name}: affected_rows={affected_rows}")
-    except Exception:
-        target_conn.rollback()
-        error = traceback.format_exc()
-        log_task(target_conn, schemas, step.name, params, "failed", affected_rows, started_at, error)
-        print(f"[failed] {step.name}", file=sys.stderr)
-        raise
+            target_conn.commit()
+            log_task(target_conn, schemas, step.name, params, "success", affected_rows, started_at)
+            print(f"[success] {step.name}: affected_rows={affected_rows}")
+            return
+        except Exception:
+            target_conn.rollback()
+            last_error = traceback.format_exc()
+            if attempt >= attempts:
+                log_task(target_conn, schemas, step.name, params, "failed", affected_rows, started_at, last_error)
+                print(f"[failed] {step.name}", file=sys.stderr)
+                raise
+            print(
+                f"[warn] {step.name}: source load attempt {attempt}/{attempts} failed; reconnecting source and retrying.",
+                file=sys.stderr,
+            )
+            ensure_live_source_connection(source_conn)
 
 
 def product_daily_is_empty(conn, schemas: SchemaConfig) -> bool:
@@ -2897,10 +2918,12 @@ def build_params(args: argparse.Namespace) -> dict[str, object]:
     return {
         "biz_date": biz_date,
         "snapshot_date": snapshot_date,
+        "next_snapshot_date": snapshot_date + timedelta(days=1),
         "period_start": period_start,
         "period_end": period_end,
         "product_start_date": product_start_date,
         "product_end_date": product_end_date,
+        "next_product_end_date": product_end_date + timedelta(days=1),
         "product_full_load": 1 if args.product_full_load else 0,
     }
 
