@@ -305,6 +305,13 @@
   }
 
   function renderPeriod(payload) {
+    if (payload.comparison_mode === "month") {
+      elements.alertPeriodHint.textContent = [
+        payload.window || "",
+        payload.comparison_window || "",
+      ].filter(Boolean).join(" / ");
+      return;
+    }
     elements.alertPeriodHint.textContent = [
       payload.window || "",
       payload.comparison_window ? "对比 " + payload.comparison_window : "",

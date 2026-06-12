@@ -15,10 +15,47 @@
   </div>
 
   <div class="filters-grid alert-filters">
-    <label class="filter-control">
+    <div class="filter-control">
       <span>观察维度</span>
-      <select id="compareDaysSelect"></select>
-    </label>
+      <div class="dimension-picker-row">
+        <select id="compareDaysSelect"></select>
+        <button id="monthCompareToggleBtn" class="month-compare-toggle" type="button">月份对比</button>
+      </div>
+      <div class="month-compare-popover" id="monthCompareControl" hidden>
+        <div class="month-compare-copy">
+          <span class="month-compare-title">月份对比</span>
+          <span class="month-compare-hint">任意选择两个月，按当前月统计至今。</span>
+        </div>
+        <div class="month-compare-fields">
+          <div class="month-picker-field">
+            <span>对比月份</span>
+            <button id="previousMonthInput" class="month-picker-value" type="button">
+              <strong id="previousMonthValue">-</strong>
+              <small>基准月</small>
+            </button>
+          </div>
+          <span class="month-compare-arrow">vs</span>
+          <div class="month-picker-field">
+            <span>观察月份</span>
+            <button id="recentMonthInput" class="month-picker-value" type="button">
+              <strong id="recentMonthValue">-</strong>
+              <small>对比月</small>
+            </button>
+          </div>
+        </div>
+        <div class="month-picker-panel">
+          <div class="month-picker-panel-head">
+            <span id="monthPickerYearLabel">可选月份</span>
+            <span class="month-picker-note">点击月份即可切换当前高亮项</span>
+          </div>
+          <div id="monthPickerGrid" class="month-picker-grid"></div>
+        </div>
+        <div class="month-compare-actions">
+          <button id="cancelMonthCompareBtn" class="ghost-button" type="button">取消</button>
+          <button id="applyMonthCompareBtn" class="primary-button" type="button">应用月份对比</button>
+        </div>
+      </div>
+    </div>
     <label class="filter-control">
       <span>站点</span>
       <select id="siteSelect"></select>
@@ -71,5 +108,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', path='js/opportunities.js') }}?v=20260612flow"></script>
+<script src="{{ url_for('static', path='js/opportunities.js') }}?v=20260612oppty2"></script>
 {% endblock %}
