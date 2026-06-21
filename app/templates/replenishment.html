@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block content %}
+<header class="hero hero-compact">
+  <h1>&#34917;&#36135;&#35745;&#21010;</h1>
+</header>
+
+<section class="panel filters-panel">
+  <div class="panel-head compact">
+    <div>
+      <p class="section-kicker">&#31579;&#36873;&#21306;</p>
+      <h2>&#27599;&#26085;&#34917;&#36135;&#21475;&#24452;</h2>
+    </div>
+    <button id="clearFiltersBtn" class="ghost-button" type="button">&#19968;&#38190;&#28165;&#31354;</button>
+  </div>
+  <div class="filters-grid replenishment-filters">
+    <div class="filter-control replenishment-date-control">
+      <span>&#34917;&#36135;&#26085;&#26399;</span>
+      <button id="datePickerBtn" class="replenishment-date-trigger" type="button" aria-label="&#34917;&#36135;&#26085;&#26399;" aria-expanded="false" aria-controls="datePickerPanel">
+        <span id="datePickerValue">--</span>
+      </button>
+      <div id="datePickerPanel" class="replenishment-date-panel" hidden></div>
+    </div>
+    <label class="filter-control">
+      <span>&#34917;&#36135;&#23618;&#32423;</span>
+      <select id="levelSelect"></select>
+    </label>
+    <label class="filter-control">
+      <span>&#31449;&#28857;</span>
+      <select id="siteSelect"></select>
+    </label>
+    <label class="filter-control">
+      <span>&#24215;&#38138;</span>
+      <select id="storeSelect"></select>
+    </label>
+    <label class="filter-control">
+      <span>&#20851;&#38190;&#35789;</span>
+      <input id="keywordInput" type="search" placeholder="&#25628;&#32034; MSKU / &#24215;&#38138; / SKU">
+    </label>
+  </div>
+</section>
+
+<section class="alerts-page-section replenishment-page-section">
+  <div class="section-head">
+    <div>
+      <p class="section-kicker">&#34917;&#36135;&#25191;&#34892;&#27744;</p>
+      <h2>&#24211;&#23384;&#25903;&#25745;&#20998;&#23618;</h2>
+    </div>
+    <p id="periodHint" class="summary-hint"></p>
+  </div>
+
+  <div id="summaryGrid" class="alert-stats-grid opportunity-stats-grid"></div>
+  <div id="layerVizGrid" class="replenishment-viz-grid"></div>
+  <div id="levelTabs" class="segmented-tabs alert-type-tabs"></div>
+
+  <div class="panel alert-table-card">
+    <div class="alert-table-head">
+      <div>
+        <p class="section-kicker">&#26126;&#32454;</p>
+        <h3>&#34917;&#36135; SKU &#21015;&#34920;</h3>
+      </div>
+      <div class="alert-table-actions">
+        <button id="sortQtyBtn" class="ghost-button" type="button">&#25353;&#34917;&#36135;&#25968;</button>
+        <button id="sortSupportBtn" class="ghost-button" type="button">&#25353;&#25903;&#25745;&#22825;&#25968;</button>
+        <button id="exportReplenishmentBtn" class="ghost-button" type="button">&#23548;&#20986;&#24403;&#21069;&#26126;&#32454;</button>
+      </div>
+    </div>
+    <div id="tableWrap" class="alert-table-wrap replenishment-table-wrap ag-grid-shell"></div>
+  </div>
+
+  <div class="pagination-bar">
+    <div id="paginationInfo" class="pagination-info"></div>
+    <div class="pagination-controls">
+      <button id="prevPageBtn" class="ghost-button" type="button">&#19978;&#19968;&#39029;</button>
+      <div id="paginationNumbers" class="pagination-numbers"></div>
+      <button id="nextPageBtn" class="ghost-button" type="button">&#19979;&#19968;&#39029;</button>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', path='js/replenishment.js') }}?v=20260620l"></script>
+{% endblock %}
