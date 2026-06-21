@@ -7,6 +7,25 @@
   var LEVEL_PLANNED = "\u8ba1\u5212\u8865\u8d27";
   var LEVEL_SUFFICIENT = "\u5e93\u5b58\u5145\u8db3";
   var LEVEL_ZERO_SALES = "\u65e5\u9500\u4e3a0";
+  var LEVEL_HELP = {};
+  LEVEL_HELP[LEVEL_URGENT] = [
+    "\u5224\u5b9a\uff1a\u5e93\u5b58\u652f\u6491\u5929\u6570 <= 35 \u5929\u3002",
+    "\u652f\u6491\u5929\u6570 = (\u53ef\u7528\u5e93\u5b58 + \u5728\u9014\u5e93\u5b58 + \u672c\u5730\u5e93\u5b58 + \u91c7\u8d2d\u8ba1\u5212\u6570) / \u65e5\u9500\u3002",
+    "\u8865\u8d27\u6570\u91cf\u6309\u9700\u6c42\u91cf\u7ed3\u5408\u91c7\u8d2d\u7bb1\u89c4\u53d6\u6574\uff0c\u8865\u8d27\u8d27\u503c = \u8865\u8d27\u6570\u91cf * \u91c7\u8d2d\u4ef7\u3002",
+    "\u4ea7\u54c1\u5206\u7c7b\u5360\u6bd4 = \u8be5\u5206\u5c42\u5185\u5bf9\u5e94\u5206\u7c7b MSKU \u6570 / \u8be5\u5206\u5c42 MSKU \u603b\u6570\u3002"
+  ];
+  LEVEL_HELP[LEVEL_SUGGESTED] = [
+    "\u5224\u5b9a\uff1a35 \u5929 < \u5e93\u5b58\u652f\u6491\u5929\u6570 <= 65 \u5929\u3002",
+    "\u652f\u6491\u5929\u6570 = (\u53ef\u7528\u5e93\u5b58 + \u5728\u9014\u5e93\u5b58 + \u672c\u5730\u5e93\u5b58 + \u91c7\u8d2d\u8ba1\u5212\u6570) / \u65e5\u9500\u3002",
+    "\u8865\u8d27\u6570\u91cf\u6309\u9700\u6c42\u91cf\u7ed3\u5408\u91c7\u8d2d\u7bb1\u89c4\u53d6\u6574\uff0c\u8865\u8d27\u8d27\u503c = \u8865\u8d27\u6570\u91cf * \u91c7\u8d2d\u4ef7\u3002",
+    "\u4ea7\u54c1\u5206\u7c7b\u5360\u6bd4 = \u8be5\u5206\u5c42\u5185\u5bf9\u5e94\u5206\u7c7b MSKU \u6570 / \u8be5\u5206\u5c42 MSKU \u603b\u6570\u3002"
+  ];
+  LEVEL_HELP[LEVEL_PLANNED] = [
+    "\u5224\u5b9a\uff1a65 \u5929 < \u5e93\u5b58\u652f\u6491\u5929\u6570 <= 90 \u5929\u3002",
+    "\u652f\u6491\u5929\u6570 = (\u53ef\u7528\u5e93\u5b58 + \u5728\u9014\u5e93\u5b58 + \u672c\u5730\u5e93\u5b58 + \u91c7\u8d2d\u8ba1\u5212\u6570) / \u65e5\u9500\u3002",
+    "\u8865\u8d27\u6570\u91cf\u6309\u9700\u6c42\u91cf\u7ed3\u5408\u91c7\u8d2d\u7bb1\u89c4\u53d6\u6574\uff0c\u8865\u8d27\u8d27\u503c = \u8865\u8d27\u6570\u91cf * \u91c7\u8d2d\u4ef7\u3002",
+    "\u4ea7\u54c1\u5206\u7c7b\u5360\u6bd4 = \u8be5\u5206\u5c42\u5185\u5bf9\u5e94\u5206\u7c7b MSKU \u6570 / \u8be5\u5206\u5c42 MSKU \u603b\u6570\u3002"
+  ];
   var text = {
     loading: "\u52a0\u8f7d\u4e2d...",
     loadFailed: "\u52a0\u8f7d\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u8865\u8d27\u7ed3\u679c\u8868\u3002",
@@ -245,7 +264,7 @@
         return [
           '<div class="replenish-layer-row level-' + app.escapeHtml(String(row.sort || "")) + active + '" data-level="' + app.escapeHtml(level) + '" role="button" tabindex="0">',
           '<span class="layer-mark">' + layerGlyph(row.sort) + '</span>',
-          '<span class="layer-name">' + app.escapeHtml(level) + '<small>' + formatNumber(row.sku_count) + ' MSKU</small>' + renderCategoryMix(row.category_mix, row.sku_count, level) + '</span>',
+          '<span class="layer-name"><span class="layer-title"><span>' + app.escapeHtml(level) + '</span>' + renderLevelHelp(level) + '</span><small>' + formatNumber(row.sku_count) + ' MSKU</small>' + renderCategoryMix(row.category_mix, row.sku_count, level) + '</span>',
           '<strong>' + formatNumber(row.replenish_qty) + '</strong>',
           '<strong>' + formatCurrency(row.replenish_cost) + '</strong>',
           '<span class="layer-progress"><i style="width:' + width + '%"></i></span>',
@@ -294,6 +313,20 @@
         render();
       });
     });
+  }
+
+  function renderLevelHelp(level) {
+    var lines = LEVEL_HELP[level] || [];
+    if (!lines.length) return "";
+    var body = lines.map(function (line) {
+      return '<span>' + app.escapeHtml(line) + '</span>';
+    }).join("");
+    return [
+      '<span class="layer-help" tabindex="0" aria-label="' + app.escapeHtml(lines.join(" ")) + '">',
+      '<span class="layer-help-icon">?</span>',
+      '<span class="layer-help-popover" role="tooltip">' + body + '</span>',
+      '</span>'
+    ].join("");
   }
 
   function renderCategoryMix(rows, total, level) {

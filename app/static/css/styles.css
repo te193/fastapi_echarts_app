@@ -4984,6 +4984,77 @@ body[data-page="matrix"] .matrix-cell-meta {
   font-weight: 900;
 }
 
+.layer-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.layer-help {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.layer-help-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1;
+  cursor: help;
+}
+
+.layer-help-popover {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 10px);
+  z-index: 30;
+  display: none;
+  width: min(360px, 74vw);
+  padding: 10px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #f8fafc;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.22);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.55;
+  transform: translateX(-50%);
+  white-space: normal;
+}
+
+.layer-help-popover::after {
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  width: 10px;
+  height: 10px;
+  background: #0f172a;
+  content: "";
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.layer-help-popover span {
+  display: block;
+}
+
+.layer-help:hover .layer-help-popover,
+.layer-help:focus .layer-help-popover,
+.layer-help:focus-within .layer-help-popover {
+  display: block;
+}
+
 .layer-name small {
   color: #64748b;
   font-size: 12px;
