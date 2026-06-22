@@ -16,6 +16,7 @@ from etl.dashboard_daily_update import COLUMN_COMMENTS
 
 from .services.dashboard_db import dashboard_service
 from .services.price_review_data import price_review_service
+from .services.replenishment_data import replenishment_service
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -150,6 +151,15 @@ def inventory_weekly_page(request: Request) -> HTMLResponse:
         request,
         "inventory_weekly.html",
         {"page": "inventory_weekly", "title": "库存周报"},
+    )
+
+
+@app.get("/replenishment", response_class=HTMLResponse)
+def replenishment_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "replenishment.html",
+        {"page": "replenishment", "title": "补货计划"},
     )
 
 
@@ -552,6 +562,66 @@ def api_inventory_weekly_export(
             "、".join(metric_labels.get(key, key) for key in item.get("warning_metrics", [])),
         ])
     filename = f"inventory_weekly_{date.today().isoformat()}.csv"
+    headers = {"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"}
+    return StreamingResponse(iter([output.getvalue()]), media_type="text/csv; charset=utf-8", headers=headers)
+
+
+@app.get("/api/replenishment")
+def api_replenishment(
+    snapshot_date: str = Query(default=""),
+    level: str = Query(default="all"),
+    category: str = Query(default="all"),
+    site: str = Query(default="all"),
+    store: str = Query(default="all"),
+    keyword: str = Query(default=""),
+    sort_field: str = Query(default=""),
+    sort_dir: str = Query(default=""),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=10, le=100),
+) -> dict:
+    return replenishment_service.get_payload(
+        snapshot_date=snapshot_date,
+        level=level,
+        category=category,
+        site=site,
+        store=store,
+        keyword=keyword,
+        sort_field=sort_field,
+        sort_dir=sort_dir,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@app.get("/api/replenishment/export")
+def api_replenishment_export(
+    snapshot_date: str = Query(default=""),
+    level: str = Query(default="all"),
+    category: str = Query(default="all"),
+    site: str = Query(default="all"),
+    store: str = Query(default="all"),
+    keyword: str = Query(default=""),
+    sort_field: str = Query(default=""),
+    sort_dir: str = Query(default=""),
+) -> StreamingResponse:
+    payload = replenishment_service.get_export_payload(
+        snapshot_date=snapshot_date,
+        level=level,
+        category=category,
+        site=site,
+        store=store,
+        keyword=keyword,
+        sort_field=sort_field,
+        sort_dir=sort_dir,
+    )
+    output = io.StringIO(newline="")
+    output.write("\ufeff")
+    writer = csv.writer(output)
+    columns = payload["columns"]
+    writer.writerow([column["label"] for column in columns])
+    for row in payload["rows"]:
+        writer.writerow([csv_cell_value(row.get(column["name"]), column["name"]) for column in columns])
+    filename = f"replenishment_{payload.get('snapshot_date') or snapshot_date or date.today().isoformat()}.csv"
     headers = {"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"}
     return StreamingResponse(iter([output.getvalue()]), media_type="text/csv; charset=utf-8", headers=headers)
 

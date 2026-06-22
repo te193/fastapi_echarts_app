@@ -10,6 +10,9 @@ logs/
 uvicorn.out.log
 uvicorn.err.log
 .worktrees/
+.playwright-cli/
+output/
+config/database.ini
 
 scripts/dashboard_env.ps1
 scripts/dashboard_env.local.ps1

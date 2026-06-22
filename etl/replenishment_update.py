@@ -1,0 +1,1100 @@
+from __future__ import annotations
+
+import argparse
+import configparser
+import os
+import sys
+import traceback
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
+from pathlib import Path
+
+from etl.dashboard_daily_update import (
+    CREATE_LOG_TABLE_SQL,
+    CREATE_SCHEMA_SQL,
+    SchemaConfig,
+    SourceLoadStep,
+    build_schema_config,
+    connect_source,
+    connect_target,
+    execute_source_load_step,
+    log_task,
+    parse_day,
+    render_sql,
+)
+
+
+DEFAULT_CANDIDATE_DAYS = 1
+DEFAULT_STEP_ORDER = [
+    "listing_basic_sync",
+    "fba_shipment_sync",
+    "check_daily_snapshots",
+    "salable_days_stat",
+    "replenishment_result",
+]
+
+
+@dataclass(frozen=True)
+class ReplenishmentStep:
+    name: str
+    statements: tuple[str, ...]
+
+
+CONFIG_ENV_MAP = {
+    "target": {
+        "host": "DASHBOARD_DB_HOST",
+        "port": "DASHBOARD_DB_PORT",
+        "user": "DASHBOARD_DB_USER",
+        "password": "DASHBOARD_DB_PASSWORD",
+        "database": "DASHBOARD_DB_NAME",
+    },
+    "source": {
+        "host": "DASHBOARD_SOURCE_DB_HOST",
+        "port": "DASHBOARD_SOURCE_DB_PORT",
+        "user": "DASHBOARD_SOURCE_DB_USER",
+        "password": "DASHBOARD_SOURCE_DB_PASSWORD",
+        "database": "DASHBOARD_SOURCE_DB_NAME",
+    },
+}
+
+SCHEMA_ENV_MAP = {
+    "target_schema": "DASHBOARD_TARGET_SCHEMA",
+    "etl_source_schema": "DASHBOARD_ETL_SOURCE_SCHEMA",
+    "dwd_source_schema": "DASHBOARD_DWD_SOURCE_SCHEMA",
+    "pricing_source_schema": "DASHBOARD_PRICING_SOURCE_SCHEMA",
+}
+
+
+def is_real_config_value(value: str | None) -> bool:
+    if not value:
+        return False
+    upper_value = value.strip().upper()
+    return not (
+        upper_value.startswith("REMOTE_")
+        or upper_value in {"YOUR_USER", "YOUR_PASSWORD", "CHANGE_ME"}
+    )
+
+
+def apply_database_ini_env(config_path: Path = Path("config/database.ini")) -> None:
+    parser = configparser.ConfigParser()
+    if not config_path.exists():
+        return
+    parser.read(config_path, encoding="utf-8")
+
+    for section, option_map in CONFIG_ENV_MAP.items():
+        if not parser.has_section(section):
+            continue
+        for option, env_name in option_map.items():
+            value = parser[section].get(option)
+            if is_real_config_value(value):
+                os.environ.setdefault(env_name, value.strip())
+
+    if parser.has_section("target"):
+        target = parser["target"]
+        target_schema = target.get("target_schema", "").strip() or target.get("database", "").strip()
+        if is_real_config_value(target_schema):
+            os.environ.setdefault("DASHBOARD_TARGET_SCHEMA", target_schema)
+
+    if parser.has_section("schemas"):
+        for option, env_name in SCHEMA_ENV_MAP.items():
+            value = parser["schemas"].get(option)
+            if is_real_config_value(value):
+                os.environ.setdefault(env_name, value.strip())
+
+    opt_lyt_fallbacks = {
+        "DASHBOARD_SOURCE_DB_HOST": "OPT_LYT_DB_HOST",
+        "DASHBOARD_SOURCE_DB_PORT": "OPT_LYT_DB_PORT",
+        "DASHBOARD_SOURCE_DB_USER": "OPT_LYT_DB_USER",
+        "DASHBOARD_SOURCE_DB_PASSWORD": "OPT_LYT_DB_PASSWORD",
+    }
+    for target_env, source_env in opt_lyt_fallbacks.items():
+        if not os.getenv(target_env) and os.getenv(source_env):
+            os.environ[target_env] = os.environ[source_env]
+
+
+CREATE_SALABLE_DAYS_STAT_SQL = """
+create table if not exists etl_datasync.pur_plan_prod_perf_salable_days_stat (
+    sta_dt date not null,
+    country_category varchar(64) not null,
+    seller_name_new varchar(128) not null,
+    seller_sku_adj varchar(128) not null,
+    r_90d_salable_days int not null default 0,
+    r_30d_salable_days int not null default 0,
+    r_14d_salable_days int not null default 0,
+    r_7d_salable_days int not null default 0,
+    r_3d_salable_days int not null default 0,
+    sales_30 decimal(18,4) not null default 0,
+    available_total decimal(18,4) not null default 0,
+    available_daily_sales_base decimal(18,6) null,
+    available_salable_days decimal(18,6) null,
+    created_at datetime not null default current_timestamp,
+    updated_at datetime not null default current_timestamp on update current_timestamp,
+    primary key (sta_dt, country_category, seller_name_new, seller_sku_adj),
+    key idx_salable_lookup (country_category, seller_name_new, seller_sku_adj),
+    key idx_salable_days (sta_dt, available_salable_days)
+) engine=InnoDB default charset=utf8mb4;
+"""
+
+CREATE_LISTING_BASIC_SYNC_SQL = """
+create table if not exists etl_datasync.dashboard_replenishment_listing_basic_sync (
+    country_category varchar(64) not null,
+    seller_name_new varchar(128) not null,
+    seller_sku varchar(128) not null,
+    new_old_product varchar(64) null,
+    max_fnsku varchar(128) null,
+    max_asin varchar(64) null,
+    max_sku varchar(128) null,
+    marketplace_status text null,
+    seller_name_concat text null,
+    onsale_sites text null,
+    unsale_sites text null,
+    sales_status varchar(64) null,
+    marketplace_concat varchar(128) null,
+    seller_name_copy varchar(255) null,
+    seller_name_ue varchar(128) null,
+    principal varchar(128) null,
+    sales_team_1 varchar(128) null,
+    max_local_name varchar(512) null,
+    max_brand_name varchar(255) null,
+    max_cg_box_pcs decimal(18,4) null,
+    max_cg_price decimal(18,4) null,
+    max_cg_transport_costs decimal(18,4) null,
+    synced_at datetime not null default current_timestamp,
+    primary key (country_category, seller_name_new, seller_sku),
+    key idx_repl_listing_sku (seller_sku),
+    key idx_repl_listing_owner (principal, sales_team_1)
+) engine=InnoDB default charset=utf8mb4;
+"""
+
+CREATE_FBA_SHIPMENT_SYNC_SQL = """
+create table if not exists etl_datasync.dashboard_replenishment_fba_shipment_sync (
+    country_category varchar(64) not null,
+    seller_name_new varchar(128) not null,
+    msku varchar(128) not null,
+    min_receiving_time datetime null,
+    max_receiving_time datetime null,
+    receiving_cnt int null,
+    days_since_launch int null,
+    days_latest_delivery int null,
+    since_launch_range varchar(128) null,
+    delivery_time_range varchar(128) null,
+    synced_at datetime not null default current_timestamp,
+    primary key (country_category, seller_name_new, msku),
+    key idx_repl_fba_ship_msku (msku)
+) engine=InnoDB default charset=utf8mb4;
+"""
+
+CREATE_REPLENISHMENT_RESULT_SQL = """
+create table if not exists etl_datasync.dashboard_pur_plan_replenish_data (
+    cur_date date not null,
+    new_old_product varchar(64) null,
+    seller_sku_adj varchar(128) not null,
+    max_fnsku varchar(128) null,
+    max_asin varchar(64) null,
+    max_sku varchar(128) null,
+    marketplace_status text null,
+    seller_name_concat text null,
+    onsale_sites text null,
+    unsale_sites text null,
+    sales_status varchar(64) null,
+    marketplace_concat varchar(128) null,
+    seller_name_copy varchar(255) null,
+    seller_name_ue varchar(128) null,
+    seller_name_new varchar(128) not null,
+    country_category varchar(64) not null,
+    max_local_name varchar(512) null,
+    max_brand_name varchar(255) null,
+    principal varchar(128) null,
+    sales_team_1 varchar(128) null,
+    max_receiving_time datetime null,
+    receiving_cnt int null,
+    max_cg_box_pcs decimal(18,4) null,
+    max_cg_price decimal(18,4) null,
+    max_cg_transport_costs decimal(18,4) null,
+    stockout_status varchar(64) null,
+    pre_daily_avg_sales decimal(18,6) null,
+    pre_normal_replenish_need_qty decimal(18,4) null,
+    pre_replenish_trigger_qty decimal(18,4) null,
+    hist_90d_instock_days int null,
+    hist_90d_instock_sales decimal(18,4) null,
+    hist_90d_instock_daily_sales decimal(18,6) null,
+    history_recovery_need_qty decimal(18,4) null,
+    history_recovery_flag tinyint not null default 0,
+    support_inventory_qty decimal(18,4) null,
+    inventory_support_days decimal(18,6) null,
+    support_replenish_level varchar(64) null,
+    support_replenish_level_sort tinyint null,
+    abcd_category varchar(16) null,
+    gp_margin_range varchar(64) null,
+    predict_abcd_category varchar(16) null,
+    pre_1m_predict_abcd_category varchar(16) null,
+    pre_1q_predict_abcd_category varchar(16) null,
+    fba_local_quantity decimal(18,4) null,
+    total decimal(18,4) null,
+    available_total decimal(18,4) null,
+    afn_fulfillable_quantity decimal(18,4) null,
+    stock_up_num decimal(18,4) null,
+    afn_unsellable_quantity decimal(18,4) null,
+    sc_quantity_local_valid decimal(18,4) null,
+    sc_quantity_purchase_shipping decimal(18,4) null,
+    sc_quantity_purchase_plan decimal(18,4) null,
+    sc_quantity_local_qc decimal(18,4) null,
+    local_quantity decimal(18,4) null,
+    r_90d_salable_days int null,
+    r_30d_salable_days int null,
+    r_14d_salable_days int null,
+    r_7d_salable_days int null,
+    r_3d_salable_days int null,
+    sales_90d decimal(18,4) null,
+    final_sales_30d decimal(18,4) null,
+    final_sales_14d decimal(18,4) null,
+    final_sales_7d decimal(18,4) null,
+    final_sales_3d decimal(18,4) null,
+    amount_30d decimal(18,4) null,
+    amount_14d decimal(18,4) null,
+    amount_7d decimal(18,4) null,
+    amount_3d decimal(18,4) null,
+    pprofit_30d decimal(18,4) null,
+    pprofit_14d decimal(18,4) null,
+    pprofit_7d decimal(18,4) null,
+    pprofit_3d decimal(18,4) null,
+    pprofit_ratio_30d decimal(10,6) null,
+    pprofit_ratio_14d decimal(10,6) null,
+    pprofit_ratio_7d decimal(10,6) null,
+    pprofit_ratio_3d decimal(10,6) null,
+    gamount_30d decimal(18,4) null,
+    gamount_14d decimal(18,4) null,
+    gamount_7d decimal(18,4) null,
+    gamount_3d decimal(18,4) null,
+    gprofit_30d decimal(18,4) null,
+    gprofit_14d decimal(18,4) null,
+    gprofit_7d decimal(18,4) null,
+    gprofit_3d decimal(18,4) null,
+    gprofit_ratio_30d decimal(10,6) null,
+    gprofit_ratio_14d decimal(10,6) null,
+    gprofit_ratio_7d decimal(10,6) null,
+    gprofit_ratio_3d decimal(10,6) null,
+    new_old_prod_jg varchar(64) null,
+    daily_avg_sales decimal(18,6) null,
+    replenish_comp_months decimal(10,4) null,
+    salable_days decimal(18,6) null,
+    `60d_stocko_qty` decimal(18,4) null,
+    `90d_stocko_qty` decimal(18,4) null,
+    `180d_stocko_qty` decimal(18,4) null,
+    replenish_dur_calc_stocko_qty decimal(18,4) null,
+    replenish_need_qty decimal(18,4) null,
+    replenish_trigger_qty decimal(18,4) null,
+    sales_change_rate_adj decimal(10,6) null,
+    sales_adj_factor decimal(10,6) null,
+    final_profit_rate decimal(10,6) null,
+    replenish_qty decimal(18,4) null,
+    replenish_box_qty decimal(18,4) null,
+    replenish_cost decimal(18,4) null,
+    amz_instock_sales_ratio decimal(18,6) null,
+    instock_intrans_pur_sales_ratio decimal(18,6) null,
+    fllow_flag tinyint null,
+    created_at datetime not null default current_timestamp,
+    updated_at datetime not null default current_timestamp on update current_timestamp,
+    primary key (cur_date, country_category, seller_name_new, seller_sku_adj),
+    key idx_replenish_level (cur_date, support_replenish_level_sort, support_replenish_level),
+    key idx_replenish_owner (cur_date, principal, sales_team_1),
+    key idx_replenish_sku (seller_sku_adj),
+    key idx_replenish_qty (cur_date, replenish_qty)
+) engine=InnoDB default charset=utf8mb4;
+"""
+
+DDL_STATEMENTS = (
+    CREATE_SCHEMA_SQL,
+    CREATE_LOG_TABLE_SQL,
+    CREATE_SALABLE_DAYS_STAT_SQL,
+    CREATE_LISTING_BASIC_SYNC_SQL,
+    CREATE_FBA_SHIPMENT_SYNC_SQL,
+    CREATE_REPLENISHMENT_RESULT_SQL,
+)
+
+LISTING_BASIC_COLUMNS = (
+    "country_category",
+    "seller_name_new",
+    "seller_sku",
+    "new_old_product",
+    "max_fnsku",
+    "max_asin",
+    "max_sku",
+    "marketplace_status",
+    "seller_name_concat",
+    "onsale_sites",
+    "unsale_sites",
+    "sales_status",
+    "marketplace_concat",
+    "seller_name_copy",
+    "seller_name_ue",
+    "principal",
+    "sales_team_1",
+    "max_local_name",
+    "max_brand_name",
+    "max_cg_box_pcs",
+    "max_cg_price",
+    "max_cg_transport_costs",
+)
+
+DELETE_LISTING_BASIC_SYNC_SQL = "delete from etl_datasync.dashboard_replenishment_listing_basic_sync;"
+
+SELECT_LISTING_BASIC_SYNC_SQL = """
+select
+    country_category,
+    seller_name_new,
+    seller_sku,
+    null as new_old_product,
+    max(max_fnsku) as max_fnsku,
+    max(max_asin) as max_asin,
+    max(max_sku) as max_sku,
+    group_concat(distinct concat(marketplace, ':', status) separator ',') as marketplace_status,
+    group_concat(distinct seller_name separator ',') as seller_name_concat,
+    max(onsale_sites) as onsale_sites,
+    max(unsale_sites) as unsale_sites,
+    null as sales_status,
+    '汇总' as marketplace_concat,
+    case
+        when country_category = '北美站' then concat(max(seller_name_ue), '-US')
+        when country_category = '英国站' then concat(max(seller_name_ue), '-UK')
+        else concat(max(seller_name_ue), '-DE')
+    end as seller_name_copy,
+    max(seller_name_ue) as seller_name_ue,
+    max(principal) as principal,
+    max(sales_team_1) as sales_team_1,
+    max(max_local_name) as max_local_name,
+    max(max_brand_name) as max_brand_name,
+    max(max_cg_box_pcs) as max_cg_box_pcs,
+    max(max_cg_price) as max_cg_price,
+    max(max_cg_transport_costs) as max_cg_transport_costs
+from (
+    select
+        sml.seller_sku,
+        sml.fnsku as max_fnsku,
+        sml.asin as max_asin,
+        sml.local_sku as max_sku,
+        sml.marketplace,
+        sml.status,
+        sml.seller_name,
+        count(case when sml.status = '在售' then 1 end)
+            over (partition by sml.country_category, sml.seller_name_new, sml.seller_sku) as onsale_sites,
+        count(case when sml.status = '停售' then 1 end)
+            over (partition by sml.country_category, sml.seller_name_new, sml.seller_sku) as unsale_sites,
+        sml.seller_name_ue,
+        sml.seller_name_new,
+        sml.country_category,
+        sml.principal,
+        sml.sales_team_1,
+        max(local_name)
+            over (partition by sml.country_category, sml.seller_name_new, sml.seller_sku) as max_local_name,
+        max(brand_name)
+            over (partition by sml.country_category, sml.seller_name_new, sml.seller_sku) as max_brand_name,
+        max(cg_box_pcs)
+            over (partition by sml.country_category, sml.seller_name_new, sml.seller_sku) as max_cg_box_pcs,
+        max(cg_price)
+            over (partition by sml.country_category, sml.seller_name_new, sml.seller_sku) as max_cg_price,
+        max(cg_transport_costs)
+            over (partition by sml.country_category, sml.seller_name_new, sml.seller_sku) as max_cg_transport_costs
+    from etl_datasync.etl_dispose_lx_sales_mws_listing as sml
+    left join etl_datasync.etl_dispose_lx_product_local_product_info as plpi
+           on sml.seller_sku = plpi.seller_sku
+          and sml.marketplace = plpi.country
+          and sml.seller_name_new = plpi.seller_name_new
+    where length(sml.seller_sku) between 5 and 10
+) listing_basic
+group by country_category, seller_name_new, seller_sku
+"""
+
+FBA_SHIPMENT_COLUMNS = (
+    "country_category",
+    "seller_name_new",
+    "msku",
+    "min_receiving_time",
+    "max_receiving_time",
+    "receiving_cnt",
+    "days_since_launch",
+    "days_latest_delivery",
+    "since_launch_range",
+    "delivery_time_range",
+)
+
+DELETE_FBA_SHIPMENT_SYNC_SQL = "delete from etl_datasync.dashboard_replenishment_fba_shipment_sync;"
+
+SELECT_FBA_SHIPMENT_SYNC_SQL = """
+select
+    country_category,
+    seller_name_new,
+    msku,
+    min_receiving_time,
+    max_receiving_time,
+    receiving_cnt,
+    days_since_launch,
+    days_latest_delivery,
+    since_launch_range,
+    delivery_time_range
+from etl_datasync.ops_rpt_fba_shipment_basic_data
+where msku is not null
+  and msku <> ''
+  and seller_name_new is not null
+  and country_category is not null
+"""
+
+CHECK_DAILY_SNAPSHOTS_SQL = """
+select
+    (select count(*)
+     from etl_datasync.dashboard_inventory_daily_snapshot
+     where snapshot_date = %(snapshot_date)s) as inventory_rows,
+    (select count(*)
+     from etl_datasync.dashboard_restock_daily_snapshot
+     where snapshot_date = %(snapshot_date)s) as restock_rows;
+"""
+
+DELETE_SALABLE_DAYS_SQL = """
+delete from etl_datasync.pur_plan_prod_perf_salable_days_stat
+where sta_dt = %(biz_date)s;
+"""
+
+INSERT_SALABLE_DAYS_SQL = """
+insert into etl_datasync.pur_plan_prod_perf_salable_days_stat (
+    sta_dt,
+    country_category,
+    seller_name_new,
+    seller_sku_adj,
+    r_90d_salable_days,
+    r_30d_salable_days,
+    r_14d_salable_days,
+    r_7d_salable_days,
+    r_3d_salable_days,
+    sales_30,
+    available_total,
+    available_daily_sales_base,
+    available_salable_days
+)
+with candidate_keys as (
+    select
+        country_category,
+        seller_name_new,
+        seller_sku_adj
+    from etl_datasync.dashboard_product_performance_daily
+    where dt_date between %(candidate_start_date)s and %(biz_date)s
+      and seller_name not regexp 'baihuiyi|Yuanoboo|Bailboo|Qianytyy'
+      and seller_name_new not in ('gushili', 'Joochees', 'ouhao', 'pingter')
+      and seller_sku_adj is not null
+      and seller_sku_adj <> ''
+      and length(seller_sku_adj) between 5 and 10
+    group by country_category, seller_name_new, seller_sku_adj
+),
+product_daily as (
+    select
+        p.dt_date,
+        p.country_category,
+        p.seller_name_new,
+        p.seller_sku_adj,
+        sum(coalesce(p.sales_qty, 0)) as sales_qty,
+        max(coalesce(p.afn_fulfillable_quantity, 0)) as afn_fulfillable_quantity
+    from etl_datasync.dashboard_product_performance_daily p
+    inner join candidate_keys c
+            on p.country_category = c.country_category
+           and p.seller_name_new = c.seller_name_new
+           and p.seller_sku_adj = c.seller_sku_adj
+    where p.dt_date between %(product_start_date)s and %(biz_date)s
+      and p.seller_name not regexp 'baihuiyi|Yuanoboo|Bailboo|Qianytyy'
+    group by
+        p.dt_date,
+        p.country_category,
+        p.seller_name_new,
+        p.seller_sku_adj
+),
+salable as (
+    select
+        country_category,
+        seller_name_new,
+        seller_sku_adj,
+        sum(case when dt_date >= date_sub(%(biz_date)s, interval 89 day)
+                  and afn_fulfillable_quantity > 0 then 1 else 0 end) as r_90d_salable_days,
+        sum(case when dt_date >= date_sub(%(biz_date)s, interval 29 day)
+                  and afn_fulfillable_quantity > 0 then 1 else 0 end) as r_30d_salable_days,
+        sum(case when dt_date >= date_sub(%(biz_date)s, interval 13 day)
+                  and afn_fulfillable_quantity > 0 then 1 else 0 end) as r_14d_salable_days,
+        sum(case when dt_date >= date_sub(%(biz_date)s, interval 6 day)
+                  and afn_fulfillable_quantity > 0 then 1 else 0 end) as r_7d_salable_days,
+        sum(case when dt_date >= date_sub(%(biz_date)s, interval 2 day)
+                  and afn_fulfillable_quantity > 0 then 1 else 0 end) as r_3d_salable_days,
+        sum(case when dt_date >= date_sub(%(biz_date)s, interval 29 day)
+                  then sales_qty else 0 end) as sales_30
+    from product_daily
+    group by country_category, seller_name_new, seller_sku_adj
+),
+inventory_current as (
+    select
+        country_category,
+        seller_name_new,
+        seller_sku_adj,
+        sum(coalesce(available_total, 0)) as available_total
+    from etl_datasync.dashboard_inventory_daily_snapshot
+    where snapshot_date = %(snapshot_date)s
+    group by country_category, seller_name_new, seller_sku_adj
+)
+select
+    %(biz_date)s as sta_dt,
+    s.country_category,
+    s.seller_name_new,
+    s.seller_sku_adj,
+    coalesce(s.r_90d_salable_days, 0) as r_90d_salable_days,
+    coalesce(s.r_30d_salable_days, 0) as r_30d_salable_days,
+    coalesce(s.r_14d_salable_days, 0) as r_14d_salable_days,
+    coalesce(s.r_7d_salable_days, 0) as r_7d_salable_days,
+    coalesce(s.r_3d_salable_days, 0) as r_3d_salable_days,
+    coalesce(s.sales_30, 0) as sales_30,
+    coalesce(i.available_total, 0) as available_total,
+    coalesce(s.sales_30, 0) / nullif(s.r_30d_salable_days, 0) as available_daily_sales_base,
+    case
+        when coalesce(i.available_total, 0) = 0 then 0
+        else coalesce(i.available_total, 0)
+             / nullif(coalesce(s.sales_30, 0) / nullif(s.r_30d_salable_days, 0), 0)
+    end as available_salable_days
+from salable s
+left join inventory_current i
+       on s.country_category = i.country_category
+      and s.seller_name_new = i.seller_name_new
+      and s.seller_sku_adj = i.seller_sku_adj;
+"""
+
+REPLENISHMENT_RESULT_SQL = """
+delete from etl_datasync.dashboard_pur_plan_replenish_data
+where cur_date = %(snapshot_date)s;
+
+drop temporary table if exists tmp_pur_plan_candidate_keys;
+create temporary table tmp_pur_plan_candidate_keys as
+select
+    country_category,
+    seller_name_new,
+    seller_sku_adj,
+    max(local_sku) as max_sku,
+    group_concat(distinct seller_name separator ',') as seller_name_concat
+from etl_datasync.dashboard_product_performance_daily
+where dt_date between %(candidate_start_date)s and %(biz_date)s
+  and seller_name not regexp 'baihuiyi|Yuanoboo|Bailboo|Qianytyy'
+  and seller_name_new not in ('gushili', 'Joochees', 'ouhao', 'pingter')
+  and seller_sku_adj is not null
+  and seller_sku_adj <> ''
+  and length(seller_sku_adj) between 5 and 10
+group by country_category, seller_name_new, seller_sku_adj;
+
+drop temporary table if exists tmp_prod_perf_sku_metrics;
+create temporary table tmp_prod_perf_sku_metrics as
+select
+    p.country_category,
+    p.seller_name_new,
+    p.seller_sku_adj,
+    sum(case when p.dt_date >= date_sub(%(biz_date)s, interval 89 day) then coalesce(p.sales_qty, 0) else 0 end) as sales_90,
+    sum(case when p.dt_date >= date_sub(%(biz_date)s, interval 29 day) then coalesce(p.sales_qty, 0) else 0 end) as sales_30,
+    sum(case when p.dt_date >= date_sub(%(biz_date)s, interval 13 day) then coalesce(p.sales_qty, 0) else 0 end) as sales_14,
+    sum(case when p.dt_date >= date_sub(%(biz_date)s, interval 6 day) then coalesce(p.sales_qty, 0) else 0 end) as sales_7,
+    sum(case when p.dt_date >= date_sub(%(biz_date)s, interval 2 day) then coalesce(p.sales_qty, 0) else 0 end) as sales_3,
+    sum(case when p.dt_date >= date_sub(%(biz_date)s, interval 29 day) then coalesce(p.sales_amount, 0) else 0 end) as amount_30,
+    sum(case when p.dt_date >= date_sub(%(biz_date)s, interval 13 day) then coalesce(p.sales_amount, 0) else 0 end) as amount_14,
+    sum(case when p.dt_date >= date_sub(%(biz_date)s, interval 6 day) then coalesce(p.sales_amount, 0) else 0 end) as amount_7,
+    sum(case when p.dt_date >= date_sub(%(biz_date)s, interval 2 day) then coalesce(p.sales_amount, 0) else 0 end) as amount_3,
+    sum(case when p.dt_date >= date_sub(%(biz_date)s, interval 29 day) then coalesce(p.order_gross_profit, 0) else 0 end) as pprofit_30,
+    sum(case when p.dt_date >= date_sub(%(biz_date)s, interval 13 day) then coalesce(p.order_gross_profit, 0) else 0 end) as pprofit_14,
+    sum(case when p.dt_date >= date_sub(%(biz_date)s, interval 6 day) then coalesce(p.order_gross_profit, 0) else 0 end) as pprofit_7,
+    sum(case when p.dt_date >= date_sub(%(biz_date)s, interval 2 day) then coalesce(p.order_gross_profit, 0) else 0 end) as pprofit_3
+from etl_datasync.dashboard_product_performance_daily p
+inner join tmp_pur_plan_candidate_keys c
+        on p.country_category = c.country_category
+       and p.seller_name_new = c.seller_name_new
+       and p.seller_sku_adj = c.seller_sku_adj
+where p.dt_date between %(product_start_date)s and %(biz_date)s
+  and p.seller_name not regexp 'baihuiyi|Yuanoboo|Bailboo|Qianytyy'
+group by p.country_category, p.seller_name_new, p.seller_sku_adj;
+
+drop temporary table if exists tmp_pur_plan_fba_current;
+create temporary table tmp_pur_plan_fba_current as
+select
+    country_category,
+    seller_name_new,
+    seller_sku_adj,
+    sum(coalesce(total, 0)) as total,
+    sum(coalesce(total_price, 0)) as total_price,
+    sum(coalesce(available_total, 0)) as available_total,
+    sum(coalesce(available_price, 0)) as available_price,
+    sum(coalesce(afn_fulfillable_quantity, 0)) as afn_fulfillable_quantity,
+    sum(coalesce(stock_up_num, 0)) as stock_up_num,
+    sum(coalesce(stock_up_num_price, 0)) as stock_up_num_price,
+    sum(coalesce(afn_unsellable_quantity, 0)) as afn_unsellable_quantity
+from etl_datasync.dashboard_inventory_daily_snapshot
+where snapshot_date = %(snapshot_date)s
+group by country_category, seller_name_new, seller_sku_adj;
+
+drop temporary table if exists tmp_pur_plan_replenish_sug_current;
+create temporary table tmp_pur_plan_replenish_sug_current as
+select
+    country_category,
+    seller_name_new,
+    seller_sku_adj,
+    sum(coalesce(local_quantity, 0)) as local_quantity,
+    sum(coalesce(purchase_shipping_quantity, 0)) as sc_quantity_purchase_shipping,
+    sum(coalesce(purchase_plan_quantity, 0)) as sc_quantity_purchase_plan,
+    sum(coalesce(local_valid_quantity, 0)) as sc_quantity_local_valid,
+    sum(coalesce(local_qc_quantity, 0)) as sc_quantity_local_qc
+from etl_datasync.dashboard_restock_daily_snapshot
+where snapshot_date = %(snapshot_date)s
+group by country_category, seller_name_new, seller_sku_adj;
+
+drop temporary table if exists tmp_pur_plan_support_layer_all;
+create temporary table tmp_pur_plan_support_layer_all as
+select
+    base.*,
+    case
+        when coalesce(base.pre_daily_avg_sales, 0) <= 0 then null
+        else base.support_inventory_qty / base.pre_daily_avg_sales
+    end as inventory_support_days,
+    case
+        when coalesce(base.pre_daily_avg_sales, 0) <= 0 then 5
+        when base.support_inventory_qty / base.pre_daily_avg_sales <= 35 then 1
+        when base.support_inventory_qty / base.pre_daily_avg_sales <= 65 then 2
+        when base.support_inventory_qty / base.pre_daily_avg_sales <= 90 then 3
+        when base.support_inventory_qty / base.pre_daily_avg_sales > 90 then 4
+        else 2
+    end as support_replenish_level_sort,
+    case
+        when coalesce(base.pre_daily_avg_sales, 0) <= 0 then '日销为0'
+        when base.support_inventory_qty / base.pre_daily_avg_sales <= 35 then '紧急补货'
+        when base.support_inventory_qty / base.pre_daily_avg_sales <= 65 then '建议补货'
+        when base.support_inventory_qty / base.pre_daily_avg_sales <= 90 then '计划补货'
+        when base.support_inventory_qty / base.pre_daily_avg_sales > 90 then '库存充足'
+        else '建议补货'
+    end as support_replenish_level
+from (
+    select
+        c.country_category,
+        c.seller_name_new,
+        c.seller_sku_adj,
+        coalesce(nullif(l.new_old_product, ''), '老品') as new_old_product,
+        l.max_fnsku,
+        l.max_asin,
+        coalesce(l.max_sku, c.max_sku) as max_sku,
+        l.marketplace_status,
+        coalesce(l.seller_name_concat, c.seller_name_concat) as seller_name_concat,
+        l.onsale_sites,
+        l.unsale_sites,
+        l.sales_status,
+        l.marketplace_concat,
+        l.seller_name_copy,
+        l.seller_name_ue,
+        l.max_local_name,
+        l.max_brand_name,
+        l.principal,
+        l.sales_team_1,
+        fs.max_receiving_time,
+        fs.receiving_cnt,
+        coalesce(m.sales_90, 0) as sales_90,
+        coalesce(m.sales_30, 0) as sales_30,
+        coalesce(m.sales_14, 0) as sales_14,
+        coalesce(m.sales_7, 0) as sales_7,
+        coalesce(m.sales_3, 0) as sales_3,
+        coalesce(m.amount_30, 0) as amount_30,
+        coalesce(m.amount_14, 0) as amount_14,
+        coalesce(m.amount_7, 0) as amount_7,
+        coalesce(m.amount_3, 0) as amount_3,
+        coalesce(m.pprofit_30, 0) as pprofit_30,
+        coalesce(m.pprofit_14, 0) as pprofit_14,
+        coalesce(m.pprofit_7, 0) as pprofit_7,
+        coalesce(m.pprofit_3, 0) as pprofit_3,
+        m.pprofit_30 / nullif(m.amount_30, 0) as pprofit_ratio_30,
+        m.pprofit_14 / nullif(m.amount_14, 0) as pprofit_ratio_14,
+        m.pprofit_7 / nullif(m.amount_7, 0) as pprofit_ratio_7,
+        m.pprofit_3 / nullif(m.amount_3, 0) as pprofit_ratio_3,
+        coalesce(f.total, 0) as total,
+        coalesce(f.total_price, 0) as total_price,
+        coalesce(f.available_total, 0) as available_total,
+        coalesce(f.available_price, 0) as available_price,
+        coalesce(f.afn_fulfillable_quantity, 0) as afn_fulfillable_quantity,
+        coalesce(f.stock_up_num, 0) as stock_up_num,
+        coalesce(f.stock_up_num_price, 0) as stock_up_num_price,
+        coalesce(f.afn_unsellable_quantity, 0) as afn_unsellable_quantity,
+        coalesce(r.local_quantity, 0) as local_quantity,
+        coalesce(r.sc_quantity_purchase_shipping, 0) as sc_quantity_purchase_shipping,
+        coalesce(r.sc_quantity_purchase_plan, 0) as sc_quantity_purchase_plan,
+        coalesce(r.sc_quantity_local_valid, 0) as sc_quantity_local_valid,
+        coalesce(r.sc_quantity_local_qc, 0) as sc_quantity_local_qc,
+        coalesce(ks.r_90d_salable_days, 0) as r_90d_salable_days,
+        coalesce(ks.r_30d_salable_days, 0) as r_30d_salable_days,
+        coalesce(ks.r_14d_salable_days, 0) as r_14d_salable_days,
+        coalesce(ks.r_7d_salable_days, 0) as r_7d_salable_days,
+        coalesce(ks.r_3d_salable_days, 0) as r_3d_salable_days,
+        case when coalesce(ks.r_3d_salable_days, 0) > 0 then coalesce(m.sales_3, 0) / ks.r_3d_salable_days else coalesce(m.sales_3, 0) / 2 end as adjusted_daily_sales_3d,
+        case when coalesce(ks.r_7d_salable_days, 0) > 0 then coalesce(m.sales_7, 0) / ks.r_7d_salable_days else coalesce(m.sales_7, 0) / 3 end as adjusted_daily_sales_7d,
+        case when coalesce(ks.r_14d_salable_days, 0) > 0 then coalesce(m.sales_14, 0) / ks.r_14d_salable_days else coalesce(m.sales_14, 0) / 7 end as adjusted_daily_sales_14d,
+        case when coalesce(ks.r_30d_salable_days, 0) > 0 then coalesce(m.sales_30, 0) / ks.r_30d_salable_days else coalesce(m.sales_30, 0) / 15 end as adjusted_daily_sales_30d,
+        (
+            coalesce(case when coalesce(ks.r_7d_salable_days, 0) > 0 then coalesce(m.sales_7, 0) / ks.r_7d_salable_days else coalesce(m.sales_7, 0) / 3 end, 0) * 0.6
+            + coalesce(case when coalesce(ks.r_14d_salable_days, 0) > 0 then coalesce(m.sales_14, 0) / ks.r_14d_salable_days else coalesce(m.sales_14, 0) / 7 end, 0) * 0.2
+            + coalesce(case when coalesce(ks.r_30d_salable_days, 0) > 0 then coalesce(m.sales_30, 0) / ks.r_30d_salable_days else coalesce(m.sales_30, 0) / 15 end, 0) * 0.2
+        ) as pre_daily_avg_sales,
+        coalesce(nullif(l.max_cg_box_pcs, 0), 50) as max_cg_box_pcs,
+        l.max_cg_price,
+        l.max_cg_transport_costs,
+        4 as pre_replenish_comp_months,
+        coalesce(f.available_total, 0) + coalesce(f.stock_up_num, 0) + coalesce(r.local_quantity, 0) as support_inventory_qty,
+        4 * 30 * (
+            coalesce(case when coalesce(ks.r_7d_salable_days, 0) > 0 then coalesce(m.sales_7, 0) / ks.r_7d_salable_days else coalesce(m.sales_7, 0) / 3 end, 0) * 0.6
+            + coalesce(case when coalesce(ks.r_14d_salable_days, 0) > 0 then coalesce(m.sales_14, 0) / ks.r_14d_salable_days else coalesce(m.sales_14, 0) / 7 end, 0) * 0.2
+            + coalesce(case when coalesce(ks.r_30d_salable_days, 0) > 0 then coalesce(m.sales_30, 0) / ks.r_30d_salable_days else coalesce(m.sales_30, 0) / 15 end, 0) * 0.2
+        )
+        - coalesce(f.available_total, 0)
+        - coalesce(f.stock_up_num, 0)
+        - coalesce(r.local_quantity, 0)
+        - coalesce(r.sc_quantity_purchase_plan, 0) as pre_normal_replenish_need_qty,
+        50 as pre_replenish_trigger_qty,
+        0 as history_recovery_flag
+    from tmp_pur_plan_candidate_keys c
+    left join tmp_prod_perf_sku_metrics m
+           on c.country_category = m.country_category
+          and c.seller_name_new = m.seller_name_new
+          and c.seller_sku_adj = m.seller_sku_adj
+    left join tmp_pur_plan_fba_current f
+           on c.country_category = f.country_category
+          and c.seller_name_new = f.seller_name_new
+          and c.seller_sku_adj = f.seller_sku_adj
+    left join tmp_pur_plan_replenish_sug_current r
+           on c.country_category = r.country_category
+          and c.seller_name_new = r.seller_name_new
+          and c.seller_sku_adj = r.seller_sku_adj
+    left join etl_datasync.dashboard_replenishment_listing_basic_sync l
+           on c.country_category = l.country_category
+          and c.seller_name_new = l.seller_name_new
+          and c.seller_sku_adj = l.seller_sku
+    left join etl_datasync.dashboard_replenishment_fba_shipment_sync fs
+           on c.country_category = fs.country_category
+          and c.seller_name_new = fs.seller_name_new
+          and c.seller_sku_adj = fs.msku
+    left join etl_datasync.pur_plan_prod_perf_salable_days_stat ks
+           on ks.sta_dt = %(biz_date)s
+          and c.country_category = ks.country_category
+          and c.seller_name_new = ks.seller_name_new
+          and c.seller_sku_adj = ks.seller_sku_adj
+) base;
+
+insert into etl_datasync.dashboard_pur_plan_replenish_data (
+    cur_date, new_old_product, seller_sku_adj, max_fnsku, max_asin, max_sku,
+    marketplace_status, seller_name_concat, onsale_sites, unsale_sites, sales_status,
+    marketplace_concat, seller_name_copy, seller_name_ue, seller_name_new, country_category,
+    max_local_name, max_brand_name, principal, sales_team_1, max_receiving_time, receiving_cnt,
+    max_cg_box_pcs, max_cg_price, max_cg_transport_costs, stockout_status,
+    pre_daily_avg_sales, pre_normal_replenish_need_qty, pre_replenish_trigger_qty,
+    history_recovery_flag, support_inventory_qty, inventory_support_days, support_replenish_level, support_replenish_level_sort,
+    abcd_category, gp_margin_range, predict_abcd_category,
+    fba_local_quantity, total, available_total, afn_fulfillable_quantity, stock_up_num, afn_unsellable_quantity,
+    sc_quantity_local_valid, sc_quantity_purchase_shipping, sc_quantity_purchase_plan, sc_quantity_local_qc, local_quantity,
+    r_90d_salable_days, r_30d_salable_days, r_14d_salable_days, r_7d_salable_days, r_3d_salable_days,
+    sales_90d, final_sales_30d, final_sales_14d, final_sales_7d, final_sales_3d,
+    amount_30d, amount_14d, amount_7d, amount_3d,
+    pprofit_30d, pprofit_14d, pprofit_7d, pprofit_3d,
+    pprofit_ratio_30d, pprofit_ratio_14d, pprofit_ratio_7d, pprofit_ratio_3d,
+    new_old_prod_jg, daily_avg_sales, replenish_comp_months, salable_days,
+    `60d_stocko_qty`, `90d_stocko_qty`, `180d_stocko_qty`, replenish_dur_calc_stocko_qty,
+    replenish_need_qty, replenish_trigger_qty, sales_adj_factor, final_profit_rate,
+    replenish_qty, replenish_box_qty, replenish_cost,
+    amz_instock_sales_ratio, instock_intrans_pur_sales_ratio, fllow_flag
+)
+select
+    %(snapshot_date)s as cur_date,
+    new_old_product,
+    seller_sku_adj,
+    max_fnsku,
+    max_asin,
+    max_sku,
+    marketplace_status,
+    seller_name_concat,
+    onsale_sites,
+    unsale_sites,
+    sales_status,
+    marketplace_concat,
+    seller_name_copy,
+    seller_name_ue,
+    seller_name_new,
+    country_category,
+    max_local_name,
+    max_brand_name,
+    principal,
+    sales_team_1,
+    max_receiving_time,
+    receiving_cnt,
+    max_cg_box_pcs,
+    max_cg_price,
+    max_cg_transport_costs,
+    case
+        when inventory_support_days > 60 then '不会缺货'
+        when stock_up_num = 0 and local_quantity = 0 then '缺货未补货'
+        else '缺货已补货'
+    end as stockout_status,
+    pre_daily_avg_sales,
+    pre_normal_replenish_need_qty,
+    pre_replenish_trigger_qty,
+    history_recovery_flag,
+    support_inventory_qty,
+    inventory_support_days,
+    support_replenish_level,
+    support_replenish_level_sort,
+    case
+        when adjusted_daily_sales_30d >= 5 and pprofit_ratio_30 >= 0.15 then '明星产品'
+        when adjusted_daily_sales_30d >= 1 and adjusted_daily_sales_30d < 5 and pprofit_ratio_30 >= 0.25 then '明星产品'
+        when adjusted_daily_sales_30d >= 5 and pprofit_ratio_30 >= 0.05 and pprofit_ratio_30 < 0.15 then '潜力产品'
+        when adjusted_daily_sales_30d >= 1 and adjusted_daily_sales_30d < 5 and pprofit_ratio_30 >= 0.10 and pprofit_ratio_30 < 0.25 then '潜力产品'
+        when adjusted_daily_sales_30d >= 1 and adjusted_daily_sales_30d < 5 and pprofit_ratio_30 >= 0.05 and pprofit_ratio_30 < 0.10 then '瘦狗产品'
+        when adjusted_daily_sales_30d < 1 and pprofit_ratio_30 >= 0.05 then '瘦狗产品'
+        when adjusted_daily_sales_30d = 0 or (adjusted_daily_sales_30d > 1 and pprofit_ratio_30 < 0.05) then '问题产品'
+        else '问题产品'
+    end as abcd_category,
+    case
+        when pprofit_ratio_30 >= 0.15 then '>=15%%'
+        when pprofit_ratio_30 >= 0.10 then '10%%-15%%'
+        when pprofit_ratio_30 >= 0.05 then '5%%-10%%'
+        when pprofit_ratio_30 >= 0 then '0%%-5%%'
+        else '<0%%'
+    end as gp_margin_range,
+    case
+        when pprofit_ratio_7 >= 0.15 and sales_7 >= 7 then 'A'
+        when pprofit_ratio_7 >= 0.10 and sales_7 >= 3 then 'B'
+        when pprofit_ratio_7 >= 0.05 then 'C'
+        when pprofit_ratio_7 >= 0 then 'D'
+        else 'E'
+    end as predict_abcd_category,
+    total + local_quantity as fba_local_quantity,
+    total,
+    available_total,
+    afn_fulfillable_quantity,
+    stock_up_num,
+    afn_unsellable_quantity,
+    sc_quantity_local_valid,
+    sc_quantity_purchase_shipping,
+    sc_quantity_purchase_plan,
+    sc_quantity_local_qc,
+    local_quantity,
+    r_90d_salable_days,
+    r_30d_salable_days,
+    r_14d_salable_days,
+    r_7d_salable_days,
+    r_3d_salable_days,
+    sales_90 as sales_90d,
+    sales_30 as final_sales_30d,
+    sales_14 as final_sales_14d,
+    sales_7 as final_sales_7d,
+    sales_3 as final_sales_3d,
+    amount_30 as amount_30d,
+    amount_14 as amount_14d,
+    amount_7 as amount_7d,
+    amount_3 as amount_3d,
+    pprofit_30 as pprofit_30d,
+    pprofit_14 as pprofit_14d,
+    pprofit_7 as pprofit_7d,
+    pprofit_3 as pprofit_3d,
+    pprofit_ratio_30 as pprofit_ratio_30d,
+    pprofit_ratio_14 as pprofit_ratio_14d,
+    pprofit_ratio_7 as pprofit_ratio_7d,
+    pprofit_ratio_3 as pprofit_ratio_3d,
+    '老品' as new_old_prod_jg,
+    pre_daily_avg_sales as daily_avg_sales,
+    pre_replenish_comp_months as replenish_comp_months,
+    case when pre_daily_avg_sales <= 0 then null else (total + local_quantity) / pre_daily_avg_sales end as salable_days,
+    60 * pre_daily_avg_sales - (total + local_quantity) as `60d_stocko_qty`,
+    90 * pre_daily_avg_sales - (total + local_quantity) as `90d_stocko_qty`,
+    180 * pre_daily_avg_sales - (total + local_quantity) as `180d_stocko_qty`,
+    pre_normal_replenish_need_qty as replenish_dur_calc_stocko_qty,
+    case when support_replenish_level_sort in (1, 2, 3) then pre_normal_replenish_need_qty else 0 end as replenish_need_qty,
+    pre_replenish_trigger_qty as replenish_trigger_qty,
+    1 as sales_adj_factor,
+    pprofit_ratio_30 as final_profit_rate,
+    case
+        when support_replenish_level_sort in (1, 2, 3) and pre_normal_replenish_need_qty > 0
+            then greatest(round(pre_normal_replenish_need_qty / max_cg_box_pcs, 0), 1) * max_cg_box_pcs
+        else 0
+    end as replenish_qty,
+    case
+        when support_replenish_level_sort in (1, 2, 3) and pre_normal_replenish_need_qty > 0
+            then greatest(round(pre_normal_replenish_need_qty / max_cg_box_pcs, 0), 1)
+        else null
+    end as replenish_box_qty,
+    case
+        when support_replenish_level_sort in (1, 2, 3) and pre_normal_replenish_need_qty > 0
+            then greatest(round(pre_normal_replenish_need_qty / max_cg_box_pcs, 0), 1) * max_cg_box_pcs
+                 * (max_cg_price + max_cg_transport_costs)
+        else 0
+    end as replenish_cost,
+    case when sales_30 = 0 then null else available_total / sales_30 end as amz_instock_sales_ratio,
+    case when sales_30 = 0 then null else (total + local_quantity) / sales_30 end as instock_intrans_pur_sales_ratio,
+    1 as fllow_flag
+from tmp_pur_plan_support_layer_all;
+"""
+
+REPLENISHMENT_TEMPORARY_SQL = (
+    CHECK_DAILY_SNAPSHOTS_SQL,
+    INSERT_SALABLE_DAYS_SQL,
+    REPLENISHMENT_RESULT_SQL,
+)
+
+STEPS = {
+    "listing_basic_sync": SourceLoadStep(
+        "listing_basic_sync",
+        DELETE_LISTING_BASIC_SYNC_SQL,
+        SELECT_LISTING_BASIC_SYNC_SQL,
+        "etl_datasync.dashboard_replenishment_listing_basic_sync",
+        LISTING_BASIC_COLUMNS,
+    ),
+    "fba_shipment_sync": SourceLoadStep(
+        "fba_shipment_sync",
+        DELETE_FBA_SHIPMENT_SYNC_SQL,
+        SELECT_FBA_SHIPMENT_SYNC_SQL,
+        "etl_datasync.dashboard_replenishment_fba_shipment_sync",
+        FBA_SHIPMENT_COLUMNS,
+    ),
+    "check_daily_snapshots": ReplenishmentStep("check_daily_snapshots", (CHECK_DAILY_SNAPSHOTS_SQL,)),
+    "salable_days_stat": ReplenishmentStep("salable_days_stat", (DELETE_SALABLE_DAYS_SQL, INSERT_SALABLE_DAYS_SQL)),
+    "replenishment_result": ReplenishmentStep(
+        "replenishment_result",
+        tuple(statement.strip() + ";" for statement in REPLENISHMENT_RESULT_SQL.split(";") if statement.strip()),
+    ),
+}
+
+
+def default_biz_date() -> date:
+    return date.today() - timedelta(days=1)
+
+
+def build_params(args: argparse.Namespace) -> dict[str, object]:
+    candidate_days = int(args.candidate_days or DEFAULT_CANDIDATE_DAYS)
+    if candidate_days < 1:
+        raise SystemExit("candidate_days must be at least 1")
+    biz_date = parse_day(args.biz_date) if args.biz_date else default_biz_date()
+    snapshot_date = parse_day(args.snapshot_date) if args.snapshot_date else date.today()
+    return {
+        "biz_date": biz_date,
+        "snapshot_date": snapshot_date,
+        "next_snapshot_date": snapshot_date + timedelta(days=1),
+        "period_start": biz_date - timedelta(days=89),
+        "period_end": biz_date,
+        "product_start_date": biz_date - timedelta(days=89),
+        "candidate_start_date": biz_date - timedelta(days=candidate_days - 1),
+        "candidate_days": candidate_days,
+    }
+
+
+def render_replenishment_sql(sql: str, schemas: SchemaConfig) -> str:
+    rendered = render_sql(sql, schemas)
+    rendered = rendered.replace("etl_datasync.pur_plan_", f"{schemas.target_schema}.pur_plan_")
+    return rendered
+
+
+def parse_steps(raw_steps: str) -> list[str]:
+    if raw_steps == "all":
+        return DEFAULT_STEP_ORDER[:]
+    step_names = [name.strip() for name in raw_steps.split(",") if name.strip()]
+    unknown = [name for name in step_names if name not in STEPS]
+    if unknown:
+        raise SystemExit(f"Unknown step(s): {', '.join(unknown)}")
+    return step_names
+
+
+def ensure_tables(conn, schemas: SchemaConfig) -> None:
+    with conn.cursor() as cursor:
+        for statement in DDL_STATEMENTS:
+            cursor.execute(render_replenishment_sql(statement, schemas))
+    conn.commit()
+
+
+def check_daily_snapshots(conn, schemas: SchemaConfig, params: dict[str, object]) -> None:
+    with conn.cursor() as cursor:
+        cursor.execute(render_replenishment_sql(CHECK_DAILY_SNAPSHOTS_SQL, schemas), params)
+        row = cursor.fetchone() or {}
+    inventory_rows = int(row.get("inventory_rows") or 0)
+    restock_rows = int(row.get("restock_rows") or 0)
+    if inventory_rows <= 0 or restock_rows <= 0:
+        raise RuntimeError(
+            "Missing daily snapshots for snapshot_date="
+            f"{params['snapshot_date']}: inventory_rows={inventory_rows}, restock_rows={restock_rows}"
+        )
+    print(
+        "[success] check_daily_snapshots: "
+        f"inventory_rows={inventory_rows}, restock_rows={restock_rows}"
+    )
+
+
+def execute_sql_step(conn, schemas: SchemaConfig, step: ReplenishmentStep, params: dict[str, object]) -> None:
+    if step.name == "check_daily_snapshots":
+        check_daily_snapshots(conn, schemas, params)
+        return
+
+    started_at = datetime.now()
+    affected_rows = 0
+    try:
+        with conn.cursor() as cursor:
+            for statement in step.statements:
+                cursor.execute(render_replenishment_sql(statement, schemas), params)
+                if statement.lstrip().lower().startswith(("insert", "delete")):
+                    affected_rows += max(cursor.rowcount, 0)
+                conn.commit()
+        log_task(conn, schemas, step.name, params, "success", affected_rows, started_at)
+        print(f"[success] {step.name}: affected_rows={affected_rows}")
+    except Exception:
+        conn.rollback()
+        error = traceback.format_exc()
+        log_task(conn, schemas, step.name, params, "failed", affected_rows, started_at, error)
+        print(f"[failed] {step.name}", file=sys.stderr)
+        raise
+
+
+def print_plan(step_names: list[str], params: dict[str, object], schemas: SchemaConfig) -> None:
+    print("Replenishment local ETL plan")
+    print(f"  biz_date        : {params['biz_date']}")
+    print(f"  snapshot_date   : {params['snapshot_date']}")
+    print(f"  candidate_start : {params['candidate_start_date']}")
+    print(f"  product_start   : {params['product_start_date']}")
+    print(f"  target_schema   : {schemas.target_schema}")
+    print(f"  steps           : {', '.join(step_names)}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Run replenishment local ETL setup.")
+    parser.add_argument("--biz-date", help="Business date, format YYYY-MM-DD. Default: yesterday.")
+    parser.add_argument("--snapshot-date", help="Inventory snapshot date, format YYYY-MM-DD. Default: today.")
+    parser.add_argument("--candidate-days", type=int, default=DEFAULT_CANDIDATE_DAYS)
+    parser.add_argument("--steps", default="all", help="Comma separated step names or all.")
+    parser.add_argument("--skip-ddl", action="store_true", help="Do not create local target tables before running.")
+    parser.add_argument("--batch-size", type=int, default=1000, help="Rows per local bulk insert from read-only source.")
+    parser.add_argument("--dry-run", action="store_true", help="Print plan only; do not connect or execute SQL.")
+    args = parser.parse_args()
+
+    apply_database_ini_env()
+    step_names = parse_steps(args.steps)
+    params = build_params(args)
+    schemas = build_schema_config()
+    print_plan(step_names, params, schemas)
+
+    if args.dry_run:
+        return
+
+    conn = connect_target()
+    needs_source = any(isinstance(STEPS[step_name], SourceLoadStep) for step_name in step_names)
+    source_conn = connect_source() if needs_source else None
+    try:
+        if not args.skip_ddl:
+            ensure_tables(conn, schemas)
+            print("[success] ensure_tables")
+        for step_name in step_names:
+            step = STEPS[step_name]
+            if isinstance(step, SourceLoadStep):
+                if source_conn is None:
+                    raise RuntimeError("Source connection is required for listing_basic_sync")
+                execute_source_load_step(conn, source_conn, schemas, step, params, args.batch_size)
+            else:
+                execute_sql_step(conn, schemas, step, params)
+    finally:
+        if source_conn is not None:
+            source_conn.close()
+        conn.close()
+
+
+if __name__ == "__main__":
+    main()

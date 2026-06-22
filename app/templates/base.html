@@ -6,7 +6,7 @@
   <title>{{ title }}</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community/styles/ag-grid.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community/styles/ag-theme-quartz.css">
-  <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}?v=20260605tables">
+  <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}?v=20260621replenishment-help1">
 </head>
 <body data-page="{{ page }}">
   <div class="app-shell">
@@ -50,6 +50,11 @@
           <span class="side-nav-icon">库</span>
           <span class="side-nav-label">库存</span>
           <span class="side-nav-full-label">库存周报</span>
+        </a>
+        <a class="side-nav-link {% if page == 'replenishment' %}active{% endif %}" href="/replenishment" title="补货计划">
+          <span class="side-nav-icon">补</span>
+          <span class="side-nav-label">补货</span>
+          <span class="side-nav-full-label">补货计划</span>
         </a>
         <a class="side-nav-link {% if page == 'price_review' %}active{% endif %}" href="/price-review" title="调价复盘">
           <span class="side-nav-icon">复</span>
