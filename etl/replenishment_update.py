@@ -14,7 +14,9 @@ from etl.dashboard_daily_update import (
     CREATE_SCHEMA_SQL,
     SchemaConfig,
     SourceLoadStep,
+    assert_source_select_only,
     build_schema_config,
+    build_target_insert_sql,
     connect_source,
     connect_target,
     execute_source_load_step,
@@ -132,6 +134,20 @@ create table if not exists etl_datasync.pur_plan_prod_perf_salable_days_stat (
     primary key (sta_dt, country_category, seller_name_new, seller_sku_adj),
     key idx_salable_lookup (country_category, seller_name_new, seller_sku_adj),
     key idx_salable_days (sta_dt, available_salable_days)
+) engine=InnoDB default charset=utf8mb4;
+"""
+
+CREATE_HISTORY_DAILY_SYNC_SQL = """
+create table if not exists etl_datasync.dashboard_replenishment_history_daily_sync (
+    dt_date date not null,
+    country_category varchar(64) not null,
+    seller_name_new varchar(128) not null,
+    seller_sku_adj varchar(128) not null,
+    day_volume decimal(18,4) not null default 0,
+    afn_fulfillable_quantity decimal(18,4) not null default 0,
+    synced_at datetime not null default current_timestamp,
+    primary key (dt_date, country_category, seller_name_new, seller_sku_adj),
+    key idx_repl_hist_lookup (country_category, seller_name_new, seller_sku_adj, dt_date)
 ) engine=InnoDB default charset=utf8mb4;
 """
 
@@ -307,6 +323,7 @@ DDL_STATEMENTS = (
     CREATE_SCHEMA_SQL,
     CREATE_LOG_TABLE_SQL,
     CREATE_SALABLE_DAYS_STAT_SQL,
+    CREATE_HISTORY_DAILY_SYNC_SQL,
     CREATE_LISTING_BASIC_SYNC_SQL,
     CREATE_FBA_SHIPMENT_SYNC_SQL,
     CREATE_REPLENISHMENT_RESULT_SQL,
@@ -437,6 +454,36 @@ where msku is not null
   and msku <> ''
   and seller_name_new is not null
   and country_category is not null
+"""
+
+HISTORY_DAILY_COLUMNS = (
+    "dt_date",
+    "country_category",
+    "seller_name_new",
+    "seller_sku_adj",
+    "day_volume",
+    "afn_fulfillable_quantity",
+)
+
+HISTORY_SOURCE_TABLES = {
+    2024: "etl_datasync.etl_dispose_lx_statistics_product_performance_2024",
+    2025: "etl_datasync.etl_dispose_lx_statistics_product_performance_2025",
+    2026: "etl_datasync.etl_dispose_lx_statistics_product_performance_2026",
+}
+
+DELETE_HISTORY_DAILY_SYNC_SQL = "delete from etl_datasync.dashboard_replenishment_history_daily_sync;"
+
+SELECT_HISTORY_DAILY_SYNC_SQL = """
+select
+    start_date as dt_date,
+    country_category,
+    seller_name_new,
+    seller_sku_adj,
+    sum(coalesce(volume, 0)) as day_volume,
+    max(afn_fulfillable_quantity) as afn_fulfillable_quantity
+from {history_source_table}
+where start_date between %(history_start_date)s and %(history_end_date)s
+group by start_date, country_category, seller_name_new, seller_sku_adj
 """
 
 CHECK_DAILY_SNAPSHOTS_SQL = """
@@ -642,30 +689,87 @@ from etl_datasync.dashboard_restock_daily_snapshot
 where snapshot_date = %(snapshot_date)s
 group by country_category, seller_name_new, seller_sku_adj;
 
-drop temporary table if exists tmp_pur_plan_support_layer_all;
-create temporary table tmp_pur_plan_support_layer_all as
+drop temporary table if exists tmp_pur_plan_future_history_stat;
+create temporary table tmp_pur_plan_future_history_stat as
 select
-    base.*,
-    case
-        when coalesce(base.pre_daily_avg_sales, 0) <= 0 then null
-        else base.support_inventory_qty / base.pre_daily_avg_sales
-    end as inventory_support_days,
-    case
-        when coalesce(base.pre_daily_avg_sales, 0) <= 0 then 5
-        when base.support_inventory_qty / base.pre_daily_avg_sales <= 35 then 1
-        when base.support_inventory_qty / base.pre_daily_avg_sales <= 65 then 2
-        when base.support_inventory_qty / base.pre_daily_avg_sales <= 90 then 3
-        when base.support_inventory_qty / base.pre_daily_avg_sales > 90 then 4
-        else 2
-    end as support_replenish_level_sort,
-    case
-        when coalesce(base.pre_daily_avg_sales, 0) <= 0 then '日销为0'
-        when base.support_inventory_qty / base.pre_daily_avg_sales <= 35 then '紧急补货'
-        when base.support_inventory_qty / base.pre_daily_avg_sales <= 65 then '建议补货'
-        when base.support_inventory_qty / base.pre_daily_avg_sales <= 90 then '计划补货'
-        when base.support_inventory_qty / base.pre_daily_avg_sales > 90 then '库存充足'
-        else '建议补货'
-    end as support_replenish_level
+    h.country_category,
+    h.seller_name_new,
+    h.seller_sku_adj,
+    sum(case when h.afn_fulfillable_quantity <> 0 then 1 else 0 end) as future_instock_days,
+    sum(case when h.afn_fulfillable_quantity <> 0 then h.day_volume else 0 end) as future_instock_sales
+from etl_datasync.dashboard_replenishment_history_daily_sync h
+inner join tmp_pur_plan_candidate_keys c
+        on h.country_category = c.country_category
+       and h.seller_name_new = c.seller_name_new
+       and h.seller_sku_adj = c.seller_sku_adj
+where h.dt_date between date_sub(%(biz_date)s, interval 1 year)
+                    and date_add(date_sub(%(biz_date)s, interval 1 year), interval 90 day)
+group by h.country_category, h.seller_name_new, h.seller_sku_adj;
+
+drop temporary table if exists tmp_pur_plan_prev_history_stat;
+create temporary table tmp_pur_plan_prev_history_stat as
+select
+    h.country_category,
+    h.seller_name_new,
+    h.seller_sku_adj,
+    sum(case when h.afn_fulfillable_quantity <> 0 then 1 else 0 end) as prev_instock_days,
+    sum(case when h.afn_fulfillable_quantity <> 0 then h.day_volume else 0 end) as prev_matched_sales
+from etl_datasync.dashboard_replenishment_history_daily_sync h
+inner join tmp_pur_plan_candidate_keys c
+        on h.country_category = c.country_category
+       and h.seller_name_new = c.seller_name_new
+       and h.seller_sku_adj = c.seller_sku_adj
+where h.dt_date between date_sub(date_sub(%(biz_date)s, interval 1 year), interval 90 day)
+                    and date_sub(%(biz_date)s, interval 1 year)
+group by h.country_category, h.seller_name_new, h.seller_sku_adj;
+
+drop temporary table if exists tmp_pur_plan_sales_change_rate;
+create temporary table tmp_pur_plan_sales_change_rate as
+select
+    ratio_base.*,
+    least(
+        greatest(
+            case
+                when future_instock_days < 45 then null
+                when prev_instock_days < 45 then null
+                when prev_matched_sales_adj is null or prev_matched_sales_adj = 0 then null
+                else ((future_instock_sales_adj - prev_matched_sales_adj) / greatest(prev_matched_sales_adj, 30))
+                    * least(prev_matched_sales_adj / 50.0, 1.0)
+            end,
+            -0.5
+        ),
+        1.5
+    ) as sales_change_rate_adj
+from (
+    select
+        future_stat.country_category,
+        future_stat.seller_name_new,
+        future_stat.seller_sku_adj,
+        future_stat.future_instock_days,
+        future_stat.future_instock_sales,
+        prev_stat.prev_instock_days,
+        prev_stat.prev_matched_sales,
+        case
+            when future_stat.future_instock_days = 0 then null
+            when future_stat.future_instock_days < 90 then future_stat.future_instock_sales / future_stat.future_instock_days * 90
+            else future_stat.future_instock_sales
+        end as future_instock_sales_adj,
+        case
+            when prev_stat.prev_instock_days = 0 then null
+            when prev_stat.prev_instock_days < 90 then prev_stat.prev_matched_sales / prev_stat.prev_instock_days * 90
+            else prev_stat.prev_matched_sales
+        end as prev_matched_sales_adj
+    from tmp_pur_plan_future_history_stat future_stat
+    left join tmp_pur_plan_prev_history_stat prev_stat
+           on future_stat.country_category = prev_stat.country_category
+          and future_stat.seller_name_new = prev_stat.seller_name_new
+          and future_stat.seller_sku_adj = prev_stat.seller_sku_adj
+) ratio_base;
+
+drop temporary table if exists tmp_pur_plan_support_metric_base;
+create temporary table tmp_pur_plan_support_metric_base as
+select
+    metric_base.*
 from (
     select
         c.country_category,
@@ -724,31 +828,55 @@ from (
         coalesce(ks.r_14d_salable_days, 0) as r_14d_salable_days,
         coalesce(ks.r_7d_salable_days, 0) as r_7d_salable_days,
         coalesce(ks.r_3d_salable_days, 0) as r_3d_salable_days,
-        case when coalesce(ks.r_3d_salable_days, 0) > 0 then coalesce(m.sales_3, 0) / ks.r_3d_salable_days else coalesce(m.sales_3, 0) / 2 end as adjusted_daily_sales_3d,
-        case when coalesce(ks.r_7d_salable_days, 0) > 0 then coalesce(m.sales_7, 0) / ks.r_7d_salable_days else coalesce(m.sales_7, 0) / 3 end as adjusted_daily_sales_7d,
-        case when coalesce(ks.r_14d_salable_days, 0) > 0 then coalesce(m.sales_14, 0) / ks.r_14d_salable_days else coalesce(m.sales_14, 0) / 7 end as adjusted_daily_sales_14d,
-        case when coalesce(ks.r_30d_salable_days, 0) > 0 then coalesce(m.sales_30, 0) / ks.r_30d_salable_days else coalesce(m.sales_30, 0) / 15 end as adjusted_daily_sales_30d,
-        (
-            coalesce(case when coalesce(ks.r_7d_salable_days, 0) > 0 then coalesce(m.sales_7, 0) / ks.r_7d_salable_days else coalesce(m.sales_7, 0) / 3 end, 0) * 0.6
-            + coalesce(case when coalesce(ks.r_14d_salable_days, 0) > 0 then coalesce(m.sales_14, 0) / ks.r_14d_salable_days else coalesce(m.sales_14, 0) / 7 end, 0) * 0.2
-            + coalesce(case when coalesce(ks.r_30d_salable_days, 0) > 0 then coalesce(m.sales_30, 0) / ks.r_30d_salable_days else coalesce(m.sales_30, 0) / 15 end, 0) * 0.2
-        ) as pre_daily_avg_sales,
-        coalesce(nullif(l.max_cg_box_pcs, 0), 50) as max_cg_box_pcs,
+        coalesce(ks.r_90d_salable_days, 0) as hist_90d_instock_days,
+        coalesce(m.sales_90, 0) as hist_90d_instock_sales,
+        case
+            when coalesce(ks.r_90d_salable_days, 0) > 0 then coalesce(m.sales_90, 0) / ks.r_90d_salable_days
+            else 0
+        end as hist_90d_instock_daily_sales,
+        scr.sales_change_rate_adj,
+        case
+            when coalesce(ks.r_30d_salable_days, 0) >= 7 then
+                case when coalesce(ks.r_3d_salable_days, 0) > 0 then coalesce(m.sales_3, 0) / ks.r_3d_salable_days else 0 end
+            else coalesce(m.sales_3, 0) / greatest(coalesce(ks.r_3d_salable_days, 0), 2)
+        end as adjusted_daily_sales_3d,
+        case
+            when coalesce(ks.r_30d_salable_days, 0) >= 7 then
+                case
+                    when coalesce(ks.r_7d_salable_days, 0) >= 7 then coalesce(m.sales_7, 0) / ks.r_7d_salable_days
+                    else least(
+                        case when coalesce(ks.r_7d_salable_days, 0) > 0 then coalesce(m.sales_7, 0) / ks.r_7d_salable_days else 0 end,
+                        (case when coalesce(ks.r_7d_salable_days, 0) > 0 then coalesce(m.sales_7, 0) / ks.r_7d_salable_days else 0 end)
+                            * (ks.r_7d_salable_days / (ks.r_7d_salable_days + 3))
+                        + (coalesce(m.sales_30, 0) / ks.r_30d_salable_days)
+                            * (1 - ks.r_7d_salable_days / (ks.r_7d_salable_days + 3))
+                    )
+                end
+            else coalesce(m.sales_7, 0) / greatest(coalesce(ks.r_7d_salable_days, 0), 3)
+        end as adjusted_daily_sales_7d,
+        case
+            when coalesce(ks.r_30d_salable_days, 0) >= 7 then
+                case
+                    when coalesce(ks.r_14d_salable_days, 0) >= 14 then coalesce(m.sales_14, 0) / ks.r_14d_salable_days
+                    else least(
+                        case when coalesce(ks.r_14d_salable_days, 0) > 0 then coalesce(m.sales_14, 0) / ks.r_14d_salable_days else 0 end,
+                        (case when coalesce(ks.r_14d_salable_days, 0) > 0 then coalesce(m.sales_14, 0) / ks.r_14d_salable_days else 0 end)
+                            * (ks.r_14d_salable_days / (ks.r_14d_salable_days + 7))
+                        + (coalesce(m.sales_30, 0) / ks.r_30d_salable_days)
+                            * (1 - ks.r_14d_salable_days / (ks.r_14d_salable_days + 7))
+                    )
+                end
+            else coalesce(m.sales_14, 0) / greatest(coalesce(ks.r_14d_salable_days, 0), 7)
+        end as adjusted_daily_sales_14d,
+        case
+            when coalesce(ks.r_30d_salable_days, 0) >= 7 then coalesce(m.sales_30, 0) / ks.r_30d_salable_days
+            else coalesce(m.sales_30, 0) / greatest(coalesce(ks.r_30d_salable_days, 0), 15)
+        end as adjusted_daily_sales_30d,
+        l.max_cg_box_pcs,
         l.max_cg_price,
         l.max_cg_transport_costs,
         4 as pre_replenish_comp_months,
-        coalesce(f.available_total, 0) + coalesce(f.stock_up_num, 0) + coalesce(r.local_quantity, 0) as support_inventory_qty,
-        4 * 30 * (
-            coalesce(case when coalesce(ks.r_7d_salable_days, 0) > 0 then coalesce(m.sales_7, 0) / ks.r_7d_salable_days else coalesce(m.sales_7, 0) / 3 end, 0) * 0.6
-            + coalesce(case when coalesce(ks.r_14d_salable_days, 0) > 0 then coalesce(m.sales_14, 0) / ks.r_14d_salable_days else coalesce(m.sales_14, 0) / 7 end, 0) * 0.2
-            + coalesce(case when coalesce(ks.r_30d_salable_days, 0) > 0 then coalesce(m.sales_30, 0) / ks.r_30d_salable_days else coalesce(m.sales_30, 0) / 15 end, 0) * 0.2
-        )
-        - coalesce(f.available_total, 0)
-        - coalesce(f.stock_up_num, 0)
-        - coalesce(r.local_quantity, 0)
-        - coalesce(r.sc_quantity_purchase_plan, 0) as pre_normal_replenish_need_qty,
-        50 as pre_replenish_trigger_qty,
-        0 as history_recovery_flag
+        coalesce(f.available_total, 0) + coalesce(f.stock_up_num, 0) + coalesce(r.local_quantity, 0) as support_inventory_qty
     from tmp_pur_plan_candidate_keys c
     left join tmp_prod_perf_sku_metrics m
            on c.country_category = m.country_category
@@ -775,7 +903,90 @@ from (
           and c.country_category = ks.country_category
           and c.seller_name_new = ks.seller_name_new
           and c.seller_sku_adj = ks.seller_sku_adj
-) base;
+    left join tmp_pur_plan_sales_change_rate scr
+           on c.country_category = scr.country_category
+          and c.seller_name_new = scr.seller_name_new
+          and c.seller_sku_adj = scr.seller_sku_adj
+) metric_base;
+
+drop temporary table if exists tmp_pur_plan_support_calc_base;
+create temporary table tmp_pur_plan_support_calc_base as
+select
+    metric_base.*,
+    case
+        when (max_brand_name like '%%2025%%' and (receiving_cnt <= 1 or receiving_cnt is null))
+          or (max_brand_name like '%%2026%%' and (receiving_cnt <= 1 or receiving_cnt is null))
+            then adjusted_daily_sales_3d * 0.5 + adjusted_daily_sales_7d * 0.5
+        else adjusted_daily_sales_7d * 0.6 + adjusted_daily_sales_14d * 0.2 + adjusted_daily_sales_30d * 0.2
+    end as pre_daily_avg_sales,
+    pre_replenish_comp_months * 30 * (
+        case
+            when (max_brand_name like '%%2025%%' and (receiving_cnt <= 1 or receiving_cnt is null))
+              or (max_brand_name like '%%2026%%' and (receiving_cnt <= 1 or receiving_cnt is null))
+                then adjusted_daily_sales_3d * 0.5 + adjusted_daily_sales_7d * 0.5
+            else adjusted_daily_sales_7d * 0.6 + adjusted_daily_sales_14d * 0.2 + adjusted_daily_sales_30d * 0.2
+        end
+    )
+    - available_total
+    - stock_up_num
+    - local_quantity
+    - sc_quantity_purchase_plan as pre_normal_replenish_need_qty,
+    hist_90d_instock_daily_sales * 120
+    - available_total
+    - stock_up_num
+    - local_quantity
+    - sc_quantity_purchase_plan as history_recovery_need_qty,
+    case
+        when coalesce(max_cg_box_pcs, 0) > 0 then max_cg_box_pcs
+        else 50
+    end as pre_replenish_trigger_qty
+from tmp_pur_plan_support_metric_base metric_base;
+
+drop temporary table if exists tmp_pur_plan_support_layer_all;
+create temporary table tmp_pur_plan_support_layer_all as
+select
+    base.*,
+    case
+        when coalesce(base.pre_daily_avg_sales, 0) <= 0 then null
+        else base.support_inventory_qty / base.pre_daily_avg_sales
+    end as inventory_support_days,
+    case
+        when coalesce(base.pre_daily_avg_sales, 0) <= 0 then 5
+        when base.support_inventory_qty / base.pre_daily_avg_sales <= 35 then 1
+        when base.support_inventory_qty / base.pre_daily_avg_sales <= 65 then 2
+        when base.support_inventory_qty / base.pre_daily_avg_sales <= 90 then 3
+        when base.support_inventory_qty / base.pre_daily_avg_sales > 90 then 4
+        else 2
+    end as support_replenish_level_sort,
+    case
+        when coalesce(base.pre_daily_avg_sales, 0) <= 0 then '日销为0'
+        when base.support_inventory_qty / base.pre_daily_avg_sales <= 35 then '紧急补货'
+        when base.support_inventory_qty / base.pre_daily_avg_sales <= 65 then '建议补货'
+        when base.support_inventory_qty / base.pre_daily_avg_sales <= 90 then '计划补货'
+        when base.support_inventory_qty / base.pre_daily_avg_sales > 90 then '库存充足'
+        else '建议补货'
+    end as support_replenish_level
+from tmp_pur_plan_support_calc_base base;
+
+drop temporary table if exists tmp_pur_plan_replenish_calc;
+create temporary table tmp_pur_plan_replenish_calc as
+select
+    support.*,
+    case
+        when support.pre_normal_replenish_need_qty < support.pre_replenish_trigger_qty
+             and support.r_30d_salable_days < 15
+             and support.hist_90d_instock_days >= 15
+             and support.hist_90d_instock_daily_sales > 1.5
+             and support.history_recovery_need_qty >= support.pre_replenish_trigger_qty
+            then 1
+        else 0
+    end as history_recovery_flag,
+    case
+        when sales_change_rate_adj is null then 1
+        when 1 + sales_change_rate_adj < 0 then 1
+        else 1 + sales_change_rate_adj
+    end as sales_adj_factor
+from tmp_pur_plan_support_layer_all support;
 
 insert into etl_datasync.dashboard_pur_plan_replenish_data (
     cur_date, new_old_product, seller_sku_adj, max_fnsku, max_asin, max_sku,
@@ -784,7 +995,9 @@ insert into etl_datasync.dashboard_pur_plan_replenish_data (
     max_local_name, max_brand_name, principal, sales_team_1, max_receiving_time, receiving_cnt,
     max_cg_box_pcs, max_cg_price, max_cg_transport_costs, stockout_status,
     pre_daily_avg_sales, pre_normal_replenish_need_qty, pre_replenish_trigger_qty,
-    history_recovery_flag, support_inventory_qty, inventory_support_days, support_replenish_level, support_replenish_level_sort,
+    hist_90d_instock_days, hist_90d_instock_sales, hist_90d_instock_daily_sales,
+    history_recovery_need_qty, history_recovery_flag,
+    support_inventory_qty, inventory_support_days, support_replenish_level, support_replenish_level_sort,
     abcd_category, gp_margin_range, predict_abcd_category,
     fba_local_quantity, total, available_total, afn_fulfillable_quantity, stock_up_num, afn_unsellable_quantity,
     sc_quantity_local_valid, sc_quantity_purchase_shipping, sc_quantity_purchase_plan, sc_quantity_local_qc, local_quantity,
@@ -795,7 +1008,7 @@ insert into etl_datasync.dashboard_pur_plan_replenish_data (
     pprofit_ratio_30d, pprofit_ratio_14d, pprofit_ratio_7d, pprofit_ratio_3d,
     new_old_prod_jg, daily_avg_sales, replenish_comp_months, salable_days,
     `60d_stocko_qty`, `90d_stocko_qty`, `180d_stocko_qty`, replenish_dur_calc_stocko_qty,
-    replenish_need_qty, replenish_trigger_qty, sales_adj_factor, final_profit_rate,
+    replenish_need_qty, replenish_trigger_qty, sales_change_rate_adj, sales_adj_factor, final_profit_rate,
     replenish_qty, replenish_box_qty, replenish_cost,
     amz_instock_sales_ratio, instock_intrans_pur_sales_ratio, fllow_flag
 )
@@ -833,6 +1046,10 @@ select
     pre_daily_avg_sales,
     pre_normal_replenish_need_qty,
     pre_replenish_trigger_qty,
+    hist_90d_instock_days,
+    hist_90d_instock_sales,
+    hist_90d_instock_daily_sales,
+    history_recovery_need_qty,
     history_recovery_flag,
     support_inventory_qty,
     inventory_support_days,
@@ -905,28 +1122,49 @@ select
     pre_normal_replenish_need_qty as replenish_dur_calc_stocko_qty,
     case when support_replenish_level_sort in (1, 2, 3) then pre_normal_replenish_need_qty else 0 end as replenish_need_qty,
     pre_replenish_trigger_qty as replenish_trigger_qty,
-    1 as sales_adj_factor,
+    sales_change_rate_adj,
+    sales_adj_factor,
     pprofit_ratio_30 as final_profit_rate,
     case
+        when support_replenish_level_sort in (1, 2, 3) and coalesce(history_recovery_flag, 0) = 1
+            then case when coalesce(max_cg_box_pcs, 0) > 0 then max_cg_box_pcs else 50 end
         when support_replenish_level_sort in (1, 2, 3) and pre_normal_replenish_need_qty > 0
-            then greatest(round(pre_normal_replenish_need_qty / max_cg_box_pcs, 0), 1) * max_cg_box_pcs
+             and max_cg_box_pcs > 0
+            then greatest(round(pre_normal_replenish_need_qty * sales_adj_factor / max_cg_box_pcs, 0), 1) * max_cg_box_pcs
+        when support_replenish_level_sort in (1, 2, 3) and pre_normal_replenish_need_qty > 0
+             and (max_cg_box_pcs = 0 or max_cg_box_pcs is null)
+            then greatest(round(pre_normal_replenish_need_qty * sales_adj_factor, 0), 50)
         else 0
     end as replenish_qty,
     case
+        when support_replenish_level_sort in (1, 2, 3) and coalesce(history_recovery_flag, 0) = 1
+            then case when coalesce(max_cg_box_pcs, 0) > 0 then 1 else 0 end
         when support_replenish_level_sort in (1, 2, 3) and pre_normal_replenish_need_qty > 0
-            then greatest(round(pre_normal_replenish_need_qty / max_cg_box_pcs, 0), 1)
+             and max_cg_box_pcs > 0
+            then greatest(round(pre_normal_replenish_need_qty * sales_adj_factor / max_cg_box_pcs, 0), 1)
+        when support_replenish_level_sort in (1, 2, 3) and pre_normal_replenish_need_qty > 0
+             and (max_cg_box_pcs = 0 or max_cg_box_pcs is null)
+            then 0
         else null
     end as replenish_box_qty,
     case
+        when support_replenish_level_sort in (1, 2, 3) and coalesce(history_recovery_flag, 0) = 1
+            then (case when coalesce(max_cg_box_pcs, 0) > 0 then max_cg_box_pcs else 50 end)
+                 * (max_cg_price + max_cg_transport_costs)
         when support_replenish_level_sort in (1, 2, 3) and pre_normal_replenish_need_qty > 0
-            then greatest(round(pre_normal_replenish_need_qty / max_cg_box_pcs, 0), 1) * max_cg_box_pcs
+             and max_cg_box_pcs > 0
+            then greatest(round(pre_normal_replenish_need_qty * sales_adj_factor / max_cg_box_pcs, 0), 1) * max_cg_box_pcs
+                 * (max_cg_price + max_cg_transport_costs)
+        when support_replenish_level_sort in (1, 2, 3) and pre_normal_replenish_need_qty > 0
+             and (max_cg_box_pcs = 0 or max_cg_box_pcs is null)
+            then greatest(round(pre_normal_replenish_need_qty * sales_adj_factor, 0), 50)
                  * (max_cg_price + max_cg_transport_costs)
         else 0
     end as replenish_cost,
     case when sales_30 = 0 then null else available_total / sales_30 end as amz_instock_sales_ratio,
     case when sales_30 = 0 then null else (total + local_quantity) / sales_30 end as instock_intrans_pur_sales_ratio,
     1 as fllow_flag
-from tmp_pur_plan_support_layer_all;
+from tmp_pur_plan_replenish_calc;
 """
 
 REPLENISHMENT_TEMPORARY_SQL = (
@@ -950,6 +1188,13 @@ STEPS = {
         "etl_datasync.dashboard_replenishment_fba_shipment_sync",
         FBA_SHIPMENT_COLUMNS,
     ),
+    "history_daily_sync": SourceLoadStep(
+        "history_daily_sync",
+        DELETE_HISTORY_DAILY_SYNC_SQL,
+        SELECT_HISTORY_DAILY_SYNC_SQL,
+        "etl_datasync.dashboard_replenishment_history_daily_sync",
+        HISTORY_DAILY_COLUMNS,
+    ),
     "check_daily_snapshots": ReplenishmentStep("check_daily_snapshots", (CHECK_DAILY_SNAPSHOTS_SQL,)),
     "salable_days_stat": ReplenishmentStep("salable_days_stat", (DELETE_SALABLE_DAYS_SQL, INSERT_SALABLE_DAYS_SQL)),
     "replenishment_result": ReplenishmentStep(
@@ -963,12 +1208,43 @@ def default_biz_date() -> date:
     return date.today() - timedelta(days=1)
 
 
+def subtract_one_year(day: date) -> date:
+    try:
+        return day.replace(year=day.year - 1)
+    except ValueError:
+        return day.replace(year=day.year - 1, day=28)
+
+
+def iter_history_source_ranges(start_date: date, end_date: date):
+    year = start_date.year
+    while year <= end_date.year:
+        if year not in HISTORY_SOURCE_TABLES:
+            raise RuntimeError(f"No history source table configured for year {year}")
+        yield (
+            HISTORY_SOURCE_TABLES[year],
+            max(start_date, date(year, 1, 1)),
+            min(end_date, date(year, 12, 31)),
+        )
+        year += 1
+
+
 def build_params(args: argparse.Namespace) -> dict[str, object]:
     candidate_days = int(args.candidate_days or DEFAULT_CANDIDATE_DAYS)
     if candidate_days < 1:
         raise SystemExit("candidate_days must be at least 1")
     biz_date = parse_day(args.biz_date) if args.biz_date else default_biz_date()
     snapshot_date = parse_day(args.snapshot_date) if args.snapshot_date else date.today()
+    history_year = subtract_one_year(biz_date).year
+    history_start_date = (
+        parse_day(getattr(args, "history_start_date", None))
+        if getattr(args, "history_start_date", None)
+        else date(history_year, 1, 1) - timedelta(days=90)
+    )
+    history_end_date = (
+        parse_day(getattr(args, "history_end_date", None))
+        if getattr(args, "history_end_date", None)
+        else date(history_year, 12, 31) + timedelta(days=90)
+    )
     return {
         "biz_date": biz_date,
         "snapshot_date": snapshot_date,
@@ -978,6 +1254,8 @@ def build_params(args: argparse.Namespace) -> dict[str, object]:
         "product_start_date": biz_date - timedelta(days=89),
         "candidate_start_date": biz_date - timedelta(days=candidate_days - 1),
         "candidate_days": candidate_days,
+        "history_start_date": history_start_date,
+        "history_end_date": history_end_date,
     }
 
 
@@ -1045,12 +1323,67 @@ def execute_sql_step(conn, schemas: SchemaConfig, step: ReplenishmentStep, param
         raise
 
 
+def execute_history_daily_sync_step(
+    target_conn,
+    source_conn,
+    schemas: SchemaConfig,
+    step: SourceLoadStep,
+    params: dict[str, object],
+    batch_size: int,
+) -> None:
+    started_at = datetime.now()
+    affected_rows = 0
+    target_insert_sql = build_target_insert_sql(step.target_table, step.target_columns, schemas)
+
+    history_start_date = params["history_start_date"]
+    history_end_date = params["history_end_date"]
+    if not isinstance(history_start_date, date) or not isinstance(history_end_date, date):
+        raise RuntimeError("history_start_date and history_end_date must be dates")
+
+    try:
+        with target_conn.cursor() as target_cursor:
+            target_cursor.execute(render_sql(step.delete_statement, schemas), params)
+        target_conn.commit()
+
+        for source_table, chunk_start, chunk_end in iter_history_source_ranges(history_start_date, history_end_date):
+            source_sql = render_sql(
+                step.source_select_statement.format(history_source_table=source_table),
+                schemas,
+            )
+            assert_source_select_only(source_sql)
+            chunk_params = dict(params)
+            chunk_params["history_start_date"] = chunk_start
+            chunk_params["history_end_date"] = chunk_end
+            chunk_rows = 0
+            with source_conn.cursor() as source_cursor, target_conn.cursor() as target_cursor:
+                source_cursor.execute(source_sql, chunk_params)
+                while True:
+                    rows = source_cursor.fetchmany(batch_size)
+                    if not rows:
+                        break
+                    target_cursor.executemany(target_insert_sql, rows)
+                    chunk_rows += len(rows)
+                    affected_rows += len(rows)
+            target_conn.commit()
+            print(f"[success] {step.name}: {source_table} {chunk_start}~{chunk_end} rows={chunk_rows}")
+
+        log_task(target_conn, schemas, step.name, params, "success", affected_rows, started_at)
+        print(f"[success] {step.name}: affected_rows={affected_rows}")
+    except Exception:
+        target_conn.rollback()
+        error = traceback.format_exc()
+        log_task(target_conn, schemas, step.name, params, "failed", affected_rows, started_at, error)
+        print(f"[failed] {step.name}", file=sys.stderr)
+        raise
+
+
 def print_plan(step_names: list[str], params: dict[str, object], schemas: SchemaConfig) -> None:
     print("Replenishment local ETL plan")
     print(f"  biz_date        : {params['biz_date']}")
     print(f"  snapshot_date   : {params['snapshot_date']}")
     print(f"  candidate_start : {params['candidate_start_date']}")
     print(f"  product_start   : {params['product_start_date']}")
+    print(f"  history_window  : {params['history_start_date']} ~ {params['history_end_date']}")
     print(f"  target_schema   : {schemas.target_schema}")
     print(f"  steps           : {', '.join(step_names)}")
 
@@ -1061,6 +1394,8 @@ def main() -> None:
     parser.add_argument("--snapshot-date", help="Inventory snapshot date, format YYYY-MM-DD. Default: today.")
     parser.add_argument("--candidate-days", type=int, default=DEFAULT_CANDIDATE_DAYS)
     parser.add_argument("--steps", default="all", help="Comma separated step names or all.")
+    parser.add_argument("--history-start-date", help="History sync start date, format YYYY-MM-DD.")
+    parser.add_argument("--history-end-date", help="History sync end date, format YYYY-MM-DD.")
     parser.add_argument("--skip-ddl", action="store_true", help="Do not create local target tables before running.")
     parser.add_argument("--batch-size", type=int, default=1000, help="Rows per local bulk insert from read-only source.")
     parser.add_argument("--dry-run", action="store_true", help="Print plan only; do not connect or execute SQL.")
@@ -1087,7 +1422,10 @@ def main() -> None:
             if isinstance(step, SourceLoadStep):
                 if source_conn is None:
                     raise RuntimeError("Source connection is required for listing_basic_sync")
-                execute_source_load_step(conn, source_conn, schemas, step, params, args.batch_size)
+                if step.name == "history_daily_sync":
+                    execute_history_daily_sync_step(conn, source_conn, schemas, step, params, args.batch_size)
+                else:
+                    execute_source_load_step(conn, source_conn, schemas, step, params, args.batch_size)
             else:
                 execute_sql_step(conn, schemas, step, params)
     finally:
