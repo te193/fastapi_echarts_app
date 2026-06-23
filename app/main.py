@@ -574,6 +574,7 @@ def api_replenishment(
     site: str = Query(default="all"),
     store: str = Query(default="all"),
     keyword: str = Query(default=""),
+    category_period_days: int = Query(default=30),
     sort_field: str = Query(default=""),
     sort_dir: str = Query(default=""),
     page: int = Query(default=1, ge=1),
@@ -586,6 +587,7 @@ def api_replenishment(
         site=site,
         store=store,
         keyword=keyword,
+        category_period_days=category_period_days,
         sort_field=sort_field,
         sort_dir=sort_dir,
         page=page,
@@ -624,6 +626,50 @@ def api_replenishment_export(
     filename = f"replenishment_{payload.get('snapshot_date') or snapshot_date or date.today().isoformat()}.csv"
     headers = {"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"}
     return StreamingResponse(iter([output.getvalue()]), media_type="text/csv; charset=utf-8", headers=headers)
+
+
+@app.get("/api/replenishment/country-metrics")
+def api_replenishment_country_metrics(
+    snapshot_date: str = Query(default=""),
+    site: str = Query(default=""),
+    store: str = Query(default=""),
+    msku: str = Query(default=""),
+    period_days: int = Query(default=30),
+    sort_field: str = Query(default=""),
+    sort_dir: str = Query(default=""),
+) -> dict:
+    return replenishment_service.get_country_metrics(
+        snapshot_date=snapshot_date,
+        site=site,
+        store=store,
+        msku=msku,
+        period_days=period_days,
+        sort_field=sort_field,
+        sort_dir=sort_dir,
+    )
+
+
+@app.get("/api/replenishment/level-flow")
+def api_replenishment_level_flow(
+    snapshot_date: str = Query(default=""),
+    level: str = Query(default="all"),
+    flow_type: str = Query(default="all"),
+    category: str = Query(default="all"),
+    site: str = Query(default="all"),
+    store: str = Query(default="all"),
+    keyword: str = Query(default=""),
+    category_period_days: int = Query(default=30),
+) -> dict:
+    return replenishment_service.get_level_flow(
+        snapshot_date=snapshot_date,
+        level=level,
+        flow_type=flow_type,
+        category=category,
+        site=site,
+        store=store,
+        keyword=keyword,
+        category_period_days=category_period_days,
+    )
 
 
 @app.get("/api/detail")

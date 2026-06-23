@@ -26,7 +26,15 @@
       <select id="levelSelect"></select>
     </label>
     <label class="filter-control">
-      <span>&#31449;&#28857;</span>
+      <span>&#20998;&#31867;&#21608;&#26399;</span>
+      <select id="categoryPeriodSelect">
+        <option value="7">7&#22825;</option>
+        <option value="14">14&#22825;</option>
+        <option value="30" selected>30&#22825;</option>
+      </select>
+    </label>
+    <label class="filter-control">
+      <span>&#22269;&#23478;&#31867;&#21035;</span>
       <select id="siteSelect"></select>
     </label>
     <label class="filter-control">
@@ -71,14 +79,59 @@
   <div class="pagination-bar">
     <div id="paginationInfo" class="pagination-info"></div>
     <div class="pagination-controls">
+      <label class="page-size-control">
+        <span>&#27599;&#39029;</span>
+        <select id="pageSizeSelect">
+          <option value="20" selected>20&#26465;</option>
+          <option value="50">50&#26465;</option>
+          <option value="100">100&#26465;</option>
+        </select>
+      </label>
       <button id="prevPageBtn" class="ghost-button" type="button">&#19978;&#19968;&#39029;</button>
       <div id="paginationNumbers" class="pagination-numbers"></div>
       <button id="nextPageBtn" class="ghost-button" type="button">&#19979;&#19968;&#39029;</button>
     </div>
   </div>
 </section>
+
+<div id="countryDrawerMask" class="drawer-mask" hidden></div>
+<aside id="countryDrawer" class="detail-drawer replenishment-country-drawer" aria-hidden="true" hidden>
+  <div class="drawer-head">
+    <div>
+      <p class="section-kicker">&#22269;&#23478;&#26126;&#32454;</p>
+      <h2 id="countryDrawerTitle">--</h2>
+      <p id="countryDrawerSubtitle" class="drawer-subtitle"></p>
+    </div>
+    <button id="countryDrawerCloseBtn" class="ghost-button" type="button">&#20851;&#38381;</button>
+  </div>
+  <div class="drawer-content">
+    <div class="country-drawer-note">&#35813;&#26126;&#32454;&#20165;&#29992;&#20110;&#26597;&#30475;&#22269;&#23478;&#32463;&#33829;&#34920;&#29616;&#65292;&#19981;&#21442;&#19982;&#24211;&#23384;&#25903;&#25745;&#22825;&#25968;&#12289;&#34917;&#36135;&#23618;&#32423;&#25110;&#34917;&#36135;&#25968;&#37327;&#35745;&#31639;&#12290;</div>
+    <div id="countryPeriodTabs" class="country-period-tabs"></div>
+    <div id="countrySummaryGrid" class="country-summary-grid"></div>
+    <div id="countryMetricsWrap" class="country-metrics-wrap ag-grid-shell"></div>
+  </div>
+</aside>
+
+<div id="flowDrawerMask" class="drawer-mask" hidden></div>
+<aside id="flowDrawer" class="detail-drawer replenishment-flow-drawer" aria-hidden="true" hidden>
+  <div class="drawer-head">
+    <div>
+      <p class="section-kicker">&#23618;&#32423;&#27969;&#36716;</p>
+      <h2 id="flowDrawerTitle">--</h2>
+      <p id="flowDrawerSubtitle" class="drawer-subtitle"></p>
+    </div>
+    <button id="flowDrawerCloseBtn" class="ghost-button" type="button">&#20851;&#38381;</button>
+  </div>
+  <div class="drawer-content">
+    <div id="flowSummaryGrid" class="country-summary-grid flow-summary-grid"></div>
+    <div class="drawer-chart-panel flow-sankey-panel">
+      <div id="flowSankeyChart" class="chart-host-echarts flow-sankey-chart"></div>
+    </div>
+    <div id="flowDetailWrap" class="flow-detail-wrap ag-grid-shell"></div>
+  </div>
+</aside>
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', path='js/replenishment.js') }}?v=20260621help3"></script>
+<script src="{{ url_for('static', path='js/replenishment.js') }}?v=20260623marginlabel1"></script>
 {% endblock %}

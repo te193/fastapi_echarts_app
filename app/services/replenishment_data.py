@@ -18,6 +18,26 @@ LEVEL_PLANNED = "\u8ba1\u5212\u8865\u8d27"
 LEVEL_SUFFICIENT = "\u5e93\u5b58\u5145\u8db3"
 LEVEL_ZERO_SALES = "\u65e5\u9500\u4e3a0"
 LEVEL_UNKNOWN = "\u672a\u5206\u5c42"
+COUNTRY_METRIC_PERIODS = {7, 14, 30, 90}
+PRODUCT_CATEGORY_PERIODS = {7, 14, 30}
+FLOW_NEW = "\u65b0\u589e"
+FLOW_IN = "\u6d41\u5165"
+FLOW_OUT = "\u6d41\u51fa"
+FLOW_EXIT = "\u9000\u51fa"
+FLOW_STAY = "\u4fdd\u6301"
+FLOW_ALL = "all"
+FLOW_ENTRY_LABEL = "\u65e0\u8bb0\u5f55"
+REPLENISHMENT_ACTIVE_LEVELS = {LEVEL_URGENT, LEVEL_SUGGESTED, LEVEL_PLANNED}
+REPLENISHMENT_PASSIVE_LEVELS = {LEVEL_SUFFICIENT, LEVEL_ZERO_SALES}
+FLOW_LEVEL_ORDER = {
+    LEVEL_URGENT: 1,
+    LEVEL_SUGGESTED: 2,
+    LEVEL_PLANNED: 3,
+    LEVEL_SUFFICIENT: 4,
+    LEVEL_ZERO_SALES: 5,
+    LEVEL_UNKNOWN: 6,
+    FLOW_ENTRY_LABEL: 99,
+}
 
 REPLENISHMENT_COLUMN_LABELS = {
     "cur_date": "补货日期",
@@ -126,9 +146,27 @@ REPLENISHMENT_COLUMN_LABELS = {
     "replenish_cost": "补货货值",
     "amz_instock_sales_ratio": "亚马逊有货销售占比",
     "instock_intrans_pur_sales_ratio": "有货在途采购销售占比",
-    "fllow_flag": "跟进标记",
+    "fllow_flag": "是否跟卖",
     "created_at": "创建时间",
     "updated_at": "更新时间",
+}
+
+REPLENISHMENT_EXPORT_EXCLUDED_COLUMNS = {
+    "stockout_status",
+    "gamount_30d",
+    "gamount_14d",
+    "gamount_7d",
+    "gamount_3d",
+    "gprofit_30d",
+    "gprofit_14d",
+    "gprofit_7d",
+    "gprofit_3d",
+    "gprofit_ratio_30d",
+    "gprofit_ratio_14d",
+    "gprofit_ratio_7d",
+    "gprofit_ratio_3d",
+    "pre_1m_predict_abcd_category",
+    "pre_1q_predict_abcd_category",
 }
 
 
@@ -142,6 +180,10 @@ def to_float(value: Any) -> float:
 
 def to_int(value: Any) -> int:
     return int(round(to_float(value)))
+
+
+def format_follow_status(value: Any) -> str:
+    return "是" if to_int(value) == 0 else "否"
 
 
 def format_day(value: date | None) -> str | None:
@@ -187,19 +229,40 @@ class ReplenishmentDataService:
         site: str = "all",
         store: str = "all",
         keyword: str = "",
+        category_period_days: int | str | None = 30,
         sort_field: str = "",
         sort_dir: str = "",
         page: int = 1,
         page_size: int = 20,
     ) -> dict[str, Any]:
+        safe_category_period_days = self._normalize_product_category_period_days(category_period_days)
+        period_metrics = self._product_category_metric_sql(safe_category_period_days)
         with self.connect() as conn:
             selected_date = parse_day(snapshot_date) or self._latest_date(conn)
             if not selected_date:
                 return self._empty_payload(page, page_size)
-            filters, params = self._build_where(selected_date, level, category, site, store, keyword)
+            filters, params = self._build_where(
+                selected_date,
+                level,
+                category,
+                site,
+                store,
+                keyword,
+                category_expr=period_metrics["category_expr"],
+            )
             summary = self._summary(conn, filters, params)
-            level_summary = self._level_summary(conn, filters, params)
-            items, total = self._items(conn, filters, params, sort_field, sort_dir, page, page_size)
+            level_summary = self._level_summary(conn, filters, params, period_metrics["category_expr"])
+            flow_summary = self._level_flow_summary(
+                conn,
+                selected_date,
+                category,
+                site,
+                store,
+                keyword,
+                period_metrics["category_expr"],
+            )
+            self._attach_level_flow_summary(level_summary, flow_summary)
+            items, total = self._items(conn, filters, params, sort_field, sort_dir, page, page_size, period_metrics)
             meta = self._meta(conn)
 
         safe_page_size = max(10, min(100, int(page_size or 20)))
@@ -216,7 +279,43 @@ class ReplenishmentDataService:
             "page_size": safe_page_size,
             "total_pages": total_pages,
             "selected_level": level,
+            "category_period_days": safe_category_period_days,
+            "flow_dates": flow_summary.get("dates", {}),
         }
+
+    def get_level_flow(
+        self,
+        snapshot_date: str = "",
+        level: str = "all",
+        flow_type: str = "all",
+        category: str = "all",
+        site: str = "all",
+        store: str = "all",
+        keyword: str = "",
+        category_period_days: int | str | None = 30,
+    ) -> dict[str, Any]:
+        safe_category_period_days = self._normalize_product_category_period_days(category_period_days)
+        period_metrics = self._product_category_metric_sql(safe_category_period_days)
+        with self.connect() as conn:
+            selected_date = parse_day(snapshot_date) or self._latest_date(conn)
+            if not selected_date:
+                return self._empty_level_flow(None, None)
+            prev_date = self._previous_date(conn, selected_date)
+            if not prev_date:
+                return self._empty_level_flow(None, selected_date)
+            rows = self._level_flow_rows(
+                conn,
+                selected_date,
+                prev_date,
+                category,
+                site,
+                store,
+                keyword,
+                period_metrics["category_expr"],
+                level,
+                flow_type,
+            )
+        return self._build_level_flow_payload(rows, format_day(prev_date), format_day(selected_date), level, flow_type)
 
     def get_export_items(
         self,
@@ -260,9 +359,120 @@ class ReplenishmentDataService:
             rows = self._export_items(conn, filters, params, sort_field, sort_dir, [col["name"] for col in columns])
             return {"columns": columns, "rows": rows, "snapshot_date": format_day(selected_date)}
 
+    def get_country_metrics(
+        self,
+        snapshot_date: str = "",
+        site: str = "",
+        store: str = "",
+        msku: str = "",
+        period_days: int | str | None = 30,
+        sort_field: str = "",
+        sort_dir: str = "",
+    ) -> dict[str, Any]:
+        safe_period_days = self._normalize_country_period_days(period_days)
+        sort_map = {
+            "country": "country",
+            "listing_price": "listing_price",
+            "sales_qty": "sales_qty",
+            "natural_daily_sales": "natural_daily_sales",
+            "salable_daily_sales": "salable_daily_sales",
+            "sales_amount": "sales_amount",
+            "order_gross_profit": "order_gross_profit",
+            "order_gross_margin": "order_gross_margin",
+            "avg_ranking": "avg_ranking",
+            "sessions_total": "sessions_total",
+            "conversion_rate": "conversion_rate",
+            "ad_spend": "ad_spend",
+            "ad_sales": "ad_sales",
+            "acos": "acos",
+        }
+        sort_column = sort_map.get(sort_field or "", "sales_qty")
+        direction = "asc" if str(sort_dir or "").lower() == "asc" else "desc"
+        with self.connect() as conn:
+            selected_date = parse_day(snapshot_date) or self._latest_date(conn)
+            if not selected_date or not site or not store or not msku:
+                return self._empty_country_metrics(selected_date, safe_period_days, site, store, msku)
+            params = {
+                "snapshot_date": selected_date,
+                "period_days": safe_period_days,
+                "site": site,
+                "store": store,
+                "msku": msku,
+            }
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    select
+                        period_start,
+                        period_end,
+                        country,
+                        local_sku_list,
+                        listing_price,
+                        sales_qty,
+                        natural_daily_sales,
+                        salable_days,
+                        salable_daily_sales,
+                        sales_amount,
+                        order_gross_profit,
+                        order_gross_margin,
+                        avg_ranking,
+                        best_ranking,
+                        worst_ranking,
+                        sessions_total,
+                        conversion_rate,
+                        ad_spend,
+                        ad_orders,
+                        ad_sales,
+                        ad_clicks,
+                        ad_impressions,
+                        acos,
+                        ctr
+                    from dashboard_replenishment_country_metrics
+                    where snapshot_date = %(snapshot_date)s
+                      and period_days = %(period_days)s
+                      and country_category = %(site)s
+                      and seller_name_new = %(store)s
+                      and seller_sku_adj = %(msku)s
+                    order by {sort_column} {direction}, country
+                    """,
+                    params,
+                )
+                rows = cursor.fetchall()
+        items = [self._serialize_country_metric(row) for row in rows]
+        sales_amount = sum(item["sales_amount"] for item in items)
+        order_gross_profit = sum(item["order_gross_profit"] for item in items)
+        return {
+            "snapshot_date": format_day(selected_date),
+            "period_days": safe_period_days,
+            "period_start": format_day(rows[0].get("period_start")) if rows else None,
+            "period_end": format_day(rows[0].get("period_end")) if rows else None,
+            "parent": {"site": site, "store": store, "msku": msku},
+            "summary": {
+                "country_count": len(items),
+                "sales_qty": round(sum(item["sales_qty"] for item in items), 2),
+                "sales_amount": round(sales_amount, 2),
+                "order_gross_profit": round(order_gross_profit, 2),
+                "order_gross_margin": round(order_gross_profit / sales_amount, 6) if sales_amount else 0,
+            },
+            "items": items,
+        }
+
     def _latest_date(self, conn) -> date | None:
         with conn.cursor() as cursor:
             cursor.execute("select max(cur_date) as cur_date from dashboard_pur_plan_replenish_data")
+            row = cursor.fetchone() or {}
+        return row.get("cur_date")
+
+    def _previous_date(self, conn, selected_date: date) -> date | None:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                select max(cur_date) as cur_date
+                from dashboard_pur_plan_replenish_data
+                where cur_date < %(snapshot_date)s
+                """,
+                {"snapshot_date": selected_date},
+            )
             row = cursor.fetchone() or {}
         return row.get("cur_date")
 
@@ -319,12 +529,17 @@ class ReplenishmentDataService:
         site: str,
         store: str,
         keyword: str,
+        category_expr: str | None = None,
     ) -> tuple[str, dict[str, Any]]:
         clauses = ["cur_date = %(snapshot_date)s"]
         params: dict[str, Any] = {"snapshot_date": snapshot_date}
         if level and level != "all":
             clauses.append("support_replenish_level = %(level)s")
             params["level"] = level
+        if category and category != "all" and category_expr:
+            clauses.append(f"coalesce({category_expr}, '未分类') = %(category)s")
+            params["category"] = category
+            category = "all"
         if category and category != "all":
             clauses.append("coalesce(abcd_category, '未分类') = %(category)s")
             params["category"] = category
@@ -390,7 +605,7 @@ class ReplenishmentDataService:
             "zero_sales_count": to_int(row.get("zero_sales_count")),
         }
 
-    def _level_summary(self, conn, filters: str, params: dict[str, Any]) -> list[dict[str, Any]]:
+    def _level_summary(self, conn, filters: str, params: dict[str, Any], category_expr: str) -> list[dict[str, Any]]:
         with conn.cursor() as cursor:
             cursor.execute(
                 f"""
@@ -426,6 +641,20 @@ class ReplenishmentDataService:
                 params,
             )
             mix_rows = cursor.fetchall()
+            cursor.execute(
+                f"""
+                select
+                    support_replenish_level_sort,
+                    coalesce({category_expr}, '未分类') as abcd_category,
+                    count(*) as sku_count
+                from dashboard_pur_plan_replenish_data
+                where {filters}
+                group by support_replenish_level_sort, coalesce({category_expr}, '未分类')
+                order by support_replenish_level_sort, sku_count desc, abcd_category
+                """,
+                params,
+            )
+            mix_rows = cursor.fetchall()
         category_mix: dict[int, list[dict[str, Any]]] = {}
         for row in mix_rows:
             sort = to_int(row.get("support_replenish_level_sort"))
@@ -451,6 +680,434 @@ class ReplenishmentDataService:
             for row in rows
         ]
 
+    def _level_flow_summary(
+        self,
+        conn,
+        selected_date: date,
+        category: str,
+        site: str,
+        store: str,
+        keyword: str,
+        category_expr: str,
+    ) -> dict[str, Any]:
+        prev_date = self._previous_date(conn, selected_date)
+        if not prev_date:
+            return {"dates": {"prev_date": None, "cur_date": format_day(selected_date)}, "levels": {}}
+        rows = self._level_flow_rows(
+            conn,
+            selected_date,
+            prev_date,
+            category,
+            site,
+            store,
+            keyword,
+            category_expr,
+            FLOW_ALL,
+            FLOW_ALL,
+        )
+        payload = self._build_level_flow_payload(rows, format_day(prev_date), format_day(selected_date))
+        return {
+            "dates": payload["dates"],
+            "levels": {row["level"]: row for row in payload["level_changes"]},
+        }
+
+    def _attach_level_flow_summary(self, level_summary: list[dict[str, Any]], flow_summary: dict[str, Any]) -> None:
+        changes = flow_summary.get("levels", {})
+        for row in level_summary:
+            row["flow"] = changes.get(
+                row.get("level"),
+                {
+                    "delta_count": 0,
+                    "new_count": 0,
+                    "in_count": 0,
+                    "out_count": 0,
+                    "exit_count": 0,
+                    "stay_count": 0,
+                },
+            )
+
+    def _level_flow_rows(
+        self,
+        conn,
+        selected_date: date,
+        prev_date: date,
+        category: str,
+        site: str,
+        store: str,
+        keyword: str,
+        category_expr: str,
+        level: str,
+        flow_type: str,
+    ) -> list[dict[str, Any]]:
+        filters, params = self._level_flow_filters(selected_date, prev_date, category, site, store, keyword)
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                select *
+                from (
+                    select
+                        coalesce(c.country_category, p.country_category) as country_category,
+                        coalesce(c.seller_name_new, p.seller_name_new) as seller_name_new,
+                        coalesce(c.seller_sku_adj, p.seller_sku_adj) as seller_sku_adj,
+                        coalesce(c.max_sku, p.max_sku) as max_sku,
+                        p.support_replenish_level as prev_level,
+                        p.support_replenish_level_sort as prev_level_sort,
+                        c.support_replenish_level as cur_level,
+                        c.support_replenish_level_sort as cur_level_sort,
+                        p.replenish_qty as prev_replenish_qty,
+                        c.replenish_qty as cur_replenish_qty,
+                        p.replenish_cost as prev_replenish_cost,
+                        c.replenish_cost as cur_replenish_cost,
+                        p.inventory_support_days as prev_inventory_support_days,
+                        c.inventory_support_days as cur_inventory_support_days,
+                        p.support_inventory_qty as prev_support_inventory_qty,
+                        c.support_inventory_qty as cur_support_inventory_qty,
+                        p.available_total as prev_available_total,
+                        c.available_total as cur_available_total,
+                        p.stock_up_num as prev_stock_up_num,
+                        c.stock_up_num as cur_stock_up_num,
+                        p.local_quantity as prev_local_quantity,
+                        c.local_quantity as cur_local_quantity,
+                        p.sc_quantity_purchase_plan as prev_purchase_plan_quantity,
+                        c.sc_quantity_purchase_plan as cur_purchase_plan_quantity,
+                        p.daily_avg_sales as prev_daily_avg_sales,
+                        c.daily_avg_sales as cur_daily_avg_sales,
+                        p.final_sales_30d as prev_sales_30d,
+                        c.final_sales_30d as cur_sales_30d,
+                        p.abcd_category as prev_category,
+                        c.abcd_category as cur_category
+                    from dashboard_pur_plan_replenish_data c
+                    left join dashboard_pur_plan_replenish_data p
+                           on p.cur_date = %(prev_date)s
+                          and c.country_category = p.country_category
+                          and c.seller_name_new = p.seller_name_new
+                          and c.seller_sku_adj = p.seller_sku_adj
+                    where c.cur_date = %(snapshot_date)s
+                    union all
+                    select
+                        p.country_category,
+                        p.seller_name_new,
+                        p.seller_sku_adj,
+                        p.max_sku,
+                        p.support_replenish_level as prev_level,
+                        p.support_replenish_level_sort as prev_level_sort,
+                        null as cur_level,
+                        null as cur_level_sort,
+                        p.replenish_qty as prev_replenish_qty,
+                        null as cur_replenish_qty,
+                        p.replenish_cost as prev_replenish_cost,
+                        null as cur_replenish_cost,
+                        p.inventory_support_days as prev_inventory_support_days,
+                        null as cur_inventory_support_days,
+                        p.support_inventory_qty as prev_support_inventory_qty,
+                        null as cur_support_inventory_qty,
+                        p.available_total as prev_available_total,
+                        null as cur_available_total,
+                        p.stock_up_num as prev_stock_up_num,
+                        null as cur_stock_up_num,
+                        p.local_quantity as prev_local_quantity,
+                        null as cur_local_quantity,
+                        p.sc_quantity_purchase_plan as prev_purchase_plan_quantity,
+                        null as cur_purchase_plan_quantity,
+                        p.daily_avg_sales as prev_daily_avg_sales,
+                        null as cur_daily_avg_sales,
+                        p.final_sales_30d as prev_sales_30d,
+                        null as cur_sales_30d,
+                        p.abcd_category as prev_category,
+                        null as cur_category
+                    from dashboard_pur_plan_replenish_data p
+                    left join dashboard_pur_plan_replenish_data c
+                           on c.cur_date = %(snapshot_date)s
+                          and c.country_category = p.country_category
+                          and c.seller_name_new = p.seller_name_new
+                          and c.seller_sku_adj = p.seller_sku_adj
+                    where p.cur_date = %(prev_date)s
+                      and c.seller_sku_adj is null
+                ) flow
+                where {filters}
+                order by coalesce(cur_level_sort, prev_level_sort, 99), seller_sku_adj
+                """,
+                params,
+            )
+            rows = cursor.fetchall()
+        return rows
+
+    def _level_flow_filters(
+        self,
+        selected_date: date,
+        prev_date: date,
+        category: str,
+        site: str,
+        store: str,
+        keyword: str,
+    ) -> tuple[str, dict[str, Any]]:
+        clauses = ["1 = 1"]
+        params: dict[str, Any] = {"snapshot_date": selected_date, "prev_date": prev_date}
+        if category and category != "all":
+            clauses.append("coalesce(cur_category, prev_category, '鏈垎绫?) = %(category)s")
+            params["category"] = category
+        if site and site != "all":
+            clauses.append("country_category = %(site)s")
+            params["site"] = site
+        if store and store != "all":
+            clauses.append("seller_name_new = %(store)s")
+            params["store"] = store
+        if keyword:
+            clauses.append(
+                "(seller_sku_adj like %(keyword)s or seller_name_new like %(keyword)s "
+                "or country_category like %(keyword)s or coalesce(max_sku, '') like %(keyword)s)"
+            )
+            params["keyword"] = f"%{keyword.strip()}%"
+        return " and ".join(clauses), params
+
+    def _build_level_flow_payload(
+        self,
+        rows: list[dict[str, Any]],
+        prev_date: str | None,
+        cur_date: str | None,
+        target_level: str = FLOW_ALL,
+        target_flow_type: str = FLOW_ALL,
+    ) -> dict[str, Any]:
+        level_map: dict[str, dict[str, Any]] = {}
+        link_map: dict[tuple[str, str], dict[str, Any]] = {}
+        items: list[dict[str, Any]] = []
+        summary = {
+            "sku_count": 0,
+            "new_count": 0,
+            "in_count": 0,
+            "out_count": 0,
+            "exit_count": 0,
+            "stay_count": 0,
+            "replenish_qty_delta": 0.0,
+            "replenish_cost_delta": 0.0,
+        }
+        for row in rows:
+            prev_level = row.get("prev_level") or FLOW_ENTRY_LABEL
+            cur_level = row.get("cur_level") or FLOW_ENTRY_LABEL
+            prev_sort = to_int(row.get("prev_level_sort")) if row.get("prev_level_sort") is not None else 99
+            cur_sort = to_int(row.get("cur_level_sort")) if row.get("cur_level_sort") is not None else 99
+            flow_type = self._classify_flow_type(row, target_level)
+            if target_level != FLOW_ALL and not self._row_matches_level(row, target_level):
+                continue
+            if target_flow_type != FLOW_ALL and flow_type != target_flow_type:
+                continue
+            self._accumulate_level_change(level_map, row)
+            link_key = (f"\u6628\u5929{prev_level}", f"\u4eca\u5929{cur_level}")
+            link = link_map.setdefault(
+                link_key,
+                {
+                    "source": link_key[0],
+                    "target": link_key[1],
+                    "value": 0,
+                    "replenish_qty": 0.0,
+                    "replenish_cost": 0.0,
+                },
+            )
+            link["value"] += 1
+            link["replenish_qty"] += to_float(row.get("cur_replenish_qty"))
+            link["replenish_cost"] += to_float(row.get("cur_replenish_cost"))
+            cur_qty = to_float(row.get("cur_replenish_qty"))
+            prev_qty = to_float(row.get("prev_replenish_qty"))
+            cur_cost = to_float(row.get("cur_replenish_cost"))
+            prev_cost = to_float(row.get("prev_replenish_cost"))
+            summary["sku_count"] += 1
+            summary["replenish_qty_delta"] += cur_qty - prev_qty
+            summary["replenish_cost_delta"] += cur_cost - prev_cost
+            if flow_type == FLOW_NEW:
+                summary["new_count"] += 1
+            elif flow_type == FLOW_IN:
+                summary["in_count"] += 1
+            elif flow_type == FLOW_OUT:
+                summary["out_count"] += 1
+            elif flow_type == FLOW_EXIT:
+                summary["exit_count"] += 1
+            elif flow_type == FLOW_STAY:
+                summary["stay_count"] += 1
+            items.append(self._serialize_flow_item(row, flow_type, self._flow_reason(row), prev_sort, cur_sort))
+        nodes = sorted(
+            {name for link in link_map.values() for name in (link["source"], link["target"])},
+            key=self._sankey_node_sort_key,
+        )
+        links = sorted(
+            link_map.values(),
+            key=lambda link: (self._sankey_node_sort_key(link["source"]), self._sankey_node_sort_key(link["target"])),
+        )
+        return {
+            "dates": {"prev_date": prev_date, "cur_date": cur_date},
+            "target": {"level": target_level, "flow_type": target_flow_type},
+            "summary": {
+                **summary,
+                "replenish_qty_delta": round(summary["replenish_qty_delta"], 2),
+                "replenish_cost_delta": round(summary["replenish_cost_delta"], 2),
+            },
+            "level_changes": sorted(level_map.values(), key=lambda item: item["sort"]),
+            "sankey": {
+                "nodes": [{"name": name, "depth": self._sankey_node_depth(name)} for name in nodes],
+                "links": [
+                    {
+                        **link,
+                        "replenish_qty": round(link["replenish_qty"], 2),
+                        "replenish_cost": round(link["replenish_cost"], 2),
+                    }
+                    for link in links
+                ],
+            },
+            "items": items,
+        }
+
+    def _sankey_node_sort_key(self, name: str) -> tuple[int, int, str]:
+        raw_name = name or ""
+        side = 1
+        level = raw_name
+        if raw_name.startswith("\u6628\u5929"):
+            side = 0
+            level = raw_name[2:]
+        elif raw_name.startswith("\u4eca\u5929"):
+            side = 1
+            level = raw_name[2:]
+        return side, FLOW_LEVEL_ORDER.get(level, 90), raw_name
+
+    def _sankey_node_depth(self, name: str) -> int:
+        return 0 if (name or "").startswith("\u6628\u5929") else 1
+
+    def _accumulate_level_change(self, level_map: dict[str, dict[str, Any]], row: dict[str, Any]) -> None:
+        prev_level = row.get("prev_level")
+        cur_level = row.get("cur_level")
+        if cur_level:
+            current = level_map.setdefault(
+                cur_level,
+                {
+                    "level": cur_level,
+                    "sort": to_int(row.get("cur_level_sort")),
+                    "prev_count": 0,
+                    "cur_count": 0,
+                    "delta_count": 0,
+                    "new_count": 0,
+                    "in_count": 0,
+                    "out_count": 0,
+                    "exit_count": 0,
+                    "stay_count": 0,
+                },
+            )
+            current["cur_count"] += 1
+            if prev_level in REPLENISHMENT_PASSIVE_LEVELS and cur_level in REPLENISHMENT_ACTIVE_LEVELS:
+                current["new_count"] += 1
+            elif prev_level == cur_level:
+                current["stay_count"] += 1
+            else:
+                current["in_count"] += 1
+        if prev_level:
+            previous = level_map.setdefault(
+                prev_level,
+                {
+                    "level": prev_level,
+                    "sort": to_int(row.get("prev_level_sort")),
+                    "prev_count": 0,
+                    "cur_count": 0,
+                    "delta_count": 0,
+                    "new_count": 0,
+                    "in_count": 0,
+                    "out_count": 0,
+                    "exit_count": 0,
+                    "stay_count": 0,
+                },
+            )
+            previous["prev_count"] += 1
+            if prev_level in REPLENISHMENT_ACTIVE_LEVELS and cur_level in REPLENISHMENT_PASSIVE_LEVELS:
+                previous["exit_count"] += 1
+            elif cur_level != prev_level:
+                previous["out_count"] += 1
+        for item in level_map.values():
+            item["delta_count"] = item["cur_count"] - item["prev_count"]
+
+    def _classify_flow_type(self, row: dict[str, Any], target_level: str = FLOW_ALL) -> str:
+        prev_level = row.get("prev_level")
+        cur_level = row.get("cur_level")
+        if target_level != FLOW_ALL:
+            if cur_level == target_level and prev_level in REPLENISHMENT_PASSIVE_LEVELS and cur_level in REPLENISHMENT_ACTIVE_LEVELS:
+                return FLOW_NEW
+            if cur_level == target_level and prev_level and prev_level != cur_level:
+                return FLOW_IN
+            if cur_level == target_level and not prev_level:
+                return FLOW_IN
+            if prev_level == target_level and prev_level in REPLENISHMENT_ACTIVE_LEVELS and cur_level in REPLENISHMENT_PASSIVE_LEVELS:
+                return FLOW_EXIT
+            if prev_level == target_level and cur_level and cur_level != prev_level:
+                return FLOW_OUT
+            if prev_level == target_level and not cur_level:
+                return FLOW_OUT
+            return FLOW_STAY
+        if prev_level in REPLENISHMENT_PASSIVE_LEVELS and cur_level in REPLENISHMENT_ACTIVE_LEVELS:
+            return FLOW_NEW
+        if not prev_level and cur_level:
+            return FLOW_IN
+        if prev_level in REPLENISHMENT_ACTIVE_LEVELS and cur_level in REPLENISHMENT_PASSIVE_LEVELS:
+            return FLOW_EXIT
+        if prev_level and not cur_level:
+            return FLOW_OUT
+        if prev_level == cur_level:
+            return FLOW_STAY
+        if row.get("cur_level_sort") is not None and row.get("prev_level_sort") is not None:
+            return FLOW_IN if to_int(row.get("cur_level_sort")) < to_int(row.get("prev_level_sort")) else FLOW_OUT
+        return FLOW_IN
+
+    def _row_matches_level(self, row: dict[str, Any], level: str) -> bool:
+        return row.get("cur_level") == level or row.get("prev_level") == level
+
+    def _flow_reason(self, row: dict[str, Any]) -> str:
+        if not row.get("prev_level"):
+            return "\u8fdb\u5165\u8865\u8d27\u6c60"
+        if not row.get("cur_level"):
+            return "\u9000\u51fa\u8865\u8d27\u6c60"
+        if row.get("prev_level") in REPLENISHMENT_PASSIVE_LEVELS and row.get("cur_level") in REPLENISHMENT_ACTIVE_LEVELS:
+            return "\u8f6c\u5165\u8865\u8d27\u8ba1\u7b97"
+        if row.get("prev_level") in REPLENISHMENT_ACTIVE_LEVELS and row.get("cur_level") in REPLENISHMENT_PASSIVE_LEVELS:
+            return "\u8f6c\u5165\u57fa\u7840\u6c60"
+        support_delta = to_float(row.get("cur_support_inventory_qty")) - to_float(row.get("prev_support_inventory_qty"))
+        sales_delta = to_float(row.get("cur_daily_avg_sales")) - to_float(row.get("prev_daily_avg_sales"))
+        if support_delta > 0:
+            return "\u5e93\u5b58\u589e\u52a0"
+        if support_delta < 0:
+            return "\u5e93\u5b58\u51cf\u5c11"
+        if sales_delta > 0:
+            return "\u65e5\u9500\u4e0a\u5347"
+        if sales_delta < 0:
+            return "\u65e5\u9500\u4e0b\u964d"
+        return "\u5c42\u7ea7\u9608\u503c\u53d8\u5316"
+
+    def _serialize_flow_item(
+        self,
+        row: dict[str, Any],
+        flow_type: str,
+        reason: str,
+        prev_sort: int,
+        cur_sort: int,
+    ) -> dict[str, Any]:
+        return {
+            "country": row.get("country_category"),
+            "store": row.get("seller_name_new"),
+            "msku": row.get("seller_sku_adj"),
+            "sku": row.get("max_sku"),
+            "prev_level": row.get("prev_level") or FLOW_ENTRY_LABEL,
+            "cur_level": row.get("cur_level") or FLOW_ENTRY_LABEL,
+            "prev_level_sort": prev_sort,
+            "cur_level_sort": cur_sort,
+            "flow_type": flow_type,
+            "reason": reason,
+            "prev_support_days": round(to_float(row.get("prev_inventory_support_days")), 2),
+            "cur_support_days": round(to_float(row.get("cur_inventory_support_days")), 2),
+            "prev_replenish_qty": round(to_float(row.get("prev_replenish_qty")), 2),
+            "cur_replenish_qty": round(to_float(row.get("cur_replenish_qty")), 2),
+            "prev_replenish_cost": round(to_float(row.get("prev_replenish_cost")), 2),
+            "cur_replenish_cost": round(to_float(row.get("cur_replenish_cost")), 2),
+            "prev_support_inventory_qty": round(to_float(row.get("prev_support_inventory_qty")), 2),
+            "cur_support_inventory_qty": round(to_float(row.get("cur_support_inventory_qty")), 2),
+            "prev_daily_sales": round(to_float(row.get("prev_daily_avg_sales")), 4),
+            "cur_daily_sales": round(to_float(row.get("cur_daily_avg_sales")), 4),
+            "prev_category": row.get("prev_category"),
+            "cur_category": row.get("cur_category"),
+        }
+
     def _items(
         self,
         conn,
@@ -460,7 +1117,9 @@ class ReplenishmentDataService:
         sort_dir: str,
         page: int,
         page_size: int,
+        period_metrics: dict[str, str] | None = None,
     ) -> tuple[list[dict[str, Any]], int]:
+        period_metrics = period_metrics or self._product_category_metric_sql(30)
         sort_map = {
             "level": "support_replenish_level_sort",
             "country": "country_category",
@@ -470,8 +1129,8 @@ class ReplenishmentDataService:
             "sku": "max_sku",
             "support_days": "inventory_support_days",
             "daily_sales": "daily_avg_sales",
-            "category_daily_sales_30d": "case when r_30d_salable_days > 0 then final_sales_30d / r_30d_salable_days else 0 end",
-            "profit_rate_30d": "pprofit_ratio_30d",
+            "category_daily_sales_30d": period_metrics["daily_sales_expr"],
+            "profit_rate_30d": period_metrics["margin_col"],
             "available_total": "available_total",
             "stock_up_num": "stock_up_num",
             "local_quantity": "local_quantity",
@@ -481,9 +1140,9 @@ class ReplenishmentDataService:
             "sales_30d": "final_sales_30d",
             "need_qty": "replenish_need_qty",
             "box_qty": "replenish_box_qty",
-            "stockout_status": "stockout_status",
-            "category": "abcd_category",
-            "margin_range": "gp_margin_range",
+            "follow_status": "fllow_flag",
+            "category": period_metrics["category_expr"],
+            "margin_range": period_metrics["margin_range_expr"],
         }
         sort_column = sort_map.get(sort_field or "", "support_replenish_level_sort")
         direction = "desc" if str(sort_dir or "").lower() == "desc" else "asc"
@@ -506,8 +1165,8 @@ class ReplenishmentDataService:
                     seller_sku_adj,
                     max_sku,
                     daily_avg_sales,
-                    case when r_30d_salable_days > 0 then final_sales_30d / r_30d_salable_days else 0 end as category_daily_sales_30d,
-                    pprofit_ratio_30d,
+                    {period_metrics["daily_sales_expr"]} as category_daily_sales_30d,
+                    {period_metrics["margin_col"]} as pprofit_ratio_30d,
                     inventory_support_days,
                     support_inventory_qty,
                     available_total,
@@ -519,9 +1178,9 @@ class ReplenishmentDataService:
                     replenish_qty,
                     replenish_box_qty,
                     replenish_cost,
-                    stockout_status,
-                    abcd_category,
-                    gp_margin_range
+                    fllow_flag,
+                    {period_metrics["category_expr"]} as abcd_category,
+                    {period_metrics["margin_range_expr"]} as gp_margin_range
                 from dashboard_pur_plan_replenish_data
                 where {filters}
                 order by {sort_column} {direction}, replenish_qty desc, seller_sku_adj
@@ -530,6 +1189,7 @@ class ReplenishmentDataService:
                 query_params,
             )
             rows = cursor.fetchall()
+            self._attach_country_summaries(cursor, rows)
         return [self._serialize_item(row) for row in rows], total
 
     def _export_items(
@@ -561,7 +1221,7 @@ class ReplenishmentDataService:
             "sales_30d": "final_sales_30d",
             "need_qty": "replenish_need_qty",
             "box_qty": "replenish_box_qty",
-            "stockout_status": "stockout_status",
+            "follow_status": "fllow_flag",
             "category": "abcd_category",
             "margin_range": "gp_margin_range",
         }
@@ -581,6 +1241,9 @@ class ReplenishmentDataService:
                 params,
             )
             rows = cursor.fetchall()
+        for row in rows:
+            if "fllow_flag" in row:
+                row["fllow_flag"] = format_follow_status(row.get("fllow_flag"))
         return rows
 
     def _export_columns(self, conn) -> list[dict[str, str]]:
@@ -604,11 +1267,157 @@ class ReplenishmentDataService:
                 "label": row.get("column_comment") or REPLENISHMENT_COLUMN_LABELS.get(row.get("column_name"), row.get("column_name")),
             }
             for row in rows
-            if row.get("column_name")
+            if row.get("column_name") and row.get("column_name") not in REPLENISHMENT_EXPORT_EXCLUDED_COLUMNS
         ]
 
     def _quote_identifier(self, value: str) -> str:
         return "`" + value.replace("`", "``") + "`"
+
+    def _attach_country_summaries(self, cursor, rows: list[dict[str, Any]]) -> None:
+        if not rows:
+            return
+        params: dict[str, Any] = {}
+        predicates: list[str] = []
+        for index, row in enumerate(rows):
+            params[f"snapshot_date_{index}"] = row.get("cur_date")
+            params[f"country_category_{index}"] = row.get("country_category")
+            params[f"seller_name_new_{index}"] = row.get("seller_name_new")
+            params[f"seller_sku_adj_{index}"] = row.get("seller_sku_adj")
+            predicates.append(
+                "("
+                f"snapshot_date = %(snapshot_date_{index})s "
+                f"and country_category = %(country_category_{index})s "
+                f"and seller_name_new = %(seller_name_new_{index})s "
+                f"and seller_sku_adj = %(seller_sku_adj_{index})s"
+                ")"
+            )
+        cursor.execute(
+            f"""
+            select
+                snapshot_date,
+                country_category,
+                seller_name_new,
+                seller_sku_adj,
+                count(*) as country_count,
+                substring_index(
+                    group_concat(
+                        concat(country, ' ', cast(round(sales_qty, 0) as char))
+                        order by sales_qty desc, country
+                        separator ' | '
+                    ),
+                    ' | ',
+                    1
+                ) as top_countries
+            from dashboard_replenishment_country_metrics
+            where period_days = 30
+              and ({' or '.join(predicates)})
+            group by snapshot_date, country_category, seller_name_new, seller_sku_adj
+            """,
+            params,
+        )
+        summary_map = {
+            (
+                row.get("snapshot_date"),
+                row.get("country_category"),
+                row.get("seller_name_new"),
+                row.get("seller_sku_adj"),
+            ): row
+            for row in cursor.fetchall()
+        }
+        for row in rows:
+            summary = summary_map.get(
+                (
+                    row.get("cur_date"),
+                    row.get("country_category"),
+                    row.get("seller_name_new"),
+                    row.get("seller_sku_adj"),
+                ),
+                {},
+            )
+            row["country_count"] = summary.get("country_count")
+            row["top_countries"] = summary.get("top_countries")
+
+    def _normalize_product_category_period_days(self, value: int | str | None) -> int:
+        try:
+            period_days = int(value or 30)
+        except (TypeError, ValueError):
+            period_days = 30
+        return period_days if period_days in PRODUCT_CATEGORY_PERIODS else 30
+
+    def _product_category_metric_sql(self, period_days: int) -> dict[str, str]:
+        safe_period_days = self._normalize_product_category_period_days(period_days)
+        sales_col = f"final_sales_{safe_period_days}d"
+        salable_col = f"r_{safe_period_days}d_salable_days"
+        margin_col = f"pprofit_ratio_{safe_period_days}d"
+        daily_sales_expr = f"case when {salable_col} > 0 then {sales_col} / {salable_col} else 0 end"
+        category_expr = f"""
+            case
+                when ({daily_sales_expr}) >= 5 and {margin_col} >= 0.15 then '明星产品'
+                when ({daily_sales_expr}) >= 1 and ({daily_sales_expr}) < 5 and {margin_col} >= 0.25 then '明星产品'
+                when ({daily_sales_expr}) >= 5 and {margin_col} >= 0.05 and {margin_col} < 0.15 then '潜力产品'
+                when ({daily_sales_expr}) >= 1 and ({daily_sales_expr}) < 5 and {margin_col} >= 0.10 and {margin_col} < 0.25 then '潜力产品'
+                when ({daily_sales_expr}) >= 1 and ({daily_sales_expr}) < 5 and {margin_col} >= 0.05 and {margin_col} < 0.10 then '瘦狗产品'
+                when ({daily_sales_expr}) < 1 and {margin_col} >= 0.05 then '瘦狗产品'
+                when ({daily_sales_expr}) = 0 or (({daily_sales_expr}) > 1 and {margin_col} < 0.05) then '问题产品'
+                else '问题产品'
+            end
+        """.strip()
+        margin_range_expr = f"""
+            case
+                when {margin_col} >= 0.15 then '>=15%%'
+                when {margin_col} >= 0.10 then '10%%-15%%'
+                when {margin_col} >= 0.05 then '5%%-10%%'
+                when {margin_col} >= 0 then '0%%-5%%'
+                else '<0%%'
+            end
+        """.strip()
+        return {
+            "period_days": str(safe_period_days),
+            "daily_sales_expr": daily_sales_expr,
+            "margin_col": margin_col,
+            "category_expr": category_expr,
+            "margin_range_expr": margin_range_expr,
+        }
+
+    def _normalize_country_period_days(self, value: int | str | None) -> int:
+        try:
+            period_days = int(value or 30)
+        except (TypeError, ValueError):
+            period_days = 30
+        return period_days if period_days in COUNTRY_METRIC_PERIODS else 30
+
+    def _serialize_country_metric(self, row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "country": row.get("country") or "-",
+            "local_sku_list": row.get("local_sku_list") or "",
+            "listing_price": round(to_float(row.get("listing_price")), 4),
+            "sales_qty": round(to_float(row.get("sales_qty")), 2),
+            "natural_daily_sales": round(to_float(row.get("natural_daily_sales")), 4),
+            "salable_days": to_int(row.get("salable_days")),
+            "salable_daily_sales": round(to_float(row.get("salable_daily_sales")), 4),
+            "sales_amount": round(to_float(row.get("sales_amount")), 2),
+            "order_gross_profit": round(to_float(row.get("order_gross_profit")), 2),
+            "order_gross_margin": round(to_float(row.get("order_gross_margin")), 6),
+            "avg_ranking": round(to_float(row.get("avg_ranking")), 2),
+            "best_ranking": round(to_float(row.get("best_ranking")), 2),
+            "worst_ranking": round(to_float(row.get("worst_ranking")), 2),
+            "sessions_total": round(to_float(row.get("sessions_total")), 2),
+            "conversion_rate": round(to_float(row.get("conversion_rate")), 6),
+            "ad_spend": round(to_float(row.get("ad_spend")), 2),
+            "ad_orders": round(to_float(row.get("ad_orders")), 2),
+            "ad_sales": round(to_float(row.get("ad_sales")), 2),
+            "ad_clicks": round(to_float(row.get("ad_clicks")), 2),
+            "ad_impressions": round(to_float(row.get("ad_impressions")), 2),
+            "acos": round(to_float(row.get("acos")), 6),
+            "ctr": round(to_float(row.get("ctr")), 6),
+        }
+
+    def _country_summary(self, row: dict[str, Any]) -> dict[str, Any]:
+        parts = [part.strip() for part in str(row.get("top_countries") or "").split("|") if part.strip()]
+        return {
+            "country_count": to_int(row.get("country_count")),
+            "top_countries": " | ".join(parts[:3]),
+        }
 
     def _serialize_item(self, row: dict[str, Any]) -> dict[str, Any]:
         return {
@@ -633,9 +1442,53 @@ class ReplenishmentDataService:
             "replenish_qty": round(to_float(row.get("replenish_qty")), 2),
             "box_qty": round(to_float(row.get("replenish_box_qty")), 2),
             "cost": round(to_float(row.get("replenish_cost")), 2),
-            "stockout_status": row.get("stockout_status"),
+            "follow_status": format_follow_status(row.get("fllow_flag")),
+            "country_summary": self._country_summary(row),
             "category": row.get("abcd_category"),
             "margin_range": row.get("gp_margin_range"),
+        }
+
+    def _empty_country_metrics(
+        self,
+        snapshot_date: date | None,
+        period_days: int,
+        site: str,
+        store: str,
+        msku: str,
+    ) -> dict[str, Any]:
+        return {
+            "snapshot_date": format_day(snapshot_date),
+            "period_days": period_days,
+            "period_start": None,
+            "period_end": None,
+            "parent": {"site": site, "store": store, "msku": msku},
+            "summary": {
+                "country_count": 0,
+                "sales_qty": 0,
+                "sales_amount": 0,
+                "order_gross_profit": 0,
+                "order_gross_margin": 0,
+            },
+            "items": [],
+        }
+
+    def _empty_level_flow(self, prev_date: date | None, cur_date: date | None) -> dict[str, Any]:
+        return {
+            "dates": {"prev_date": format_day(prev_date), "cur_date": format_day(cur_date)},
+            "target": {"level": FLOW_ALL, "flow_type": FLOW_ALL},
+            "summary": {
+                "sku_count": 0,
+                "new_count": 0,
+                "in_count": 0,
+                "out_count": 0,
+                "exit_count": 0,
+                "stay_count": 0,
+                "replenish_qty_delta": 0,
+                "replenish_cost_delta": 0,
+            },
+            "level_changes": [],
+            "sankey": {"nodes": [], "links": []},
+            "items": [],
         }
 
     def _empty_payload(self, page: int, page_size: int) -> dict[str, Any]:
