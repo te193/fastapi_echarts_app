@@ -376,30 +376,38 @@
       node.addEventListener("click", function (event) {
         event.preventDefault();
         event.stopPropagation();
-        state.level = this.dataset.level || "all";
-        state.category = this.dataset.category || "all";
-        state.page = 1;
-        render();
+        selectLayerDetails(this.dataset.level || "all", this.dataset.category || "all");
       });
     });
     Array.from(elements.layerVizGrid.querySelectorAll("[data-flow-type]")).forEach(function (node) {
       node.addEventListener("click", function (event) {
         event.preventDefault();
         event.stopPropagation();
-        openLevelFlowDrawer(this.dataset.flowLevel || "all");
+        openLevelFlowDrawer(this.dataset.flowLevel || "all", this.dataset.flowType || "all");
       });
     });
     Array.from(elements.layerVizGrid.querySelectorAll("[data-level]:not([data-category])")).forEach(function (node) {
       node.addEventListener("click", function (event) {
         if (event.target.closest(".layer-help")) return;
-        openLevelFlowDrawer(this.dataset.level || "all");
+        selectLayerDetails(this.dataset.level || "all", "all");
       });
       node.addEventListener("keydown", function (event) {
         if (event.key !== "Enter" && event.key !== " ") return;
         event.preventDefault();
-        openLevelFlowDrawer(this.dataset.level || "all");
+        selectLayerDetails(this.dataset.level || "all", "all");
       });
     });
+  }
+
+  function selectLayerDetails(level, category) {
+    state.level = level || "all";
+    state.category = category || "all";
+    state.page = 1;
+    render();
+    window.setTimeout(function () {
+      var detailSection = elements.tableWrap && elements.tableWrap.closest(".dashboard-section");
+      if (detailSection) detailSection.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
   }
 
   function renderLevelHelp(level) {
@@ -454,10 +462,10 @@
     }).join("") + '</span>';
   }
 
-  function openLevelFlowDrawer(level) {
+  function openLevelFlowDrawer(level, flowType) {
     flowDrawer.open = true;
     flowDrawer.level = level || "all";
-    flowDrawer.flow_type = "all";
+    flowDrawer.flow_type = flowType || "all";
     elements.flowDrawer.hidden = false;
     elements.flowDrawerMask.hidden = false;
     elements.flowDrawer.setAttribute("aria-hidden", "false");

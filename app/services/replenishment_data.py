@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
@@ -37,6 +38,13 @@ FLOW_LEVEL_ORDER = {
     LEVEL_ZERO_SALES: 5,
     LEVEL_UNKNOWN: 6,
     FLOW_ENTRY_LABEL: 99,
+}
+PRODUCT_CATEGORY_SQL_COLUMNS = {
+    f"final_sales_{period}d" for period in PRODUCT_CATEGORY_PERIODS
+} | {
+    f"r_{period}d_salable_days" for period in PRODUCT_CATEGORY_PERIODS
+} | {
+    f"pprofit_ratio_{period}d" for period in PRODUCT_CATEGORY_PERIODS
 }
 
 REPLENISHMENT_COLUMN_LABELS = {
@@ -315,7 +323,14 @@ class ReplenishmentDataService:
                 level,
                 flow_type,
             )
-        return self._build_level_flow_payload(rows, format_day(prev_date), format_day(selected_date), level, flow_type)
+        return self._build_level_flow_payload(
+            rows,
+            format_day(prev_date),
+            format_day(selected_date),
+            level,
+            flow_type,
+            category,
+        )
 
     def get_export_items(
         self,
@@ -705,7 +720,12 @@ class ReplenishmentDataService:
             FLOW_ALL,
             FLOW_ALL,
         )
-        payload = self._build_level_flow_payload(rows, format_day(prev_date), format_day(selected_date))
+        payload = self._build_level_flow_payload(
+            rows,
+            format_day(prev_date),
+            format_day(selected_date),
+            target_category=category,
+        )
         return {
             "dates": payload["dates"],
             "levels": {row["level"]: row for row in payload["level_changes"]},
@@ -726,6 +746,12 @@ class ReplenishmentDataService:
                 },
             )
 
+    def _qualify_product_category_expr(self, expr: str, alias: str) -> str:
+        qualified = expr
+        for column in sorted(PRODUCT_CATEGORY_SQL_COLUMNS, key=len, reverse=True):
+            qualified = re.sub(rf"\b{re.escape(column)}\b", f"{alias}.{column}", qualified)
+        return qualified
+
     def _level_flow_rows(
         self,
         conn,
@@ -740,6 +766,8 @@ class ReplenishmentDataService:
         flow_type: str,
     ) -> list[dict[str, Any]]:
         filters, params = self._level_flow_filters(selected_date, prev_date, category, site, store, keyword)
+        prev_category_expr = self._qualify_product_category_expr(category_expr, "p")
+        cur_category_expr = self._qualify_product_category_expr(category_expr, "c")
         with conn.cursor() as cursor:
             cursor.execute(
                 f"""
@@ -774,8 +802,8 @@ class ReplenishmentDataService:
                         c.daily_avg_sales as cur_daily_avg_sales,
                         p.final_sales_30d as prev_sales_30d,
                         c.final_sales_30d as cur_sales_30d,
-                        p.abcd_category as prev_category,
-                        c.abcd_category as cur_category
+                        case when p.seller_sku_adj is null then null else {prev_category_expr} end as prev_category,
+                        {cur_category_expr} as cur_category
                     from dashboard_pur_plan_replenish_data c
                     left join dashboard_pur_plan_replenish_data p
                            on p.cur_date = %(prev_date)s
@@ -813,7 +841,7 @@ class ReplenishmentDataService:
                         null as cur_daily_avg_sales,
                         p.final_sales_30d as prev_sales_30d,
                         null as cur_sales_30d,
-                        p.abcd_category as prev_category,
+                        {prev_category_expr} as prev_category,
                         null as cur_category
                     from dashboard_pur_plan_replenish_data p
                     left join dashboard_pur_plan_replenish_data c
@@ -844,7 +872,11 @@ class ReplenishmentDataService:
         clauses = ["1 = 1"]
         params: dict[str, Any] = {"snapshot_date": selected_date, "prev_date": prev_date}
         if category and category != "all":
-            clauses.append("coalesce(cur_category, prev_category, '鏈垎绫?) = %(category)s")
+            unknown_category = "\u672a\u5206\u7c7b"
+            clauses.append(
+                f"(coalesce(cur_category, '{unknown_category}') = %(category)s "
+                f"or coalesce(prev_category, '{unknown_category}') = %(category)s)"
+            )
             params["category"] = category
         if site and site != "all":
             clauses.append("country_category = %(site)s")
@@ -867,6 +899,7 @@ class ReplenishmentDataService:
         cur_date: str | None,
         target_level: str = FLOW_ALL,
         target_flow_type: str = FLOW_ALL,
+        target_category: str = FLOW_ALL,
     ) -> dict[str, Any]:
         level_map: dict[str, dict[str, Any]] = {}
         link_map: dict[tuple[str, str], dict[str, Any]] = {}
@@ -886,12 +919,12 @@ class ReplenishmentDataService:
             cur_level = row.get("cur_level") or FLOW_ENTRY_LABEL
             prev_sort = to_int(row.get("prev_level_sort")) if row.get("prev_level_sort") is not None else 99
             cur_sort = to_int(row.get("cur_level_sort")) if row.get("cur_level_sort") is not None else 99
-            flow_type = self._classify_flow_type(row, target_level)
-            if target_level != FLOW_ALL and not self._row_matches_level(row, target_level):
+            flow_type = self._classify_flow_type(row, target_level, target_category)
+            if target_level != FLOW_ALL and not self._row_matches_level(row, target_level, target_category):
                 continue
             if target_flow_type != FLOW_ALL and flow_type != target_flow_type:
                 continue
-            self._accumulate_level_change(level_map, row)
+            self._accumulate_level_change(level_map, row, target_category)
             link_key = (f"\u6628\u5929{prev_level}", f"\u4eca\u5929{cur_level}")
             link = link_map.setdefault(
                 link_key,
@@ -934,7 +967,7 @@ class ReplenishmentDataService:
         )
         return {
             "dates": {"prev_date": prev_date, "cur_date": cur_date},
-            "target": {"level": target_level, "flow_type": target_flow_type},
+            "target": {"level": target_level, "flow_type": target_flow_type, "category": target_category},
             "summary": {
                 **summary,
                 "replenish_qty_delta": round(summary["replenish_qty_delta"], 2),
@@ -970,10 +1003,22 @@ class ReplenishmentDataService:
     def _sankey_node_depth(self, name: str) -> int:
         return 0 if (name or "").startswith("\u6628\u5929") else 1
 
-    def _accumulate_level_change(self, level_map: dict[str, dict[str, Any]], row: dict[str, Any]) -> None:
+    def _category_matches(self, value: Any, target_category: str = FLOW_ALL) -> bool:
+        if not target_category or target_category == FLOW_ALL:
+            return True
+        return (value or "未分类") == target_category
+
+    def _accumulate_level_change(
+        self,
+        level_map: dict[str, dict[str, Any]],
+        row: dict[str, Any],
+        target_category: str = FLOW_ALL,
+    ) -> None:
         prev_level = row.get("prev_level")
         cur_level = row.get("cur_level")
-        if cur_level:
+        prev_category_match = self._category_matches(row.get("prev_category"), target_category)
+        cur_category_match = self._category_matches(row.get("cur_category"), target_category)
+        if cur_level and cur_category_match:
             current = level_map.setdefault(
                 cur_level,
                 {
@@ -992,11 +1037,11 @@ class ReplenishmentDataService:
             current["cur_count"] += 1
             if prev_level in REPLENISHMENT_PASSIVE_LEVELS and cur_level in REPLENISHMENT_ACTIVE_LEVELS:
                 current["new_count"] += 1
-            elif prev_level == cur_level:
+            elif prev_level == cur_level and prev_category_match:
                 current["stay_count"] += 1
             else:
                 current["in_count"] += 1
-        if prev_level:
+        if prev_level and prev_category_match:
             previous = level_map.setdefault(
                 prev_level,
                 {
@@ -1015,27 +1060,34 @@ class ReplenishmentDataService:
             previous["prev_count"] += 1
             if prev_level in REPLENISHMENT_ACTIVE_LEVELS and cur_level in REPLENISHMENT_PASSIVE_LEVELS:
                 previous["exit_count"] += 1
-            elif cur_level != prev_level:
+            elif cur_level != prev_level or not cur_category_match:
                 previous["out_count"] += 1
         for item in level_map.values():
             item["delta_count"] = item["cur_count"] - item["prev_count"]
 
-    def _classify_flow_type(self, row: dict[str, Any], target_level: str = FLOW_ALL) -> str:
+    def _classify_flow_type(
+        self,
+        row: dict[str, Any],
+        target_level: str = FLOW_ALL,
+        target_category: str = FLOW_ALL,
+    ) -> str:
         prev_level = row.get("prev_level")
         cur_level = row.get("cur_level")
+        prev_category_match = self._category_matches(row.get("prev_category"), target_category)
+        cur_category_match = self._category_matches(row.get("cur_category"), target_category)
         if target_level != FLOW_ALL:
-            if cur_level == target_level and prev_level in REPLENISHMENT_PASSIVE_LEVELS and cur_level in REPLENISHMENT_ACTIVE_LEVELS:
+            cur_match = cur_level == target_level and cur_category_match
+            prev_match = prev_level == target_level and prev_category_match
+            if cur_match and prev_level in REPLENISHMENT_PASSIVE_LEVELS and cur_level in REPLENISHMENT_ACTIVE_LEVELS:
                 return FLOW_NEW
-            if cur_level == target_level and prev_level and prev_level != cur_level:
+            if cur_match and not prev_match:
                 return FLOW_IN
-            if cur_level == target_level and not prev_level:
-                return FLOW_IN
-            if prev_level == target_level and prev_level in REPLENISHMENT_ACTIVE_LEVELS and cur_level in REPLENISHMENT_PASSIVE_LEVELS:
+            if prev_match and prev_level in REPLENISHMENT_ACTIVE_LEVELS and cur_level in REPLENISHMENT_PASSIVE_LEVELS:
                 return FLOW_EXIT
-            if prev_level == target_level and cur_level and cur_level != prev_level:
+            if prev_match and not cur_match:
                 return FLOW_OUT
-            if prev_level == target_level and not cur_level:
-                return FLOW_OUT
+            if cur_match and prev_match:
+                return FLOW_STAY
             return FLOW_STAY
         if prev_level in REPLENISHMENT_PASSIVE_LEVELS and cur_level in REPLENISHMENT_ACTIVE_LEVELS:
             return FLOW_NEW
@@ -1051,8 +1103,11 @@ class ReplenishmentDataService:
             return FLOW_IN if to_int(row.get("cur_level_sort")) < to_int(row.get("prev_level_sort")) else FLOW_OUT
         return FLOW_IN
 
-    def _row_matches_level(self, row: dict[str, Any], level: str) -> bool:
-        return row.get("cur_level") == level or row.get("prev_level") == level
+    def _row_matches_level(self, row: dict[str, Any], level: str, target_category: str = FLOW_ALL) -> bool:
+        return (
+            (row.get("cur_level") == level and self._category_matches(row.get("cur_category"), target_category))
+            or (row.get("prev_level") == level and self._category_matches(row.get("prev_category"), target_category))
+        )
 
     def _flow_reason(self, row: dict[str, Any]) -> str:
         if not row.get("prev_level"):
