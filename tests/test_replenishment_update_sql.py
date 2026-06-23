@@ -15,6 +15,7 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("dashboard_pur_plan_replenish_data", ddl)
         self.assertIn("pur_plan_prod_perf_salable_days_stat", ddl)
         self.assertIn("dashboard_replenishment_history_daily_sync", ddl)
+        self.assertIn("dashboard_replenishment_self_asin_sync", ddl)
         self.assertIn("support_inventory_qty", ddl)
         self.assertIn("inventory_support_days", ddl)
         self.assertIn("support_replenish_level", ddl)
@@ -23,6 +24,9 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("pre_normal_replenish_need_qty", ddl)
         self.assertIn("pre_replenish_trigger_qty", ddl)
         self.assertIn("dashboard_replenishment_listing_basic_sync", ddl)
+        self.assertIn("dashboard_replenishment_country_metrics", ddl)
+        self.assertIn("listing_price", ddl)
+        self.assertIn("primary key (snapshot_date, period_days, country_category, country, seller_name_new, seller_sku_adj)", ddl)
         self.assertIn("max_cg_price", ddl)
         self.assertIn("principal", ddl)
 
@@ -38,6 +42,16 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("day_volume", step.target_columns)
         self.assertIn("afn_fulfillable_quantity", step.target_columns)
         self.assertNotIn("history_daily_sync", replenishment_update.DEFAULT_STEP_ORDER)
+
+    def test_self_asin_sync_step_loads_follow_mapping_source(self):
+        step = replenishment_update.STEPS["self_asin_sync"]
+
+        self.assertIn("dashboard_replenishment_self_asin_sync", step.target_table)
+        self.assertIn("dwd_datasync.lx_sales_mws_listing", step.source_select_statement)
+        self.assertIn("opt_db.store_brand_relation", step.source_select_statement)
+        self.assertIn("asin", step.target_columns)
+        self.assertIn("seller_name_new", step.target_columns)
+        self.assertIn("self_asin_sync", replenishment_update.DEFAULT_STEP_ORDER)
 
     def test_salable_days_sql_uses_local_daily_sources(self):
         sql = replenishment_update.INSERT_SALABLE_DAYS_SQL
@@ -97,8 +111,8 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("l.max_cg_box_pcs", sql)
         self.assertIn("when coalesce(max_cg_box_pcs, 0) > 0 then max_cg_box_pcs", sql)
         self.assertIn("and (max_cg_box_pcs = 0 or max_cg_box_pcs is null)", sql)
-        self.assertIn("greatest(round(pre_normal_replenish_need_qty * sales_adj_factor, 0), 50)", sql)
-        self.assertIn("* sales_adj_factor /", sql)
+        self.assertIn("greatest(round(normal_replenish_need_qty * sales_adj_factor, 0), 50)", sql)
+        self.assertIn("normal_replenish_need_qty * sales_adj_factor /", sql)
         self.assertNotIn("50 as pre_replenish_trigger_qty", sql)
         self.assertNotIn("1 as sales_adj_factor", sql)
         self.assertNotIn("0 as history_recovery_flag", sql)
@@ -116,12 +130,60 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("adjusted_daily_sales_3d * 0.5 + adjusted_daily_sales_7d * 0.5", sql)
         self.assertIn("adjusted_daily_sales_7d * 0.6 + adjusted_daily_sales_14d * 0.2 + adjusted_daily_sales_30d * 0.2", sql)
 
+    def test_replenishment_result_sql_restores_follow_sales_logic(self):
+        sql = replenishment_update.REPLENISHMENT_RESULT_SQL
+
+        self.assertIn("tmp_prod_perf_sku_asin_metrics", sql)
+        self.assertIn("tmp_prod_perf_follow_origin", sql)
+        self.assertIn("dashboard_replenishment_self_asin_sync", sql)
+        self.assertIn("origin_sales_30", sql)
+        self.assertIn("when coalesce(fo.fllow_flag, 1) = 1 then coalesce(m.sales_30, 0)", sql)
+        self.assertIn("else coalesce(m.sales_30, 0) + coalesce(fo.origin_sales_30, 0)", sql)
+        self.assertIn("coalesce(fo.fllow_flag, 1) as fllow_flag", sql)
+        self.assertNotIn("1 as fllow_flag", sql)
+
+    def test_follow_sales_only_affects_replenishment_qty_not_support_layer(self):
+        sql = replenishment_update.REPLENISHMENT_RESULT_SQL
+
+        self.assertIn("left join tmp_prod_perf_sku_metrics m", sql)
+        self.assertIn("left join tmp_prod_perf_sku_follow_metrics fm", sql)
+        self.assertIn("coalesce(m.sales_30, 0) as sales_30", sql)
+        self.assertIn("coalesce(fm.sales_30, m.sales_30, 0) as final_sales_30", sql)
+        self.assertIn("as final_adjusted_daily_sales_30d", sql)
+        self.assertIn("end as daily_avg_sales", sql)
+        self.assertIn("pre_replenish_comp_months * 30 * coalesce(daily_avg_sales, 0)", sql)
+        self.assertIn("base.support_inventory_qty / base.pre_daily_avg_sales", sql)
+        self.assertNotIn("left join tmp_prod_perf_sku_follow_metrics m", sql)
+
     def test_replenishment_qty_only_uses_support_candidate_layers(self):
         sql = replenishment_update.REPLENISHMENT_RESULT_SQL
 
         self.assertIn("when support_replenish_level_sort in (1, 2, 3) and coalesce(history_recovery_flag, 0) = 1", sql)
         self.assertNotIn("when coalesce(history_recovery_flag, 0) = 1 then max_cg_box_pcs", sql)
         self.assertNotIn("when coalesce(history_recovery_flag, 0) = 1 then 1", sql)
+
+    def test_country_metrics_sql_is_display_only_by_period(self):
+        sql = replenishment_update.BUILD_COUNTRY_METRICS_SQL
+
+        self.assertIn("dashboard_replenishment_country_metrics", sql)
+        self.assertIn("dashboard_product_performance_daily", sql)
+        self.assertIn("dashboard_pur_plan_replenish_data", sql)
+        self.assertIn("period_days", sql)
+        self.assertIn("period_days in (7, 14, 30, 90)", sql)
+        self.assertIn("group_concat(distinct nullif(p.local_sku, '')", sql)
+        self.assertIn("null as listing_price", sql)
+        self.assertIn("avg(case when p.dt_date = %(biz_date)s then nullif(p.ranking, 0) end) as avg_ranking", sql)
+        self.assertIn("group by", sql.lower())
+        self.assertIn("p.country_category", sql)
+        self.assertIn("p.country", sql)
+        self.assertIn("p.seller_name_new", sql)
+        self.assertIn("p.seller_sku_adj", sql)
+        self.assertNotIn("group by\n    p.country_category,\n    p.country,\n    p.seller_name_new,\n    p.seller_sku_adj,\n    coalesce(nullif(p.local_sku", sql)
+        self.assertIn("country_metrics", replenishment_update.DEFAULT_STEP_ORDER)
+        self.assertIn("dashboard_listing_price_daily_snapshot", replenishment_update.INSERT_COUNTRY_LISTING_PRICE_SQL)
+        self.assertIn("where snapshot_date = %(biz_date)s", replenishment_update.INSERT_COUNTRY_LISTING_PRICE_SQL)
+        self.assertIn("tmp_replenishment_country_listing_price", replenishment_update.UPDATE_COUNTRY_METRICS_LISTING_PRICE_SQL)
+        self.assertIn("set m.listing_price = lp.price", replenishment_update.UPDATE_COUNTRY_METRICS_LISTING_PRICE_SQL)
 
     def test_replenishment_category_uses_30d_margin_and_salable_day_daily_sales(self):
         sql = replenishment_update.REPLENISHMENT_RESULT_SQL

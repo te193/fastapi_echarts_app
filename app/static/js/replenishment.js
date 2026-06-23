@@ -26,6 +26,14 @@
     "\u8865\u8d27\u6570\u91cf\u6309\u9700\u6c42\u91cf\u7ed3\u5408\u91c7\u8d2d\u7bb1\u89c4\u53d6\u6574\uff0c\u8865\u8d27\u8d27\u503c = \u8865\u8d27\u6570\u91cf * (\u91c7\u8d2d\u5355\u4ef7 + \u5934\u7a0b\u8fd0\u8d39)\u3002",
     "\u4ea7\u54c1\u5206\u7c7b\u5360\u6bd4 = \u8be5\u5206\u5c42\u5185\u5bf9\u5e94\u5206\u7c7b MSKU \u6570 / \u8be5\u5206\u5c42 MSKU \u603b\u6570\u3002"
   ];
+  var FLOW_HELP = [
+    "\u6d41\u8f6c\u6307\u6807\u53e3\u5f84\uff1a\u6309\u5f53\u524d\u8865\u8d27\u65e5\u671f\u4e0e\u4e0a\u4e00\u4e2a\u5df2\u751f\u6210\u8865\u8d27\u7ed3\u679c\u65e5\u671f\u5bf9\u6bd4\u3002",
+    "\u8f83\u4e0a\u671f = \u4eca\u5929\u8be5\u5c42 MSKU \u6570 - \u4e0a\u671f\u8be5\u5c42 MSKU \u6570\u3002",
+    "\u6d41\u5165 = \u4e0a\u671f\u5728\u5176\u4ed6\u5c42\u7ea7\u6216\u65e0\u8bb0\u5f55\uff0c\u4eca\u5929\u8fdb\u5165\u8be5\u5c42\u7684 MSKU\u3002",
+    "\u6d41\u51fa = \u4e0a\u671f\u5728\u8be5\u5c42\uff0c\u4eca\u5929\u8f6c\u5230\u5176\u4ed6\u5c42\u6216\u65e0\u8bb0\u5f55\u7684 MSKU\u3002",
+    "\u9000\u51fa = \u4e0a\u671f\u5728\u7d27\u6025/\u5efa\u8bae/\u8ba1\u5212\u8865\u8d27\u4e09\u5c42\uff0c\u4eca\u5929\u8f6c\u5230\u5e93\u5b58\u5145\u8db3\u6216\u65e5\u9500\u4e3a0\u7684 MSKU\u3002",
+    "\u65b0\u589e = \u4e0a\u671f\u5728\u5e93\u5b58\u5145\u8db3\u6216\u65e5\u9500\u4e3a0\uff0c\u4eca\u5929\u8fdb\u5165\u7d27\u6025/\u5efa\u8bae/\u8ba1\u5212\u8865\u8d27\u4e09\u5c42\u7684 MSKU\u3002"
+  ];
   var text = {
     loading: "\u52a0\u8f7d\u4e2d...",
     loadFailed: "\u52a0\u8f7d\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u8865\u8d27\u7ed3\u679c\u8868\u3002",
@@ -49,22 +57,52 @@
     all: LEVEL_ALL,
     level: "\u5c42\u7ea7",
     store: "\u5e97\u94fa",
-    site: "\u7ad9\u70b9",
+    site: "\u56fd\u5bb6\u7c7b\u522b",
     dailySales: "\u65e5\u9500",
     supportDays: "\u652f\u6491\u5929\u6570",
-    available: "\u53ef\u7528",
-    inTransit: "\u5728\u9014",
-    local: "\u672c\u5730",
+    available: "FBA\u53ef\u7528",
+    inTransit: "FBA\u5728\u9014",
+    local: "\u672c\u5730\u5728\u4ed3",
+    purchasePlan: "\u8ba1\u5212\u91c7\u8d2d\u6570",
     sales30d: "30\u5929\u9500\u91cf",
+    categoryPeriod: "\u5206\u7c7b\u5468\u671f",
+    periodSalableDailySales: "\u5929\u53ef\u552e\u65e5\u9500",
+    periodProfitRate: "\u5929\u8ba2\u5355\u6bdb\u5229\u7387",
     needQty: "\u9700\u6c42\u91cf",
     boxQty: "\u7bb1\u6570",
-    stockoutStatus: "\u7f3a\u8d27\u72b6\u6001",
+    followStatus: "\u662f\u5426\u8ddf\u5356",
+    countryPerformance: "\u56fd\u5bb6\u8868\u73b0",
+    countryDetail: "\u56fd\u5bb6\u660e\u7ec6",
+    countryCount: "\u56fd\u5bb6\u6570",
+    periodSales: "\u5468\u671f\u9500\u91cf",
+    periodAmount: "\u5468\u671f\u9500\u552e\u989d",
+    periodMargin: "\u5468\u671f\u6bdb\u5229\u7387",
+    listingPrice: "\u4ef7\u683c",
+    salableDailySales: "\u53ef\u552e\u65e5\u9500",
+    salesAmount: "\u9500\u552e\u989d",
+    profit: "\u5229\u6da6",
+    avgRanking: "\u6700\u540e\u6392\u540d",
+    bestRanking: "\u6700\u597d\u6392\u540d",
+    worstRanking: "\u6700\u5dee\u6392\u540d",
+    conversionRate: "\u8f6c\u5316\u7387",
+    adSpend: "\u5e7f\u544a\u82b1\u8d39",
+    adSales: "\u5e7f\u544a\u9500\u552e\u989d",
     skuInfo: "SKU \u4fe1\u606f",
     replenishAdvice: "\u8865\u8d27\u5efa\u8bae",
     inventoryStructure: "\u5e93\u5b58\u7ed3\u6784",
     salesSupport: "\u9500\u552e\u652f\u6491",
     category: "\u4ea7\u54c1\u5206\u7c7b",
     margin: "\u5229\u6da6\u7387",
+    flowChange: "\u8f83\u4e0a\u671f",
+    flowNew: "\u65b0\u589e",
+    flowIn: "\u6d41\u5165",
+    flowOut: "\u6d41\u51fa",
+    flowExit: "\u9000\u51fa",
+    flowStay: "\u4fdd\u6301",
+    flowDetail: "\u5c42\u7ea7\u6d41\u8f6c",
+    flowReason: "\u53d8\u5316\u539f\u56e0",
+    prevLevel: "\u6628\u5929\u5c42\u7ea7",
+    curLevel: "\u4eca\u5929\u5c42\u7ea7",
     totalPrefix: "\u5171 ",
     totalMiddle: " \u6761\uff0c\u7b2c ",
     totalSuffix: " \u9875"
@@ -76,23 +114,41 @@
     site: query.get("site") || "all",
     store: query.get("store") || "all",
     keyword: query.get("keyword") || "",
+    category_period_days: Number(query.get("category_period_days") || 30),
     sort_field: query.get("sort_field") || "",
     sort_dir: query.get("sort_dir") || "",
     page: Number(query.get("page") || 1),
-    page_size: 20
+    page_size: normalizePageSize(query.get("page_size"))
   };
   var elements = {};
   var meta = null;
   var token = 0;
   var datePickerMonth = null;
+  var countryDrawer = {
+    open: false,
+    period_days: 30,
+    row: null,
+    sort_field: "",
+    sort_dir: ""
+  };
+  var flowDrawer = {
+    open: false,
+    level: "all",
+    flow_type: "all",
+    chart: null
+  };
 
   document.addEventListener("DOMContentLoaded", init);
 
   function init() {
     [
-      "datePickerBtn", "datePickerValue", "datePickerPanel", "levelSelect", "siteSelect", "storeSelect", "keywordInput", "clearFiltersBtn",
-      "periodHint", "summaryGrid", "layerVizGrid", "levelTabs", "tableWrap", "paginationInfo", "paginationNumbers",
-      "prevPageBtn", "nextPageBtn", "sortQtyBtn", "sortSupportBtn", "exportReplenishmentBtn"
+      "datePickerBtn", "datePickerValue", "datePickerPanel", "levelSelect", "categoryPeriodSelect", "siteSelect", "storeSelect", "keywordInput", "clearFiltersBtn",
+      "periodHint", "summaryGrid", "layerVizGrid", "levelTabs", "tableWrap", "paginationInfo", "paginationNumbers", "pageSizeSelect",
+      "prevPageBtn", "nextPageBtn", "sortQtyBtn", "sortSupportBtn", "exportReplenishmentBtn",
+      "countryDrawerMask", "countryDrawer", "countryDrawerTitle", "countryDrawerSubtitle", "countryDrawerCloseBtn",
+      "countryPeriodTabs", "countrySummaryGrid", "countryMetricsWrap",
+      "flowDrawerMask", "flowDrawer", "flowDrawerTitle", "flowDrawerSubtitle", "flowDrawerCloseBtn",
+      "flowSummaryGrid", "flowSankeyChart", "flowDetailWrap"
     ].forEach(function (id) {
       elements[id] = document.getElementById(id);
     });
@@ -103,11 +159,12 @@
   function bindEvents() {
     [
       ["levelSelect", "level"],
+      ["categoryPeriodSelect", "category_period_days"],
       ["siteSelect", "site"],
       ["storeSelect", "store"]
     ].forEach(function (pair) {
       elements[pair[0]].addEventListener("change", function () {
-        state[pair[1]] = this.value;
+        state[pair[1]] = pair[1] === "category_period_days" ? Number(this.value || 30) : this.value;
         state.page = 1;
         render();
       });
@@ -135,7 +192,11 @@
       }
     });
     document.addEventListener("keydown", function (event) {
-      if (event.key === "Escape") closeDatePicker();
+      if (event.key === "Escape") {
+        closeDatePicker();
+        closeCountryDrawer();
+        closeFlowDrawer();
+      }
     });
     elements.keywordInput.addEventListener("input", function () {
       state.keyword = this.value.trim();
@@ -148,6 +209,7 @@
       state.site = "all";
       state.store = "all";
       state.keyword = "";
+      state.category_period_days = 30;
       state.sort_field = "";
       state.sort_dir = "";
       state.page = 1;
@@ -164,6 +226,11 @@
       state.page += 1;
       render();
     });
+    elements.pageSizeSelect.addEventListener("change", function () {
+      state.page_size = normalizePageSize(this.value);
+      state.page = 1;
+      render();
+    });
     elements.sortQtyBtn.addEventListener("click", function () {
       state.sort_field = "replenish_qty";
       state.sort_dir = state.sort_dir === "desc" ? "asc" : "desc";
@@ -175,6 +242,22 @@
       render();
     });
     elements.exportReplenishmentBtn.addEventListener("click", exportReplenishment);
+    elements.tableWrap.addEventListener("click", function (event) {
+      var button = event.target.closest("[data-country-detail]");
+      if (!button) return;
+      var row = window.replenishmentCountryRowMap ? window.replenishmentCountryRowMap[button.dataset.rowKey || ""] : null;
+      if (row) openCountryDrawer(row);
+    });
+    elements.countryDrawerCloseBtn.addEventListener("click", closeCountryDrawer);
+    elements.countryDrawerMask.addEventListener("click", closeCountryDrawer);
+    elements.flowDrawerCloseBtn.addEventListener("click", closeFlowDrawer);
+    elements.flowDrawerMask.addEventListener("click", closeFlowDrawer);
+    elements.countryPeriodTabs.addEventListener("click", function (event) {
+      var button = event.target.closest("[data-country-period]");
+      if (!button) return;
+      countryDrawer.period_days = Number(button.dataset.countryPeriod || 30);
+      fetchCountryMetrics();
+    });
   }
 
   function render() {
@@ -213,9 +296,11 @@
   function syncControls() {
     elements.datePickerValue.textContent = state.snapshot_date || "--";
     elements.levelSelect.value = state.level || "all";
+    elements.categoryPeriodSelect.value = String(state.category_period_days || 30);
     elements.siteSelect.value = state.site || "all";
     elements.storeSelect.value = state.store || "all";
     elements.keywordInput.value = state.keyword || "";
+    elements.pageSizeSelect.value = String(normalizePageSize(state.page_size));
   }
 
   function renderHeader(payload) {
@@ -264,7 +349,7 @@
         return [
           '<div class="replenish-layer-row level-' + app.escapeHtml(String(row.sort || "")) + active + '" data-level="' + app.escapeHtml(level) + '" role="button" tabindex="0">',
           '<span class="layer-mark">' + layerGlyph(row.sort) + '</span>',
-          '<span class="layer-name"><span class="layer-title"><span>' + app.escapeHtml(level) + '</span>' + renderLevelHelp(level) + '</span><small>' + formatNumber(row.sku_count) + ' MSKU</small>' + renderCategoryMix(row.category_mix, row.sku_count, level) + '</span>',
+          '<span class="layer-name"><span class="layer-title"><span>' + app.escapeHtml(level) + '</span>' + renderLevelHelp(level) + '</span><small>' + formatNumber(row.sku_count) + ' MSKU</small>' + renderFlowChips(row) + renderCategoryMix(row.category_mix, row.sku_count, level) + '</span>',
           '<strong>' + formatNumber(row.replenish_qty) + '</strong>',
           '<strong>' + formatCurrency(row.replenish_cost) + '</strong>',
           '<span class="layer-progress"><i style="width:' + width + '%"></i></span>',
@@ -297,26 +382,28 @@
         render();
       });
     });
+    Array.from(elements.layerVizGrid.querySelectorAll("[data-flow-type]")).forEach(function (node) {
+      node.addEventListener("click", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        openLevelFlowDrawer(this.dataset.flowLevel || "all");
+      });
+    });
     Array.from(elements.layerVizGrid.querySelectorAll("[data-level]:not([data-category])")).forEach(function (node) {
-      node.addEventListener("click", function () {
-        state.level = this.dataset.level || "all";
-        state.category = "all";
-        state.page = 1;
-        render();
+      node.addEventListener("click", function (event) {
+        if (event.target.closest(".layer-help")) return;
+        openLevelFlowDrawer(this.dataset.level || "all");
       });
       node.addEventListener("keydown", function (event) {
         if (event.key !== "Enter" && event.key !== " ") return;
         event.preventDefault();
-        state.level = this.dataset.level || "all";
-        state.category = "all";
-        state.page = 1;
-        render();
+        openLevelFlowDrawer(this.dataset.level || "all");
       });
     });
   }
 
   function renderLevelHelp(level) {
-    var lines = LEVEL_HELP[level] || [];
+    var lines = (LEVEL_HELP[level] || []).concat(FLOW_HELP);
     if (!lines.length) return "";
     var body = lines.map(function (line) {
       return '<span>' + app.escapeHtml(line) + '</span>';
@@ -343,6 +430,211 @@
     }).join("") + '</span>';
   }
 
+  function renderFlowChips(row) {
+    var flow = row.flow || {};
+    var level = row.level || "";
+    var chips = [
+      [text.flowChange, Number(flow.delta_count || 0), "all"],
+      [text.flowIn, Number(flow.in_count || 0), "\u6d41\u5165"],
+      [text.flowOut, Number(flow.out_count || 0), "\u6d41\u51fa"],
+      [text.flowExit, Number(flow.exit_count || 0), "\u9000\u51fa"],
+      [text.flowNew, Number(flow.new_count || 0), "\u65b0\u589e"]
+    ];
+    return '<span class="level-flow-chips">' + chips.map(function (chip) {
+      var value = chip[1];
+      var signed = chip[2] === "all";
+      var tone = value > 0 ? "up" : (value < 0 ? "down" : "flat");
+      var label = signed ? signedNumber(value) : formatNumber(value, 0);
+      return [
+        '<button type="button" class="level-flow-chip ' + tone + '" data-flow-level="' + app.escapeHtml(level) + '" data-flow-type="' + app.escapeHtml(chip[2]) + '">',
+        '<span>' + app.escapeHtml(chip[0]) + '</span>',
+        '<strong>' + app.escapeHtml(label) + '</strong>',
+        '</button>'
+      ].join("");
+    }).join("") + '</span>';
+  }
+
+  function openLevelFlowDrawer(level) {
+    flowDrawer.open = true;
+    flowDrawer.level = level || "all";
+    flowDrawer.flow_type = "all";
+    elements.flowDrawer.hidden = false;
+    elements.flowDrawerMask.hidden = false;
+    elements.flowDrawer.setAttribute("aria-hidden", "false");
+    elements.flowDrawerTitle.textContent = flowDrawer.level === "all" ? text.flowDetail : flowDrawer.level + " - " + text.flowDetail;
+    elements.flowDrawerSubtitle.textContent = text.loading;
+    elements.flowSummaryGrid.innerHTML = "";
+    elements.flowSankeyChart.innerHTML = "";
+    elements.flowDetailWrap.innerHTML = '<div class="empty-state compact">' + text.loading + '</div>';
+    fetchLevelFlow();
+  }
+
+  function closeFlowDrawer() {
+    if (!elements.flowDrawer) return;
+    flowDrawer.open = false;
+    elements.flowDrawer.hidden = true;
+    elements.flowDrawerMask.hidden = true;
+    elements.flowDrawer.setAttribute("aria-hidden", "true");
+    if (flowDrawer.chart) {
+      flowDrawer.chart.dispose();
+      flowDrawer.chart = null;
+    }
+  }
+
+  function fetchLevelFlow() {
+    var level = flowDrawer.level;
+    var flowType = flowDrawer.flow_type;
+    app.apiGet("/api/replenishment/level-flow", {
+      snapshot_date: state.snapshot_date,
+      level: level,
+      flow_type: flowType,
+      category: state.category,
+      site: state.site,
+      store: state.store,
+      keyword: state.keyword,
+      category_period_days: state.category_period_days
+    }).then(function (payload) {
+      if (!flowDrawer.open || flowDrawer.level !== level || flowDrawer.flow_type !== flowType) return;
+      renderFlowDrawer(payload);
+    }).catch(function (error) {
+      console.error(error);
+      elements.flowDetailWrap.innerHTML = '<div class="empty-state compact">' + text.loadFailed + '</div>';
+    });
+  }
+
+  function renderFlowDrawer(payload) {
+    var dates = payload.dates || {};
+    elements.flowDrawerSubtitle.textContent = (dates.prev_date || "--") + " \u2192 " + (dates.cur_date || "--");
+    renderFlowSummary(payload.summary || {});
+    renderFlowSankey(payload.sankey || {}, payload.summary || {});
+    renderFlowDetailTable(payload.items || []);
+  }
+
+  function renderFlowSummary(summary) {
+    var cards = [
+      [text.skuInfo, formatNumber(summary.sku_count, 0)],
+      [text.flowIn, formatNumber(summary.in_count, 0)],
+      [text.flowOut, formatNumber(summary.out_count, 0)],
+      [text.flowExit, formatNumber(summary.exit_count, 0)],
+      [text.flowNew, formatNumber(summary.new_count, 0)],
+      [text.replenishQty, signedNumber(summary.replenish_qty_delta || 0)],
+      [text.replenishValue, signedCurrency(summary.replenish_cost_delta || 0)]
+    ];
+    elements.flowSummaryGrid.innerHTML = cards.map(function (card) {
+      return '<div class="country-summary-card"><span>' + app.escapeHtml(card[0]) + '</span><strong>' + app.escapeHtml(card[1]) + '</strong></div>';
+    }).join("");
+  }
+
+  function renderFlowSankey(sankey, summary) {
+    if (typeof echarts === "undefined" || !elements.flowSankeyChart) return;
+    var chartData = enrichFlowSankey(sankey, summary);
+    if (flowDrawer.chart) flowDrawer.chart.dispose();
+    flowDrawer.chart = echarts.init(elements.flowSankeyChart);
+    flowDrawer.chart.setOption({
+      backgroundColor: "#ffffff",
+      tooltip: {
+        trigger: "item",
+        formatter: function (params) {
+          if (!params.data || params.data.source == null) {
+            return [
+              app.escapeHtml(params.name || ""),
+              "<br/>SKU\uff1a" + formatNumber(params.data && params.data.flow_count, 0),
+              "<br/>\u5360\u6bd4\uff1a" + formatPercent(params.data && params.data.flow_percent)
+            ].join("");
+          }
+          return [
+            app.escapeHtml(params.data.source + " \u2192 " + params.data.target),
+            "<br/>SKU\u6570\uff1a" + formatNumber(params.data.value, 0),
+            "<br/>\u8865\u8d27\u6570\u91cf\uff1a" + formatNumber(params.data.replenish_qty, 0),
+            "<br/>\u8865\u8d27\u8d27\u503c\uff1a" + formatCurrency(params.data.replenish_cost)
+          ].join("");
+        }
+      },
+      series: [{
+        type: "sankey",
+        left: 84,
+        right: 128,
+        top: 22,
+        bottom: 24,
+        nodeWidth: 16,
+        nodeGap: 14,
+        layoutIterations: 0,
+        draggable: false,
+        label: {
+          color: "#10213a",
+          fontWeight: 700,
+          align: "center",
+          lineHeight: 16,
+          overflow: "break",
+          width: 72,
+          formatter: function (params) {
+            return params.data && params.data.flow_label ? params.data.flow_label : params.name;
+          }
+        },
+        itemStyle: { borderColor: "rgba(255,255,255,0.95)", borderWidth: 1 },
+        lineStyle: { color: "gradient", opacity: 0.22, curveness: 0.5 },
+        emphasis: { focus: "adjacency" },
+        data: chartData.nodes,
+        links: chartData.links
+      }]
+    });
+    window.setTimeout(function () {
+      if (flowDrawer.chart) flowDrawer.chart.resize();
+    }, 80);
+  }
+
+  function enrichFlowSankey(sankey, summary) {
+    var nodes = sankey.nodes || [];
+    var links = sankey.links || [];
+    var nodeTotals = {};
+    var denominator = Number((summary || {}).sku_count || 0);
+    links.forEach(function (link) {
+      var value = Number(link.value || 0);
+      if (link.source) nodeTotals[link.source] = (nodeTotals[link.source] || 0) + value;
+      if (link.target) nodeTotals[link.target] = (nodeTotals[link.target] || 0) + value;
+    });
+    return {
+      nodes: nodes.map(function (node) {
+        var count = Number(nodeTotals[node.name] || 0);
+        var percent = denominator ? count / denominator : 0;
+        return Object.assign({}, node, {
+          flow_count: count,
+          flow_percent: percent,
+          flow_label: node.name
+        });
+      }),
+      links: links
+    };
+  }
+
+  function renderFlowDetailTable(rows) {
+    if (!rows.length) {
+      elements.flowDetailWrap.innerHTML = '<div class="empty-state compact">\u6682\u65e0\u6d41\u8f6c\u660e\u7ec6</div>';
+      return;
+    }
+    elements.flowDetailWrap.innerHTML = '<div id="flowDetailAgGrid"></div>';
+    window.kanbanGrid.makeGrid("flowDetailAgGrid", {
+      rowData: rows,
+      rowHeight: 52,
+      domLayout: "normal",
+      columnDefs: [
+        { headerName: "MSKU / SKU", field: "msku", pinned: "left", width: 150, cellRenderer: function (params) { return window.kanbanGrid.subCell(params.data.msku || "-", params.data.sku || ""); } },
+        { headerName: text.store, field: "store", width: 120 },
+        { headerName: text.site, field: "country", width: 110 },
+        { headerName: text.prevLevel, field: "prev_level", width: 120 },
+        { headerName: text.curLevel, field: "cur_level", width: 120 },
+        { headerName: text.flowDetail, field: "flow_type", width: 96, cellRenderer: function (params) { return '<span class="status-pill">' + app.escapeHtml(params.value || "") + '</span>'; } },
+        { headerName: text.flowReason, field: "reason", width: 122 },
+        numberColumn("\u6628\u652f\u6491\u5929", "prev_support_days", 112, 2),
+        numberColumn("\u4eca\u652f\u6491\u5929", "cur_support_days", 112, 2),
+        numberColumn("\u6628\u8865\u8d27\u6570", "prev_replenish_qty", 112, 0),
+        numberColumn("\u4eca\u8865\u8d27\u6570", "cur_replenish_qty", 112, 0),
+        { headerName: "\u6628\u8865\u8d27\u8d27\u503c", field: "prev_replenish_cost", width: 132, type: "numericColumn", cellRenderer: function (params) { return formatCurrency(params.value); } },
+        { headerName: "\u4eca\u8865\u8d27\u8d27\u503c", field: "cur_replenish_cost", width: 132, type: "numericColumn", cellRenderer: function (params) { return formatCurrency(params.value); } }
+      ]
+    });
+  }
+
   function renderTabs(payload) {
     var rows = payload.level_summary || [];
     var allButton = '<button type="button" class="' + (state.level === "all" ? "active" : "") + '" data-level="all">' + text.all + '</button>';
@@ -365,9 +657,15 @@
       elements.tableWrap.innerHTML = '<div class="empty-state compact">' + text.noRows + '</div>';
       return;
     }
+    var categoryPeriod = Number(payload.category_period_days || state.category_period_days || 30);
+    window.replenishmentCountryRowMap = rows.reduce(function (map, row) {
+      map[countryRowKey(row)] = row;
+      return map;
+    }, {});
     elements.tableWrap.innerHTML = '<div id="replenishmentAgGrid"></div>';
     window.kanbanGrid.makeGrid("replenishmentAgGrid", {
       rowData: rows,
+      domLayout: "normal",
       rowHeight: 58,
       overlayNoRowsTemplate: '<span class="ag-empty-copy">' + app.escapeHtml(text.noRows) + '</span>',
       onFilterChanged: handleGridFilterChanged,
@@ -376,24 +674,174 @@
         { headerName: "MSKU / SKU", field: "msku", pinned: "left", width: 150, sort: colSort("msku"), cellRenderer: function (params) { return window.kanbanGrid.subCell(params.data.msku || "-", params.data.sku || ""); } },
         { headerName: text.store, field: "store", width: 130, sort: colSort("store") },
         { headerName: text.site, field: "country", width: 110, sort: colSort("country") },
+        { headerName: text.countryPerformance, field: "country_summary", width: 188, cellRenderer: renderCountrySummaryCell },
         numberColumn(text.dailySales, "daily_sales", 112, 2),
-        numberColumn("30\u5929\u53ef\u552e\u65e5\u9500", "category_daily_sales_30d", 132, 2),
-        { headerName: "30\u5929\u6bdb\u5229\u7387", field: "profit_rate_30d", width: 120, type: "numericColumn", sort: colSort("profit_rate_30d"), cellRenderer: function (params) { return window.kanbanGrid.percent(params.value, 2); } },
+        numberColumn(categoryPeriod + text.periodSalableDailySales, "category_daily_sales_30d", 132, 2),
+        { headerName: categoryPeriod + text.periodProfitRate, field: "profit_rate_30d", width: 120, type: "numericColumn", sort: colSort("profit_rate_30d"), cellRenderer: function (params) { return window.kanbanGrid.percent(params.value, 2); } },
         { headerName: text.category, field: "category", width: 118, sort: colSort("category") },
         numberColumn(text.supportDays, "support_days", 118, 2),
         numberColumn(text.available, "available_total", 104, 0),
         numberColumn(text.inTransit, "stock_up_num", 104, 0),
         numberColumn(text.local, "local_quantity", 104, 0),
+        numberColumn(text.purchasePlan, "purchase_plan_quantity", 118, 0),
         numberColumn(text.sales30d, "sales_30d", 110, 0),
         numberColumn(text.needQty, "need_qty", 120, 2),
         numberColumn(text.replenishQty, "replenish_qty", 122, 0),
         numberColumn(text.boxQty, "box_qty", 96, 0),
         { headerName: text.replenishValue, field: "cost", width: 132, type: "numericColumn", sort: colSort("cost"), cellRenderer: function (params) { return formatCurrency(params.value); } },
-        { headerName: text.stockoutStatus, field: "stockout_status", width: 126, sort: colSort("stockout_status") },
+        { headerName: text.followStatus, field: "follow_status", width: 112, sort: colSort("follow_status"), cellRenderer: function (params) { return '<span class="status-pill">' + app.escapeHtml(params.value || "") + '</span>'; } },
         { headerName: text.margin, field: "margin_range", width: 118, sort: colSort("margin_range") }
       ],
       onSortChanged: handleGridSortChanged
     });
+  }
+
+  function renderCountrySummaryCell(params) {
+    var data = params.data || {};
+    var summary = data.country_summary || {};
+    var countryCount = Number(summary.country_count || 0);
+    var top = summary.top_countries || "";
+    var label = countryCount ? (top || ("\u56fd\u5bb6 " + countryCount + " \u4e2a")) : "\u67e5\u770b\u660e\u7ec6";
+    var key = countryRowKey(data);
+    return [
+      '<button type="button" class="country-summary-button" data-country-detail="1" data-row-key="' + app.escapeHtml(key) + '">',
+      '<span>' + app.escapeHtml(label) + '</span>',
+      '<small>' + app.escapeHtml(countryCount ? "\u0033\u0030\u5929\u9500\u91cf\u6700\u9ad8" : "\u70b9\u51fb\u67e5\u770b 7/14/30/90 \u5929") + '</small>',
+      '</button>'
+    ].join("");
+  }
+
+  function countryRowKey(row) {
+    row = row || {};
+    return [row.cur_date || "", row.country || "", row.store || "", row.msku || ""].map(function (part) {
+      return encodeURIComponent(String(part));
+    }).join("|");
+  }
+
+  function openCountryDrawer(row) {
+    countryDrawer.open = true;
+    countryDrawer.row = row;
+    countryDrawer.period_days = 30;
+    countryDrawer.sort_field = "";
+    countryDrawer.sort_dir = "";
+    elements.countryDrawer.hidden = false;
+    elements.countryDrawerMask.hidden = false;
+    elements.countryDrawer.setAttribute("aria-hidden", "false");
+    elements.countryDrawerTitle.textContent = [row.msku || "-", row.store || "-", row.country || "-"].join(" / ");
+    elements.countryDrawerSubtitle.textContent = (row.sku || "") + (row.level ? (" · " + row.level) : "");
+    fetchCountryMetrics();
+  }
+
+  function closeCountryDrawer() {
+    if (!elements.countryDrawer) return;
+    countryDrawer.open = false;
+    countryDrawer.row = null;
+    elements.countryDrawer.hidden = true;
+    elements.countryDrawerMask.hidden = true;
+    elements.countryDrawer.setAttribute("aria-hidden", "true");
+  }
+
+  function fetchCountryMetrics() {
+    var row = countryDrawer.row;
+    if (!row) return;
+    renderCountryPeriodTabs();
+    elements.countryMetricsWrap.innerHTML = '<div class="empty-state compact">' + text.loading + '</div>';
+    app.apiGet("/api/replenishment/country-metrics", {
+      snapshot_date: state.snapshot_date,
+      site: row.country,
+      store: row.store,
+      msku: row.msku,
+      period_days: countryDrawer.period_days,
+      sort_field: countryDrawer.sort_field,
+      sort_dir: countryDrawer.sort_dir
+    }).then(function (payload) {
+      if (!countryDrawer.row || countryDrawer.row.msku !== row.msku) return;
+      renderCountrySummary(payload);
+      renderCountryMetricsTable(payload);
+    }).catch(function (error) {
+      console.error(error);
+      elements.countryMetricsWrap.innerHTML = '<div class="empty-state compact">' + text.loadFailed + '</div>';
+    });
+  }
+
+  function renderCountryPeriodTabs() {
+    var periods = [7, 14, 30, 90];
+    elements.countryPeriodTabs.innerHTML = periods.map(function (period) {
+      var active = Number(countryDrawer.period_days) === period ? " active" : "";
+      return '<button type="button" class="' + active + '" data-country-period="' + period + '">' + period + '\u5929</button>';
+    }).join("");
+  }
+
+  function renderCountrySummary(payload) {
+    var summary = payload.summary || {};
+    var cards = [
+      [text.countryCount, formatNumber(summary.country_count, 0)],
+      [text.periodSales, formatNumber(summary.sales_qty, 0)],
+      [text.periodAmount, formatCurrency(summary.sales_amount)],
+      [text.periodMargin, window.kanbanGrid.percent(summary.order_gross_margin, 2)]
+    ];
+    elements.countrySummaryGrid.innerHTML = cards.map(function (card) {
+      return [
+        '<div class="country-summary-card">',
+        '<span>' + app.escapeHtml(card[0]) + '</span>',
+        '<strong>' + app.escapeHtml(card[1]) + '</strong>',
+        '</div>'
+      ].join("");
+    }).join("");
+  }
+
+  function renderCountryMetricsTable(payload) {
+    var rows = payload.items || [];
+    if (!rows.length) {
+      elements.countryMetricsWrap.innerHTML = '<div class="empty-state compact">\u6682\u65e0\u56fd\u5bb6\u660e\u7ec6</div>';
+      return;
+    }
+    elements.countryMetricsWrap.innerHTML = '<div id="countryMetricsAgGrid"></div>';
+    window.kanbanGrid.makeGrid("countryMetricsAgGrid", {
+      rowData: rows,
+      rowHeight: 52,
+      overlayNoRowsTemplate: '<span class="ag-empty-copy">\u6682\u65e0\u56fd\u5bb6\u660e\u7ec6</span>',
+      columnDefs: [
+        { headerName: "\u56fd\u5bb6", field: "country", pinned: "left", width: 92 },
+        { headerName: "Listing SKU", field: "local_sku_list", width: 150, cellRenderer: function (params) { return '<span class="sku-list-cell">' + app.escapeHtml(params.value || "-") + '</span>'; } },
+        countryNumberColumn(text.periodSales, "sales_qty", 100, 0),
+        countryNumberColumn(text.listingPrice, "listing_price", 100, 2),
+        countryNumberColumn(text.salableDailySales, "salable_daily_sales", 110, 2),
+        { headerName: text.salesAmount, field: "sales_amount", width: 116, type: "numericColumn", cellRenderer: function (params) { return formatCurrency(params.value); } },
+        { headerName: text.profit, field: "order_gross_profit", width: 112, type: "numericColumn", cellRenderer: function (params) { return formatCurrency(params.value); } },
+        { headerName: "\u6bdb\u5229\u7387", field: "order_gross_margin", width: 104, type: "numericColumn", cellRenderer: function (params) { return window.kanbanGrid.percent(params.value, 2); } },
+        countryNumberColumn(text.avgRanking, "avg_ranking", 104, 0),
+        countryNumberColumn(text.bestRanking, "best_ranking", 104, 0),
+        countryNumberColumn(text.worstRanking, "worst_ranking", 104, 0),
+        countryNumberColumn("Sessions", "sessions_total", 110, 0),
+        { headerName: text.conversionRate, field: "conversion_rate", width: 104, type: "numericColumn", cellRenderer: function (params) { return window.kanbanGrid.percent(params.value, 2); } },
+        { headerName: text.adSpend, field: "ad_spend", width: 112, type: "numericColumn", cellRenderer: function (params) { return formatCurrency(params.value); } },
+        { headerName: text.adSales, field: "ad_sales", width: 116, type: "numericColumn", cellRenderer: function (params) { return formatCurrency(params.value); } },
+        { headerName: "ACOS", field: "acos", width: 92, type: "numericColumn", cellRenderer: function (params) { return window.kanbanGrid.percent(params.value, 2); } },
+        {
+          headerName: "TACOS",
+          field: "tacos",
+          width: 96,
+          type: "numericColumn",
+          valueGetter: function (params) {
+            var data = params.data || {};
+            var salesAmount = Number(data.sales_amount || 0);
+            return salesAmount ? Number(data.ad_spend || 0) / salesAmount : 0;
+          },
+          cellRenderer: function (params) { return window.kanbanGrid.percent(params.value, 2); }
+        }
+      ]
+    });
+  }
+
+  function countryNumberColumn(label, field, width, digits) {
+    return {
+      headerName: label,
+      field: field,
+      width: width,
+      type: "numericColumn",
+      cellRenderer: function (params) { return '<strong class="ag-number-strong">' + formatNumber(params.value, digits) + '</strong>'; }
+    };
   }
 
   function numberColumn(label, field, width, digits) {
@@ -555,6 +1003,8 @@
 
   function renderPagination(payload) {
     state.page = payload.page || 1;
+    state.page_size = normalizePageSize(payload.page_size || state.page_size);
+    elements.pageSizeSelect.value = String(state.page_size);
     elements.paginationInfo.textContent = text.totalPrefix + formatNumber(payload.total || 0) + text.totalMiddle + state.page + " / " + (payload.total_pages || 1) + text.totalSuffix;
     elements.prevPageBtn.disabled = state.page <= 1;
     elements.nextPageBtn.disabled = state.page >= (payload.total_pages || 1);
@@ -571,6 +1021,13 @@
     window.history.replaceState({}, "", window.location.pathname + (params.toString() ? "?" + params.toString() : ""));
   }
 
+  function normalizePageSize(value) {
+    var pageSize = Number(value || 20);
+    if (pageSize <= 20) return 20;
+    if (pageSize <= 50) return 50;
+    return 100;
+  }
+
   function formatNumber(value, digits) {
     var options = { maximumFractionDigits: typeof digits === "number" ? digits : 2 };
     if (typeof digits === "number") options.minimumFractionDigits = digits;
@@ -579,6 +1036,25 @@
 
   function formatCurrency(value) {
     return "\u00a5" + Number(value || 0).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
+  }
+
+  function signedCurrency(value) {
+    var amount = Number(value || 0);
+    return (amount > 0 ? "+" : "") + formatCurrency(amount);
+  }
+
+  function signedNumber(value) {
+    var amount = Number(value || 0);
+    return (amount > 0 ? "+" : "") + amount.toLocaleString("zh-CN", { maximumFractionDigits: 0 });
+  }
+
+  function flowTypeLabel(value) {
+    if (value === "\u65b0\u589e") return text.flowNew;
+    if (value === "\u6d41\u5165") return text.flowIn;
+    if (value === "\u6d41\u51fa") return text.flowOut;
+    if (value === "\u9000\u51fa") return text.flowExit;
+    if (value === "\u4fdd\u6301") return text.flowStay;
+    return text.flowDetail;
   }
 
   function formatPercent(value) {

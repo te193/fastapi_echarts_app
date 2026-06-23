@@ -29,10 +29,12 @@ from etl.dashboard_daily_update import (
 DEFAULT_CANDIDATE_DAYS = 1
 DEFAULT_STEP_ORDER = [
     "listing_basic_sync",
+    "self_asin_sync",
     "fba_shipment_sync",
     "check_daily_snapshots",
     "salable_days_stat",
     "replenishment_result",
+    "country_metrics",
 ]
 
 
@@ -148,6 +150,17 @@ create table if not exists etl_datasync.dashboard_replenishment_history_daily_sy
     synced_at datetime not null default current_timestamp,
     primary key (dt_date, country_category, seller_name_new, seller_sku_adj),
     key idx_repl_hist_lookup (country_category, seller_name_new, seller_sku_adj, dt_date)
+) engine=InnoDB default charset=utf8mb4;
+"""
+
+CREATE_SELF_ASIN_SYNC_SQL = """
+create table if not exists etl_datasync.dashboard_replenishment_self_asin_sync (
+    seller_name_new varchar(128) not null,
+    seller_brand varchar(128) not null,
+    asin varchar(64) not null,
+    synced_at datetime not null default current_timestamp,
+    primary key (seller_name_new, seller_brand, asin),
+    key idx_repl_self_asin_lookup (asin, seller_name_new)
 ) engine=InnoDB default charset=utf8mb4;
 """
 
@@ -319,14 +332,55 @@ create table if not exists etl_datasync.dashboard_pur_plan_replenish_data (
 ) engine=InnoDB default charset=utf8mb4;
 """
 
+CREATE_COUNTRY_METRICS_SQL = """
+create table if not exists etl_datasync.dashboard_replenishment_country_metrics (
+    snapshot_date date not null,
+    period_days int not null,
+    period_start date not null,
+    period_end date not null,
+    country_category varchar(64) not null,
+    country varchar(64) not null,
+    seller_name_new varchar(128) not null,
+    seller_sku_adj varchar(128) not null,
+    local_sku_list text null,
+    listing_price decimal(18,4) null,
+    sales_qty decimal(18,4) not null default 0,
+    natural_daily_sales decimal(18,6) not null default 0,
+    salable_days int not null default 0,
+    salable_daily_sales decimal(18,6) null,
+    sales_amount decimal(18,4) not null default 0,
+    order_gross_profit decimal(18,4) not null default 0,
+    order_gross_margin decimal(10,6) null,
+    avg_ranking decimal(18,4) null,
+    best_ranking decimal(18,4) null,
+    worst_ranking decimal(18,4) null,
+    sessions_total decimal(18,4) not null default 0,
+    conversion_rate decimal(10,6) null,
+    ad_spend decimal(18,4) not null default 0,
+    ad_orders decimal(18,4) not null default 0,
+    ad_sales decimal(18,4) not null default 0,
+    ad_clicks decimal(18,4) not null default 0,
+    ad_impressions decimal(18,4) not null default 0,
+    acos decimal(10,6) null,
+    ctr decimal(10,6) null,
+    created_at datetime not null default current_timestamp,
+    updated_at datetime not null default current_timestamp on update current_timestamp,
+    primary key (snapshot_date, period_days, country_category, country, seller_name_new, seller_sku_adj),
+    key idx_repl_country_parent (snapshot_date, period_days, country_category, seller_name_new, seller_sku_adj),
+    key idx_repl_country_sales (snapshot_date, period_days, country_category, seller_name_new, sales_qty)
+) engine=InnoDB default charset=utf8mb4;
+"""
+
 DDL_STATEMENTS = (
     CREATE_SCHEMA_SQL,
     CREATE_LOG_TABLE_SQL,
     CREATE_SALABLE_DAYS_STAT_SQL,
     CREATE_HISTORY_DAILY_SYNC_SQL,
+    CREATE_SELF_ASIN_SYNC_SQL,
     CREATE_LISTING_BASIC_SYNC_SQL,
     CREATE_FBA_SHIPMENT_SYNC_SQL,
     CREATE_REPLENISHMENT_RESULT_SQL,
+    CREATE_COUNTRY_METRICS_SQL,
 )
 
 LISTING_BASIC_COLUMNS = (
@@ -420,6 +474,28 @@ from (
     where length(sml.seller_sku) between 5 and 10
 ) listing_basic
 group by country_category, seller_name_new, seller_sku
+"""
+
+SELF_ASIN_COLUMNS = (
+    "seller_name_new",
+    "seller_brand",
+    "asin",
+)
+
+DELETE_SELF_ASIN_SYNC_SQL = "delete from etl_datasync.dashboard_replenishment_self_asin_sync;"
+
+SELECT_SELF_ASIN_SYNC_SQL = """
+select distinct
+    store.`店铺名` as seller_name_new,
+    store.`品牌名` as seller_brand,
+    list.asin
+from dwd_datasync.lx_sales_mws_listing list
+left join opt_db.store_brand_relation store
+       on store.`店铺名` = substring_index(list.seller_name, '-', 1)
+      and store.`品牌名` = list.seller_brand
+where store.`店铺名` is not null
+  and list.asin is not null
+  and list.asin <> ''
 """
 
 FBA_SHIPMENT_COLUMNS = (
@@ -629,11 +705,13 @@ where dt_date between %(candidate_start_date)s and %(biz_date)s
 group by country_category, seller_name_new, seller_sku_adj;
 
 drop temporary table if exists tmp_prod_perf_sku_metrics;
-create temporary table tmp_prod_perf_sku_metrics as
+drop temporary table if exists tmp_prod_perf_sku_asin_metrics;
+create temporary table tmp_prod_perf_sku_asin_metrics as
 select
     p.country_category,
     p.seller_name_new,
     p.seller_sku_adj,
+    max(l.max_asin) as asin,
     sum(case when p.dt_date >= date_sub(%(biz_date)s, interval 89 day) then coalesce(p.sales_qty, 0) else 0 end) as sales_90,
     sum(case when p.dt_date >= date_sub(%(biz_date)s, interval 29 day) then coalesce(p.sales_qty, 0) else 0 end) as sales_30,
     sum(case when p.dt_date >= date_sub(%(biz_date)s, interval 13 day) then coalesce(p.sales_qty, 0) else 0 end) as sales_14,
@@ -652,9 +730,119 @@ inner join tmp_pur_plan_candidate_keys c
         on p.country_category = c.country_category
        and p.seller_name_new = c.seller_name_new
        and p.seller_sku_adj = c.seller_sku_adj
+left join etl_datasync.dashboard_replenishment_listing_basic_sync l
+       on p.country_category = l.country_category
+      and p.seller_name_new = l.seller_name_new
+      and p.seller_sku_adj = l.seller_sku
 where p.dt_date between %(product_start_date)s and %(biz_date)s
   and p.seller_name not regexp 'baihuiyi|Yuanoboo|Bailboo|Qianytyy'
 group by p.country_category, p.seller_name_new, p.seller_sku_adj;
+
+create temporary table tmp_prod_perf_sku_metrics as
+select
+    country_category,
+    seller_name_new,
+    seller_sku_adj,
+    sum(sales_90) as sales_90,
+    sum(sales_30) as sales_30,
+    sum(sales_14) as sales_14,
+    sum(sales_7) as sales_7,
+    sum(sales_3) as sales_3,
+    sum(amount_30) as amount_30,
+    sum(amount_14) as amount_14,
+    sum(amount_7) as amount_7,
+    sum(amount_3) as amount_3,
+    sum(pprofit_30) as pprofit_30,
+    sum(pprofit_14) as pprofit_14,
+    sum(pprofit_7) as pprofit_7,
+    sum(pprofit_3) as pprofit_3
+from tmp_prod_perf_sku_asin_metrics
+group by country_category, seller_name_new, seller_sku_adj;
+
+drop temporary table if exists tmp_asin_to_self_store;
+create temporary table tmp_asin_to_self_store as
+select
+    asin,
+    max(seller_name_new) as self_store_name
+from etl_datasync.dashboard_replenishment_self_asin_sync
+group by asin;
+
+drop temporary table if exists tmp_origin_sales_all;
+create temporary table tmp_origin_sales_all as
+select
+    target.asin,
+    target.self_store_name,
+    max(metrics.sales_3) as sales_3,
+    max(metrics.sales_7) as sales_7,
+    max(metrics.sales_14) as sales_14,
+    max(metrics.sales_30) as sales_30
+from tmp_asin_to_self_store target
+left join tmp_prod_perf_sku_asin_metrics origin
+       on origin.asin = target.asin
+      and origin.seller_name_new = target.self_store_name
+left join tmp_prod_perf_sku_metrics metrics
+       on origin.country_category = metrics.country_category
+      and origin.seller_name_new = metrics.seller_name_new
+      and origin.seller_sku_adj = metrics.seller_sku_adj
+group by target.asin, target.self_store_name;
+
+drop temporary table if exists tmp_prod_perf_follow_origin;
+create temporary table tmp_prod_perf_follow_origin as
+select
+    bridge.country_category,
+    bridge.seller_name_new,
+    bridge.seller_sku_adj,
+    max(case when self_asin.asin is not null then 1 else 0 end) as fllow_flag,
+    max(case when self_asin.asin is null then origin.sales_3 else null end) as origin_sales_3,
+    max(case when self_asin.asin is null then origin.sales_7 else null end) as origin_sales_7,
+    max(case when self_asin.asin is null then origin.sales_14 else null end) as origin_sales_14,
+    max(case when self_asin.asin is null then origin.sales_30 else null end) as origin_sales_30
+from tmp_prod_perf_sku_asin_metrics bridge
+left join etl_datasync.dashboard_replenishment_self_asin_sync self_asin
+       on bridge.seller_name_new = self_asin.seller_name_new
+      and bridge.asin = self_asin.asin
+left join tmp_origin_sales_all origin
+       on origin.asin = bridge.asin
+      and self_asin.asin is null
+group by bridge.country_category, bridge.seller_name_new, bridge.seller_sku_adj;
+
+drop temporary table if exists tmp_prod_perf_sku_follow_metrics;
+create temporary table tmp_prod_perf_sku_follow_metrics as
+select
+    m.country_category,
+    m.seller_name_new,
+    m.seller_sku_adj,
+    coalesce(fo.fllow_flag, 1) as fllow_flag,
+    m.sales_90,
+    case
+        when coalesce(fo.fllow_flag, 1) = 1 then coalesce(m.sales_30, 0)
+        else coalesce(m.sales_30, 0) + coalesce(fo.origin_sales_30, 0)
+    end as sales_30,
+    case
+        when coalesce(fo.fllow_flag, 1) = 1 then coalesce(m.sales_14, 0)
+        else coalesce(m.sales_14, 0) + coalesce(fo.origin_sales_14, 0)
+    end as sales_14,
+    case
+        when coalesce(fo.fllow_flag, 1) = 1 then coalesce(m.sales_7, 0)
+        else coalesce(m.sales_7, 0) + coalesce(fo.origin_sales_7, 0)
+    end as sales_7,
+    case
+        when coalesce(fo.fllow_flag, 1) = 1 then coalesce(m.sales_3, 0)
+        else coalesce(m.sales_3, 0) + coalesce(fo.origin_sales_3, 0)
+    end as sales_3,
+    m.amount_30,
+    m.amount_14,
+    m.amount_7,
+    m.amount_3,
+    m.pprofit_30,
+    m.pprofit_14,
+    m.pprofit_7,
+    m.pprofit_3
+from tmp_prod_perf_sku_metrics m
+left join tmp_prod_perf_follow_origin fo
+       on m.country_category = fo.country_category
+      and m.seller_name_new = fo.seller_name_new
+      and m.seller_sku_adj = fo.seller_sku_adj;
 
 drop temporary table if exists tmp_pur_plan_fba_current;
 create temporary table tmp_pur_plan_fba_current as
@@ -793,11 +981,16 @@ from (
         l.sales_team_1,
         fs.max_receiving_time,
         fs.receiving_cnt,
+        coalesce(fm.fllow_flag, 1) as fllow_flag,
         coalesce(m.sales_90, 0) as sales_90,
         coalesce(m.sales_30, 0) as sales_30,
         coalesce(m.sales_14, 0) as sales_14,
         coalesce(m.sales_7, 0) as sales_7,
         coalesce(m.sales_3, 0) as sales_3,
+        coalesce(fm.sales_30, m.sales_30, 0) as final_sales_30,
+        coalesce(fm.sales_14, m.sales_14, 0) as final_sales_14,
+        coalesce(fm.sales_7, m.sales_7, 0) as final_sales_7,
+        coalesce(fm.sales_3, m.sales_3, 0) as final_sales_3,
         coalesce(m.amount_30, 0) as amount_30,
         coalesce(m.amount_14, 0) as amount_14,
         coalesce(m.amount_7, 0) as amount_7,
@@ -872,6 +1065,43 @@ from (
             when coalesce(ks.r_30d_salable_days, 0) >= 7 then coalesce(m.sales_30, 0) / ks.r_30d_salable_days
             else coalesce(m.sales_30, 0) / greatest(coalesce(ks.r_30d_salable_days, 0), 15)
         end as adjusted_daily_sales_30d,
+        case
+            when coalesce(ks.r_30d_salable_days, 0) >= 7 then
+                case when coalesce(ks.r_3d_salable_days, 0) > 0 then coalesce(fm.sales_3, m.sales_3, 0) / ks.r_3d_salable_days else 0 end
+            else coalesce(fm.sales_3, m.sales_3, 0) / greatest(coalesce(ks.r_3d_salable_days, 0), 2)
+        end as final_adjusted_daily_sales_3d,
+        case
+            when coalesce(ks.r_30d_salable_days, 0) >= 7 then
+                case
+                    when coalesce(ks.r_7d_salable_days, 0) >= 7 then coalesce(fm.sales_7, m.sales_7, 0) / ks.r_7d_salable_days
+                    else least(
+                        case when coalesce(ks.r_7d_salable_days, 0) > 0 then coalesce(fm.sales_7, m.sales_7, 0) / ks.r_7d_salable_days else 0 end,
+                        (case when coalesce(ks.r_7d_salable_days, 0) > 0 then coalesce(fm.sales_7, m.sales_7, 0) / ks.r_7d_salable_days else 0 end)
+                            * (ks.r_7d_salable_days / (ks.r_7d_salable_days + 3))
+                        + (coalesce(fm.sales_30, m.sales_30, 0) / ks.r_30d_salable_days)
+                            * (1 - ks.r_7d_salable_days / (ks.r_7d_salable_days + 3))
+                    )
+                end
+            else coalesce(fm.sales_7, m.sales_7, 0) / greatest(coalesce(ks.r_7d_salable_days, 0), 3)
+        end as final_adjusted_daily_sales_7d,
+        case
+            when coalesce(ks.r_30d_salable_days, 0) >= 7 then
+                case
+                    when coalesce(ks.r_14d_salable_days, 0) >= 14 then coalesce(fm.sales_14, m.sales_14, 0) / ks.r_14d_salable_days
+                    else least(
+                        case when coalesce(ks.r_14d_salable_days, 0) > 0 then coalesce(fm.sales_14, m.sales_14, 0) / ks.r_14d_salable_days else 0 end,
+                        (case when coalesce(ks.r_14d_salable_days, 0) > 0 then coalesce(fm.sales_14, m.sales_14, 0) / ks.r_14d_salable_days else 0 end)
+                            * (ks.r_14d_salable_days / (ks.r_14d_salable_days + 7))
+                        + (coalesce(fm.sales_30, m.sales_30, 0) / ks.r_30d_salable_days)
+                            * (1 - ks.r_14d_salable_days / (ks.r_14d_salable_days + 7))
+                    )
+                end
+            else coalesce(fm.sales_14, m.sales_14, 0) / greatest(coalesce(ks.r_14d_salable_days, 0), 7)
+        end as final_adjusted_daily_sales_14d,
+        case
+            when coalesce(ks.r_30d_salable_days, 0) >= 7 then coalesce(fm.sales_30, m.sales_30, 0) / ks.r_30d_salable_days
+            else coalesce(fm.sales_30, m.sales_30, 0) / greatest(coalesce(ks.r_30d_salable_days, 0), 15)
+        end as final_adjusted_daily_sales_30d,
         l.max_cg_box_pcs,
         l.max_cg_price,
         l.max_cg_transport_costs,
@@ -882,6 +1112,10 @@ from (
            on c.country_category = m.country_category
           and c.seller_name_new = m.seller_name_new
           and c.seller_sku_adj = m.seller_sku_adj
+    left join tmp_prod_perf_sku_follow_metrics fm
+           on c.country_category = fm.country_category
+          and c.seller_name_new = fm.seller_name_new
+          and c.seller_sku_adj = fm.seller_sku_adj
     left join tmp_pur_plan_fba_current f
            on c.country_category = f.country_category
           and c.seller_name_new = f.seller_name_new
@@ -919,6 +1153,12 @@ select
             then adjusted_daily_sales_3d * 0.5 + adjusted_daily_sales_7d * 0.5
         else adjusted_daily_sales_7d * 0.6 + adjusted_daily_sales_14d * 0.2 + adjusted_daily_sales_30d * 0.2
     end as pre_daily_avg_sales,
+    case
+        when (max_brand_name like '%%2025%%' and (receiving_cnt <= 1 or receiving_cnt is null))
+          or (max_brand_name like '%%2026%%' and (receiving_cnt <= 1 or receiving_cnt is null))
+            then final_adjusted_daily_sales_3d * 0.5 + final_adjusted_daily_sales_7d * 0.5
+        else final_adjusted_daily_sales_7d * 0.6 + final_adjusted_daily_sales_14d * 0.2 + final_adjusted_daily_sales_30d * 0.2
+    end as daily_avg_sales,
     pre_replenish_comp_months * 30 * (
         case
             when (max_brand_name like '%%2025%%' and (receiving_cnt <= 1 or receiving_cnt is null))
@@ -972,6 +1212,11 @@ drop temporary table if exists tmp_pur_plan_replenish_calc;
 create temporary table tmp_pur_plan_replenish_calc as
 select
     support.*,
+    pre_replenish_comp_months * 30 * coalesce(daily_avg_sales, 0)
+    - available_total
+    - stock_up_num
+    - local_quantity
+    - sc_quantity_purchase_plan as normal_replenish_need_qty,
     case
         when support.pre_normal_replenish_need_qty < support.pre_replenish_trigger_qty
              and support.r_30d_salable_days < 15
@@ -1096,10 +1341,10 @@ select
     r_7d_salable_days,
     r_3d_salable_days,
     sales_90 as sales_90d,
-    sales_30 as final_sales_30d,
-    sales_14 as final_sales_14d,
-    sales_7 as final_sales_7d,
-    sales_3 as final_sales_3d,
+    final_sales_30 as final_sales_30d,
+    final_sales_14 as final_sales_14d,
+    final_sales_7 as final_sales_7d,
+    final_sales_3 as final_sales_3d,
     amount_30 as amount_30d,
     amount_14 as amount_14d,
     amount_7 as amount_7d,
@@ -1113,14 +1358,14 @@ select
     pprofit_ratio_7 as pprofit_ratio_7d,
     pprofit_ratio_3 as pprofit_ratio_3d,
     '老品' as new_old_prod_jg,
-    pre_daily_avg_sales as daily_avg_sales,
+    daily_avg_sales,
     pre_replenish_comp_months as replenish_comp_months,
-    case when pre_daily_avg_sales <= 0 then null else (total + local_quantity) / pre_daily_avg_sales end as salable_days,
-    60 * pre_daily_avg_sales - (total + local_quantity) as `60d_stocko_qty`,
-    90 * pre_daily_avg_sales - (total + local_quantity) as `90d_stocko_qty`,
-    180 * pre_daily_avg_sales - (total + local_quantity) as `180d_stocko_qty`,
-    pre_normal_replenish_need_qty as replenish_dur_calc_stocko_qty,
-    case when support_replenish_level_sort in (1, 2, 3) then pre_normal_replenish_need_qty else 0 end as replenish_need_qty,
+    case when daily_avg_sales <= 0 then null else (total + local_quantity) / daily_avg_sales end as salable_days,
+    60 * daily_avg_sales - (total + local_quantity) as `60d_stocko_qty`,
+    90 * daily_avg_sales - (total + local_quantity) as `90d_stocko_qty`,
+    180 * daily_avg_sales - (total + local_quantity) as `180d_stocko_qty`,
+    normal_replenish_need_qty as replenish_dur_calc_stocko_qty,
+    case when support_replenish_level_sort in (1, 2, 3) then normal_replenish_need_qty else 0 end as replenish_need_qty,
     pre_replenish_trigger_qty as replenish_trigger_qty,
     sales_change_rate_adj,
     sales_adj_factor,
@@ -1128,21 +1373,21 @@ select
     case
         when support_replenish_level_sort in (1, 2, 3) and coalesce(history_recovery_flag, 0) = 1
             then case when coalesce(max_cg_box_pcs, 0) > 0 then max_cg_box_pcs else 50 end
-        when support_replenish_level_sort in (1, 2, 3) and pre_normal_replenish_need_qty > 0
+        when support_replenish_level_sort in (1, 2, 3) and normal_replenish_need_qty > 0
              and max_cg_box_pcs > 0
-            then greatest(round(pre_normal_replenish_need_qty * sales_adj_factor / max_cg_box_pcs, 0), 1) * max_cg_box_pcs
-        when support_replenish_level_sort in (1, 2, 3) and pre_normal_replenish_need_qty > 0
+            then greatest(round(normal_replenish_need_qty * sales_adj_factor / max_cg_box_pcs, 0), 1) * max_cg_box_pcs
+        when support_replenish_level_sort in (1, 2, 3) and normal_replenish_need_qty > 0
              and (max_cg_box_pcs = 0 or max_cg_box_pcs is null)
-            then greatest(round(pre_normal_replenish_need_qty * sales_adj_factor, 0), 50)
+            then greatest(round(normal_replenish_need_qty * sales_adj_factor, 0), 50)
         else 0
     end as replenish_qty,
     case
         when support_replenish_level_sort in (1, 2, 3) and coalesce(history_recovery_flag, 0) = 1
             then case when coalesce(max_cg_box_pcs, 0) > 0 then 1 else 0 end
-        when support_replenish_level_sort in (1, 2, 3) and pre_normal_replenish_need_qty > 0
+        when support_replenish_level_sort in (1, 2, 3) and normal_replenish_need_qty > 0
              and max_cg_box_pcs > 0
-            then greatest(round(pre_normal_replenish_need_qty * sales_adj_factor / max_cg_box_pcs, 0), 1)
-        when support_replenish_level_sort in (1, 2, 3) and pre_normal_replenish_need_qty > 0
+            then greatest(round(normal_replenish_need_qty * sales_adj_factor / max_cg_box_pcs, 0), 1)
+        when support_replenish_level_sort in (1, 2, 3) and normal_replenish_need_qty > 0
              and (max_cg_box_pcs = 0 or max_cg_box_pcs is null)
             then 0
         else null
@@ -1151,19 +1396,19 @@ select
         when support_replenish_level_sort in (1, 2, 3) and coalesce(history_recovery_flag, 0) = 1
             then (case when coalesce(max_cg_box_pcs, 0) > 0 then max_cg_box_pcs else 50 end)
                  * (max_cg_price + max_cg_transport_costs)
-        when support_replenish_level_sort in (1, 2, 3) and pre_normal_replenish_need_qty > 0
+        when support_replenish_level_sort in (1, 2, 3) and normal_replenish_need_qty > 0
              and max_cg_box_pcs > 0
-            then greatest(round(pre_normal_replenish_need_qty * sales_adj_factor / max_cg_box_pcs, 0), 1) * max_cg_box_pcs
+            then greatest(round(normal_replenish_need_qty * sales_adj_factor / max_cg_box_pcs, 0), 1) * max_cg_box_pcs
                  * (max_cg_price + max_cg_transport_costs)
-        when support_replenish_level_sort in (1, 2, 3) and pre_normal_replenish_need_qty > 0
+        when support_replenish_level_sort in (1, 2, 3) and normal_replenish_need_qty > 0
              and (max_cg_box_pcs = 0 or max_cg_box_pcs is null)
-            then greatest(round(pre_normal_replenish_need_qty * sales_adj_factor, 0), 50)
+            then greatest(round(normal_replenish_need_qty * sales_adj_factor, 0), 50)
                  * (max_cg_price + max_cg_transport_costs)
         else 0
     end as replenish_cost,
     case when sales_30 = 0 then null else available_total / sales_30 end as amz_instock_sales_ratio,
     case when sales_30 = 0 then null else (total + local_quantity) / sales_30 end as instock_intrans_pur_sales_ratio,
-    1 as fllow_flag
+    fllow_flag
 from tmp_pur_plan_replenish_calc;
 """
 
@@ -1173,6 +1418,146 @@ REPLENISHMENT_TEMPORARY_SQL = (
     REPLENISHMENT_RESULT_SQL,
 )
 
+DELETE_COUNTRY_METRICS_SQL = """
+delete from etl_datasync.dashboard_replenishment_country_metrics
+where snapshot_date = %(snapshot_date)s
+"""
+
+DROP_COUNTRY_LISTING_PRICE_SQL = """
+drop temporary table if exists tmp_replenishment_country_listing_price
+"""
+
+CREATE_COUNTRY_LISTING_PRICE_SQL = """
+create temporary table tmp_replenishment_country_listing_price (
+    country_category varchar(64) not null,
+    seller_name_new varchar(128) not null,
+    country varchar(64) not null,
+    seller_sku varchar(128) not null,
+    price decimal(18,4) null,
+    primary key (country_category, seller_name_new, country, seller_sku)
+) engine=InnoDB
+"""
+
+INSERT_COUNTRY_LISTING_PRICE_SQL = """
+insert into tmp_replenishment_country_listing_price (
+    country_category,
+    seller_name_new,
+    country,
+    seller_sku,
+    price
+)
+select
+    country_category,
+    seller_name_new,
+    country,
+    seller_sku,
+    max(price) as price
+from etl_datasync.dashboard_listing_price_daily_snapshot
+where snapshot_date = %(biz_date)s
+group by country_category, seller_name_new, country, seller_sku
+"""
+
+BUILD_COUNTRY_METRICS_SQL = """
+insert into etl_datasync.dashboard_replenishment_country_metrics (
+    snapshot_date,
+    period_days,
+    period_start,
+    period_end,
+    country_category,
+    country,
+    seller_name_new,
+    seller_sku_adj,
+    local_sku_list,
+    listing_price,
+    sales_qty,
+    natural_daily_sales,
+    salable_days,
+    salable_daily_sales,
+    sales_amount,
+    order_gross_profit,
+    order_gross_margin,
+    avg_ranking,
+    best_ranking,
+    worst_ranking,
+    sessions_total,
+    conversion_rate,
+    ad_spend,
+    ad_orders,
+    ad_sales,
+    ad_clicks,
+    ad_impressions,
+    acos,
+    ctr,
+    created_at,
+    updated_at
+)
+select
+    %(snapshot_date)s as snapshot_date,
+    period_def.period_days,
+    date_sub(%(biz_date)s, interval period_def.period_days - 1 day) as period_start,
+    %(biz_date)s as period_end,
+    p.country_category,
+    coalesce(nullif(p.country, ''), '-') as country,
+    p.seller_name_new,
+    p.seller_sku_adj,
+    group_concat(distinct nullif(p.local_sku, '') order by nullif(p.local_sku, '') separator ',') as local_sku_list,
+    null as listing_price,
+    sum(coalesce(p.sales_qty, 0)) as sales_qty,
+    sum(coalesce(p.sales_qty, 0)) / period_def.period_days as natural_daily_sales,
+    sum(case when coalesce(p.afn_fulfillable_quantity, 0) > 0 then 1 else 0 end) as salable_days,
+    sum(coalesce(p.sales_qty, 0))
+        / nullif(sum(case when coalesce(p.afn_fulfillable_quantity, 0) > 0 then 1 else 0 end), 0) as salable_daily_sales,
+    sum(coalesce(p.sales_amount, 0)) as sales_amount,
+    sum(coalesce(p.order_gross_profit, 0)) as order_gross_profit,
+    sum(coalesce(p.order_gross_profit, 0)) / nullif(sum(coalesce(p.sales_amount, 0)), 0) as order_gross_margin,
+    avg(case when p.dt_date = %(biz_date)s then nullif(p.ranking, 0) end) as avg_ranking,
+    min(nullif(p.ranking, 0)) as best_ranking,
+    max(nullif(p.ranking, 0)) as worst_ranking,
+    sum(coalesce(p.sessions_total, 0)) as sessions_total,
+    sum(coalesce(p.sales_qty, 0)) / nullif(sum(coalesce(p.sessions_total, 0)), 0) as conversion_rate,
+    sum(coalesce(p.ad_spend, 0)) as ad_spend,
+    sum(coalesce(p.ad_orders, 0)) as ad_orders,
+    sum(coalesce(p.ad_sales, 0)) as ad_sales,
+    sum(coalesce(p.ad_clicks, 0)) as ad_clicks,
+    sum(coalesce(p.ad_impressions, 0)) as ad_impressions,
+    sum(coalesce(p.ad_spend, 0)) / nullif(sum(coalesce(p.ad_sales, 0)), 0) as acos,
+    sum(coalesce(p.ad_clicks, 0)) / nullif(sum(coalesce(p.ad_impressions, 0)), 0) as ctr,
+    now(),
+    now()
+from (
+    select 7 as period_days
+    union all select 14
+    union all select 30
+    union all select 90
+) period_def
+inner join etl_datasync.dashboard_product_performance_daily p
+        on p.dt_date between date_sub(%(biz_date)s, interval period_def.period_days - 1 day)
+                         and %(biz_date)s
+inner join etl_datasync.dashboard_pur_plan_replenish_data r
+        on r.cur_date = %(snapshot_date)s
+       and r.country_category = p.country_category
+       and r.seller_name_new = p.seller_name_new
+       and r.seller_sku_adj = p.seller_sku_adj
+where period_def.period_days in (7, 14, 30, 90)
+group by
+    period_def.period_days,
+    p.country_category,
+    coalesce(nullif(p.country, ''), '-'),
+    p.seller_name_new,
+    p.seller_sku_adj
+"""
+
+UPDATE_COUNTRY_METRICS_LISTING_PRICE_SQL = """
+update etl_datasync.dashboard_replenishment_country_metrics m
+left join tmp_replenishment_country_listing_price lp
+       on lp.country_category = m.country_category
+      and lp.seller_name_new = m.seller_name_new
+      and lp.country = m.country
+      and binary lp.seller_sku = binary m.seller_sku_adj
+set m.listing_price = lp.price
+where m.snapshot_date = %(snapshot_date)s
+"""
+
 STEPS = {
     "listing_basic_sync": SourceLoadStep(
         "listing_basic_sync",
@@ -1180,6 +1565,13 @@ STEPS = {
         SELECT_LISTING_BASIC_SYNC_SQL,
         "etl_datasync.dashboard_replenishment_listing_basic_sync",
         LISTING_BASIC_COLUMNS,
+    ),
+    "self_asin_sync": SourceLoadStep(
+        "self_asin_sync",
+        DELETE_SELF_ASIN_SYNC_SQL,
+        SELECT_SELF_ASIN_SYNC_SQL,
+        "etl_datasync.dashboard_replenishment_self_asin_sync",
+        SELF_ASIN_COLUMNS,
     ),
     "fba_shipment_sync": SourceLoadStep(
         "fba_shipment_sync",
@@ -1200,6 +1592,17 @@ STEPS = {
     "replenishment_result": ReplenishmentStep(
         "replenishment_result",
         tuple(statement.strip() + ";" for statement in REPLENISHMENT_RESULT_SQL.split(";") if statement.strip()),
+    ),
+    "country_metrics": ReplenishmentStep(
+        "country_metrics",
+        (
+            DELETE_COUNTRY_METRICS_SQL,
+            DROP_COUNTRY_LISTING_PRICE_SQL,
+            CREATE_COUNTRY_LISTING_PRICE_SQL,
+            INSERT_COUNTRY_LISTING_PRICE_SQL,
+            BUILD_COUNTRY_METRICS_SQL,
+            UPDATE_COUNTRY_METRICS_LISTING_PRICE_SQL,
+        ),
     ),
 }
 
@@ -1279,7 +1682,38 @@ def ensure_tables(conn, schemas: SchemaConfig) -> None:
     with conn.cursor() as cursor:
         for statement in DDL_STATEMENTS:
             cursor.execute(render_replenishment_sql(statement, schemas))
+        ensure_replenishment_columns(cursor, schemas)
     conn.commit()
+
+
+def ensure_replenishment_columns(cursor, schemas: SchemaConfig) -> None:
+    column_specs = {
+        "dashboard_replenishment_country_metrics": [
+            ("listing_price", "decimal(18,4) null", "local_sku_list"),
+        ],
+    }
+    for table_name, columns in column_specs.items():
+        cursor.execute(
+            """
+            select column_name
+            from information_schema.columns
+            where table_schema = %(schema)s
+              and table_name = %(table)s
+            """,
+            {"schema": schemas.target_schema, "table": table_name},
+        )
+        existing = {
+            next(iter(row.values())) if isinstance(row, dict) else row[0]
+            for row in cursor.fetchall()
+        }
+        for column_name, definition, after_column in columns:
+            if column_name in existing:
+                continue
+            cursor.execute(
+                f"alter table `{schemas.target_schema}`.`{table_name}` "
+                f"add column `{column_name}` {definition} after `{after_column}`"
+            )
+            existing.add(column_name)
 
 
 def check_daily_snapshots(conn, schemas: SchemaConfig, params: dict[str, object]) -> None:
