@@ -92,7 +92,7 @@
     inventoryStructure: "\u5e93\u5b58\u7ed3\u6784",
     salesSupport: "\u9500\u552e\u652f\u6491",
     category: "\u4ea7\u54c1\u5206\u7c7b",
-    margin: "\u5229\u6da6\u7387",
+    margin: "\u8ba2\u5355\u6bdb\u5229\u7387\u533a\u95f4",
     flowChange: "\u8f83\u4e0a\u671f",
     flowNew: "\u65b0\u589e",
     flowIn: "\u6d41\u5165",
@@ -690,7 +690,7 @@
         numberColumn(text.boxQty, "box_qty", 96, 0),
         { headerName: text.replenishValue, field: "cost", width: 132, type: "numericColumn", sort: colSort("cost"), cellRenderer: function (params) { return formatCurrency(params.value); } },
         { headerName: text.followStatus, field: "follow_status", width: 112, sort: colSort("follow_status"), cellRenderer: function (params) { return '<span class="status-pill">' + app.escapeHtml(params.value || "") + '</span>'; } },
-        { headerName: text.margin, field: "margin_range", width: 118, sort: colSort("margin_range") }
+        { headerName: text.margin, field: "margin_range", width: 146, sort: colSort("margin_range") }
       ],
       onSortChanged: handleGridSortChanged
     });
