@@ -169,7 +169,7 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("dashboard_product_performance_daily", sql)
         self.assertIn("dashboard_pur_plan_replenish_data", sql)
         self.assertIn("period_days", sql)
-        self.assertIn("period_days in (7, 14, 30, 90)", sql)
+        self.assertIn("period_days in (7, 14, 30, 90, 180)", sql)
         self.assertIn("group_concat(distinct nullif(p.local_sku, '')", sql)
         self.assertIn("null as listing_price", sql)
         self.assertIn("avg(case when p.dt_date = %(biz_date)s then nullif(p.ranking, 0) end) as avg_ranking", sql)
@@ -196,6 +196,20 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("'瘦狗产品'", sql)
         self.assertIn("'问题产品'", sql)
 
+    def test_replenishment_result_stores_90d_and_180d_category_metrics(self):
+        ddl = "\n".join(replenishment_update.DDL_STATEMENTS)
+        sql = replenishment_update.REPLENISHMENT_RESULT_SQL
+        salable_sql = replenishment_update.INSERT_SALABLE_DAYS_SQL
+
+        self.assertIn("r_180d_salable_days", ddl)
+        self.assertIn("sales_180d", ddl)
+        self.assertIn("pprofit_ratio_90d", ddl)
+        self.assertIn("pprofit_ratio_180d", ddl)
+        self.assertIn("interval 179 day", salable_sql)
+        self.assertIn("sum(case when p.dt_date >= date_sub(%(biz_date)s, interval 179 day) then coalesce(p.sales_qty, 0) else 0 end) as sales_180", sql)
+        self.assertIn("sum(case when p.dt_date >= date_sub(%(biz_date)s, interval 89 day) then coalesce(p.sales_amount, 0) else 0 end) as amount_90", sql)
+        self.assertIn("m.pprofit_180 / nullif(m.amount_180, 0) as pprofit_ratio_180", sql)
+
     def test_build_params_defaults_and_candidate_window(self):
         args = Namespace(biz_date="2026-06-17", snapshot_date="2026-06-18", candidate_days=1)
 
@@ -203,7 +217,7 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
 
         self.assertEqual(date(2026, 6, 17), params["biz_date"])
         self.assertEqual(date(2026, 6, 18), params["snapshot_date"])
-        self.assertEqual(date(2026, 3, 20), params["product_start_date"])
+        self.assertEqual(date(2025, 12, 20), params["product_start_date"])
         self.assertEqual(date(2026, 6, 17), params["candidate_start_date"])
         self.assertEqual(1, params["candidate_days"])
         self.assertEqual(date(2024, 10, 3), params["history_start_date"])
