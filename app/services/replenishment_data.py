@@ -352,6 +352,7 @@ class ReplenishmentDataService:
         snapshot_date: str = "",
         level: str = "all",
         category: str = "all",
+        category_period_days: int | str | None = 30,
         site: str = "all",
         store: str = "all",
         keyword: str = "",
@@ -362,6 +363,7 @@ class ReplenishmentDataService:
             snapshot_date=snapshot_date,
             level=level,
             category=category,
+            category_period_days=category_period_days,
             site=site,
             store=store,
             keyword=keyword,
@@ -374,6 +376,7 @@ class ReplenishmentDataService:
         snapshot_date: str = "",
         level: str = "all",
         category: str = "all",
+        category_period_days: int | str | None = 30,
         site: str = "all",
         store: str = "all",
         keyword: str = "",
@@ -384,9 +387,27 @@ class ReplenishmentDataService:
             selected_date = parse_day(snapshot_date) or self._latest_date(conn)
             if not selected_date:
                 return {"columns": [], "rows": [], "snapshot_date": None}
-            filters, params = self._build_where(selected_date, level, category, site, store, keyword)
+            safe_category_period_days = self._normalize_product_category_period_days(category_period_days)
+            period_metrics = self._product_category_metric_sql(safe_category_period_days)
+            filters, params = self._build_where(
+                selected_date,
+                level,
+                category,
+                site,
+                store,
+                keyword,
+                category_expr=period_metrics["category_expr"],
+            )
             columns = self._export_columns(conn)
-            rows = self._export_items(conn, filters, params, sort_field, sort_dir, [col["name"] for col in columns])
+            rows = self._export_items(
+                conn,
+                filters,
+                params,
+                sort_field,
+                sort_dir,
+                [col["name"] for col in columns],
+                period_metrics=period_metrics,
+            )
             return {"columns": columns, "rows": rows, "snapshot_date": format_day(selected_date)}
 
     def get_country_metrics(
@@ -1386,7 +1407,9 @@ class ReplenishmentDataService:
         sort_field: str,
         sort_dir: str,
         columns: list[str] | None = None,
+        period_metrics: dict[str, str] | None = None,
     ) -> list[dict[str, Any]]:
+        period_metrics = period_metrics or self._product_category_metric_sql(30)
         sort_map = {
             "level": "support_replenish_level_sort",
             "country": "country_category",
@@ -1396,8 +1419,8 @@ class ReplenishmentDataService:
             "sku": "max_sku",
             "support_days": "inventory_support_days",
             "daily_sales": "daily_avg_sales",
-            "category_daily_sales_30d": "case when r_30d_salable_days > 0 then final_sales_30d / r_30d_salable_days else 0 end",
-            "profit_rate_30d": "pprofit_ratio_30d",
+            "category_daily_sales_30d": period_metrics["daily_sales_expr"],
+            "profit_rate_30d": period_metrics["margin_col"],
             "available_total": "available_total",
             "stock_up_num": "stock_up_num",
             "local_quantity": "local_quantity",
@@ -1408,13 +1431,15 @@ class ReplenishmentDataService:
             "need_qty": "replenish_need_qty",
             "box_qty": "replenish_box_qty",
             "follow_status": "fllow_flag",
-            "category": "abcd_category",
-            "margin_range": "gp_margin_range",
+            "category": period_metrics["category_expr"],
+            "margin_range": period_metrics["margin_range_expr"],
         }
         sort_column = sort_map.get(sort_field or "", "support_replenish_level_sort")
         direction = "desc" if str(sort_dir or "").lower() == "desc" else "asc"
         export_columns = columns or [col["name"] for col in self._export_columns(conn)]
-        select_columns = ",\n                    ".join(self._quote_identifier(column) for column in export_columns)
+        select_columns = ",\n                    ".join(
+            self._export_select_expression(column, period_metrics) for column in export_columns
+        )
         with conn.cursor() as cursor:
             cursor.execute(
                 f"""
@@ -1431,6 +1456,13 @@ class ReplenishmentDataService:
             if "fllow_flag" in row:
                 row["fllow_flag"] = format_follow_status(row.get("fllow_flag"))
         return rows
+
+    def _export_select_expression(self, column: str, period_metrics: dict[str, str]) -> str:
+        if column == "abcd_category":
+            return f"{period_metrics['category_expr']} as {self._quote_identifier(column)}"
+        if column == "gp_margin_range":
+            return f"{period_metrics['margin_range_expr']} as {self._quote_identifier(column)}"
+        return self._quote_identifier(column)
 
     def _export_columns(self, conn) -> list[dict[str, str]]:
         with conn.cursor() as cursor:

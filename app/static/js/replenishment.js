@@ -912,7 +912,7 @@
 
   function exportReplenishment() {
     var params = new URLSearchParams();
-    ["snapshot_date", "level", "category", "site", "store", "keyword", "sort_field", "sort_dir"].forEach(function (key) {
+    ["snapshot_date", "level", "category", "category_period_days", "site", "store", "keyword", "sort_field", "sort_dir"].forEach(function (key) {
       var value = state[key];
       if (value !== undefined && value !== null && value !== "" && value !== "all") params.set(key, value);
     });
