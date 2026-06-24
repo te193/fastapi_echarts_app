@@ -5087,7 +5087,8 @@ body[data-page="matrix"] .matrix-cell-meta {
   display: none;
   width: min(520px, 82vw);
   max-height: 280px;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 10px 12px;
   border: 1px solid #cbd5e1;
   border-radius: 8px;
@@ -5099,6 +5100,7 @@ body[data-page="matrix"] .matrix-cell-meta {
   line-height: 1.7;
   transform: translateY(-50%);
   white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .layer-help-popover::after {
@@ -5198,6 +5200,11 @@ body[data-page="matrix"] .matrix-cell-meta {
   color: #1e40af;
 }
 
+.replenish-layer-row.level-6 .layer-mark {
+  background: #f3e8ff;
+  color: #6b21a8;
+}
+
 .replenish-pool-panel {
   display: flex;
   flex-direction: column;
@@ -5227,6 +5234,23 @@ body[data-page="matrix"] .matrix-cell-meta {
 
 .pool-chip span:not(.mix-icon) {
   font-weight: 900;
+}
+
+.pool-chip-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pool-chip-title .layer-help-popover {
+  left: auto;
+  right: calc(100% + 10px);
+}
+
+.pool-chip-title .layer-help-popover::after {
+  left: auto;
+  right: -6px;
 }
 
 .pool-chip strong {
@@ -5391,6 +5415,12 @@ body[data-page="matrix"] .matrix-cell-meta {
   color: #475569;
 }
 
+.layer-rank-row.level-6 .rank-index,
+.layer-mix-card.level-6 .mix-icon {
+  background: #f3e8ff;
+  color: #6b21a8;
+}
+
 .status-pill {
   display: inline-flex;
   align-items: center;
@@ -5427,6 +5457,11 @@ body[data-page="matrix"] .matrix-cell-meta {
 .status-pill.level-5 {
   background: #e2e8f0;
   color: #475569;
+}
+
+.status-pill.level-6 {
+  background: #f3e8ff;
+  color: #6b21a8;
 }
 
 .country-summary-button {

@@ -7,6 +7,7 @@
   var LEVEL_PLANNED = "\u8ba1\u5212\u8865\u8d27";
   var LEVEL_SUFFICIENT = "\u5e93\u5b58\u5145\u8db3";
   var LEVEL_ZERO_SALES = "\u65e5\u9500\u4e3a0";
+  var LEVEL_HISTORY_RECOVERY = "\u5386\u53f2\u515c\u5e95";
   var LEVEL_HELP = {};
   LEVEL_HELP[LEVEL_URGENT] = [
     "\u5224\u5b9a\uff1a\u5e93\u5b58\u652f\u6491\u5929\u6570 <= 35 \u5929\u3002",
@@ -26,6 +27,25 @@
     "\u8865\u8d27\u6570\u91cf\u6309\u9700\u6c42\u91cf\u7ed3\u5408\u91c7\u8d2d\u7bb1\u89c4\u53d6\u6574\uff0c\u8865\u8d27\u8d27\u503c = \u8865\u8d27\u6570\u91cf * (\u91c7\u8d2d\u5355\u4ef7 + \u5934\u7a0b\u8fd0\u8d39)\u3002",
     "\u4ea7\u54c1\u5206\u7c7b\u5360\u6bd4 = \u8be5\u5206\u5c42\u5185\u5bf9\u5e94\u5206\u7c7b MSKU \u6570 / \u8be5\u5206\u5c42 MSKU \u603b\u6570\u3002"
   ];
+  LEVEL_HELP[LEVEL_SUFFICIENT] = [
+    "判断：原始补货分层不在紧急/建议/计划补货三层，且未触发日销为0或历史兜底。",
+    "通常表示库存支撑天数 > 90 天，当前不进入补货计算。",
+    "补货数量按 0 展示。"
+  ];
+  LEVEL_HELP[LEVEL_ZERO_SALES] = [
+    "判断：用于计算库存支撑天数的日销 <= 0。",
+    "日销为0时无法计算有效库存支撑天数，当前不进入补货计算。",
+    "后续销量恢复后，会重新按库存支撑天数进入对应分层。"
+  ];
+  LEVEL_HELP[LEVEL_HISTORY_RECOVERY] = [
+    "判断：正常补货需求数量 < 补货触发数量，且近30天可售天数 < 15，且近90天有货天数 >= 15，且近90天有货日销 > 1.5。",
+    "同时要求：历史恢复需求数量 > 补货触发数量，才会进入历史兜底。",
+    "白话解释：近30天可售天数太少，可能是缺货、断货或短期销量过低，直接按当前日销判断容易漏补。",
+    "所以会参考近90天有货时的日销，如果历史有货表现能支撑一箱/50个以上的恢复需求，就单独放到历史兜底。",
+    "用途：补充识别短期日销偏低或日销为0但历史销售能力还在的 SKU，不改变库存支撑分层结果。",
+    "补货数量按恢复一箱展示：有采购箱规取一箱数量，无箱规按 50 个；补货货值 = 补货数量 * (采购单价 + 头程运费)。",
+    "该层不计入需要补货 MSKU 三层合计，但补货数量和补货货值汇总会包含这批恢复数量。"
+  ];
   var FLOW_HELP = [
     "\u6d41\u8f6c\u6307\u6807\u53e3\u5f84\uff1a\u6309\u5f53\u524d\u8865\u8d27\u65e5\u671f\u4e0e\u4e0a\u4e00\u4e2a\u5df2\u751f\u6210\u8865\u8d27\u7ed3\u679c\u65e5\u671f\u5bf9\u6bd4\u3002",
     "\u8f83\u4e0a\u671f = \u4eca\u5929\u8be5\u5c42 MSKU \u6570 - \u4e0a\u671f\u8be5\u5c42 MSKU \u6570\u3002",
@@ -33,6 +53,11 @@
     "\u6d41\u51fa = \u4e0a\u671f\u5728\u8be5\u5c42\uff0c\u4eca\u5929\u8f6c\u5230\u5176\u4ed6\u5c42\u6216\u65e0\u8bb0\u5f55\u7684 MSKU\u3002",
     "\u9000\u51fa = \u4e0a\u671f\u5728\u7d27\u6025/\u5efa\u8bae/\u8ba1\u5212\u8865\u8d27\u4e09\u5c42\uff0c\u4eca\u5929\u8f6c\u5230\u5e93\u5b58\u5145\u8db3\u6216\u65e5\u9500\u4e3a0\u7684 MSKU\u3002",
     "\u65b0\u589e = \u4e0a\u671f\u5728\u5e93\u5b58\u5145\u8db3\u6216\u65e5\u9500\u4e3a0\uff0c\u4eca\u5929\u8fdb\u5165\u7d27\u6025/\u5efa\u8bae/\u8ba1\u5212\u8865\u8d27\u4e09\u5c42\u7684 MSKU\u3002"
+  ];
+  var DAILY_SALES_HELP = [
+    "\u65e5\u9500\u53e3\u5f84\uff1a\u65b0\u54c1 = 3\u5929\u65e5\u9500 * 0.5 + 7\u5929\u65e5\u9500 * 0.5\uff1b\u8001\u54c1 = 7\u5929\u65e5\u9500 * 0.6 + 14\u5929\u65e5\u9500 * 0.2 + 30\u5929\u65e5\u9500 * 0.2\u3002",
+    "\u5468\u671f\u65e5\u9500 = \u5468\u671f\u9500\u91cf / \u5468\u671f\u53ef\u552e\u5929\u6570\uff1b\u5f53\u53ef\u552e\u5929\u6570\u4e0d\u8db3\u65f6\uff0c\u4f1a\u7ed3\u540830\u5929\u65e5\u9500\u505a\u5e73\u6ed1\uff0c\u907f\u514d\u77ed\u5468\u671f\u7f3a\u8d27\u5bfc\u81f4\u65e5\u9500\u88ab\u653e\u5927\u3002",
+    "\u5386\u53f290\u5929\u6709\u8d27\u65e5\u9500\u53ea\u7528\u4e8e\u8865\u8d27\u6570\u91cf\u515c\u5e95\u6807\u8bb0\uff0c\u4e0d\u53c2\u4e0e\u5e93\u5b58\u652f\u6491\u5929\u6570\u548c\u5206\u5c42\u5224\u65ad\u3002"
   ];
   var text = {
     loading: "\u52a0\u8f7d\u4e2d...",
@@ -76,11 +101,13 @@
     countryCount: "\u56fd\u5bb6\u6570",
     periodSales: "\u5468\u671f\u9500\u91cf",
     periodAmount: "\u5468\u671f\u9500\u552e\u989d",
-    periodMargin: "\u5468\u671f\u6bdb\u5229\u7387",
+    periodMargin: "\u5468\u671f\u8ba2\u5355\u6bdb\u5229\u7387",
     listingPrice: "\u4ef7\u683c",
+    marginPrice35: "35\u6bdb\u5229\u5b9a\u4ef7",
+    marginPrice10: "10\u6bdb\u5229\u5b9a\u4ef7",
     salableDailySales: "\u53ef\u552e\u65e5\u9500",
     salesAmount: "\u9500\u552e\u989d",
-    profit: "\u5229\u6da6",
+    profit: "\u8ba2\u5355\u6bdb\u5229\u6da6",
     avgRanking: "\u6700\u540e\u6392\u540d",
     bestRanking: "\u6700\u597d\u6392\u540d",
     worstRanking: "\u6700\u5dee\u6392\u540d",
@@ -363,7 +390,7 @@
         return [
           '<button type="button" class="pool-chip level-' + app.escapeHtml(String(row.sort || "")) + '" data-level="' + app.escapeHtml(row.level || "") + '">',
           '<span class="mix-icon">' + layerGlyph(row.sort) + '</span>',
-          '<span>' + app.escapeHtml(row.level || "") + '</span>',
+          '<span class="pool-chip-title">' + app.escapeHtml(row.level || "") + renderLevelHelp(row.level || "") + '</span>',
           '<strong>' + formatNumber(row.sku_count) + '</strong>',
           '<small>' + text.replenishQty + ' ' + formatNumber(row.replenish_qty) + '</small>',
           '</button>'
@@ -411,7 +438,10 @@
   }
 
   function renderLevelHelp(level) {
-    var lines = (LEVEL_HELP[level] || []).concat(FLOW_HELP);
+    var lines = (LEVEL_HELP[level] || []).slice();
+    if ([LEVEL_URGENT, LEVEL_SUGGESTED, LEVEL_PLANNED].indexOf(level) >= 0) {
+      lines = lines.concat(DAILY_SALES_HELP, FLOW_HELP);
+    }
     if (!lines.length) return "";
     var body = lines.map(function (line) {
       return '<span>' + app.escapeHtml(line) + '</span>';
@@ -814,10 +844,12 @@
         { headerName: "Listing SKU", field: "local_sku_list", width: 150, cellRenderer: function (params) { return '<span class="sku-list-cell">' + app.escapeHtml(params.value || "-") + '</span>'; } },
         countryNumberColumn(text.periodSales, "sales_qty", 100, 0),
         countryNumberColumn(text.listingPrice, "listing_price", 100, 2),
+        countryNumberColumn(text.marginPrice35, "margin_price_35", 116, 2),
+        countryNumberColumn(text.marginPrice10, "margin_price_10", 116, 2),
         countryNumberColumn(text.salableDailySales, "salable_daily_sales", 110, 2),
         { headerName: text.salesAmount, field: "sales_amount", width: 116, type: "numericColumn", cellRenderer: function (params) { return formatCurrency(params.value); } },
         { headerName: text.profit, field: "order_gross_profit", width: 112, type: "numericColumn", cellRenderer: function (params) { return formatCurrency(params.value); } },
-        { headerName: "\u6bdb\u5229\u7387", field: "order_gross_margin", width: 104, type: "numericColumn", cellRenderer: function (params) { return window.kanbanGrid.percent(params.value, 2); } },
+        { headerName: "\u8ba2\u5355\u6bdb\u5229\u7387", field: "order_gross_margin", width: 120, type: "numericColumn", cellRenderer: function (params) { return window.kanbanGrid.percent(params.value, 2); } },
         countryNumberColumn(text.avgRanking, "avg_ranking", 104, 0),
         countryNumberColumn(text.bestRanking, "best_ranking", 104, 0),
         countryNumberColumn(text.worstRanking, "worst_ranking", 104, 0),
@@ -1080,6 +1112,7 @@
     if (key === 3) return "\u8ba1";
     if (key === 4) return "\u8db3";
     if (key === 5) return "0";
+    if (key === 6) return "\u53f2";
     return "-";
   }
 })();

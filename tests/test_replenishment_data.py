@@ -2,6 +2,7 @@ import unittest
 
 from app.services.replenishment_data import (
     FLOW_ENTRY_LABEL,
+    LEVEL_HISTORY_RECOVERY,
     LEVEL_PLANNED,
     LEVEL_SUGGESTED,
     LEVEL_SUFFICIENT,
@@ -121,6 +122,50 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
         self.assertEqual(7, service._normalize_country_period_days(7))
         self.assertEqual(90, service._normalize_country_period_days("90"))
         self.assertEqual(30, service._normalize_country_period_days(21))
+
+    def test_product_category_period_days_supports_90_and_180(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+
+        self.assertEqual(30, service._normalize_product_category_period_days(None))
+        self.assertEqual(90, service._normalize_product_category_period_days("90"))
+        self.assertEqual(180, service._normalize_product_category_period_days(180))
+        self.assertEqual(30, service._normalize_product_category_period_days(365))
+
+        metrics_90 = service._product_category_metric_sql(90)
+        metrics_180 = service._product_category_metric_sql(180)
+        self.assertIn("sales_90d / r_90d_salable_days", metrics_90["daily_sales_expr"])
+        self.assertEqual("pprofit_ratio_90d", metrics_90["margin_col"])
+        self.assertIn("sales_180d / r_180d_salable_days", metrics_180["daily_sales_expr"])
+        self.assertEqual("pprofit_ratio_180d", metrics_180["margin_col"])
+
+    def test_history_recovery_display_layer_only_covers_passive_rows(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+
+        condition = service._history_recovery_display_condition()
+        level_expr = service._display_level_expr()
+        sort_expr = service._display_level_sort_expr()
+
+        self.assertIn("history_recovery_flag", condition)
+        self.assertIn("support_replenish_level_sort, 99) not in (1, 2, 3)", condition)
+        self.assertIn("then %(level_history_recovery)s", level_expr)
+        self.assertIn("then 6", sort_expr)
+        self.assertEqual(
+            {"level_history_recovery": LEVEL_HISTORY_RECOVERY, "snapshot_date": "2026-06-24"},
+            service._with_display_level_params({"snapshot_date": "2026-06-24"}),
+        )
+
+    def test_history_recovery_display_replenish_qty_restores_one_box(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+
+        qty_expr = service._display_replenish_qty_expr()
+        box_expr = service._display_replenish_box_qty_expr()
+        cost_expr = service._display_replenish_cost_expr()
+
+        self.assertIn("max_cg_box_pcs", qty_expr)
+        self.assertIn("else 50", qty_expr)
+        self.assertIn("then 1 else 0", box_expr)
+        self.assertIn("max_cg_price", cost_expr)
+        self.assertIn("max_cg_transport_costs", cost_expr)
 
     def test_serialize_country_metric_formats_display_fields(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)
