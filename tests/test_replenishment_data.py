@@ -37,6 +37,34 @@ class FakeConnection:
         return FakeCursor(self.rows)
 
 
+class RecordingCursor:
+    def __init__(self, conn):
+        self.conn = conn
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def execute(self, query, params=None):
+        self.conn.queries.append(str(query))
+        self.conn.params.append(params or {})
+
+    def fetchall(self):
+        return self.conn.rows
+
+
+class RecordingConnection:
+    def __init__(self, rows):
+        self.rows = rows
+        self.queries = []
+        self.params = []
+
+    def cursor(self):
+        return RecordingCursor(self)
+
+
 class ReplenishmentDataServiceTests(unittest.TestCase):
     def test_export_columns_excludes_empty_gmv_and_gross_profit_fields(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)
@@ -114,6 +142,27 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
 
         self.assertEqual("是", rows[0]["fllow_flag"])
 
+
+    def test_export_items_uses_selected_period_category_expression(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+        conn = RecordingConnection([{"abcd_category": "x", "gp_margin_range": "y"}])
+        metrics = service._product_category_metric_sql(90)
+
+        service._export_items(
+            conn,
+            filters="cur_date = %(snapshot_date)s",
+            params={"snapshot_date": "2026-06-24"},
+            sort_field="category",
+            sort_dir="asc",
+            columns=["abcd_category", "gp_margin_range"],
+            period_metrics=metrics,
+        )
+
+        sql = conn.queries[0]
+        self.assertIn("sales_90d / r_90d_salable_days", sql)
+        self.assertIn("as `abcd_category`", sql)
+        self.assertIn("as `gp_margin_range`", sql)
+        self.assertIn("order by", sql)
 
     def test_normalize_country_period_days_allows_only_supported_periods(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)
