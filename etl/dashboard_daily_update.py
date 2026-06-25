@@ -359,7 +359,13 @@ create table if not exists etl_datasync.dashboard_limit_price_daily_snapshot (
     tax_inclusive_price_noad decimal(18,2) null,
     tax_inclusive_price_adj decimal(18,2) null,
     margin_price_35 decimal(18,2) null,
+    margin_price_30 decimal(18,2) null,
+    margin_price_25 decimal(18,2) null,
+    margin_price_20 decimal(18,2) null,
+    margin_price_15 decimal(18,2) null,
     margin_price_10 decimal(18,2) null,
+    margin_price_5 decimal(18,2) null,
+    margin_price_0 decimal(18,2) null,
     created_at datetime not null default current_timestamp,
     updated_at datetime not null default current_timestamp on update current_timestamp,
     unique key uk_snapshot_item (snapshot_date, item_key),
@@ -1893,7 +1899,8 @@ group by
 """
 
 DELETE_LIMIT_PRICE_SQL = """
-delete from etl_datasync.dashboard_limit_price_daily_snapshot;
+delete from etl_datasync.dashboard_limit_price_daily_snapshot
+where snapshot_date = %(snapshot_date)s;
 """
 
 INSERT_LIMIT_PRICE_SQL = """
@@ -1901,7 +1908,8 @@ insert into etl_datasync.dashboard_limit_price_daily_snapshot (
     snapshot_date, item_key, local_sku, seller_sku, seller_name_new,
     country, country_category, shipping_method, target_margin, currency,
     tax_inclusive_price, tax_inclusive_price_noad, tax_inclusive_price_adj,
-    margin_price_35, margin_price_10,
+    margin_price_35, margin_price_30, margin_price_25, margin_price_20,
+    margin_price_15, margin_price_10, margin_price_5, margin_price_0,
     created_at, updated_at
 )
 select
@@ -1926,7 +1934,13 @@ select
     round(max(margin_price_35), 2) as tax_inclusive_price_noad,
     round(max(margin_price_35_adj), 2) as tax_inclusive_price_adj,
     round(max(margin_price_35), 2) as margin_price_35,
+    round(max(margin_price_30), 2) as margin_price_30,
+    round(max(margin_price_25), 2) as margin_price_25,
+    round(max(margin_price_20), 2) as margin_price_20,
+    round(max(margin_price_15), 2) as margin_price_15,
     round(max(margin_price_10), 2) as margin_price_10,
+    round(max(margin_price_5), 2) as margin_price_5,
+    round(max(margin_price_0), 2) as margin_price_0,
     now() as created_at,
     now() as updated_at
 from (
@@ -1939,7 +1953,13 @@ from (
         币种 as currency,
         listing价格 as listing_price,
         `35毛利润价格` as margin_price_35,
+        `30毛利润价格` as margin_price_30,
+        `25毛利润价格` as margin_price_25,
+        `20毛利润价格` as margin_price_20,
+        `15毛利润价格` as margin_price_15,
         `10毛利润价格` as margin_price_10,
+        `5毛利润价格` as margin_price_5,
+        `0毛利润价格` as margin_price_0,
         `35毛利润含广告定价` as margin_price_35_adj
     from temporary_dwd.`在库节点_输出定价表`
 ) limit_price_source
@@ -2265,7 +2285,8 @@ LIMIT_PRICE_COLUMNS = (
     "snapshot_date", "item_key", "local_sku", "seller_sku", "seller_name_new",
     "country", "country_category", "shipping_method", "target_margin", "currency",
     "tax_inclusive_price", "tax_inclusive_price_noad", "tax_inclusive_price_adj",
-    "margin_price_35", "margin_price_10",
+    "margin_price_35", "margin_price_30", "margin_price_25", "margin_price_20",
+    "margin_price_15", "margin_price_10", "margin_price_5", "margin_price_0",
     "created_at", "updated_at",
 )
 
@@ -2410,6 +2431,14 @@ def ensure_inventory_weekly_columns(cursor, schemas: SchemaConfig) -> None:
         ],
         "dashboard_inventory_daily_snapshot": [
             ("stock_up_num_price", "decimal(18,4) not null default 0", "stock_up_num"),
+        ],
+        "dashboard_limit_price_daily_snapshot": [
+            ("margin_price_30", "decimal(18,2) null", "margin_price_35"),
+            ("margin_price_25", "decimal(18,2) null", "margin_price_30"),
+            ("margin_price_20", "decimal(18,2) null", "margin_price_25"),
+            ("margin_price_15", "decimal(18,2) null", "margin_price_20"),
+            ("margin_price_5", "decimal(18,2) null", "margin_price_10"),
+            ("margin_price_0", "decimal(18,2) null", "margin_price_5"),
         ],
     }
     for table_name, specs in column_specs.items():

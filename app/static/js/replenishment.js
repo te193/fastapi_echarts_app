@@ -103,6 +103,7 @@
     periodAmount: "\u5468\u671f\u9500\u552e\u989d",
     periodMargin: "\u5468\u671f\u8ba2\u5355\u6bdb\u5229\u7387",
     listingPrice: "\u4ef7\u683c",
+    marginPrices: "\u6bdb\u5229\u5b9a\u4ef7",
     marginPrice35: "35\u6bdb\u5229\u5b9a\u4ef7",
     marginPrice10: "10\u6bdb\u5229\u5b9a\u4ef7",
     salableDailySales: "\u53ef\u552e\u65e5\u9500",
@@ -158,6 +159,7 @@
     sort_field: "",
     sort_dir: ""
   };
+  var marginPricePopover = null;
   var flowDrawer = {
     open: false,
     level: "all",
@@ -284,6 +286,18 @@
       if (!button) return;
       countryDrawer.period_days = Number(button.dataset.countryPeriod || 30);
       fetchCountryMetrics();
+    });
+    elements.countryMetricsWrap.addEventListener("click", function (event) {
+      var button = event.target.closest("[data-margin-price-key]");
+      if (!button) return;
+      event.preventDefault();
+      event.stopPropagation();
+      toggleMarginPricePopover(button, button.dataset.marginPriceKey || "");
+    });
+    document.addEventListener("click", function (event) {
+      if (!marginPricePopover) return;
+      if (event.target.closest(".margin-price-popover") || event.target.closest("[data-margin-price-key]")) return;
+      closeMarginPricePopover();
     });
   }
 
@@ -834,6 +848,12 @@
       elements.countryMetricsWrap.innerHTML = '<div class="empty-state compact">\u6682\u65e0\u56fd\u5bb6\u660e\u7ec6</div>';
       return;
     }
+    closeMarginPricePopover();
+    window.replenishmentMarginPriceRowMap = {};
+    rows.forEach(function (row, index) {
+      row._margin_price_key = "margin-price-" + index;
+      window.replenishmentMarginPriceRowMap[row._margin_price_key] = row;
+    });
     elements.countryMetricsWrap.innerHTML = '<div id="countryMetricsAgGrid"></div>';
     window.kanbanGrid.makeGrid("countryMetricsAgGrid", {
       rowData: rows,
@@ -844,8 +864,13 @@
         { headerName: "Listing SKU", field: "local_sku_list", width: 150, cellRenderer: function (params) { return '<span class="sku-list-cell">' + app.escapeHtml(params.value || "-") + '</span>'; } },
         countryNumberColumn(text.periodSales, "sales_qty", 100, 0),
         countryNumberColumn(text.listingPrice, "listing_price", 100, 2),
-        countryNumberColumn(text.marginPrice35, "margin_price_35", 116, 2),
-        countryNumberColumn(text.marginPrice10, "margin_price_10", 116, 2),
+        {
+          headerName: text.marginPrices,
+          field: "margin_price_35",
+          width: 126,
+          type: "numericColumn",
+          cellRenderer: renderMarginPriceCell
+        },
         countryNumberColumn(text.salableDailySales, "salable_daily_sales", 110, 2),
         { headerName: text.salesAmount, field: "sales_amount", width: 116, type: "numericColumn", cellRenderer: function (params) { return formatCurrency(params.value); } },
         { headerName: text.profit, field: "order_gross_profit", width: 112, type: "numericColumn", cellRenderer: function (params) { return formatCurrency(params.value); } },
@@ -882,6 +907,67 @@
       type: "numericColumn",
       cellRenderer: function (params) { return '<strong class="ag-number-strong">' + formatNumber(params.value, digits) + '</strong>'; }
     };
+  }
+
+  function renderMarginPriceCell(params) {
+    var data = params.data || {};
+    var prices = Array.isArray(data.margin_prices) ? data.margin_prices : [];
+    var defaultItem = prices.find(function (item) { return Number(item.target) === 35; }) || prices[0] || null;
+    var value = defaultItem ? defaultItem.price : data.margin_price_35;
+    if (!prices.length && !value) return '<span class="muted-cell">-</span>';
+    var label = defaultItem ? defaultItem.label : "35\u6bdb\u5229";
+    return [
+      '<button type="button" class="margin-price-trigger" data-margin-price-key="' + app.escapeHtml(data._margin_price_key || "") + '" title="\u67e5\u770b\u5168\u90e8\u6bdb\u5229\u5b9a\u4ef7">',
+      '<strong>' + formatNumber(value, 2) + '</strong>',
+      '<span>' + app.escapeHtml(label) + '</span>',
+      '<i aria-hidden="true">\u2304</i>',
+      '</button>'
+    ].join("");
+  }
+
+  function toggleMarginPricePopover(button, key) {
+    if (marginPricePopover && marginPricePopover.dataset.key === key) {
+      closeMarginPricePopover();
+      return;
+    }
+    var row = window.replenishmentMarginPriceRowMap ? window.replenishmentMarginPriceRowMap[key] : null;
+    var prices = row && Array.isArray(row.margin_prices) ? row.margin_prices : [];
+    closeMarginPricePopover();
+    if (!prices.length) return;
+    marginPricePopover = document.createElement("div");
+    marginPricePopover.className = "margin-price-popover";
+    marginPricePopover.dataset.key = key;
+    marginPricePopover.innerHTML = [
+      '<table>',
+      '<thead><tr><th>\u6bdb\u5229\u6863\u4f4d</th><th>\u5b9a\u4ef7</th></tr></thead>',
+      '<tbody>',
+      prices.map(function (item) {
+        return '<tr><td>' + app.escapeHtml(item.label || "") + '</td><td>' + formatNumber(item.price, 2) + '</td></tr>';
+      }).join(""),
+      '</tbody>',
+      '</table>'
+    ].join("");
+    document.body.appendChild(marginPricePopover);
+    positionMarginPricePopover(button);
+  }
+
+  function positionMarginPricePopover(button) {
+    if (!marginPricePopover) return;
+    var rect = button.getBoundingClientRect();
+    var width = marginPricePopover.offsetWidth || 220;
+    var left = Math.min(Math.max(12, rect.left), window.innerWidth - width - 12);
+    var top = rect.bottom + 8;
+    if (top + marginPricePopover.offsetHeight > window.innerHeight - 12) {
+      top = Math.max(12, rect.top - marginPricePopover.offsetHeight - 8);
+    }
+    marginPricePopover.style.left = left + "px";
+    marginPricePopover.style.top = top + "px";
+  }
+
+  function closeMarginPricePopover() {
+    if (!marginPricePopover) return;
+    marginPricePopover.remove();
+    marginPricePopover = null;
   }
 
   function numberColumn(label, field, width, digits) {

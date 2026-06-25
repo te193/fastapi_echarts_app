@@ -22,6 +22,7 @@ LEVEL_HISTORY_RECOVERY = "\u5386\u53f2\u515c\u5e95"
 LEVEL_UNKNOWN = "\u672a\u5206\u5c42"
 COUNTRY_METRIC_PERIODS = {7, 14, 30, 90}
 PRODUCT_CATEGORY_PERIODS = {7, 14, 30, 90, 180}
+MARGIN_PRICE_TARGETS = (35, 30, 25, 20, 15, 10, 5, 0)
 PRODUCT_CATEGORY_SALES_COLUMNS = {
     7: "final_sales_7d",
     14: "final_sales_14d",
@@ -461,8 +462,14 @@ class ReplenishmentDataService:
                         m.country,
                         m.local_sku_list,
                         m.listing_price,
-                        coalesce(p.margin_price_35, 0) as margin_price_35,
-                        coalesce(p.margin_price_10, 0) as margin_price_10,
+                        p.margin_price_35,
+                        p.margin_price_30,
+                        p.margin_price_25,
+                        p.margin_price_20,
+                        p.margin_price_15,
+                        p.margin_price_10,
+                        p.margin_price_5,
+                        p.margin_price_0,
                         m.sales_qty,
                         m.natural_daily_sales,
                         m.salable_days,
@@ -491,16 +498,25 @@ class ReplenishmentDataService:
                             seller_name_new,
                             seller_sku,
                             max(margin_price_35) as margin_price_35,
-                            max(margin_price_10) as margin_price_10
+                            max(margin_price_30) as margin_price_30,
+                            max(margin_price_25) as margin_price_25,
+                            max(margin_price_20) as margin_price_20,
+                            max(margin_price_15) as margin_price_15,
+                            max(margin_price_10) as margin_price_10,
+                            max(margin_price_5) as margin_price_5,
+                            max(margin_price_0) as margin_price_0
                         from dashboard_limit_price_daily_snapshot
-                        where snapshot_date = %(snapshot_date)s
+                        where snapshot_date = (
+                            select max(snapshot_date)
+                            from dashboard_limit_price_daily_snapshot
+                            where snapshot_date <= %(snapshot_date)s
+                        )
                           and country_category = %(site)s
                           and seller_name_new = %(store)s
                           and seller_sku = %(msku)s
                         group by snapshot_date, country_category, country, seller_name_new, seller_sku
                     ) p
-                      on p.snapshot_date = m.snapshot_date
-                     and p.country_category = m.country_category
+                      on p.country_category = m.country_category
                      and p.country = m.country
                      and p.seller_name_new = m.seller_name_new
                      and p.seller_sku = m.seller_sku_adj
@@ -1605,12 +1621,28 @@ class ReplenishmentDataService:
         return period_days if period_days in COUNTRY_METRIC_PERIODS else 30
 
     def _serialize_country_metric(self, row: dict[str, Any]) -> dict[str, Any]:
+        margin_prices = [
+            {
+                "target": target,
+                "label": f"{target}\u6bdb\u5229",
+                "price": round(to_float(row.get(f"margin_price_{target}")), 4),
+            }
+            for target in MARGIN_PRICE_TARGETS
+            if row.get(f"margin_price_{target}") is not None
+        ]
         return {
             "country": row.get("country") or "-",
             "local_sku_list": row.get("local_sku_list") or "",
             "listing_price": round(to_float(row.get("listing_price")), 4),
             "margin_price_35": round(to_float(row.get("margin_price_35")), 4),
+            "margin_price_30": round(to_float(row.get("margin_price_30")), 4),
+            "margin_price_25": round(to_float(row.get("margin_price_25")), 4),
+            "margin_price_20": round(to_float(row.get("margin_price_20")), 4),
+            "margin_price_15": round(to_float(row.get("margin_price_15")), 4),
             "margin_price_10": round(to_float(row.get("margin_price_10")), 4),
+            "margin_price_5": round(to_float(row.get("margin_price_5")), 4),
+            "margin_price_0": round(to_float(row.get("margin_price_0")), 4),
+            "margin_prices": margin_prices,
             "sales_qty": round(to_float(row.get("sales_qty")), 2),
             "natural_daily_sales": round(to_float(row.get("natural_daily_sales")), 4),
             "salable_days": to_int(row.get("salable_days")),
