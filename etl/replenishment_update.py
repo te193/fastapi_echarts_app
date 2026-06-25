@@ -51,6 +51,7 @@ CONFIG_ENV_MAP = {
         "user": "DASHBOARD_DB_USER",
         "password": "DASHBOARD_DB_PASSWORD",
         "database": "DASHBOARD_DB_NAME",
+        "charset": "DASHBOARD_DB_CHARSET",
     },
     "source": {
         "host": "DASHBOARD_SOURCE_DB_HOST",
@@ -58,6 +59,7 @@ CONFIG_ENV_MAP = {
         "user": "DASHBOARD_SOURCE_DB_USER",
         "password": "DASHBOARD_SOURCE_DB_PASSWORD",
         "database": "DASHBOARD_SOURCE_DB_NAME",
+        "charset": "DASHBOARD_SOURCE_DB_CHARSET",
     },
 }
 
