@@ -17,6 +17,7 @@ from etl.dashboard_daily_update import COLUMN_COMMENTS
 from .services.dashboard_db import dashboard_service
 from .services.price_review_data import price_review_service
 from .services.replenishment_data import replenishment_service
+from .services.replenishment_tracking_data import replenishment_tracking_service
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -160,6 +161,15 @@ def replenishment_page(request: Request) -> HTMLResponse:
         request,
         "replenishment.html",
         {"page": "replenishment", "title": "补货计划"},
+    )
+
+
+@app.get("/replenishment-tracking", response_class=HTMLResponse)
+def replenishment_tracking_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "replenishment_tracking.html",
+        {"page": "replenishment_tracking", "title": "补货追踪"},
     )
 
 
@@ -655,6 +665,54 @@ def api_replenishment_level_flow(
         store=store,
         keyword=keyword,
         category_period_days=category_period_days,
+    )
+
+
+@app.get("/api/replenishment-tracking")
+def api_replenishment_tracking(
+    snapshot_date: str = Query(default=""),
+    tracking_window_days: int = Query(default=7),
+    level: str = Query(default="all"),
+    site: str = Query(default="all"),
+    store: str = Query(default="all"),
+    keyword: str = Query(default=""),
+    status: str = Query(default="all"),
+    sort_field: str = Query(default=""),
+    sort_dir: str = Query(default=""),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=10, le=100),
+    category_period_days: int = Query(default=30),
+) -> dict:
+    return replenishment_tracking_service.get_payload(
+        snapshot_date=snapshot_date,
+        tracking_window_days=tracking_window_days,
+        level=level,
+        site=site,
+        store=store,
+        keyword=keyword,
+        status=status,
+        sort_field=sort_field,
+        sort_dir=sort_dir,
+        page=page,
+        page_size=page_size,
+        category_period_days=category_period_days,
+    )
+
+
+@app.get("/api/replenishment-tracking/detail")
+def api_replenishment_tracking_detail(
+    snapshot_date: str = Query(default=""),
+    tracking_window_days: int = Query(default=30),
+    site: str = Query(default=""),
+    store: str = Query(default=""),
+    msku: str = Query(default=""),
+) -> dict:
+    return replenishment_tracking_service.get_detail(
+        snapshot_date=snapshot_date,
+        tracking_window_days=tracking_window_days,
+        site=site,
+        store=store,
+        msku=msku,
     )
 
 

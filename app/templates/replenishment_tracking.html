@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block content %}
+<header class="hero hero-compact">
+  <h1>补货追踪</h1>
+</header>
+
+<section class="panel filters-panel">
+  <div class="panel-head compact">
+    <div>
+      <p class="section-kicker">筛选区</p>
+      <h2>采购 / 发货 / 收货链路</h2>
+    </div>
+    <button id="clearTrackingFiltersBtn" class="ghost-button" type="button">一键清空</button>
+  </div>
+  <div class="filters-grid replenishment-tracking-filters">
+    <div class="filter-control replenishment-date-control">
+      <span>补货日期</span>
+      <button id="trackingDatePickerBtn" class="replenishment-date-trigger" type="button" aria-label="补货日期" aria-expanded="false" aria-controls="trackingDatePickerPanel">
+        <span id="trackingDatePickerValue">--</span>
+      </button>
+      <div id="trackingDatePickerPanel" class="replenishment-date-panel" hidden></div>
+    </div>
+    <label class="filter-control">
+      <span>补货后追踪天数</span>
+      <select id="trackingWindowSelect">
+        <option value="7" selected>7天</option>
+        <option value="14">14天</option>
+        <option value="30">30天</option>
+      </select>
+    </label>
+    <label class="filter-control">
+      <span>产品角色分类周期</span>
+      <select id="trackingCategoryPeriodSelect">
+        <option value="7">7天</option>
+        <option value="14">14天</option>
+        <option value="30" selected>30天</option>
+        <option value="90">90天</option>
+      </select>
+    </label>
+    <label class="filter-control">
+      <span>补货层级</span>
+      <select id="trackingLevelSelect"></select>
+    </label>
+    <label class="filter-control">
+      <span>追踪状态</span>
+      <select id="trackingStatusSelect"></select>
+    </label>
+    <label class="filter-control">
+      <span>国家类别</span>
+      <select id="trackingSiteSelect"></select>
+    </label>
+    <label class="filter-control">
+      <span>店铺</span>
+      <select id="trackingStoreSelect"></select>
+    </label>
+    <label class="filter-control">
+      <span>关键词</span>
+      <input id="trackingKeywordInput" type="search" placeholder="搜索 MSKU / 店铺 / SKU">
+    </label>
+  </div>
+</section>
+
+<section class="alerts-page-section replenishment-tracking-page">
+  <div class="section-head">
+    <div>
+      <p class="section-kicker">追踪执行池</p>
+      <h2>补货分层采购追踪</h2>
+    </div>
+    <p id="trackingPeriodHint" class="summary-hint"></p>
+  </div>
+
+  <div id="trackingSummaryGrid" class="alert-stats-grid opportunity-stats-grid"></div>
+  <div id="trackingLayerVizGrid" class="replenishment-viz-grid tracking-viz-grid"></div>
+  <div id="trackingLevelTabs" class="level-tabs tracking-level-tabs"></div>
+
+  <div class="panel alert-table-card">
+    <div class="alert-table-head">
+      <div>
+        <p class="section-kicker">明细</p>
+        <h3>补货追踪 SKU 列表</h3>
+      </div>
+      <div class="alert-table-actions">
+        <button id="trackingSortPurchaseBtn" class="ghost-button" type="button">按采购计划数</button>
+        <button id="trackingSortReplenishBtn" class="ghost-button" type="button">按补货数</button>
+      </div>
+    </div>
+    <div id="trackingTableWrap" class="alert-table-wrap replenishment-table-wrap ag-grid-shell"></div>
+  </div>
+
+  <div class="pagination-bar">
+    <div id="trackingPaginationInfo" class="pagination-info"></div>
+    <div class="pagination-controls">
+      <label class="page-size-control">
+        <span>每页</span>
+        <select id="trackingPageSizeSelect">
+          <option value="20" selected>20条</option>
+          <option value="50">50条</option>
+          <option value="100">100条</option>
+        </select>
+      </label>
+      <button id="trackingPrevPageBtn" class="ghost-button" type="button">上一页</button>
+      <div id="trackingPaginationNumbers" class="pagination-numbers"></div>
+      <button id="trackingNextPageBtn" class="ghost-button" type="button">下一页</button>
+    </div>
+  </div>
+</section>
+
+<div id="trackingDetailMask" class="drawer-mask" hidden></div>
+<aside id="trackingDetailDrawer" class="detail-drawer replenishment-country-drawer" aria-hidden="true" hidden>
+  <div class="drawer-head">
+    <div>
+      <p class="section-kicker">追踪明细</p>
+      <h2 id="trackingDetailTitle">--</h2>
+      <p id="trackingDetailSubtitle" class="drawer-subtitle"></p>
+    </div>
+    <button id="trackingDetailCloseBtn" class="ghost-button" type="button">关闭</button>
+  </div>
+  <div class="drawer-content">
+    <div class="country-drawer-note">该明细用于查看采购计划、FBA 发货计划和货件履约记录，不参与补货层级和补货数量计算。</div>
+    <div id="trackingDetailWrap" class="country-metrics-wrap ag-grid-shell"></div>
+  </div>
+</aside>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', path='js/replenishment_tracking.js') }}?v=20260626tracking18"></script>
+{% endblock %}

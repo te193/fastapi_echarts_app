@@ -173,7 +173,7 @@
     [
       "datePickerBtn", "datePickerValue", "datePickerPanel", "levelSelect", "categoryPeriodSelect", "siteSelect", "storeSelect", "keywordInput", "clearFiltersBtn",
       "periodHint", "summaryGrid", "layerVizGrid", "levelTabs", "tableWrap", "paginationInfo", "paginationNumbers", "pageSizeSelect",
-      "prevPageBtn", "nextPageBtn", "sortQtyBtn", "sortSupportBtn", "exportReplenishmentBtn",
+      "prevPageBtn", "nextPageBtn", "sortQtyBtn", "sortSupportBtn", "openTrackingBtn", "exportReplenishmentBtn",
       "countryDrawerMask", "countryDrawer", "countryDrawerTitle", "countryDrawerSubtitle", "countryDrawerCloseBtn",
       "countryPeriodTabs", "countrySummaryGrid", "countryMetricsWrap",
       "flowDrawerMask", "flowDrawer", "flowDrawerTitle", "flowDrawerSubtitle", "flowDrawerCloseBtn",
@@ -270,6 +270,9 @@
       state.sort_dir = state.sort_dir === "asc" ? "desc" : "asc";
       render();
     });
+    if (elements.openTrackingBtn) {
+      elements.openTrackingBtn.addEventListener("click", openTrackingPage);
+    }
     elements.exportReplenishmentBtn.addEventListener("click", exportReplenishment);
     elements.tableWrap.addEventListener("click", function (event) {
       var button = event.target.closest("[data-country-detail]");
@@ -390,7 +393,7 @@
         return [
           '<div class="replenish-layer-row level-' + app.escapeHtml(String(row.sort || "")) + active + '" data-level="' + app.escapeHtml(level) + '" role="button" tabindex="0">',
           '<span class="layer-mark">' + layerGlyph(row.sort) + '</span>',
-          '<span class="layer-name"><span class="layer-title"><span>' + app.escapeHtml(level) + '</span>' + renderLevelHelp(level) + '</span><small>' + formatNumber(row.sku_count) + ' MSKU</small>' + renderFlowChips(row) + renderCategoryMix(row.category_mix, row.sku_count, level) + '</span>',
+          '<span class="layer-name"><span class="layer-title"><span>' + app.escapeHtml(level) + '</span>' + renderLevelHelp(level) + '<button type="button" class="layer-tracking-button" data-tracking-level-entry="' + app.escapeHtml(level) + '">采购发货追踪</button></span><small>' + formatNumber(row.sku_count) + ' MSKU</small>' + renderFlowChips(row) + renderCategoryMix(row.category_mix, row.sku_count, level) + '</span>',
           '<strong>' + formatNumber(row.replenish_qty) + '</strong>',
           '<strong>' + formatCurrency(row.replenish_cost) + '</strong>',
           '<span class="layer-progress"><i style="width:' + width + '%"></i></span>',
@@ -427,9 +430,16 @@
         openLevelFlowDrawer(this.dataset.flowLevel || "all", this.dataset.flowType || "all");
       });
     });
+    Array.from(elements.layerVizGrid.querySelectorAll("[data-tracking-level-entry]")).forEach(function (node) {
+      node.addEventListener("click", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        openTrackingPage(event, this.dataset.trackingLevelEntry || "all");
+      });
+    });
     Array.from(elements.layerVizGrid.querySelectorAll("[data-level]:not([data-category])")).forEach(function (node) {
       node.addEventListener("click", function (event) {
-        if (event.target.closest(".layer-help")) return;
+        if (event.target.closest(".layer-help, .layer-tracking-button")) return;
         selectLayerDetails(this.dataset.level || "all", "all");
       });
       node.addEventListener("keydown", function (event) {
@@ -1003,6 +1013,27 @@
       if (value !== undefined && value !== null && value !== "" && value !== "all") params.set(key, value);
     });
     window.location.href = "/api/replenishment/export" + (params.toString() ? ("?" + params.toString()) : "");
+  }
+
+  function openTrackingPage(event, level) {
+    if (event && typeof event.preventDefault === "function") event.preventDefault();
+    var targetLevel = level || state.level || "all";
+    var params = new URLSearchParams();
+    [
+      ["snapshot_date", state.snapshot_date],
+      ["level", targetLevel],
+      ["site", state.site],
+      ["store", state.store],
+      ["keyword", state.keyword],
+      ["tracking_window_days", 7],
+      ["category_period_days", state.category_period_days]
+    ].forEach(function (pair) {
+      var value = pair[1];
+      if (value !== undefined && value !== null && value !== "" && value !== "all") {
+        params.set(pair[0], value);
+      }
+    });
+    window.location.href = "/replenishment-tracking" + (params.toString() ? ("?" + params.toString()) : "");
   }
 
   function handleGridFilterChanged(event) {
