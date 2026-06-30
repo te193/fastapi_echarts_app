@@ -53,6 +53,39 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("seller_name_new", step.target_columns)
         self.assertIn("self_asin_sync", replenishment_update.DEFAULT_STEP_ORDER)
 
+    def test_fba_shipment_sync_calculates_receiving_count_from_detail(self):
+        sql = replenishment_update.SELECT_FBA_SHIPMENT_SYNC_SQL
+
+        self.assertIn("etl_dispose_lx_fba_shipment", sql)
+        self.assertIn("count(*) as receiving_cnt", sql)
+        self.assertIn("group by msku, store_name", sql)
+        self.assertIn("str_to_date(receiving_time, '%%Y-%%m-%%d %%H:%%i:%%s')", sql)
+        self.assertNotIn("ops_rpt_fba_shipment_basic_data", sql)
+
+    def test_listing_basic_sync_prefers_real_eu_store_from_inventory(self):
+        sql = replenishment_update.SELECT_LISTING_BASIC_SYNC_SQL
+
+        self.assertIn("dwd_datasync.lx_storage_inventory_details", sql)
+        self.assertIn("inv_store.sku = sml.local_sku", sql)
+        self.assertIn("inv_store.msku = sml.seller_sku", sql)
+        self.assertIn("upper(substring_index(store_name, '-', -1)) = 'DE'", sql)
+        self.assertIn("else coalesce(max(inventory_seller_name_copy), concat(max(seller_name_ue), '-DE'))", sql)
+
+    def test_listing_basic_sync_derives_sales_status(self):
+        sql = replenishment_update.SELECT_LISTING_BASIC_SYNC_SQL
+
+        self.assertIn("when max(onsale_sites) = 0 then '停售中'", sql)
+        self.assertIn("else '在售中'", sql)
+        self.assertNotIn("null as sales_status", sql)
+
+    def test_listing_basic_sync_derives_new_old_product_from_brand_year(self):
+        sql = replenishment_update.SELECT_LISTING_BASIC_SYNC_SQL
+
+        self.assertIn("max(max_brand_name) regexp '2027|2026|2025'", sql)
+        self.assertIn("then '新品'", sql)
+        self.assertIn("else '老品'", sql)
+        self.assertNotIn("null as new_old_product", sql)
+
     def test_salable_days_sql_uses_local_daily_sources(self):
         sql = replenishment_update.INSERT_SALABLE_DAYS_SQL
 
@@ -130,6 +163,15 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("adjusted_daily_sales_3d * 0.5 + adjusted_daily_sales_7d * 0.5", sql)
         self.assertIn("adjusted_daily_sales_7d * 0.6 + adjusted_daily_sales_14d * 0.2 + adjusted_daily_sales_30d * 0.2", sql)
 
+    def test_replenishment_result_sql_classifies_new_product_by_brand_year_and_receiving_count(self):
+        sql = replenishment_update.REPLENISHMENT_RESULT_SQL
+
+        self.assertIn("max_brand_name like '%%2025%%' and (receiving_cnt <= 1 or receiving_cnt is null)", sql)
+        self.assertIn("then '2025新品'", sql)
+        self.assertIn("max_brand_name like '%%2026%%' and (receiving_cnt <= 1 or receiving_cnt is null)", sql)
+        self.assertIn("then '2026新品'", sql)
+        self.assertNotIn("'老品' as new_old_prod_jg", sql)
+
     def test_replenishment_result_sql_restores_follow_sales_logic(self):
         sql = replenishment_update.REPLENISHMENT_RESULT_SQL
 
@@ -154,6 +196,14 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("pre_replenish_comp_months * 30 * coalesce(daily_avg_sales, 0)", sql)
         self.assertIn("base.support_inventory_qty / base.pre_daily_avg_sales", sql)
         self.assertNotIn("left join tmp_prod_perf_sku_follow_metrics m", sql)
+
+    def test_replenishment_need_qty_does_not_double_subtract_purchase_plan_support(self):
+        sql = replenishment_update.REPLENISHMENT_RESULT_SQL
+
+        self.assertIn("coalesce(r.sc_quantity_purchase_plan, 0) as sc_quantity_purchase_plan", sql)
+        self.assertNotIn("- sc_quantity_purchase_plan as normal_replenish_need_qty", sql)
+        self.assertNotIn("- sc_quantity_purchase_plan as pre_normal_replenish_need_qty", sql)
+        self.assertNotIn("- sc_quantity_purchase_plan as history_recovery_need_qty", sql)
 
     def test_replenishment_qty_only_uses_support_candidate_layers(self):
         sql = replenishment_update.REPLENISHMENT_RESULT_SQL

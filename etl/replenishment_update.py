@@ -426,7 +426,10 @@ select
     country_category,
     seller_name_new,
     seller_sku,
-    null as new_old_product,
+    case
+        when max(max_brand_name) regexp '2027|2026|2025' then '新品'
+        else '老品'
+    end as new_old_product,
     max(max_fnsku) as max_fnsku,
     max(max_asin) as max_asin,
     max(max_sku) as max_sku,
@@ -434,12 +437,15 @@ select
     group_concat(distinct seller_name separator ',') as seller_name_concat,
     max(onsale_sites) as onsale_sites,
     max(unsale_sites) as unsale_sites,
-    null as sales_status,
+    case
+        when max(onsale_sites) = 0 then '停售中'
+        else '在售中'
+    end as sales_status,
     '汇总' as marketplace_concat,
     case
         when country_category = '北美站' then concat(max(seller_name_ue), '-US')
         when country_category = '英国站' then concat(max(seller_name_ue), '-UK')
-        else concat(max(seller_name_ue), '-DE')
+        else coalesce(max(inventory_seller_name_copy), concat(max(seller_name_ue), '-DE'))
     end as seller_name_copy,
     max(seller_name_ue) as seller_name_ue,
     max(principal) as principal,
@@ -467,6 +473,7 @@ from (
         sml.country_category,
         sml.principal,
         sml.sales_team_1,
+        inv_store.inventory_seller_name_copy,
         max(local_name)
             over (partition by sml.country_category, sml.seller_name_new, sml.seller_sku) as max_local_name,
         max(brand_name)
@@ -482,6 +489,31 @@ from (
            on sml.seller_sku = plpi.seller_sku
           and sml.marketplace = plpi.country
           and sml.seller_name_new = plpi.seller_name_new
+    left join (
+        select
+            sku,
+            msku,
+            substring_index(store_name, '-', 1) as seller_name_new,
+            substring_index(
+                group_concat(
+                    distinct store_name
+                    order by
+                        case when upper(substring_index(store_name, '-', -1)) = 'DE' then 0 else 1 end,
+                        store_name
+                    separator ','
+                ),
+                ',',
+                1
+            ) as inventory_seller_name_copy
+        from dwd_datasync.lx_storage_inventory_details
+        where nullif(sku, '') is not null
+          and nullif(msku, '') is not null
+          and nullif(store_name, '') is not null
+        group by sku, msku, substring_index(store_name, '-', 1)
+    ) inv_store
+           on inv_store.sku = sml.local_sku
+          and inv_store.msku = sml.seller_sku
+          and inv_store.seller_name_new = sml.seller_name_new
     where length(sml.seller_sku) between 5 and 10
 ) listing_basic
 group by country_category, seller_name_new, seller_sku
@@ -536,7 +568,61 @@ select
     days_latest_delivery,
     since_launch_range,
     delivery_time_range
-from etl_datasync.ops_rpt_fba_shipment_basic_data
+from (
+    select
+        b.*,
+        datediff(current_date, min_receiving_time) as days_since_launch,
+        datediff(current_date, max_receiving_time) as days_latest_delivery,
+        case
+            when datediff(current_date, min_receiving_time) between 0 and 30 then '<=30天'
+            when datediff(current_date, min_receiving_time) between 31 and 90 then '<=90天'
+            when datediff(current_date, min_receiving_time) between 91 and 180 then '<=180'
+            when datediff(current_date, min_receiving_time) > 180 then '>180天'
+        end as since_launch_range,
+        case
+            when datediff(current_date, max_receiving_time) between 0 and 7 then '0-7天'
+            when datediff(current_date, max_receiving_time) between 8 and 14 then '8-14天'
+            when datediff(current_date, max_receiving_time) between 15 and 30 then '15-30天'
+            when datediff(current_date, max_receiving_time) >= 30 then '>=30天'
+        end as delivery_time_range
+    from (
+        select
+            msku,
+            seller_name_new,
+            country_category,
+            min(str_to_date(receiving_time, '%%Y-%%m-%%d %%H:%%i:%%s')) as min_receiving_time,
+            max(str_to_date(receiving_time, '%%Y-%%m-%%d %%H:%%i:%%s')) as max_receiving_time,
+            max(receiving_cnt) as receiving_cnt
+        from (
+            select
+                f.country_category,
+                f.store_name,
+                f.seller_name_new,
+                f.msku,
+                case
+                    when f.receiving_time = '' then null
+                    else f.receiving_time
+                end as receiving_time,
+                r.receiving_cnt
+            from etl_datasync.etl_dispose_lx_fba_shipment as f
+            left join (
+                select
+                    msku,
+                    store_name,
+                    count(*) as receiving_cnt
+                from etl_datasync.etl_dispose_lx_fba_shipment
+                where receiving_time is not null
+                  and quantity_shipped <> 0
+                group by msku, store_name
+            ) as r
+              on f.msku = r.msku
+             and f.store_name = r.store_name
+            where f.receiving_time is not null
+              and f.quantity_received <> 0
+        ) as a
+        group by msku, seller_name_new, country_category
+    ) as b
+) as shipment_basic
 where msku is not null
   and msku <> ''
   and seller_name_new is not null
@@ -1207,13 +1293,11 @@ select
     )
     - available_total
     - stock_up_num
-    - local_quantity
-    - sc_quantity_purchase_plan as pre_normal_replenish_need_qty,
+    - local_quantity as pre_normal_replenish_need_qty,
     hist_90d_instock_daily_sales * 120
     - available_total
     - stock_up_num
-    - local_quantity
-    - sc_quantity_purchase_plan as history_recovery_need_qty,
+    - local_quantity as history_recovery_need_qty,
     case
         when coalesce(max_cg_box_pcs, 0) > 0 then max_cg_box_pcs
         else 50
@@ -1253,8 +1337,7 @@ select
     pre_replenish_comp_months * 30 * coalesce(daily_avg_sales, 0)
     - available_total
     - stock_up_num
-    - local_quantity
-    - sc_quantity_purchase_plan as normal_replenish_need_qty,
+    - local_quantity as normal_replenish_need_qty,
     case
         when support.pre_normal_replenish_need_qty < support.pre_replenish_trigger_qty
              and support.r_30d_salable_days < 15
@@ -1403,7 +1486,11 @@ select
     pprofit_ratio_14 as pprofit_ratio_14d,
     pprofit_ratio_7 as pprofit_ratio_7d,
     pprofit_ratio_3 as pprofit_ratio_3d,
-    '老品' as new_old_prod_jg,
+    case
+        when max_brand_name like '%%2025%%' and (receiving_cnt <= 1 or receiving_cnt is null) then '2025新品'
+        when max_brand_name like '%%2026%%' and (receiving_cnt <= 1 or receiving_cnt is null) then '2026新品'
+        else '老品'
+    end as new_old_prod_jg,
     daily_avg_sales,
     pre_replenish_comp_months as replenish_comp_months,
     case when daily_avg_sales <= 0 then null else (total + local_quantity) / daily_avg_sales end as salable_days,
