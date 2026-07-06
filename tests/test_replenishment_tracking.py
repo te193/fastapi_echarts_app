@@ -110,6 +110,51 @@ def test_detail_rows_hide_local_snapshot_source():
     assert [row["source_type"] for row in rows] == ["purchase_plan", "shipment_plan"]
 
 
+def test_detail_falls_back_to_first_tracked_date_in_window(monkeypatch):
+    service = ReplenishmentTrackingService()
+
+    class Cursor:
+        def __init__(self):
+            self.rows = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def execute(self, sql, params):
+            if "from dashboard_replenishment_tracking_snapshot" in sql:
+                self.rows = [{"snapshot_date": date(2026, 6, 25), "country_category": "raw-site"}]
+            elif params["snapshot_date"] == date(2026, 6, 25):
+                assert params["site"] == "raw-site"
+                self.rows = [{"source_type": "purchase_plan", "purchase_plan_sn": "PP260625045"}]
+            else:
+                self.rows = []
+
+        def fetchall(self):
+            return self.rows
+
+        def fetchone(self):
+            return self.rows[0] if self.rows else None
+
+    class Conn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def cursor(self):
+            return Cursor()
+
+    monkeypatch.setattr(service, "connect", lambda: Conn())
+
+    payload = service.get_detail("2026-06-29", 30, "欧洲站", "YuanJinRong", "YJR008a")
+
+    assert [row["purchase_plan_sn"] for row in payload["rows"]] == ["PP260625045"]
+
+
 def test_level_summary_serialization_includes_status_msku_counts():
     service = ReplenishmentTrackingService()
 

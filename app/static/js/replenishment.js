@@ -484,12 +484,25 @@
     var denominator = Number(total || 0) || items.reduce(function (sum, row) {
       return sum + Number(row.sku_count || 0);
     }, 0) || 1;
-    return '<span class="layer-category-mix">' + items.map(function (row) {
+    return '<span class="layer-category-mix">' + items.sort(categoryOrder).map(function (row) {
       var count = Number(row.sku_count || 0);
       var category = row.category || "-";
       var active = state.level === level && state.category === category ? " active" : "";
-      return '<button type="button" class="' + active + '" data-level="' + app.escapeHtml(level || "all") + '" data-category="' + app.escapeHtml(category) + '">' + app.escapeHtml(category) + ' ' + formatNumber(count) + '<b>' + formatPercent(count / denominator) + '</b></button>';
+      return '<button type="button" class="' + categoryTone(category) + active + '" data-level="' + app.escapeHtml(level || "all") + '" data-category="' + app.escapeHtml(category) + '">' + app.escapeHtml(category) + ' ' + formatNumber(count) + '<b>' + formatPercent(count / denominator) + '</b></button>';
     }).join("") + '</span>';
+  }
+
+  function categoryTone(category) {
+    if (category === "明星产品") return "positive";
+    if (category === "潜力产品") return "band-low";
+    if (category === "瘦狗产品") return "warning";
+    if (category === "问题产品") return "negative";
+    return "neutral";
+  }
+
+  function categoryOrder(a, b) {
+    var order = {"明星产品": 1, "潜力产品": 2, "瘦狗产品": 3, "问题产品": 4};
+    return (order[a.category] || 9) - (order[b.category] || 9);
   }
 
   function renderFlowChips(row) {

@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+
+{% block content %}
+<header class="hero hero-compact">
+  <h1>返场品</h1>
+</header>
+
+<section class="panel filters-panel">
+  <div class="panel-head compact">
+    <div>
+      <p class="section-kicker">筛选区</p>
+      <h2>返场监控口径</h2>
+    </div>
+    <button id="clearFiltersBtn" class="ghost-button" type="button">一键清空</button>
+  </div>
+  <div class="filters-grid replenishment-filters return-goods-filters">
+    <div class="filter-control return-goods-date-control">
+      <span>统计日期</span>
+      <div class="snapshot-date-control">
+        <button id="snapshotDateButton" class="snapshot-date-trigger" type="button" aria-label="统计日期" aria-expanded="false" aria-controls="snapshotCalendarPanel">
+          <span id="snapshotDateValue">--</span>
+          <span class="snapshot-date-icon" aria-hidden="true">▾</span>
+        </button>
+        <div id="snapshotCalendarPanel" class="snapshot-calendar-panel" hidden></div>
+      </div>
+    </div>
+    <label class="filter-control">
+      <span>国家类别</span>
+      <select id="countrySelect"></select>
+    </label>
+    <label class="filter-control">
+      <span>店铺</span>
+      <select id="storeSelect"></select>
+    </label>
+    <label class="filter-control">
+      <span>关键词</span>
+      <input id="keywordInput" type="search" placeholder="搜索 MSKU / SKU">
+    </label>
+  </div>
+</section>
+
+<section class="alerts-page-section replenishment-page-section return-goods-page-section">
+  <div class="section-head">
+    <div>
+      <p class="section-kicker">返场池</p>
+      <h2>截至统计日状态总览</h2>
+    </div>
+    <p id="periodHint" class="summary-hint"></p>
+  </div>
+
+  <div class="return-goods-definition" aria-label="返场品口径说明">
+    <article>
+      <span>返场定义</span>
+      <strong>断货后恢复到 FBA 可售库存 &gt; 5</strong>
+      <small>先出现 `FBA可售库存 = 0`，后续首次恢复到 `FBA可售库存 &gt; 5` 即生成一条返场事件。</small>
+    </article>
+    <article>
+      <span>统计粒度</span>
+      <strong>店铺 + 国家类别 + MSKU</strong>
+      <small>主明细按 MSKU 最新一轮展示，返场轮次只用于识别历史发生次数。</small>
+    </article>
+    <article>
+      <span>时间口径</span>
+      <strong>识别回溯 180 天，展示截至统计日状态</strong>
+      <small>统计日期决定当前快照；顶部总览、矩阵和明细均按 MSKU 最新一轮状态展示。</small>
+    </article>
+    <article>
+      <span>断货未到货</span>
+      <strong>当前 FBA 可售库存 = 0，且 FBA 在途 &gt; 0</strong>
+      <small>已计划返场但还未恢复可售，优先确认到货、上架和接收异常。</small>
+    </article>
+  </div>
+
+  <div id="summaryGrid" class="alert-stats-grid opportunity-stats-grid"></div>
+
+  <div class="return-goods-workbench-head">
+    <h2>返场处置工作台</h2>
+    <button class="return-goods-help-button" type="button" aria-label="查看返场处置工作台说明">?</button>
+  </div>
+
+  <div class="panel return-goods-stage-business-panel">
+    <div class="panel-head compact">
+      <div>
+        <h3>观察期 / 干预期经营对比</h3>
+        <p class="summary-hint">观察期对比断货前7天销量；干预期对比返场后观察期7天销量</p>
+      </div>
+    </div>
+    <div id="stageBusinessCompare" class="return-goods-stage-business-grid"></div>
+  </div>
+
+  <div class="replenishment-viz-grid return-goods-workbench-grid">
+    <div class="panel chart-panel">
+      <div class="panel-head compact">
+        <div>
+          <h3>角色 × 当前状态</h3>
+          <p class="summary-hint">按断货前7天销售角色分组，统计当前所处返场状态的MSKU数量及占比</p>
+        </div>
+      </div>
+      <div id="stageChart" class="return-goods-matrix-wrap"></div>
+    </div>
+    <div class="panel chart-panel">
+      <div class="panel-head compact">
+        <div>
+          <h3>优先处理队列</h3>
+          <p class="summary-hint">基于当前风险和影响，建议优先跟进的返场池</p>
+        </div>
+      </div>
+      <div id="warningList" class="summary-side-list"></div>
+    </div>
+  </div>
+
+  <div class="panel alert-table-card">
+    <div class="alert-table-head">
+      <div>
+        <p class="section-kicker">明细</p>
+        <h3>返场 MSKU 最新状态</h3>
+      </div>
+    </div>
+    <div id="tableWrap" class="alert-table-wrap"></div>
+  </div>
+
+  <div class="pagination-bar">
+    <div id="paginationInfo" class="pagination-info"></div>
+    <div class="pagination-controls">
+      <label class="page-size-control">
+        <span>每页</span>
+        <select id="pageSizeSelect">
+          <option value="20" selected>20条</option>
+          <option value="50">50条</option>
+          <option value="100">100条</option>
+        </select>
+      </label>
+      <button id="prevPageBtn" class="ghost-button" type="button">上一页</button>
+      <button id="nextPageBtn" class="ghost-button" type="button">下一页</button>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block overlay %}
+<div id="returnGoodsDetailMask" class="drawer-mask" hidden></div>
+<aside id="returnGoodsDetailDrawer" class="detail-drawer return-goods-detail-drawer" aria-hidden="true" hidden>
+  <div class="drawer-head">
+    <div>
+      <p class="section-kicker">返场明细</p>
+      <h2 id="returnGoodsDetailTitle">-</h2>
+      <p id="returnGoodsDetailSubtitle" class="drawer-subtitle"></p>
+    </div>
+    <button id="returnGoodsDetailClose" class="icon-button" type="button" aria-label="关闭">×</button>
+  </div>
+  <div id="returnGoodsDetailBody" class="drawer-content"></div>
+</aside>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', path='js/return_goods.js') }}?v=20260706drillname1"></script>
+{% endblock %}

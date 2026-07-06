@@ -40,6 +40,10 @@ class DashboardDailyUpdateSqlTests(unittest.TestCase):
             "    round(max(margin_price_35), 2) as tax_inclusive_price_noad,\n"
             "    round(max(margin_price_35_adj), 2) as tax_inclusive_price_adj,\n"
             "    round(max(margin_price_35), 2) as margin_price_35,\n"
+            "    round(max(margin_price_30), 2) as margin_price_30,\n"
+            "    round(max(margin_price_25), 2) as margin_price_25,\n"
+            "    round(max(margin_price_20), 2) as margin_price_20,\n"
+            "    round(max(margin_price_15), 2) as margin_price_15,\n"
             "    round(max(margin_price_10), 2) as margin_price_10,",
             INSERT_LIMIT_PRICE_SQL,
         )
