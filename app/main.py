@@ -18,6 +18,8 @@ from .services.dashboard_db import dashboard_service
 from .services.price_review_data import price_review_service
 from .services.replenishment_data import replenishment_service
 from .services.replenishment_tracking_data import replenishment_tracking_service
+from .services.replenishment_tracking_summary_data import replenishment_tracking_summary_service
+from .services.return_goods_data import return_goods_service
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -170,6 +172,15 @@ def replenishment_tracking_page(request: Request) -> HTMLResponse:
         request,
         "replenishment_tracking.html",
         {"page": "replenishment_tracking", "title": "补货追踪"},
+    )
+
+
+@app.get("/return-goods", response_class=HTMLResponse)
+def return_goods_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "return_goods.html",
+        {"page": "return_goods", "title": "返场品"},
     )
 
 
@@ -713,6 +724,118 @@ def api_replenishment_tracking_detail(
         site=site,
         store=store,
         msku=msku,
+    )
+
+
+@app.get("/api/replenishment-tracking-summary")
+def api_replenishment_tracking_summary(
+    cutoff_date: str = Query(default=""),
+    entry_batch_days: int = Query(default=30),
+    level: str = Query(default="all"),
+    purchase_status: str = Query(default="all"),
+    fba_status: str = Query(default="all"),
+    summary_stage: str = Query(default="all"),
+    category_period_days: int = Query(default=30),
+    history_level: str = Query(default="all"),
+    product_category: str = Query(default="all"),
+    site: str = Query(default="all"),
+    store: str = Query(default="all"),
+    keyword: str = Query(default=""),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=10, le=100),
+) -> dict:
+    return replenishment_tracking_summary_service.get_payload(
+        cutoff_date=cutoff_date,
+        entry_batch_days=entry_batch_days,
+        level=level,
+        purchase_status=purchase_status,
+        fba_status=fba_status,
+        summary_stage=summary_stage,
+        category_period_days=category_period_days,
+        history_level=history_level,
+        product_category=product_category,
+        site=site,
+        store=store,
+        keyword=keyword,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@app.get("/api/replenishment-tracking-summary/detail")
+def api_replenishment_tracking_summary_detail(
+    cutoff_date: str = Query(default=""),
+    site: str = Query(default=""),
+    store: str = Query(default=""),
+    msku: str = Query(default=""),
+) -> dict:
+    return replenishment_tracking_summary_service.get_detail(
+        cutoff_date=cutoff_date,
+        site=site,
+        store=store,
+        msku=msku,
+    )
+
+
+@app.get("/api/return-goods")
+def api_return_goods(
+    snapshot_date: str = Query(default=""),
+    period_days: int = Query(default=1, ge=1, le=30),
+    country_category: str = Query(default="all"),
+    seller_name_new: str = Query(default="all"),
+    keyword: str = Query(default=""),
+    stage: str = Query(default="all"),
+    warning_type: str = Query(default="all"),
+    quick_filter: str = Query(default="all"),
+    return_day: int = Query(default=0, ge=0, le=21),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=10, le=100),
+) -> dict:
+    safe_return_day = return_day if isinstance(return_day, int) else 0
+    params = {
+        "snapshot_date": snapshot_date,
+        "period_days": period_days,
+        "country_category": country_category,
+        "seller_name_new": seller_name_new,
+        "keyword": keyword,
+        "stage": stage,
+        "warning_type": warning_type,
+        "quick_filter": quick_filter,
+        "page": page,
+        "page_size": page_size,
+    }
+    if safe_return_day:
+        params["return_day"] = safe_return_day
+    return return_goods_service.get_payload(**params)
+
+
+@app.get("/api/return-goods/detail")
+def api_return_goods_detail(
+    snapshot_date: str = Query(default=""),
+    return_event_id: str = Query(default=""),
+) -> dict:
+    return return_goods_service.get_detail(
+        snapshot_date=snapshot_date,
+        return_event_id=return_event_id,
+    )
+
+
+@app.get("/api/return-goods/stage-detail")
+def api_return_goods_stage_detail(
+    snapshot_date: str = Query(default=""),
+    period_days: int = Query(default=1, ge=1, le=30),
+    country_category: str = Query(default="all"),
+    seller_name_new: str = Query(default="all"),
+    keyword: str = Query(default=""),
+    stage_key: str = Query(default="observe"),
+) -> dict:
+    return return_goods_service.get_stage_detail(
+        snapshot_date=snapshot_date,
+        period_days=period_days,
+        country_category=country_category,
+        seller_name_new=seller_name_new,
+        keyword=keyword,
+        stage_key=stage_key,
     )
 
 

@@ -13,6 +13,8 @@ uvicorn.err.log
 .worktrees/
 .playwright-cli/
 output/
+.codegraph/
+.codegraph-*/
 config/database.ini
 
 scripts/dashboard_env.ps1

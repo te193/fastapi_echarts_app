@@ -11,7 +11,13 @@
       <p class="section-kicker">&#31579;&#36873;&#21306;</p>
       <h2>&#27599;&#26085;&#34917;&#36135;&#21475;&#24452;</h2>
     </div>
-    <button id="clearFiltersBtn" class="ghost-button" type="button">&#19968;&#38190;&#28165;&#31354;</button>
+    <div class="replenishment-view-actions">
+      <div class="segmented-tabs summary-view-tabs" aria-label="补货视图">
+        <button id="dailyViewBtn" class="active" type="button">每日补货看板</button>
+        <button id="summaryViewBtn" type="button">补货链路追踪汇总</button>
+      </div>
+      <button id="clearFiltersBtn" class="ghost-button" type="button">&#19968;&#38190;&#28165;&#31354;</button>
+    </div>
   </div>
   <div class="filters-grid replenishment-filters">
     <div class="filter-control replenishment-date-control">
@@ -50,7 +56,7 @@
   </div>
 </section>
 
-<section class="alerts-page-section replenishment-page-section">
+<section id="dailyReplenishmentSection" class="alerts-page-section replenishment-page-section">
   <div class="section-head">
     <div>
       <p class="section-kicker">&#34917;&#36135;&#25191;&#34892;&#27744;</p>
@@ -98,6 +104,98 @@
   </div>
 </section>
 
+<section id="trackingSummarySection" class="alerts-page-section replenishment-page-section" hidden>
+  <div class="section-head">
+    <div>
+      <p class="section-kicker">补货链路追踪池</p>
+      <h2>补货链路追踪汇总</h2>
+      <p class="summary-hint">本次：首次进入补货后产生的采购/FBA动作；历史：首次进入补货前已有，但截止日仍在途或仍影响库存的动作。</p>
+    </div>
+    <div class="summary-extra-filters">
+      <label class="filter-control">
+        <span>补货需求批次</span>
+        <select id="summaryBatchSelect">
+          <option value="7">最近7天新增补货</option>
+          <option value="14">最近14天新增补货</option>
+          <option value="30" selected>最近30天新增补货</option>
+          <option value="90">最近90天新增补货</option>
+          <option value="0">全部历史补货</option>
+        </select>
+      </label>
+      <label class="filter-control">
+        <span>采购状态</span>
+        <select id="summaryPurchaseStatusSelect">
+          <option value="all">全部</option>
+          <option value="none">未采购</option>
+          <option value="current">本次补货后采购</option>
+          <option value="historical">历史采购在途</option>
+          <option value="mixed">本次+历史采购</option>
+        </select>
+      </label>
+      <label class="filter-control">
+        <span>FBA状态</span>
+        <select id="summaryFbaStatusSelect">
+          <option value="all">全部</option>
+          <option value="none">未建FBA</option>
+          <option value="current">本次FBA在途</option>
+          <option value="historical">历史FBA在途</option>
+          <option value="mixed">本次+历史FBA在途</option>
+        </select>
+      </label>
+    </div>
+  </div>
+  <div id="trackingSummaryTopCards" class="summary-top-cards"></div>
+  <div class="summary-workbench">
+    <div class="summary-main-panel">
+      <div class="summary-panel-head">
+        <h3>履约分层</h3>
+        <span>历史出现 / 当前仍在 / 后续链路</span>
+      </div>
+      <div id="trackingSummaryLevelFlow" class="replenishment-summary-flow"></div>
+    </div>
+    <aside class="summary-side-panel">
+      <div class="summary-panel-head">
+        <h3>其他分类</h3>
+        <span>辅助判断当前卡点分布</span>
+      </div>
+      <div id="trackingSummaryCards" class="summary-side-list"></div>
+    </aside>
+  </div>
+  <div id="trackingSummaryLevelTabs" class="segmented-tabs alert-type-tabs"></div>
+  <div class="panel alert-table-card">
+    <div class="alert-table-head">
+      <div>
+        <p class="section-kicker">明细</p>
+        <h3>补货链路追踪 MSKU 列表</h3>
+      </div>
+    </div>
+    <div id="trackingSummaryTable" class="summary-table-wrap"></div>
+  </div>
+  <div class="pagination-bar">
+    <div id="trackingSummaryPaginationInfo" class="pagination-info"></div>
+    <div class="pagination-controls">
+      <button id="trackingSummaryPrevBtn" class="ghost-button" type="button">上一页</button>
+      <button id="trackingSummaryNextBtn" class="ghost-button" type="button">下一页</button>
+    </div>
+  </div>
+</section>
+
+<div id="summaryTrackingDetailMask" class="drawer-mask" hidden></div>
+<aside id="summaryTrackingDetailDrawer" class="detail-drawer replenishment-flow-drawer" aria-hidden="true" hidden>
+  <div class="drawer-head">
+    <div>
+      <p class="section-kicker">履约明细</p>
+      <h2 id="summaryTrackingDetailTitle">--</h2>
+      <p id="summaryTrackingDetailSubtitle" class="drawer-subtitle"></p>
+    </div>
+    <button id="summaryTrackingDetailCloseBtn" class="ghost-button" type="button">关闭</button>
+  </div>
+  <div class="drawer-content">
+    <div class="country-drawer-note">该明细用于核对采购计划、FBA 发货计划和货件履约记录，口径沿用每日采购发货追踪明细。</div>
+    <div id="summaryTrackingDetailWrap" class="flow-detail-wrap ag-grid-shell"></div>
+  </div>
+</aside>
+
 <div id="countryDrawerMask" class="drawer-mask" hidden></div>
 <aside id="countryDrawer" class="detail-drawer replenishment-country-drawer" aria-hidden="true" hidden>
   <div class="drawer-head">
@@ -137,5 +235,6 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', path='js/replenishment.js') }}?v=20260626trackingentry2"></script>
+<script src="{{ url_for('static', path='js/replenishment.js') }}?v=20260630dailycategory2"></script>
+<script src="{{ url_for('static', path='js/replenishment_tracking_summary.js') }}?v=20260630chainv8"></script>
 {% endblock %}

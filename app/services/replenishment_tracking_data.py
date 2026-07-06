@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import os
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -133,63 +133,98 @@ class ReplenishmentTrackingService:
             return {"rows": []}
         with self.connect() as conn:
             with conn.cursor() as cursor:
-                cursor.execute(
-                    """
-                    select
-                        source_type,
-                        link_attribution,
-                        purchase_plan_sn,
-                        purchase_plan_time,
-                        purchase_plan_status,
-                        purchase_plan_qty,
-                        purchase_expect_arrive_time,
-                        supplier_name,
-                        purchaser_name,
-                        order_sn,
-                        shipment_sn,
-                        plan_create_time,
-                        plan_status,
-                        shipment_status,
-                        logistics_status,
-                        method_name,
-                        logistics_channel_name,
-                        logistics_provider_name,
-                        shipment_plan_quantity,
-                        quantity_shipped,
-                        quantity_received,
-                        shipment_time,
-                        actual_shipment_time,
-                        expected_arrival_date,
-                        eta_date,
-                        delivery_date,
-                        sku,
-                        nation
-                    from dashboard_replenishment_tracking_detail
-                    where snapshot_date = %(snapshot_date)s
-                      and tracking_window_days = %(tracking_window_days)s
-                      and country_category = %(site)s
-                      and seller_name_new = %(store)s
-                      and seller_sku_adj = %(msku)s
-                    order by
-                        case source_type
-                            when 'purchase_plan' then 1
-                            when 'shipment_plan' then 2
-                            when 'shipment_detail' then 3
-                            else 9
-                        end,
-                        coalesce(actual_shipment_time, shipment_time, plan_create_time, purchase_plan_time) desc
-                    limit 200
-                    """,
-                    {
-                        "snapshot_date": selected_date,
-                        "tracking_window_days": safe_window,
-                        "site": site,
-                        "store": store,
-                        "msku": msku,
-                    },
-                )
-                rows = cursor.fetchall()
+                params = {
+                    "snapshot_date": selected_date,
+                    "tracking_window_days": safe_window,
+                    "site": site,
+                    "store": store,
+                    "msku": msku,
+                }
+                rows = self._detail_rows(cursor, params)
+                if not rows:
+                    entry = self._first_tracked_entry(cursor, selected_date, safe_window, site, store, msku)
+                    if entry and entry.get("snapshot_date") != selected_date:
+                        params["snapshot_date"] = entry.get("snapshot_date")
+                        params["site"] = entry.get("country_category") or site
+                        rows = self._detail_rows(cursor, params)
         return {"rows": self._serialize_detail_rows(rows)}
+
+    def _detail_rows(self, cursor, params: dict[str, Any]) -> list[dict[str, Any]]:
+        cursor.execute(
+            """
+            select
+                source_type,
+                link_attribution,
+                purchase_plan_sn,
+                purchase_plan_time,
+                purchase_plan_status,
+                purchase_plan_qty,
+                purchase_expect_arrive_time,
+                supplier_name,
+                purchaser_name,
+                order_sn,
+                shipment_sn,
+                plan_create_time,
+                plan_status,
+                shipment_status,
+                logistics_status,
+                method_name,
+                logistics_channel_name,
+                logistics_provider_name,
+                shipment_plan_quantity,
+                quantity_shipped,
+                quantity_received,
+                shipment_time,
+                actual_shipment_time,
+                expected_arrival_date,
+                eta_date,
+                delivery_date,
+                sku,
+                nation
+            from dashboard_replenishment_tracking_detail
+            where snapshot_date = %(snapshot_date)s
+              and tracking_window_days = %(tracking_window_days)s
+              and country_category = %(site)s
+              and seller_name_new = %(store)s
+              and seller_sku_adj = %(msku)s
+            order by
+                case source_type
+                    when 'purchase_plan' then 1
+                    when 'shipment_plan' then 2
+                    when 'shipment_detail' then 3
+                    else 9
+                end,
+                coalesce(actual_shipment_time, shipment_time, plan_create_time, purchase_plan_time) desc
+            limit 200
+            """,
+            params,
+        )
+        return cursor.fetchall()
+
+    def _first_tracked_entry(self, cursor, selected_date: date, tracking_window_days: int, site: str, store: str, msku: str) -> dict[str, Any] | None:
+        cursor.execute(
+            """
+            select snapshot_date, country_category
+            from dashboard_replenishment_tracking_snapshot
+            where snapshot_date between %(start_date)s and %(snapshot_date)s
+              and tracking_window_days = %(tracking_window_days)s
+              and seller_name_new = %(store)s
+              and seller_sku_adj = %(msku)s
+            order by
+              case when country_category = %(site)s then 0 else 1 end,
+              snapshot_date
+            limit 1
+            """,
+            {
+                "start_date": selected_date - timedelta(days=tracking_window_days - 1),
+                "snapshot_date": selected_date,
+                "tracking_window_days": tracking_window_days,
+                "site": site,
+                "store": store,
+                "msku": msku,
+            },
+        )
+        return cursor.fetchone()
 
     def _latest_date(self, conn) -> date | None:
         with conn.cursor() as cursor:
