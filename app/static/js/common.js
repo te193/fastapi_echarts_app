@@ -167,6 +167,100 @@
     });
   }
 
+  function initSideNavigation() {
+    var root = document.querySelector(".nav-v2");
+    if (!root) return;
+
+    var groups = Array.from(root.querySelectorAll("[data-nav-group]"));
+    var searchInput = root.querySelector(".nav-v2-search input");
+    var clearButton = root.querySelector(".nav-v2-search-clear");
+    var emptyState = root.querySelector(".nav-v2-empty");
+
+    function syncGroup(group) {
+      var toggle = group.querySelector(".nav-v2-group-toggle");
+      if (!toggle) return;
+      toggle.setAttribute("aria-expanded", group.classList.contains("open") ? "true" : "false");
+    }
+
+    function getSearchText(element) {
+      return String(element ? element.textContent || "" : "").replace(/\s+/g, "").toLowerCase();
+    }
+
+    function resetSearch() {
+      root.classList.remove("searching");
+      groups.forEach(function (group) {
+        group.hidden = false;
+        group.classList.toggle("open", group.dataset.defaultOpen === "true");
+        Array.from(group.querySelectorAll(".nav-v2-link")).forEach(function (link) {
+          link.hidden = false;
+        });
+        syncGroup(group);
+      });
+      if (emptyState) emptyState.hidden = true;
+    }
+
+    function applySearch() {
+      var keyword = searchInput ? searchInput.value.trim().replace(/\s+/g, "").toLowerCase() : "";
+      if (clearButton) clearButton.hidden = !keyword;
+      if (!keyword) {
+        resetSearch();
+        return;
+      }
+
+      root.classList.add("searching");
+      var totalMatches = 0;
+      groups.forEach(function (group) {
+        var groupText = getSearchText(group.querySelector(".nav-v2-group-toggle"));
+        var groupMatched = groupText.indexOf(keyword) >= 0;
+        var groupMatches = 0;
+        Array.from(group.querySelectorAll(".nav-v2-link")).forEach(function (link) {
+          var matched = groupMatched || getSearchText(link).indexOf(keyword) >= 0;
+          link.hidden = !matched;
+          if (matched) groupMatches += 1;
+        });
+        group.hidden = groupMatches === 0;
+        group.classList.toggle("open", groupMatches > 0);
+        totalMatches += groupMatches;
+        syncGroup(group);
+      });
+      if (emptyState) emptyState.hidden = totalMatches > 0;
+    }
+
+    groups.forEach(function (group) {
+      var toggle = group.querySelector(".nav-v2-group-toggle");
+      if (!toggle) return;
+      group.dataset.defaultOpen = group.classList.contains("open") ? "true" : "false";
+
+      toggle.addEventListener("click", function () {
+        group.classList.toggle("open");
+        if (!root.classList.contains("searching")) {
+          group.dataset.defaultOpen = group.classList.contains("open") ? "true" : "false";
+        }
+        syncGroup(group);
+      });
+
+      syncGroup(group);
+    });
+
+    if (searchInput) {
+      searchInput.addEventListener("input", applySearch);
+      searchInput.addEventListener("keydown", function (event) {
+        if (event.key !== "Escape") return;
+        searchInput.value = "";
+        applySearch();
+      });
+    }
+    if (clearButton && searchInput) {
+      clearButton.addEventListener("click", function () {
+        searchInput.value = "";
+        applySearch();
+        searchInput.focus();
+      });
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", initSideNavigation);
+
   function addMonths(date, months) {
     return new Date(date.getFullYear(), date.getMonth() + months, 1);
   }
