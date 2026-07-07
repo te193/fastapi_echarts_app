@@ -4,69 +4,112 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ title }}</title>
+  <link rel="icon" href="data:,">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community/styles/ag-grid.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community/styles/ag-theme-quartz.css">
-  <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}?v=20260706returnhelp1">
+  <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}?v=20260707nav5">
 </head>
 <body data-page="{{ page }}">
   <div class="app-shell">
     <aside class="side-nav">
-      <div class="side-nav-brand">
-        <span class="side-nav-brand-mark">产品</span>
-        <strong>产品结构看板</strong>
+      <div class="nav-v2">
+        <div class="nav-v2-brand">
+          <span class="nav-v2-brand-mark">产品</span>
+          <strong>产品结构看板</strong>
+          <button class="nav-v2-collapse" type="button" aria-label="导航默认收起，移入展开">‹</button>
+        </div>
+
+        <label class="nav-v2-search">
+          <span>⌕</span>
+          <input type="search" placeholder="搜索页面" aria-label="搜索页面">
+          <button class="nav-v2-search-clear" type="button" aria-label="清空搜索" hidden>×</button>
+        </label>
+
+        <section class="nav-v2-favorites" aria-label="常用页面">
+          <div class="nav-v2-section-title compact"><span>☆ 常用</span></div>
+          <div class="nav-v2-chips">
+            <a href="/sales-role">销售角色</a>
+            <a href="/detail">产品明细</a>
+            <a href="/alerts">异常预警</a>
+          </div>
+        </section>
+
+        <nav class="nav-v2-groups" aria-label="产品结构看板导航">
+          <section class="nav-v2-group {% if page in ['dashboard', 'layers', 'matrix', 'detail'] %}open{% endif %}" data-nav-group="structure">
+            <button class="nav-v2-group-toggle" type="button" aria-expanded="{% if page in ['dashboard', 'layers', 'matrix', 'detail'] %}true{% else %}false{% endif %}">
+              <span><i>⌄</i> 结构分析</span>
+              <b>4</b>
+            </button>
+            <div class="nav-v2-group-links">
+              <a class="nav-v2-link {% if page == 'dashboard' %}active{% endif %}" href="/">
+                <span class="nav-v2-icon">总</span>
+                <span><strong>结构概览</strong><small>经营概览 / 规模概况</small></span>
+              </a>
+              <a class="nav-v2-link {% if page == 'layers' %}active{% endif %}" href="/layers">
+                <span class="nav-v2-icon">层</span>
+                <span><strong>分层分布</strong><small>层级分布 / 占比</small></span>
+              </a>
+              <a class="nav-v2-link {% if page == 'matrix' %}active{% endif %}" href="/matrix">
+                <span class="nav-v2-icon">矩</span>
+                <span><strong>交叉矩阵</strong><small>多维交叉 / 组合分析</small></span>
+              </a>
+              <a class="nav-v2-link {% if page == 'detail' %}active{% endif %}" href="/detail">
+                <span class="nav-v2-icon">明</span>
+                <span><strong>产品明细</strong><small>产品明细 / 指标透视</small></span>
+              </a>
+            </div>
+          </section>
+
+          <section class="nav-v2-group {% if page in ['alerts', 'opportunities', 'sales_role', 'price_review'] %}open{% endif %}" data-nav-group="operation">
+            <button class="nav-v2-group-toggle" type="button" aria-expanded="{% if page in ['alerts', 'opportunities', 'sales_role', 'price_review'] %}true{% else %}false{% endif %}">
+              <span><i>⌄</i> 经营诊断</span>
+              <b>4</b>
+            </button>
+            <div class="nav-v2-group-links">
+              <a class="nav-v2-link {% if page == 'alerts' %}active{% endif %}" href="/alerts">
+                <span class="nav-v2-icon">警</span>
+                <span><strong>异常预警</strong><small>风险监控 / 预警</small></span>
+              </a>
+              <a class="nav-v2-link {% if page == 'opportunities' %}active{% endif %}" href="/opportunities">
+                <span class="nav-v2-icon">机</span>
+                <span><strong>机会池</strong><small>机会识别 / 优先级</small></span>
+              </a>
+              <a class="nav-v2-link {% if page == 'sales_role' %}active{% endif %}" href="/sales-role">
+                <span class="nav-v2-icon">销</span>
+                <span><strong>销售角色分析</strong><small>MSKU角色 / 毛利 / 日销</small></span>
+              </a>
+              <a class="nav-v2-link {% if page == 'price_review' %}active{% endif %}" href="/price-review">
+                <span class="nav-v2-icon">复</span>
+                <span><strong>调价复盘</strong><small>调价效果 / 复盘</small></span>
+              </a>
+            </div>
+          </section>
+
+          <section class="nav-v2-group {% if page in ['inventory_weekly', 'replenishment', 'return_goods'] %}open{% endif %}" data-nav-group="fulfillment">
+            <button class="nav-v2-group-toggle" type="button" aria-expanded="{% if page in ['inventory_weekly', 'replenishment', 'return_goods'] %}true{% else %}false{% endif %}">
+              <span><i>⌄</i> 库存补货相关</span>
+              <b>3</b>
+            </button>
+            <div class="nav-v2-group-links">
+              <a class="nav-v2-link {% if page == 'inventory_weekly' %}active{% endif %}" href="/inventory-weekly">
+                <span class="nav-v2-icon">库</span>
+                <span><strong>库存周报</strong><small>库存趋势 / 周报</small></span>
+              </a>
+              <a class="nav-v2-link {% if page == 'replenishment' %}active{% endif %}" href="/replenishment">
+                <span class="nav-v2-icon">补</span>
+                <span><strong>补货计划</strong><small>补货建议 / 计划</small></span>
+              </a>
+              <a class="nav-v2-link {% if page == 'return_goods' %}active{% endif %}" href="/return-goods">
+                <span class="nav-v2-icon">返</span>
+                <span><strong>返场品</strong><small>返场分析 / 表现</small></span>
+              </a>
+            </div>
+          </section>
+        </nav>
+
+        <p class="nav-v2-empty" hidden>没有匹配的页面</p>
+        <p class="nav-v2-note">页面较多时可搜索定位</p>
       </div>
-      <nav class="side-nav-links">
-        <a class="side-nav-link {% if page == 'dashboard' %}active{% endif %}" href="/" title="结构概览">
-          <span class="side-nav-icon">总</span>
-          <span class="side-nav-label">总览</span>
-          <span class="side-nav-full-label">结构概览</span>
-        </a>
-        <a class="side-nav-link {% if page == 'layers' %}active{% endif %}" href="/layers" title="分层分布">
-          <span class="side-nav-icon">层</span>
-          <span class="side-nav-label">分层</span>
-          <span class="side-nav-full-label">分层分布</span>
-        </a>
-        <a class="side-nav-link {% if page == 'matrix' %}active{% endif %}" href="/matrix" title="交叉矩阵">
-          <span class="side-nav-icon">矩</span>
-          <span class="side-nav-label">矩阵</span>
-          <span class="side-nav-full-label">交叉矩阵</span>
-        </a>
-        <a class="side-nav-link {% if page == 'detail' %}active{% endif %}" href="/detail" title="产品明细">
-          <span class="side-nav-icon">明</span>
-          <span class="side-nav-label">明细</span>
-          <span class="side-nav-full-label">产品明细</span>
-        </a>
-        <a class="side-nav-link {% if page == 'alerts' %}active{% endif %}" href="/alerts" title="异常预警">
-          <span class="side-nav-icon">警</span>
-          <span class="side-nav-label">预警</span>
-          <span class="side-nav-full-label">异常预警</span>
-        </a>
-        <a class="side-nav-link {% if page == 'opportunities' %}active{% endif %}" href="/opportunities" title="机会 SKU 池">
-          <span class="side-nav-icon">机</span>
-          <span class="side-nav-label">机会</span>
-          <span class="side-nav-full-label">机会池</span>
-        </a>
-        <a class="side-nav-link {% if page == 'inventory_weekly' %}active{% endif %}" href="/inventory-weekly" title="库存周报">
-          <span class="side-nav-icon">库</span>
-          <span class="side-nav-label">库存</span>
-          <span class="side-nav-full-label">库存周报</span>
-        </a>
-        <a class="side-nav-link {% if page == 'replenishment' %}active{% endif %}" href="/replenishment" title="补货计划">
-          <span class="side-nav-icon">补</span>
-          <span class="side-nav-label">补货</span>
-          <span class="side-nav-full-label">补货计划</span>
-        </a>
-        <a class="side-nav-link {% if page == 'return_goods' %}active{% endif %}" href="/return-goods" title="返场品">
-          <span class="side-nav-icon">返</span>
-          <span class="side-nav-label">返场</span>
-          <span class="side-nav-full-label">返场品</span>
-        </a>
-        <a class="side-nav-link {% if page == 'price_review' %}active{% endif %}" href="/price-review" title="调价复盘">
-          <span class="side-nav-icon">复</span>
-          <span class="side-nav-label">复盘</span>
-          <span class="side-nav-full-label">调价复盘</span>
-        </a>
-      </nav>
     </aside>
 
     <main class="main-content">
@@ -80,7 +123,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/ag-grid-community/dist/ag-grid-community.min.js"></script>
-  <script src="{{ url_for('static', path='js/common.js') }}?v=20260602a"></script>
+  <script src="{{ url_for('static', path='js/common.js') }}?v=20260707nav5"></script>
   <script src="{{ url_for('static', path='js/ag_grid_helper.js') }}?v=20260604a"></script>
   {% block scripts %}{% endblock %}
 </body>

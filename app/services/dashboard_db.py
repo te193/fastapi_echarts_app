@@ -37,6 +37,83 @@ ALERT_COMPARISON_TABLE = "etl_datasync.dashboard_alert_comparison_snapshot"
 ALERT_MONTHLY_METRIC_TABLE = "etl_datasync.dashboard_alert_monthly_metric_snapshot"
 ALERT_DAY_COMPARISONS = {7: "d7", 14: "d14", 30: "d30", 60: "d60", 90: "d90"}
 MARGIN_TRANSITION_LAYERS = ["\u65e0\u6bdb\u5229", "<0%", "0-10%", "10-15%", "15-25%", "25-35%", ">35%"]
+SALES_ROLE_PERIOD_TABLE = "etl_datasync.dashboard_sales_role_period_snapshot"
+SALES_ROLE_PERIODS = {"7d", "14d", "30d", "90d"}
+SALES_ROLE_SNAPSHOT_CODE_MAP = {
+    "star": "star",
+    "potential": "potential",
+    "dog": "incubation",
+    "problem": "eliminate",
+}
+SALES_ROLE_OPTIONS = [
+    {"key": "star", "label": "明星产品", "tone": "positive"},
+    {"key": "potential", "label": "潜力产品", "tone": "warning"},
+    {"key": "incubation", "label": "瘦狗产品", "tone": "info"},
+    {"key": "eliminate", "label": "问题产品", "tone": "negative"},
+]
+SALES_ROLE_BY_KEY = {option["key"]: option for option in SALES_ROLE_OPTIONS}
+SALES_ROLE_DAILY_SALES_BANDS = ["日销 0", "日销 <1", "日销 1-5", "日销 >5"]
+SALES_ROLE_MARGIN_BANDS = ["<5%", "5%-10%", "10%-15%", "15%-25%", ">25%"]
+SALES_ROLE_DAILY_LOW = Decimal("1")
+SALES_ROLE_DAILY_HIGH = Decimal("5")
+SALES_ROLE_MARGIN_5 = Decimal("0.05")
+SALES_ROLE_MARGIN_10 = Decimal("0.10")
+SALES_ROLE_MARGIN_15 = Decimal("0.15")
+SALES_ROLE_MARGIN_25 = Decimal("0.25")
+
+
+def _to_decimal_or_none(value: Any) -> Decimal | None:
+    if value is None or value == "":
+        return None
+    return Decimal(str(value))
+
+
+def classify_sales_role(daily_sales: Any, margin_rate: Any) -> dict[str, str]:
+    daily = _to_decimal_or_none(daily_sales) or Decimal("0")
+    margin = _to_decimal_or_none(margin_rate)
+    if daily <= 0 or margin is None:
+        return SALES_ROLE_BY_KEY["eliminate"]
+
+    if daily > SALES_ROLE_DAILY_HIGH and margin > SALES_ROLE_MARGIN_15:
+        return SALES_ROLE_BY_KEY["star"]
+    if SALES_ROLE_DAILY_LOW <= daily <= SALES_ROLE_DAILY_HIGH and margin > SALES_ROLE_MARGIN_25:
+        return SALES_ROLE_BY_KEY["star"]
+
+    if daily > SALES_ROLE_DAILY_HIGH and SALES_ROLE_MARGIN_5 <= margin <= SALES_ROLE_MARGIN_15:
+        return SALES_ROLE_BY_KEY["potential"]
+    if SALES_ROLE_DAILY_LOW <= daily <= SALES_ROLE_DAILY_HIGH and SALES_ROLE_MARGIN_10 <= margin <= SALES_ROLE_MARGIN_25:
+        return SALES_ROLE_BY_KEY["potential"]
+
+    if SALES_ROLE_DAILY_LOW <= daily <= SALES_ROLE_DAILY_HIGH and SALES_ROLE_MARGIN_5 <= margin < SALES_ROLE_MARGIN_10:
+        return SALES_ROLE_BY_KEY["incubation"]
+    if daily < SALES_ROLE_DAILY_LOW and margin > SALES_ROLE_MARGIN_5:
+        return SALES_ROLE_BY_KEY["incubation"]
+
+    return SALES_ROLE_BY_KEY["eliminate"]
+
+
+def sales_role_daily_sales_band(value: Any) -> str:
+    daily = _to_decimal_or_none(value) or Decimal("0")
+    if daily <= 0:
+        return "日销 0"
+    if daily < SALES_ROLE_DAILY_LOW:
+        return "日销 <1"
+    if daily <= SALES_ROLE_DAILY_HIGH:
+        return "日销 1-5"
+    return "日销 >5"
+
+
+def sales_role_margin_band(value: Any) -> str:
+    margin = _to_decimal_or_none(value)
+    if margin is None or margin < SALES_ROLE_MARGIN_5:
+        return "<5%"
+    if margin < SALES_ROLE_MARGIN_10:
+        return "5%-10%"
+    if margin < SALES_ROLE_MARGIN_15:
+        return "10%-15%"
+    if margin < SALES_ROLE_MARGIN_25:
+        return "15%-25%"
+    return ">25%"
 
 
 @dataclass(frozen=True)
@@ -259,6 +336,146 @@ class DashboardDbService:
             "matrix": matrix,
             "goal_gap_breakdown": goal_gap,
         }
+
+    def get_sales_role_meta(self) -> dict[str, Any]:
+        default_period = "30d"
+        period_table = self._render_sales_role_period_table(default_period)
+        country_categories: list[str] = []
+        stores: list[str] = []
+        window = None
+        try:
+            with self.connect() as conn:
+                window = self._latest_sales_role_window(conn, period_table, default_period)
+                if window:
+                    params = {
+                        "snapshot_date": window["snapshot_date"],
+                        "period_code": window["period_code"],
+                        "period_start": window["period_start"],
+                        "period_end": window["period_end"],
+                    }
+                    with conn.cursor() as cursor:
+                        cursor.execute(
+                            f"""
+                            select distinct country_category
+                            from {period_table}
+                            where snapshot_date = %(snapshot_date)s
+                              and period_code = %(period_code)s
+                              and period_start = %(period_start)s
+                              and period_end = %(period_end)s
+                              and country_category is not null
+                              and country_category != ''
+                            order by country_category
+                            """,
+                            params,
+                        )
+                        country_categories = [row["country_category"] for row in cursor.fetchall()]
+                        cursor.execute(
+                            f"""
+                            select distinct seller_name_new
+                            from {period_table}
+                            where snapshot_date = %(snapshot_date)s
+                              and period_code = %(period_code)s
+                              and period_start = %(period_start)s
+                              and period_end = %(period_end)s
+                              and seller_name_new is not null
+                              and seller_name_new != ''
+                            order by seller_name_new
+                            """,
+                            params,
+                        )
+                        stores = [row["seller_name_new"] for row in cursor.fetchall()]
+        except pymysql.err.ProgrammingError as exc:
+            if not (exc.args and exc.args[0] == 1146):
+                raise
+
+        return {
+            "default_period": default_period,
+            "periods": [
+                {"key": "7d", "label": "7天"},
+                {"key": "14d", "label": "14天"},
+                {"key": "30d", "label": "30天"},
+                {"key": "90d", "label": "90天"},
+            ],
+            "country_categories": country_categories,
+            "stores": stores,
+            "roles": SALES_ROLE_OPTIONS,
+            "daily_sales_bands": SALES_ROLE_DAILY_SALES_BANDS,
+            "margin_bands": SALES_ROLE_MARGIN_BANDS,
+            "window": self._sales_role_window_payload(window),
+        }
+
+    def get_sales_role_payload(
+        self,
+        period: str = "30d",
+        country_category: str = "all",
+        seller_name_new: str = "all",
+        sales_role: str = "all",
+        daily_sales_band: str = "all",
+        margin_band: str = "all",
+        keyword: str = "",
+        page: int = 1,
+        page_size: int = 20,
+        sort_field: str = "sales_amount",
+        sort_dir: str = "desc",
+    ) -> dict[str, Any]:
+        with self.connect() as conn:
+            period_table = self._render_sales_role_period_table(period)
+            window = self._latest_sales_role_window(conn, period_table, period)
+            base_rows = self._fetch_sales_role_base_rows(
+                conn,
+                period_table,
+                window,
+                country_category=country_category,
+                seller_name_new=seller_name_new,
+                keyword=keyword,
+            )
+
+        filtered_rows = self._filter_sales_role_rows(base_rows, sales_role, daily_sales_band, margin_band)
+        self._sort_sales_role_rows(filtered_rows, sort_field, sort_dir)
+        safe_page_size = max(10, min(5000, int(page_size or 20)))
+        total = len(filtered_rows)
+        total_pages = max(1, math.ceil(total / safe_page_size))
+        safe_page = min(max(1, int(page or 1)), total_pages)
+        start = (safe_page - 1) * safe_page_size
+        return {
+            "meta": self.get_sales_role_meta(),
+            "window": self._sales_role_window_payload(window),
+            "summary": self._build_sales_role_summary(base_rows),
+            "roles": self._build_sales_role_distribution(base_rows),
+            "matrix": self._build_sales_role_matrix(base_rows),
+            "rows": filtered_rows[start:start + safe_page_size],
+            "total": total,
+            "page": safe_page,
+            "page_size": safe_page_size,
+            "total_pages": total_pages,
+        }
+
+    def get_sales_role_export_payload(
+        self,
+        period: str = "30d",
+        country_category: str = "all",
+        seller_name_new: str = "all",
+        sales_role: str = "all",
+        daily_sales_band: str = "all",
+        margin_band: str = "all",
+        keyword: str = "",
+        sort_field: str = "sales_amount",
+        sort_dir: str = "desc",
+    ) -> dict[str, Any]:
+        with self.connect() as conn:
+            period_table = self._render_sales_role_period_table(period)
+            window = self._latest_sales_role_window(conn, period_table, period)
+            base_rows = self._fetch_sales_role_base_rows(
+                conn,
+                period_table,
+                window,
+                country_category=country_category,
+                seller_name_new=seller_name_new,
+                keyword=keyword,
+            )
+        filtered_rows = self._filter_sales_role_rows(base_rows, sales_role, daily_sales_band, margin_band)
+        self._sort_sales_role_rows(filtered_rows, sort_field, sort_dir)
+        return {"window": self._sales_role_window_payload(window), "rows": filtered_rows}
 
     def get_monthly_goals_payload(self) -> dict[str, Any]:
         metrics = [
@@ -1236,6 +1453,276 @@ class DashboardDbService:
         if table_name not in allowed_tables:
             raise RuntimeError(f"Unexpected period table: {table_name}")
         return render_sql(table_name, self.schemas)
+
+    def _render_sales_role_period_table(self, period: str) -> str:
+        return render_sql(SALES_ROLE_PERIOD_TABLE, self.schemas)
+
+    def _sales_role_period_code(self, period: str) -> str:
+        period_code = str(period or "").strip().lower()
+        return period_code if period_code in SALES_ROLE_PERIODS else "30d"
+
+    def _latest_sales_role_window(self, conn, period_table: str, period: str = "30d") -> dict[str, Any] | None:
+        period_code = self._sales_role_period_code(period)
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                select snapshot_date, period_code, period_days, period_start, period_end
+                from {period_table}
+                where snapshot_date = (
+                    select max(snapshot_date)
+                    from {period_table}
+                    where period_code = %(period_code)s
+                )
+                  and period_code = %(period_code)s
+                group by snapshot_date, period_code, period_days, period_start, period_end
+                order by period_end desc, period_start desc
+                limit 1
+                """,
+                {"period_code": period_code},
+            )
+            return cursor.fetchone()
+
+    def _sales_role_window_payload(self, window: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not window:
+            return None
+        return {
+            "snapshot_date": format_day(window["snapshot_date"]),
+            "period_code": window.get("period_code"),
+            "period_days": to_int(window.get("period_days")),
+            "period_start": format_day(window["period_start"]),
+            "period_end": format_day(window["period_end"]),
+            "label": f"{format_day(window['period_start'])} ~ {format_day(window['period_end'])}",
+        }
+
+    def _sales_role_base_filter_sql(
+        self,
+        country_category: str = "all",
+        seller_name_new: str = "all",
+        keyword: str = "",
+    ) -> tuple[str, dict[str, Any]]:
+        clauses = ["1 = 1"]
+        params: dict[str, Any] = {}
+        if country_category and country_category != "all":
+            clauses.append("p.country_category = %(country_category)s")
+            params["country_category"] = country_category
+        if seller_name_new and seller_name_new != "all":
+            clauses.append("p.seller_name_new = %(seller_name_new)s")
+            params["seller_name_new"] = seller_name_new
+        keyword = str(keyword or "").strip()
+        if keyword:
+            params["keyword"] = f"%{keyword}%"
+            clauses.append(
+                "("
+                "p.seller_sku_adj like %(keyword)s "
+                "or coalesce(p.local_sku_sample, '') like %(keyword)s "
+                "or coalesce(p.seller_name_new, '') like %(keyword)s"
+                ")"
+            )
+        return " and ".join(clauses), params
+
+    def _fetch_sales_role_base_rows(
+        self,
+        conn,
+        period_table: str,
+        window: dict[str, Any] | None,
+        country_category: str = "all",
+        seller_name_new: str = "all",
+        keyword: str = "",
+    ) -> list[dict[str, Any]]:
+        if not window:
+            return []
+        where_sql, params = self._sales_role_base_filter_sql(country_category, seller_name_new, keyword)
+        params.update(
+            {
+                "snapshot_date": window["snapshot_date"],
+                "period_code": window["period_code"],
+                "period_start": window["period_start"],
+                "period_end": window["period_end"],
+            }
+        )
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                select
+                    p.seller_sku_adj,
+                    p.seller_name_new,
+                    p.country_category,
+                    p.local_sku_sample,
+                    p.country_count,
+                    p.countries,
+                    p.sales_qty,
+                    p.daily_sales,
+                    p.sales_amount,
+                    p.sales_amount_ex_tax,
+                    p.order_gross_profit,
+                    p.order_gross_margin,
+                    p.ad_spend,
+                    p.ad_sales,
+                    p.acos,
+                    p.tacos,
+                    p.sales_role_code as snapshot_sales_role_code,
+                    p.sales_role_label,
+                    p.sales_role_sub_label_id
+                from {period_table} p
+                where p.snapshot_date = %(snapshot_date)s
+                  and p.period_code = %(period_code)s
+                  and p.period_start = %(period_start)s
+                  and p.period_end = %(period_end)s
+                  and {where_sql}
+                """,
+                params,
+            )
+            rows = cursor.fetchall()
+
+        result = []
+        for row in rows:
+            sales_qty = to_float(row.get("sales_qty"))
+            sales_amount = to_float(row.get("sales_amount"))
+            order_gross_profit = to_float(row.get("order_gross_profit"))
+            daily_sales = to_float(row.get("daily_sales"))
+            margin_rate = row.get("order_gross_margin")
+            role_code = SALES_ROLE_SNAPSHOT_CODE_MAP.get(str(row.get("snapshot_sales_role_code") or ""), "eliminate")
+            role = SALES_ROLE_BY_KEY.get(role_code, SALES_ROLE_BY_KEY["eliminate"])
+            ad_spend = to_float(row.get("ad_spend"))
+            ad_sales = to_float(row.get("ad_sales"))
+            item = {
+                "sales_role_key": f"{row.get('seller_name_new') or ''}|{row.get('seller_sku_adj') or ''}|{row.get('country_category') or ''}",
+                "sales_role": role["label"],
+                "sales_role_code": role["key"],
+                "sales_role_tone": role["tone"],
+                "country_category": row.get("country_category") or "",
+                "seller_name_new": row.get("seller_name_new") or "",
+                "seller_sku_adj": row.get("seller_sku_adj") or "",
+                "local_sku_sample": row.get("local_sku_sample") or "",
+                "country_count": to_int(row.get("country_count")),
+                "countries": row.get("countries") or "",
+                "sales_qty": round(sales_qty, 2),
+                "daily_sales": round(daily_sales, 2),
+                "sales_amount": round(sales_amount, 2),
+                "sales_amount_ex_tax": round(to_float(row.get("sales_amount_ex_tax")), 2),
+                "order_gross_profit": round(order_gross_profit, 2),
+                "order_gross_margin": round(to_float(margin_rate), 4),
+                "daily_sales_band": sales_role_daily_sales_band(daily_sales),
+                "margin_band": sales_role_margin_band(margin_rate),
+                "ad_spend": round(ad_spend, 2),
+                "ad_sales": round(ad_sales, 2),
+                "acos": round(to_float(row.get("acos")), 4),
+                "tacos": round(to_float(row.get("tacos")), 4),
+            }
+            result.append(item)
+        return result
+
+    def _filter_sales_role_rows(
+        self,
+        rows: list[dict[str, Any]],
+        sales_role: str = "all",
+        daily_sales_band: str = "all",
+        margin_band: str = "all",
+    ) -> list[dict[str, Any]]:
+        filtered = []
+        for row in rows:
+            if sales_role and sales_role != "all" and row["sales_role_code"] != sales_role:
+                continue
+            if daily_sales_band and daily_sales_band != "all" and row["daily_sales_band"] != daily_sales_band:
+                continue
+            if margin_band and margin_band != "all" and row["margin_band"] != margin_band:
+                continue
+            filtered.append(row)
+        return filtered
+
+    def _sort_sales_role_rows(self, rows: list[dict[str, Any]], sort_field: str, sort_dir: str) -> None:
+        sort_key = sort_field if sort_field in {
+            "sales_role",
+            "country_category",
+            "seller_name_new",
+            "seller_sku_adj",
+            "country_count",
+            "sales_qty",
+            "daily_sales",
+            "sales_amount",
+            "order_gross_profit",
+            "order_gross_margin",
+            "daily_sales_band",
+            "margin_band",
+            "ad_spend",
+            "ad_sales",
+            "acos",
+            "tacos",
+        } else "sales_amount"
+        reverse = str(sort_dir or "desc").lower() != "asc"
+
+        def normalized(row: dict[str, Any]) -> tuple[int, Any]:
+            value = row.get(sort_key)
+            if value is None or value == "":
+                return (1, "")
+            if isinstance(value, (int, float)):
+                return (0, value)
+            return (0, str(value))
+
+        rows.sort(key=lambda row: (normalized(row), row.get("seller_sku_adj") or ""), reverse=reverse)
+
+    def _build_sales_role_summary(self, rows: list[dict[str, Any]]) -> dict[str, Any]:
+        sales_amount = sum(to_float(row.get("sales_amount")) for row in rows)
+        sales_qty = sum(to_float(row.get("sales_qty")) for row in rows)
+        gross_profit = sum(to_float(row.get("order_gross_profit")) for row in rows)
+        active_count = sum(1 for row in rows if to_float(row.get("sales_qty")) > 0)
+        eliminate_count = sum(1 for row in rows if row.get("sales_role_code") == "eliminate")
+        return {
+            "sku_count": len(rows),
+            "sales_amount": round(sales_amount, 2),
+            "sales_qty": round(sales_qty, 2),
+            "order_gross_profit": round(gross_profit, 2),
+            "order_gross_margin": round(gross_profit / sales_amount, 4) if sales_amount else 0,
+            "active_sku_count": active_count,
+            "eliminate_count": eliminate_count,
+        }
+
+    def _build_sales_role_distribution(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        total = max(len(rows), 1)
+        result = []
+        for option in SALES_ROLE_OPTIONS:
+            role_rows = [row for row in rows if row.get("sales_role_code") == option["key"]]
+            sales_amount = sum(to_float(row.get("sales_amount")) for row in role_rows)
+            sales_qty = sum(to_float(row.get("sales_qty")) for row in role_rows)
+            gross_profit = sum(to_float(row.get("order_gross_profit")) for row in role_rows)
+            result.append(
+                {
+                    **option,
+                    "count": len(role_rows),
+                    "ratio": round(len(role_rows) / total, 4),
+                    "sales_amount": round(sales_amount, 2),
+                    "daily_sales": round(sum(to_float(row.get("daily_sales")) for row in role_rows), 2),
+                    "order_gross_margin": round(gross_profit / sales_amount, 4) if sales_amount else 0,
+                }
+            )
+        return result
+
+    def _build_sales_role_matrix(self, rows: list[dict[str, Any]]) -> dict[str, Any]:
+        cells = []
+        total = max(len(rows), 1)
+        for margin in SALES_ROLE_MARGIN_BANDS:
+            for daily in SALES_ROLE_DAILY_SALES_BANDS:
+                cell_rows = [
+                    row
+                    for row in rows
+                    if row.get("margin_band") == margin and row.get("daily_sales_band") == daily
+                ]
+                sales_amount = sum(to_float(row.get("sales_amount")) for row in cell_rows)
+                cells.append(
+                    {
+                        "margin_band": margin,
+                        "daily_sales_band": daily,
+                        "count": len(cell_rows),
+                        "ratio": round(len(cell_rows) / total, 4),
+                        "sales_amount": round(sales_amount, 2),
+                    }
+                )
+        return {
+            "daily_sales_bands": SALES_ROLE_DAILY_SALES_BANDS,
+            "margin_bands": SALES_ROLE_MARGIN_BANDS,
+            "cells": cells,
+            "total": len(rows),
+        }
 
     def _ensure_period_snapshot(self, conn, window: PeriodWindow) -> None:
         params = {

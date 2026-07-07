@@ -184,9 +184,109 @@ def return_goods_page(request: Request) -> HTMLResponse:
     )
 
 
+@app.get("/sales-role", response_class=HTMLResponse)
+def sales_role_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "sales_role.html",
+        {"page": "sales_role", "title": "销售角色分析"},
+    )
+
+
 @app.get("/api/meta")
 def api_meta() -> dict:
     return dashboard_service.get_meta()
+
+
+@app.get("/api/sales-role/meta")
+def api_sales_role_meta() -> dict:
+    return dashboard_service.get_sales_role_meta()
+
+
+@app.get("/api/sales-role")
+def api_sales_role(
+    period: str = "30d",
+    country_category: str = "all",
+    seller_name_new: str = "all",
+    sales_role: str = "all",
+    daily_sales_band: str = "all",
+    margin_band: str = "all",
+    keyword: str = "",
+    page: int = 1,
+    page_size: int = 20,
+    sort_field: str = "sales_amount",
+    sort_dir: str = "desc",
+) -> dict:
+    return dashboard_service.get_sales_role_payload(
+        period=period,
+        country_category=country_category,
+        seller_name_new=seller_name_new,
+        sales_role=sales_role,
+        daily_sales_band=daily_sales_band,
+        margin_band=margin_band,
+        keyword=keyword,
+        page=page,
+        page_size=page_size,
+        sort_field=sort_field,
+        sort_dir=sort_dir,
+    )
+
+
+@app.get("/api/sales-role/export")
+def api_sales_role_export(
+    period: str = "30d",
+    country_category: str = "all",
+    seller_name_new: str = "all",
+    sales_role: str = "all",
+    daily_sales_band: str = "all",
+    margin_band: str = "all",
+    keyword: str = "",
+    sort_field: str = "sales_amount",
+    sort_dir: str = "desc",
+) -> StreamingResponse:
+    payload = dashboard_service.get_sales_role_export_payload(
+        period=period,
+        country_category=country_category,
+        seller_name_new=seller_name_new,
+        sales_role=sales_role,
+        daily_sales_band=daily_sales_band,
+        margin_band=margin_band,
+        keyword=keyword,
+        sort_field=sort_field,
+        sort_dir=sort_dir,
+    )
+    output = io.StringIO(newline="")
+    output.write("\ufeff")
+    writer = csv.writer(output)
+    writer.writerow([
+        "销售角色", "国家类别", "店铺新", "MSKU", "SKU示例", "覆盖国家数", "覆盖国家",
+        "销量", "日均销量", "销售额", "订单毛利额", "订单毛利率", "日销分层", "毛利率分层",
+        "广告花费", "广告销售额", "ACOS", "TACOS",
+    ])
+    for row in payload["rows"]:
+        writer.writerow([
+            csv_cell_value(row.get("sales_role")),
+            csv_cell_value(row.get("country_category")),
+            csv_cell_value(row.get("seller_name_new")),
+            csv_cell_value(row.get("seller_sku_adj")),
+            csv_cell_value(row.get("local_sku_sample")),
+            csv_cell_value(row.get("country_count")),
+            csv_cell_value(row.get("countries")),
+            csv_cell_value(row.get("sales_qty")),
+            csv_cell_value(row.get("daily_sales")),
+            csv_cell_value(row.get("sales_amount")),
+            csv_cell_value(row.get("order_gross_profit")),
+            csv_cell_value(row.get("order_gross_margin")),
+            csv_cell_value(row.get("daily_sales_band")),
+            csv_cell_value(row.get("margin_band")),
+            csv_cell_value(row.get("ad_spend")),
+            csv_cell_value(row.get("ad_sales")),
+            csv_cell_value(row.get("acos")),
+            csv_cell_value(row.get("tacos")),
+        ])
+    filename = f"sales_role_{period}_{date.today().isoformat()}.csv"
+    headers = {"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"}
+    return StreamingResponse(iter([output.getvalue()]), media_type="text/csv; charset=utf-8", headers=headers)
 
 
 @app.get("/api/dashboard")
