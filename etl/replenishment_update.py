@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import configparser
 import os
+import re
 import sys
 import traceback
 from dataclasses import dataclass
@@ -36,6 +37,26 @@ DEFAULT_STEP_ORDER = [
     "replenishment_result",
     "country_metrics",
 ]
+
+REPLENISHMENT_WORK_TABLES = {
+    "tmp_pur_plan_candidate_keys": "etl_datasync.dashboard_replenishment_work_candidate_keys_v3",
+    "tmp_prod_perf_sku_asin_metrics": "etl_datasync.dashboard_replenishment_work_sku_asin_metrics_v3",
+    "tmp_prod_perf_sku_metrics": "etl_datasync.dashboard_replenishment_work_sku_metrics_v3",
+    "tmp_asin_to_self_store": "etl_datasync.dashboard_replenishment_work_asin_self_store_v3",
+    "tmp_origin_sales_all": "etl_datasync.dashboard_replenishment_work_origin_sales_all_v3",
+    "tmp_prod_perf_follow_origin": "etl_datasync.dashboard_replenishment_work_follow_origin_v3",
+    "tmp_prod_perf_sku_follow_metrics": "etl_datasync.dashboard_replenishment_work_sku_follow_metrics_v3",
+    "tmp_pur_plan_fba_current": "etl_datasync.dashboard_replenishment_work_fba_current_v3",
+    "tmp_pur_plan_replenish_sug_current": "etl_datasync.dashboard_replenishment_work_restock_current_v3",
+    "tmp_pur_plan_future_history_stat": "etl_datasync.dashboard_replenishment_work_future_history_stat_v3",
+    "tmp_pur_plan_prev_history_stat": "etl_datasync.dashboard_replenishment_work_prev_history_stat_v3",
+    "tmp_pur_plan_sales_change_rate": "etl_datasync.dashboard_replenishment_work_sales_change_rate_v3",
+    "tmp_pur_plan_support_metric_base": "etl_datasync.dashboard_replenishment_work_support_metric_base_v3",
+    "tmp_pur_plan_support_calc_base": "etl_datasync.dashboard_replenishment_work_support_calc_base_v3",
+    "tmp_pur_plan_support_layer_all": "etl_datasync.dashboard_replenishment_work_support_layer_all_v3",
+    "tmp_pur_plan_replenish_calc": "etl_datasync.dashboard_replenishment_work_replenish_calc_v3",
+    "tmp_replenishment_country_listing_price": "etl_datasync.dashboard_replenishment_work_country_listing_price_v3",
+}
 
 
 @dataclass(frozen=True)
@@ -698,11 +719,8 @@ with candidate_keys as (
         seller_sku_adj
     from etl_datasync.dashboard_product_performance_daily
     where dt_date between %(candidate_start_date)s and %(biz_date)s
-      and seller_name not regexp 'baihuiyi|Yuanoboo|Bailboo|Qianytyy'
-      and seller_name_new not in ('gushili', 'Joochees', 'ouhao', 'pingter')
       and seller_sku_adj is not null
       and seller_sku_adj <> ''
-      and length(seller_sku_adj) between 5 and 10
     group by country_category, seller_name_new, seller_sku_adj
 ),
 product_daily as (
@@ -719,7 +737,6 @@ product_daily as (
            and p.seller_name_new = c.seller_name_new
            and p.seller_sku_adj = c.seller_sku_adj
     where p.dt_date between %(product_start_date)s and %(biz_date)s
-      and p.seller_name not regexp 'baihuiyi|Yuanoboo|Bailboo|Qianytyy'
     group by
         p.dt_date,
         p.country_category,
@@ -798,11 +815,8 @@ select
     group_concat(distinct seller_name separator ',') as seller_name_concat
 from etl_datasync.dashboard_product_performance_daily
 where dt_date between %(candidate_start_date)s and %(biz_date)s
-  and seller_name not regexp 'baihuiyi|Yuanoboo|Bailboo|Qianytyy'
-  and seller_name_new not in ('gushili', 'Joochees', 'ouhao', 'pingter')
   and seller_sku_adj is not null
   and seller_sku_adj <> ''
-  and length(seller_sku_adj) between 5 and 10
 group by country_category, seller_name_new, seller_sku_adj;
 
 drop temporary table if exists tmp_prod_perf_sku_metrics;
@@ -841,7 +855,6 @@ left join etl_datasync.dashboard_replenishment_listing_basic_sync l
       and p.seller_name_new = l.seller_name_new
       and p.seller_sku_adj = l.seller_sku
 where p.dt_date between %(product_start_date)s and %(biz_date)s
-  and p.seller_name not regexp 'baihuiyi|Yuanoboo|Bailboo|Qianytyy'
 group by p.country_category, p.seller_name_new, p.seller_sku_adj;
 
 create temporary table tmp_prod_perf_sku_metrics as
@@ -1802,6 +1815,74 @@ def render_replenishment_sql(sql: str, schemas: SchemaConfig) -> str:
     return rendered
 
 
+def split_sql_statements(sql: str) -> list[str]:
+    return [statement.strip() for statement in sql.split(";") if statement.strip()]
+
+
+def render_replenishment_work_sql(sql: str, schemas: SchemaConfig) -> str:
+    rendered = render_replenishment_sql(sql, schemas)
+    for temporary_name, work_table in REPLENISHMENT_WORK_TABLES.items():
+        rendered_work_table = render_replenishment_sql(work_table, schemas)
+        rendered = re.sub(rf"\b{re.escape(temporary_name)}\b", rendered_work_table, rendered)
+    return rendered
+
+
+def render_replenishment_work_table(temporary_name: str, schemas: SchemaConfig) -> str:
+    try:
+        work_table = REPLENISHMENT_WORK_TABLES[temporary_name]
+    except KeyError as exc:
+        raise KeyError(f"Missing replenishment work table mapping for {temporary_name}") from exc
+    return render_replenishment_sql(work_table, schemas)
+
+
+def build_replenishment_result_statements(schemas: SchemaConfig) -> list[str]:
+    statements = split_sql_statements(REPLENISHMENT_RESULT_SQL)
+    expanded: list[str] = []
+    for statement in statements:
+        drop_match = re.fullmatch(r"drop\s+temporary\s+table\s+if\s+exists\s+(\w+)", statement, re.IGNORECASE)
+        if drop_match:
+            render_replenishment_work_table(drop_match.group(1), schemas)
+            continue
+
+        create_match = re.fullmatch(
+            r"create\s+temporary\s+table\s+(\w+)\s+as\s+(.*)",
+            statement,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if create_match:
+            temporary_name = create_match.group(1)
+            work_table = render_replenishment_work_table(temporary_name, schemas)
+            select_sql = render_replenishment_work_sql(create_match.group(2), schemas)
+            expanded.extend(
+                [
+                    f"drop table if exists {work_table}",
+                    f"create table {work_table} as select * from ({select_sql}) as seed where 1 = 0",
+                    f"insert into {work_table}\n{select_sql}",
+                ]
+            )
+            continue
+
+        explicit_create_match = re.fullmatch(
+            r"create\s+temporary\s+table\s+(\w+)\s*(\(.*)",
+            statement,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if explicit_create_match:
+            temporary_name = explicit_create_match.group(1)
+            work_table = render_replenishment_work_table(temporary_name, schemas)
+            definition_sql = render_replenishment_work_sql(explicit_create_match.group(2), schemas)
+            expanded.extend(
+                [
+                    f"drop table if exists {work_table}",
+                    f"create table {work_table} {definition_sql}",
+                ]
+            )
+            continue
+
+        expanded.append(render_replenishment_work_sql(statement, schemas))
+    return expanded
+
+
 def parse_steps(raw_steps: str) -> list[str]:
     if raw_steps == "all":
         return DEFAULT_STEP_ORDER[:]
@@ -1880,6 +1961,38 @@ def check_daily_snapshots(conn, schemas: SchemaConfig, params: dict[str, object]
     )
 
 
+def validate_replenishment_result(
+    conn,
+    schemas: SchemaConfig,
+    params: dict[str, object],
+) -> int:
+    with conn.cursor() as cursor:
+        cursor.execute(
+            render_replenishment_sql(
+                """
+                select count(*) as row_count
+                from etl_datasync.dashboard_pur_plan_replenish_data
+                where cur_date = %(snapshot_date)s
+                """,
+                schemas,
+            ),
+            params,
+        )
+        row = cursor.fetchone() or {}
+    row_count = int(row.get("row_count") or 0)
+    if row_count <= 0:
+        raise RuntimeError(
+            "Business result validation failed: "
+            f"replenishment snapshot_date={params['snapshot_date']} has 0 rows "
+            f"for biz_date={params['biz_date']}."
+        )
+    print(
+        "[success] replenishment_business_result: "
+        f"snapshot_date={params['snapshot_date']} rows={row_count}"
+    )
+    return row_count
+
+
 def execute_sql_step(conn, schemas: SchemaConfig, step: ReplenishmentStep, params: dict[str, object]) -> None:
     if step.name == "check_daily_snapshots":
         check_daily_snapshots(conn, schemas, params)
@@ -1889,11 +2002,18 @@ def execute_sql_step(conn, schemas: SchemaConfig, step: ReplenishmentStep, param
     affected_rows = 0
     try:
         with conn.cursor() as cursor:
-            for statement in step.statements:
-                cursor.execute(render_replenishment_sql(statement, schemas), params)
+            statements = (
+                build_replenishment_result_statements(schemas)
+                if step.name == "replenishment_result"
+                else [render_replenishment_sql(statement, schemas) for statement in step.statements]
+            )
+            for statement in statements:
+                cursor.execute(statement, params)
                 if statement.lstrip().lower().startswith(("insert", "delete")):
                     affected_rows += max(cursor.rowcount, 0)
                 conn.commit()
+        if step.name == "replenishment_result":
+            validate_replenishment_result(conn, schemas, params)
         log_task(conn, schemas, step.name, params, "success", affected_rows, started_at)
         print(f"[success] {step.name}: affected_rows={affected_rows}")
     except Exception:

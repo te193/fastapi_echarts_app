@@ -1,5 +1,7 @@
 from datetime import date, datetime, timedelta
 
+import pytest
+
 from app.services.replenishment_tracking_data import ReplenishmentTrackingService
 from etl import replenishment_tracking_update
 
@@ -292,6 +294,21 @@ def test_source_sync_looks_back_for_historical_fba_carryover():
     source = replenishment_tracking_update.SOURCE_LOOKBACK_DAYS
 
     assert source == 30
+
+
+def test_source_sync_normalizes_eu_store_suffix_before_marketplace_suffix():
+    assert "upper(seller_name) regexp '-EU-[A-Z]{2}$'" in replenishment_tracking_update.SELECT_PURCHASE_PLAN_SYNC_SQL
+    assert "upper(sname) regexp '-EU-[A-Z]{2}$'" in replenishment_tracking_update.SELECT_FBA_SHIPMENT_PLAN_SYNC_SQL
+    assert "upper(sname) regexp '-EU-[A-Z]{2}$'" in replenishment_tracking_update.SELECT_INBOUND_ITEM_SYNC_SQL
+
+
+def test_tracking_result_validation_rejects_empty_snapshot():
+    with pytest.raises(RuntimeError, match="2026-06-27.*7.*0 rows"):
+        replenishment_tracking_update.validate_tracking_result(
+            date(2026, 6, 27),
+            7,
+            {"snapshot_rows": 0, "detail_rows": 0},
+        )
 
 
 def test_tracking_service_serializes_current_and_historical_shipments():

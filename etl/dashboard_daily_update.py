@@ -3424,6 +3424,8 @@ def execute_source_load_step(
                     target_cursor.executemany(target_insert_sql, rows)
                     affected_rows += len(rows)
 
+            if step.name == "product_performance_daily":
+                validate_product_performance_result(target_conn, schemas, params)
             target_conn.commit()
             log_task(target_conn, schemas, step.name, params, "success", affected_rows, started_at)
             print(f"[success] {step.name}: affected_rows={affected_rows}")
@@ -3440,6 +3442,38 @@ def execute_source_load_step(
                 file=sys.stderr,
             )
             ensure_live_source_connection(source_conn)
+
+
+def validate_product_performance_result(
+    conn,
+    schemas: SchemaConfig,
+    params: dict[str, object],
+) -> int:
+    with conn.cursor() as cursor:
+        cursor.execute(
+            render_sql(
+                """
+                select count(*) as row_count
+                from etl_datasync.dashboard_product_performance_daily
+                where dt_date = %(biz_date)s
+                """,
+                schemas,
+            ),
+            params,
+        )
+        row = cursor.fetchone() or {}
+    row_count = int(row.get("row_count") or 0)
+    if row_count <= 0:
+        raise RuntimeError(
+            "Business result validation failed: "
+            f"product_performance_daily biz_date={params['biz_date']} has 0 rows. "
+            "The remote product-performance source is not ready."
+        )
+    print(
+        "[success] product_performance_business_result: "
+        f"biz_date={params['biz_date']} rows={row_count}"
+    )
+    return row_count
 
 
 def product_daily_is_empty(conn, schemas: SchemaConfig) -> bool:

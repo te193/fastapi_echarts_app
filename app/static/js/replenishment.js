@@ -8,6 +8,12 @@
   var LEVEL_SUFFICIENT = "\u5e93\u5b58\u5145\u8db3";
   var LEVEL_ZERO_SALES = "\u65e5\u9500\u4e3a0";
   var LEVEL_HISTORY_RECOVERY = "\u5386\u53f2\u515c\u5e95";
+  var CATEGORY_MIX_ORDER = [
+    "\u95ee\u9898\u4ea7\u54c1",
+    "\u7626\u72d7\u4ea7\u54c1",
+    "\u6f5c\u529b\u4ea7\u54c1",
+    "\u660e\u661f\u4ea7\u54c1"
+  ];
   var LEVEL_HELP = {};
   LEVEL_HELP[LEVEL_URGENT] = [
     "\u5224\u5b9a\uff1a\u5e93\u5b58\u652f\u6491\u5929\u6570 <= 35 \u5929\u3002",
@@ -69,13 +75,13 @@
     allStores: "\u5168\u90e8\u5e97\u94fa",
     replenishSku: "\u9700\u8981\u8865\u8d27 MSKU",
     replenishValue: "\u8865\u8d27\u8d27\u503c",
-    skuCount: "\u57fa\u7840\u6c60 MSKU",
+    skuCount: "\u5f53\u65e5\u603b MSKU",
     detailRows: "\u660e\u7ec6\u884c\u6570",
     calcMsku: "\u8fdb\u5165\u8865\u8d27\u8ba1\u7b97",
     replenishQty: "\u8865\u8d27\u6570\u91cf",
     avgSupportDays: "\u5e73\u5747\u652f\u6491\u5929\u6570",
     actionLayers: "\u8865\u8d27\u5206\u5c42",
-    basePool: "\u57fa\u7840\u6c60\u5206\u5e03",
+    basePool: "\u6d4b\u7b97\u8303\u56f4\u5206\u5e03",
     layerRank: "\u5c42\u7ea7",
     allMsku: "\u5168\u91cf MSKU",
     calcQty: "\u9700\u8865 SKU",
@@ -109,7 +115,7 @@
     salableDailySales: "\u53ef\u552e\u65e5\u9500",
     salesAmount: "\u9500\u552e\u989d",
     profit: "\u8ba2\u5355\u6bdb\u5229\u6da6",
-    avgRanking: "\u6700\u540e\u6392\u540d",
+    avgRanking: "\u6700\u540e\u4e00\u5929\u6392\u540d",
     bestRanking: "\u6700\u597d\u6392\u540d",
     worstRanking: "\u6700\u5dee\u6392\u540d",
     conversionRate: "\u8f6c\u5316\u7387",
@@ -290,13 +296,14 @@
       countryDrawer.period_days = Number(button.dataset.countryPeriod || 30);
       fetchCountryMetrics();
     });
-    elements.countryMetricsWrap.addEventListener("click", function (event) {
+    document.addEventListener("click", function (event) {
       var button = event.target.closest("[data-margin-price-key]");
       if (!button) return;
       event.preventDefault();
       event.stopPropagation();
+      event.stopImmediatePropagation();
       toggleMarginPricePopover(button, button.dataset.marginPriceKey || "");
-    });
+    }, true);
     document.addEventListener("click", function (event) {
       if (!marginPricePopover) return;
       if (event.target.closest(".margin-price-popover") || event.target.closest("[data-margin-price-key]")) return;
@@ -357,7 +364,7 @@
       [text.replenishSku, formatNumber(s.calc_msku_count), "primary", "\u8865", "\u7d27\u6025/\u5efa\u8bae/\u8ba1\u5212\u4e09\u5c42\u5408\u8ba1"],
       [text.replenishQty, formatNumber(s.replenish_qty), "quantity", "\u6570", "\u6309\u7bb1\u89c4\u6574\u540e\u7684\u8865\u8d27\u603b\u6570"],
       [text.replenishValue, formatCurrency(s.replenish_cost), "value", "\u00a5", "\u6309\u91c7\u8d2d\u4ef7\u805a\u5408"],
-      [text.skuCount, formatNumber(s.all_msku_count || s.sku_count), "context", "\u6c60", "\u5f53\u65e5\u57fa\u7840\u6c60"],
+      [text.skuCount, formatNumber(s.all_msku_count || s.sku_count), "context", "\u603b", "\u53c2\u4e0e\u8865\u8d27\u6d4b\u7b97"],
       [LEVEL_SUFFICIENT + " / " + LEVEL_ZERO_SALES, formatNumber((s.sufficient_count || 0) + (s.zero_sales_count || 0)), "context", "\u4f59", "\u4e0d\u8fdb\u5165\u8865\u8d27\u8ba1\u7b97"]
     ];
     elements.summaryGrid.innerHTML = cards.map(function (card) {
@@ -479,7 +486,18 @@
   }
 
   function renderCategoryMix(rows, total, level) {
-    var items = (rows || []).filter(function (row) { return Number(row.sku_count || 0) > 0; });
+    var itemMap = {};
+    (rows || []).forEach(function (row) {
+      if (!row || !row.category) return;
+      itemMap[row.category] = row;
+    });
+    var orderedItems = CATEGORY_MIX_ORDER.map(function (category) {
+      return itemMap[category];
+    }).filter(Boolean);
+    var extraItems = (rows || []).filter(function (row) {
+      return row && row.category && CATEGORY_MIX_ORDER.indexOf(row.category) < 0;
+    });
+    var items = orderedItems.concat(extraItems).filter(function (row) { return Number(row.sku_count || 0) > 0; });
     if (!items.length) return "";
     var denominator = Number(total || 0) || items.reduce(function (sum, row) {
       return sum + Number(row.sku_count || 0);
@@ -718,10 +736,7 @@
     })).join("");
     Array.from(elements.levelTabs.querySelectorAll("[data-level]")).forEach(function (node) {
       node.addEventListener("click", function () {
-        state.level = this.dataset.level || "all";
-        state.category = "all";
-        state.page = 1;
-        render();
+        selectLayerDetails(this.dataset.level || "all", "all");
       });
     });
   }

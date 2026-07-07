@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$TaskName = "DashboardDailyUpdate",
-    [string]$TaskTime = "10:00",
+    [string]$TaskTime = "09:00",
     [switch]$SkipInstall,
     [switch]$SkipConnectionTest,
     [switch]$SkipScheduledTask,

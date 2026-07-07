@@ -1035,12 +1035,12 @@ class ReplenishmentDataService:
         clauses = ["1 = 1"]
         params: dict[str, Any] = {"snapshot_date": selected_date, "prev_date": prev_date}
         if category and category != "all":
-            unknown_category = "\u672a\u5206\u7c7b"
             clauses.append(
-                f"(coalesce(cur_category, '{unknown_category}') = %(category)s "
-                f"or coalesce(prev_category, '{unknown_category}') = %(category)s)"
+                "(coalesce(cur_category, %(uncategorized)s) = %(category)s "
+                "or coalesce(prev_category, %(uncategorized)s) = %(category)s)"
             )
             params["category"] = category
+            params["uncategorized"] = "\u672a\u5206\u7c7b"
         if site and site != "all":
             clauses.append("country_category = %(site)s")
             params["site"] = site

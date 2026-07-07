@@ -46,7 +46,7 @@
         state.snapshot_date = dateButton.getAttribute("data-snapshot-date");
         state.return_day = 0;
         closeSnapshotCalendar();
-        setSnapshotDateLabel(state.snapshot_date);
+        setSnapshotDateLabel(displayDateForSnapshot(state.snapshot_date));
         state.page = 1;
         render();
       }
@@ -134,7 +134,7 @@
           scrollToTableAfterRender = false;
           el.tableWrap.scrollIntoView({ behavior: "smooth", block: "start" });
         }
-        el.periodHint.textContent = "总览、矩阵和明细均截至统计日 " + (payload.snapshot_date || "-") + "，按 MSKU 最新状态展示。";
+        el.periodHint.textContent = "总览、矩阵和明细均截至统计日 " + (displayDateForSnapshot(payload.snapshot_date) || "-") + "，按 MSKU 最新状态展示。";
       })
       .catch(function (error) {
         console.error(error);
@@ -195,17 +195,18 @@
     if (options.indexOf(state.snapshot_date) < 0) {
       state.snapshot_date = selectedDate && options.indexOf(selectedDate) >= 0 ? selectedDate : (options[0] || selectedDate || "");
     }
-    state.calendar_month = state.calendar_month || monthKey(state.snapshot_date || options[0]);
-    if (state.snapshot_date && monthKey(state.snapshot_date) !== state.calendar_month && !el.snapshotCalendarPanel.hidden) {
-      state.calendar_month = monthKey(state.snapshot_date);
+    var displayDate = displayDateForSnapshot(state.snapshot_date || options[0]);
+    state.calendar_month = state.calendar_month || monthKey(displayDate);
+    if (displayDate && monthKey(displayDate) !== state.calendar_month && !el.snapshotCalendarPanel.hidden) {
+      state.calendar_month = monthKey(displayDate);
     }
-    setSnapshotDateLabel(state.snapshot_date);
+    setSnapshotDateLabel(displayDateForSnapshot(state.snapshot_date));
     renderSnapshotCalendar();
   }
 
   function toggleSnapshotCalendar() {
     if (el.snapshotCalendarPanel.hidden) {
-      state.calendar_month = monthKey(state.snapshot_date || state.available_dates[0]);
+      state.calendar_month = monthKey(displayDateForSnapshot(state.snapshot_date || state.available_dates[0]));
       renderSnapshotCalendar();
       el.snapshotCalendarPanel.hidden = false;
       el.snapshotDateButton.setAttribute("aria-expanded", "true");
@@ -224,9 +225,9 @@
   }
 
   function renderSnapshotCalendar() {
-    var month = state.calendar_month || monthKey(state.snapshot_date || state.available_dates[0]);
+    var month = state.calendar_month || monthKey(displayDateForSnapshot(state.snapshot_date || state.available_dates[0]));
     if (!month) {
-      el.snapshotCalendarPanel.innerHTML = '<div class="snapshot-calendar-empty">暂无已生成返场结果的日期</div>';
+      el.snapshotCalendarPanel.innerHTML = '<div class="snapshot-calendar-empty">暂无已生成返场结果的截至日期</div>';
       return;
     }
     state.calendar_month = month;
@@ -237,9 +238,11 @@
     var daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
     var leading = (firstDay.getDay() + 6) % 7;
     var available = {};
-    state.available_dates.forEach(function (dateValue) {
-      available[dateValue] = true;
+    state.available_dates.forEach(function (snapshotDate) {
+      var displayDate = displayDateForSnapshot(snapshotDate);
+      available[displayDate] = snapshotDate;
     });
+    var activeDisplayDate = displayDateForSnapshot(state.snapshot_date);
 
     var html = [
       '<div class="snapshot-calendar-head">',
@@ -258,19 +261,32 @@
     }
     for (var dayNumber = 1; dayNumber <= daysInMonth; dayNumber += 1) {
       var dateValue = year + "-" + pad2(monthIndex + 1) + "-" + pad2(dayNumber);
-      var enabled = !!available[dateValue];
-      var active = dateValue === state.snapshot_date;
+      var snapshotDate = available[dateValue] || "";
+      var enabled = !!snapshotDate;
+      var active = dateValue === activeDisplayDate;
       html.push(
         '<button type="button" class="snapshot-calendar-day' +
         (enabled ? "" : " disabled") +
         (active ? " active" : "") +
         '" ' +
-        (enabled ? 'data-snapshot-date="' + dateValue + '"' : "disabled") +
+        (enabled ? 'data-snapshot-date="' + snapshotDate + '"' : "disabled") +
         '>' + dayNumber + '</button>'
       );
     }
-    html.push('</div><p class="snapshot-calendar-foot">只显示已生成返场结果的日期</p>');
+    html.push('</div><p class="snapshot-calendar-foot">只显示已生成返场结果的截至日期</p>');
     el.snapshotCalendarPanel.innerHTML = html.join("");
+  }
+
+  function displayDateForSnapshot(snapshotDate) {
+    return addDays(snapshotDate, 1);
+  }
+
+  function addDays(dateValue, offset) {
+    if (!dateValue) return "";
+    var parts = String(dateValue).split("-");
+    if (parts.length !== 3) return dateValue;
+    var date = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]) + offset);
+    return date.getFullYear() + "-" + pad2(date.getMonth() + 1) + "-" + pad2(date.getDate());
   }
 
   function monthKey(dateValue) {
@@ -601,14 +617,20 @@
     gridRenderSeq += 1;
     var gridId = "returnGoodsAgGrid-" + gridRenderSeq;
     el.tableWrap.innerHTML = '<div id="' + gridId + '" class="return-goods-ag-grid"></div>';
+    el.tableWrap.onclick = function (event) {
+      var trigger = event.target.closest("[data-return-detail]");
+      if (!trigger) return;
+      event.preventDefault();
+      event.stopPropagation();
+      var eventId = trigger.getAttribute("data-return-event-id");
+      var row = (items || []).find(function (item) { return String(item.return_event_id || "") === String(eventId || ""); });
+      openDetail(row || {});
+    };
     window.kanbanGrid.makeGrid(gridId, {
       rowData: items,
       domLayout: "normal",
       rowHeight: 92,
       overlayNoRowsTemplate: '<span class="ag-empty-copy">暂无返场明细</span>',
-      onRowClicked: function (params) {
-        openDetail(params.data || {});
-      },
       columnDefs: [
         { headerName: "MSKU / SKU", field: "seller_sku_adj", pinned: "left", width: 160, tooltipField: "seller_sku_adj", cellRenderer: function (params) {
           return window.kanbanGrid.subCell(params.data.seller_sku_adj || "-", params.data.local_sku || "");
@@ -627,11 +649,13 @@
         numberColumn("断货前对比销量", "pre_recovery_sales_qty", 136, 0),
         numberColumn("返场后对比销量", "post_recovery_sales_qty", 136, 0),
         { headerName: "销量恢复率", field: "sales_recovery_rate_text", width: 112, type: "numericColumn", cellRenderer: function (params) { return '<span class="ag-number-strong">' + escapeHtml(params.value || "-") + '</span>'; } },
-        { headerName: "国家售价 / 定价", field: "listing_preview", minWidth: 500, flex: 1.7, cellRenderer: function (params) { return renderListingPreviewCell(params.value || {}); } },
+        { headerName: "国家售价 / 定价", field: "listing_preview", minWidth: 500, flex: 1.7, cellRenderer: function (params) { return renderListingPreviewCell(params.value || {}, params.data || {}); } },
         { headerName: "广告概览", field: "listing_preview", width: 260, cellRenderer: function (params) { return renderAdPreviewCell(params.value || {}); } },
                 { headerName: "退出原因", field: "exit_reason", width: 126, cellRenderer: function (params) { return statusPill(params.value || "-"); } },
         { headerName: "预警", field: "warning_type", minWidth: 150, tooltipField: "warning_type", cellRenderer: function (params) { return statusPill(params.value || "-"); } },
-        { headerName: "详情", field: "return_event_id", pinned: "right", width: 92, sortable: false, filter: false, cellRenderer: function () { return '<button class="return-goods-detail-btn" type="button">详情</button>'; } }
+        { headerName: "详情", field: "return_event_id", pinned: "right", width: 92, sortable: false, filter: false, cellRenderer: function (params) {
+          return '<button class="return-goods-detail-btn" type="button" data-return-detail="button" data-return-event-id="' + escapeHtml(params.value || "") + '">详情</button>';
+        } }
       ]
     });
   }
@@ -685,18 +709,19 @@
     el.returnGoodsDetailDrawer.setAttribute("aria-hidden", "true");
   }
 
-  function renderListingPreviewCell(preview) {
+  function renderListingPreviewCell(preview, row) {
     var countries = preview.top_countries || [];
     if (!countries.length) return '<span class="muted">-</span>';
+    var eventId = row && row.return_event_id ? row.return_event_id : "";
     return [
       '<div class="return-goods-listing-preview">',
       countries.map(function (item) {
         return [
-          '<div class="listing-country-line">',
+          '<button class="listing-country-line" type="button" data-return-detail="country" data-return-event-id="' + escapeHtml(eventId) + '">',
           '<span class="listing-country-name">' + escapeHtml(item.country || "-") + '</span>',
           '<span class="listing-price-main">售价 ' + escapeHtml(formatDecimal(item.listing_price)) + '</span>',
           '<span class="listing-price-bench"><em>35% ' + escapeHtml(formatDecimal(item.margin_price_35)) + '</em><em>10% ' + escapeHtml(formatDecimal(item.margin_price_10)) + '</em></span>',
-          '</div>'
+          '</button>'
         ].join("");
       }).join(""),
       (preview.country_count > countries.length ? '<small>共 ' + formatNumber(preview.country_count) + ' 国，详情查看全部</small>' : ''),

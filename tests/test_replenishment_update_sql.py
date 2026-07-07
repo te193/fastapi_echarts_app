@@ -93,6 +93,9 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("dashboard_inventory_daily_snapshot", sql)
         self.assertIn("candidate_start_date", sql)
         self.assertIn("available_salable_days", sql)
+        self.assertNotIn("length(seller_sku_adj) between 5 and 10", sql)
+        self.assertNotIn("seller_name not regexp", sql)
+        self.assertNotIn("seller_name_new not in", sql)
         self.assertNotIn("ops_weekly_rpt_prod_perf_interim", sql)
         self.assertNotIn("ops_weekly_rpt_prod_perf_data_2026", sql)
         self.assertNotIn("etl_dispose_lx_statistics_product_performance_2026", sql)
@@ -115,9 +118,49 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("create temporary table tmp_pur_plan_support_layer_all", sql)
         self.assertIn("create temporary table tmp_pur_plan_replenish_calc", sql)
         self.assertIn("from tmp_pur_plan_replenish_calc;", sql)
+        self.assertNotIn("length(seller_sku_adj) between 5 and 10", sql)
+        self.assertNotIn("seller_name not regexp", sql)
+        self.assertNotIn("seller_name_new not in", sql)
         self.assertNotIn("where support_replenish_level_sort in (1, 2, 3)", sql)
         self.assertNotIn("ops_weekly_rpt_prod_perf_interim", sql)
         self.assertNotIn("ops_weekly_rpt_prod_perf_data_2026", sql)
+
+    def test_replenishment_result_work_statements_avoid_temporary_table_privilege(self):
+        schemas = replenishment_update.SchemaConfig(
+            target_schema="etl_datasync_test",
+            etl_source_schema="etl_datasync",
+            dwd_source_schema="dwd_datasync",
+            pricing_source_schema="temporary_dwd",
+        )
+
+        statements = replenishment_update.build_replenishment_result_statements(schemas)
+        rendered = "\n".join(statements).lower()
+
+        self.assertNotIn("create temporary table", rendered)
+        self.assertNotIn("drop temporary table", rendered)
+        self.assertIn("etl_datasync_test.dashboard_replenishment_work_candidate_keys_v3", rendered)
+        self.assertIn("drop table if exists etl_datasync_test.dashboard_replenishment_work_candidate_keys_v3", rendered)
+        self.assertIn("create table etl_datasync_test.dashboard_replenishment_work_candidate_keys_v3 as", rendered)
+        self.assertIn("insert into etl_datasync_test.dashboard_replenishment_work_candidate_keys_v3", rendered)
+        self.assertIn("insert into etl_datasync_test.dashboard_pur_plan_replenish_data", rendered)
+
+    def test_replenishment_work_tables_are_recreated_each_run(self):
+        schemas = replenishment_update.SchemaConfig(
+            target_schema="etl_datasync_test",
+            etl_source_schema="etl_datasync",
+            dwd_source_schema="dwd_datasync",
+            pricing_source_schema="temporary_dwd",
+        )
+
+        statements = replenishment_update.build_replenishment_result_statements(schemas)
+        rendered = "\n".join(statements).lower()
+
+        self.assertIn("drop table if exists etl_datasync_test.dashboard_replenishment_work_sku_asin_metrics_v3", rendered)
+        self.assertIn("create table etl_datasync_test.dashboard_replenishment_work_sku_asin_metrics_v3 as", rendered)
+        self.assertNotIn(
+            "create table if not exists etl_datasync_test.dashboard_replenishment_work_sku_asin_metrics_v3",
+            rendered,
+        )
 
     def test_replenishment_result_sql_calculates_cost_from_synced_original_sources(self):
         sql = replenishment_update.REPLENISHMENT_RESULT_SQL
@@ -197,13 +240,16 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("base.support_inventory_qty / base.pre_daily_avg_sales", sql)
         self.assertNotIn("left join tmp_prod_perf_sku_follow_metrics m", sql)
 
-    def test_replenishment_need_qty_does_not_double_subtract_purchase_plan_support(self):
+    def test_replenishment_need_qty_does_not_subtract_purchase_plan_twice(self):
         sql = replenishment_update.REPLENISHMENT_RESULT_SQL
 
         self.assertIn("coalesce(r.sc_quantity_purchase_plan, 0) as sc_quantity_purchase_plan", sql)
-        self.assertNotIn("- sc_quantity_purchase_plan as normal_replenish_need_qty", sql)
+        self.assertIn("- local_quantity as pre_normal_replenish_need_qty", sql)
+        self.assertIn("- local_quantity as history_recovery_need_qty", sql)
+        self.assertIn("- local_quantity as normal_replenish_need_qty", sql)
         self.assertNotIn("- sc_quantity_purchase_plan as pre_normal_replenish_need_qty", sql)
         self.assertNotIn("- sc_quantity_purchase_plan as history_recovery_need_qty", sql)
+        self.assertNotIn("- sc_quantity_purchase_plan as normal_replenish_need_qty", sql)
 
     def test_replenishment_qty_only_uses_support_candidate_layers(self):
         sql = replenishment_update.REPLENISHMENT_RESULT_SQL
@@ -272,6 +318,22 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertEqual(1, params["candidate_days"])
         self.assertEqual(date(2024, 10, 3), params["history_start_date"])
         self.assertEqual(date(2026, 3, 31), params["history_end_date"])
+
+    def test_replenishment_result_validation_rejects_empty_snapshot(self):
+        conn = ResultCountConnection(0)
+        schemas = replenishment_update.SchemaConfig(
+            target_schema="etl_datasync_test",
+            etl_source_schema="etl_datasync",
+            dwd_source_schema="dwd_datasync",
+            pricing_source_schema="temporary_dwd",
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "2026-06-27.*0 rows"):
+            replenishment_update.validate_replenishment_result(
+                conn,
+                schemas,
+                {"snapshot_date": date(2026, 6, 27), "biz_date": date(2026, 6, 26)},
+            )
 
     def test_history_sync_runs_by_year_source_table(self):
         ranges = list(
@@ -378,3 +440,28 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ResultCountCursor:
+    def __init__(self, row_count):
+        self.row_count = row_count
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def execute(self, sql, params=None):
+        return 1
+
+    def fetchone(self):
+        return {"row_count": self.row_count}
+
+
+class ResultCountConnection:
+    def __init__(self, row_count):
+        self.row_count = row_count
+
+    def cursor(self):
+        return ResultCountCursor(self.row_count)

@@ -8539,6 +8539,7 @@ body[data-page="return_goods"] .return-goods-ag-grid .ag-cell {
 }
 
 .listing-country-line {
+  appearance: none;
   display: grid;
   grid-template-rows: auto auto auto;
   align-content: center;
@@ -8553,6 +8554,14 @@ body[data-page="return_goods"] .return-goods-ag-grid .ag-cell {
   color: #24445f;
   font-size: 11px;
   line-height: 1.2;
+  cursor: pointer;
+  text-align: left;
+}
+
+.listing-country-line:hover,
+.listing-country-line:focus-visible {
+  border-color: #95c5ff;
+  background: #eef6ff;
 }
 
 .listing-country-name {

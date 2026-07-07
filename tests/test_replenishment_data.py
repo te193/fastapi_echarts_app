@@ -252,6 +252,24 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
         self.assertEqual(0.2, item["order_gross_margin"])
         self.assertEqual(12.35, item["avg_ranking"])
 
+    def test_level_flow_category_filter_uses_sql_parameters(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+
+        filters, params = service._level_flow_filters(
+            selected_date="2026-06-23",
+            prev_date="2026-06-22",
+            category="问题产品",
+            site="all",
+            store="all",
+            keyword="",
+        )
+
+        self.assertIn("coalesce(cur_category, %(uncategorized)s) = %(category)s", filters)
+        self.assertIn("coalesce(prev_category, %(uncategorized)s) = %(category)s", filters)
+        self.assertEqual("问题产品", params["category"])
+        self.assertEqual("未分类", params["uncategorized"])
+        self.assertNotIn("'未分类'", filters)
+
     def test_build_level_flow_payload_classifies_level_changes(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)
         rows = [

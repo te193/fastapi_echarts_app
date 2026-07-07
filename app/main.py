@@ -31,6 +31,91 @@ TWO_DECIMAL_EXPORT_COLUMNS = {
     "margin_price_10",
 }
 CSV_FORMULA_PREFIXES = ("=", "+", "-", "@")
+CSV_HEADER_LABELS = {
+    "snapshot_date": "快照日期",
+    "period_start": "周期开始",
+    "period_end": "周期结束",
+    "item_key": "商品键",
+    "stat_period": "统计周期",
+    "dt_year": "年",
+    "dt_week": "周",
+    "dt_month": "月",
+    "dt_date": "日期",
+    "seller_name_new": "店铺",
+    "seller_name": "原店铺",
+    "seller_sku_adj": "MSKU",
+    "seller_sku": "卖家SKU",
+    "country_category": "国家分组",
+    "country": "国家",
+    "local_sku": "SKU",
+    "sales_qty": "销量",
+    "sales_amount": "销售额",
+    "sales_amount_ex_tax": "不含税销售额",
+    "order_gross_profit": "毛利润",
+    "raw_order_gross_profit": "原始毛利润",
+    "order_gross_margin": "毛利率",
+    "margin_band": "毛利分层",
+    "settlement_gross_profit": "结算毛利润",
+    "filter_flag": "纳入筛选",
+    "current_price_cny": "当前售价(CNY)",
+    "price_currency": "币种",
+    "current_price": "当前售价",
+    "limit_price": "限价",
+    "limit_price_10": "10毛利定价",
+    "limit_price_adj": "调整后限价",
+    "limit_price_without_ad": "不含广告限价",
+    "over_limit_flag": "是否超限价",
+    "shipping_method": "发货方式",
+    "target_margin": "目标毛利率",
+    "in_stock_days": "有货天数",
+    "stat_days": "统计天数",
+    "abnormal_days": "异常天数",
+    "all_abnormal_flag": "全周期异常",
+    "abnormal_flag_count": "异常标记次数",
+    "daily_sales": "日销",
+    "daily_sales_in_stock_days": "有货日销",
+    "daily_sales_in_stock_band": "有货日销分层",
+    "daily_sales_band": "日销分层",
+    "ad_spend": "广告花费",
+    "ad_orders": "广告订单量",
+    "ad_sales": "广告销售额",
+    "ad_clicks": "广告点击量",
+    "ad_impressions": "广告曝光量",
+    "acos": "ACOS",
+    "tacos": "TACOS",
+    "ctr": "CTR",
+    "sessions_total": "Sessions",
+    "ranking": "排名",
+    "return_count": "退货量",
+    "return_amount": "退货额",
+    "net_amount": "净销售额",
+    "afn_fulfillable_quantity": "AFN可售库存",
+    "fba_total_inventory": "FBA总库存",
+    "fba_total_inventory_cost": "FBA总库存成本",
+    "fba_available_inventory": "FBA可用库存",
+    "fba_available_inventory_cost": "FBA可用库存成本",
+    "fba_sellable_inventory": "FBA可售库存",
+    "pending_transfer": "预留调拨",
+    "transferring_qty": "调拨在途",
+    "pending_shipment": "待发货",
+    "unsellable_inventory": "不可售库存",
+    "planned_inbound": "计划入库",
+    "actual_in_transit": "实际在途",
+    "under_investigation": "调查中库存",
+    "total_available_inventory": "总可用库存",
+    "local_sellable_inventory": "本地可售库存",
+    "local_stock_sellable_days": "本地可售天数",
+    "price": "当前售价",
+    "org_currency_icon": "币种",
+    "price_cny": "售价(CNY)",
+    "tax_inclusive_price": "含税限价",
+    "tax_inclusive_price_noad": "不含广告限价",
+    "tax_inclusive_price_adj": "调整后限价",
+    "margin_price_35": "35毛利定价",
+    "margin_price_10": "10毛利定价",
+    "created_at": "创建时间",
+    "updated_at": "更新时间",
+}
 
 app = FastAPI(title="产品分层看板", version="1.0.0")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
@@ -69,7 +154,7 @@ def csv_cell_value(value, column: str | None = None):
 
 
 def csv_header_value(column: str) -> str:
-    return COLUMN_COMMENTS.get(column, column)
+    return COLUMN_COMMENTS.get(column) or CSV_HEADER_LABELS.get(column, column)
 
 
 def build_filters(
@@ -163,6 +248,14 @@ def replenishment_page(request: Request) -> HTMLResponse:
         request,
         "replenishment.html",
         {"page": "replenishment", "title": "补货计划"},
+    )
+
+@app.get("/returned-product-tags-dashboard", response_class=HTMLResponse)
+def returned_products_dashboard_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "returned-product-tags-dashboard.html",
+        {"page": "returned_products_dashboard", "title": "返厂跟踪"},
     )
 
 
