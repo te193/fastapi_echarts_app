@@ -1011,6 +1011,11 @@ class ReplenishmentDataService:
         filters, params = self._level_flow_filters(selected_date, prev_date, category, site, store, keyword)
         prev_category_expr = self._qualify_product_category_expr(category_expr, "p")
         cur_category_expr = self._qualify_product_category_expr(category_expr, "c")
+        prev_level_expr = self._display_level_expr("p")
+        prev_level_sort_expr = self._display_level_sort_expr("p")
+        cur_level_expr = self._display_level_expr("c")
+        cur_level_sort_expr = self._display_level_sort_expr("c")
+        query_params = self._with_display_level_params(params)
         with conn.cursor() as cursor:
             cursor.execute(
                 f"""
@@ -1021,10 +1026,10 @@ class ReplenishmentDataService:
                         coalesce(c.seller_name_new, p.seller_name_new) as seller_name_new,
                         coalesce(c.seller_sku_adj, p.seller_sku_adj) as seller_sku_adj,
                         coalesce(c.max_sku, p.max_sku) as max_sku,
-                        p.support_replenish_level as prev_level,
-                        p.support_replenish_level_sort as prev_level_sort,
-                        c.support_replenish_level as cur_level,
-                        c.support_replenish_level_sort as cur_level_sort,
+                        case when p.seller_sku_adj is null then null else {prev_level_expr} end as prev_level,
+                        case when p.seller_sku_adj is null then null else {prev_level_sort_expr} end as prev_level_sort,
+                        {cur_level_expr} as cur_level,
+                        {cur_level_sort_expr} as cur_level_sort,
                         p.replenish_qty as prev_replenish_qty,
                         c.replenish_qty as cur_replenish_qty,
                         p.replenish_cost as prev_replenish_cost,
@@ -1060,8 +1065,8 @@ class ReplenishmentDataService:
                         p.seller_name_new,
                         p.seller_sku_adj,
                         p.max_sku,
-                        p.support_replenish_level as prev_level,
-                        p.support_replenish_level_sort as prev_level_sort,
+                        {prev_level_expr} as prev_level,
+                        {prev_level_sort_expr} as prev_level_sort,
                         null as cur_level,
                         null as cur_level_sort,
                         p.replenish_qty as prev_replenish_qty,
@@ -1098,7 +1103,7 @@ class ReplenishmentDataService:
                 where {filters}
                 order by coalesce(cur_level_sort, prev_level_sort, 99), seller_sku_adj
                 """,
-                params,
+                query_params,
             )
             rows = cursor.fetchall()
         return rows

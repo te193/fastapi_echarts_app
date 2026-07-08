@@ -250,15 +250,6 @@ def replenishment_page(request: Request) -> HTMLResponse:
         {"page": "replenishment", "title": "补货计划"},
     )
 
-@app.get("/returned-product-tags-dashboard", response_class=HTMLResponse)
-def returned_products_dashboard_page(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse(
-        request,
-        "returned-product-tags-dashboard.html",
-        {"page": "returned_products_dashboard", "title": "返厂跟踪"},
-    )
-
-
 @app.get("/replenishment-tracking", response_class=HTMLResponse)
 def replenishment_tracking_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(

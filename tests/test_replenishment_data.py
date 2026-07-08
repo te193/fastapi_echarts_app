@@ -321,6 +321,51 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
         self.assertNotIn("support_replenish_level = %(level)s", filters)
         self.assertEqual("库存充足", params["level"])
 
+    def test_level_flow_query_uses_display_layer_expression(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+        captured = {}
+
+        class Cursor:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def execute(self, sql, params):
+                captured["sql"] = sql
+                captured["params"] = params
+
+            def fetchall(self):
+                return []
+
+        class Conn:
+            def cursor(self):
+                return Cursor()
+
+        service._level_flow_rows(
+            Conn(),
+            selected_date="2026-07-08",
+            prev_date="2026-07-07",
+            category="all",
+            site="all",
+            store="all",
+            keyword="",
+            category_expr="abcd_category",
+            level="all",
+            flow_type="all",
+        )
+
+        sql = captured["sql"]
+        self.assertIn("case when p.seller_sku_adj is null then null else case when", sql)
+        self.assertIn("case when coalesce(c.asin_merge_flag, 0) = 1", sql)
+        self.assertIn("case when coalesce(p.asin_merge_flag, 0) = 1", sql)
+        self.assertNotIn("p.support_replenish_level as prev_level", sql)
+        self.assertNotIn("c.support_replenish_level as cur_level", sql)
+        self.assertNotIn("p.support_replenish_level_sort as prev_level_sort", sql)
+        self.assertNotIn("c.support_replenish_level_sort as cur_level_sort", sql)
+        self.assertIn("level_sufficient", captured["params"])
+
     def test_history_recovery_display_replenish_qty_restores_one_box(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)
 

@@ -29,7 +29,6 @@
           <div class="nav-v2-section-title compact"><span>☆ 常用</span></div>
           <div class="nav-v2-chips">
             <a href="/sales-role">销售角色</a>
-            <a href="/returned-product-tags-dashboard">返厂跟踪</a>
             <a href="/detail">产品明细</a>
             <a href="/alerts">异常预警</a>
           </div>
@@ -86,10 +85,10 @@
             </div>
           </section>
 
-          <section class="nav-v2-group {% if page in ['inventory_weekly', 'replenishment', 'return_goods', 'returned_products_dashboard'] %}open{% endif %}" data-nav-group="fulfillment">
-            <button class="nav-v2-group-toggle" type="button" aria-expanded="{% if page in ['inventory_weekly', 'replenishment', 'return_goods', 'returned_products_dashboard'] %}true{% else %}false{% endif %}">
+          <section class="nav-v2-group {% if page in ['inventory_weekly', 'replenishment', 'return_goods'] %}open{% endif %}" data-nav-group="fulfillment">
+            <button class="nav-v2-group-toggle" type="button" aria-expanded="{% if page in ['inventory_weekly', 'replenishment', 'return_goods'] %}true{% else %}false{% endif %}">
               <span><i>⌄</i> 库存补货相关</span>
-              <b>4</b>
+              <b>3</b>
             </button>
             <div class="nav-v2-group-links">
               <a class="nav-v2-link {% if page == 'inventory_weekly' %}active{% endif %}" href="/inventory-weekly">
@@ -103,10 +102,6 @@
               <a class="nav-v2-link {% if page == 'return_goods' %}active{% endif %}" href="/return-goods">
                 <span class="nav-v2-icon">返</span>
                 <span><strong>返场品</strong><small>返场分析 / 表现</small></span>
-              </a>
-              <a class="nav-v2-link {% if page == 'returned_products_dashboard' %}active{% endif %}" href="/returned-product-tags-dashboard">
-                <span class="nav-v2-icon">跟</span>
-                <span><strong>返厂跟踪</strong><small>返厂标签 / 状态</small></span>
               </a>
             </div>
           </section>

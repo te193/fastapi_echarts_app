@@ -14,8 +14,6 @@ $StdoutLog = Join-Path $LogDir "etl_daily_run_$RunStamp.log"
 $StderrLog = Join-Path $LogDir "etl_daily_run_$RunStamp.err.log"
 $ReplenishmentStdoutLog = Join-Path $LogDir "etl_replenishment_run_$RunStamp.log"
 $ReplenishmentStderrLog = Join-Path $LogDir "etl_replenishment_run_$RunStamp.err.log"
-$ReplenishmentTrackingStdoutLog = Join-Path $LogDir "etl_replenishment_tracking_run_$RunStamp.log"
-$ReplenishmentTrackingStderrLog = Join-Path $LogDir "etl_replenishment_tracking_run_$RunStamp.err.log"
 $ReturnGoodsStdoutLog = Join-Path $LogDir "etl_return_goods_run_$RunStamp.log"
 $ReturnGoodsStderrLog = Join-Path $LogDir "etl_return_goods_run_$RunStamp.err.log"
 $DingTalkNotifyScript = Join-Path $ProjectRoot "scripts\notify_daily_task_dingtalk.py"
@@ -48,8 +46,6 @@ function Send-DashboardDingTalkNotification {
         "--dashboard-stderr", $StderrLog,
         "--replenishment-stdout", $ReplenishmentStdoutLog,
         "--replenishment-stderr", $ReplenishmentStderrLog,
-        "--tracking-stdout", $ReplenishmentTrackingStdoutLog,
-        "--tracking-stderr", $ReplenishmentTrackingStderrLog,
         "--return-goods-stdout", $ReturnGoodsStdoutLog,
         "--return-goods-stderr", $ReturnGoodsStderrLog
     )
@@ -125,23 +121,7 @@ if ($ReplenishmentExitCode -ne 0) {
 }
 
 Write-Host "Replenishment ETL finished at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-Write-Host "Replenishment tracking ETL started at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-Write-Host "Replenishment tracking stdout log : $ReplenishmentTrackingStdoutLog"
-Write-Host "Replenishment tracking stderr log : $ReplenishmentTrackingStderrLog"
-
-$PreviousErrorActionPreference = $ErrorActionPreference
-$ErrorActionPreference = "Continue"
-& $PythonExe -m etl.replenishment_tracking_update --rolling-days 30 @args > $ReplenishmentTrackingStdoutLog 2> $ReplenishmentTrackingStderrLog
-$ReplenishmentTrackingExitCode = $LASTEXITCODE
-$ErrorActionPreference = $PreviousErrorActionPreference
-
-if ($ReplenishmentTrackingExitCode -ne 0) {
-    Send-DashboardDingTalkNotification -Status "failed" -Stage "replenishment_tracking" -ExitCode $ReplenishmentTrackingExitCode -ErrorMessage "Replenishment tracking ETL failed with exit code $ReplenishmentTrackingExitCode. See $ReplenishmentTrackingStdoutLog and $ReplenishmentTrackingStderrLog."
-    Write-Error "Replenishment tracking ETL failed with exit code $ReplenishmentTrackingExitCode. See $ReplenishmentTrackingStdoutLog and $ReplenishmentTrackingStderrLog."
-    exit $ReplenishmentTrackingExitCode
-}
-
-Write-Host "Replenishment tracking ETL finished at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+Write-Host "Replenishment tracking ETL is temporarily skipped."
 Write-Host "Return goods ETL started at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 Write-Host "Return goods stdout log : $ReturnGoodsStdoutLog"
 Write-Host "Return goods stderr log : $ReturnGoodsStderrLog"
@@ -159,5 +139,5 @@ if ($ReturnGoodsExitCode -ne 0) {
 }
 
 Write-Host "Return goods ETL finished at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-Write-Host "Data update strategy includes rolling product refresh, current snapshots, preset period summaries, matrix summaries, replenishment results, replenishment tracking, and return goods."
+Write-Host "Data update strategy includes rolling product refresh, current snapshots, preset period summaries, matrix summaries, replenishment results, and return goods. Replenishment tracking is temporarily skipped."
 Send-DashboardDingTalkNotification -Status "success" -Stage "all" -ExitCode 0
