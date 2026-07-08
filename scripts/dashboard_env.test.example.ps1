@@ -9,7 +9,7 @@ $ErrorActionPreference = "Stop"
 # $env:DASHBOARD_HOST = "127.0.0.1"
 # $env:DASHBOARD_PORT = "8001"
 
-# First phase: reuse the same local database as the application server.
-# Uncomment these only after a separate test database is created.
-# $env:DASHBOARD_DB_NAME = "etl_datasync_test_dev"
-# $env:DASHBOARD_TARGET_SCHEMA = "etl_datasync_test_dev"
+# Replenishment ETL validation must use an isolated schema, not the
+# application database etl_datasync_test.
+# $env:DASHBOARD_DB_NAME = "etl_datasync_replenishment_test"
+# $env:DASHBOARD_TARGET_SCHEMA = "etl_datasync_replenishment_test"

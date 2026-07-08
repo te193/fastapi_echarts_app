@@ -29,6 +29,14 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("primary key (snapshot_date, period_days, country_category, country, seller_name_new, seller_sku_adj)", ddl)
         self.assertIn("max_cg_price", ddl)
         self.assertIn("principal", ddl)
+        self.assertIn("global_tags", ddl)
+        self.assertIn("followed_flag", ddl)
+        self.assertIn("followed_by_count", ddl)
+        self.assertIn("followed_by_links", ddl)
+        self.assertIn("replenish_block_reason", ddl)
+        self.assertIn("asin_merge_flag", ddl)
+        self.assertIn("asin_merge_target", ddl)
+        self.assertIn("asin_merge_reason", ddl)
 
     def test_history_daily_sync_step_loads_fixed_remote_history(self):
         step = replenishment_update.STEPS["history_daily_sync"]
@@ -65,6 +73,8 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
     def test_listing_basic_sync_prefers_real_eu_store_from_inventory(self):
         sql = replenishment_update.SELECT_LISTING_BASIC_SYNC_SQL
 
+        self.assertIn("dwd_datasync.lx_sales_mws_listing", sql)
+        self.assertIn("substring_index(raw.seller_name, '-', 1) as seller_name_new", sql)
         self.assertIn("dwd_datasync.lx_storage_inventory_details", sql)
         self.assertIn("inv_store.sku = sml.local_sku", sql)
         self.assertIn("inv_store.msku = sml.seller_sku", sql)
@@ -85,6 +95,18 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("then '新品'", sql)
         self.assertIn("else '老品'", sql)
         self.assertNotIn("null as new_old_product", sql)
+        self.assertNotIn("length(sml.seller_sku) between 5 and 10", sql)
+
+    def test_listing_basic_sync_aggregates_global_tags_by_marketplace(self):
+        sql = replenishment_update.SELECT_LISTING_BASIC_SYNC_SQL
+        step = replenishment_update.STEPS["listing_basic_sync"]
+
+        self.assertIn("global_tags", step.target_columns)
+        self.assertIn("sml.global_tags", sql)
+        self.assertIn("raw.global_tags", sql)
+        self.assertIn("concat(marketplace, ':', global_tags)", sql)
+        self.assertIn("separator ' | '", sql)
+        self.assertIn("as global_tags", sql)
 
     def test_salable_days_sql_uses_local_daily_sources(self):
         sql = replenishment_update.INSERT_SALABLE_DAYS_SQL
@@ -117,7 +139,10 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("日销为0", sql)
         self.assertIn("create temporary table tmp_pur_plan_support_layer_all", sql)
         self.assertIn("create temporary table tmp_pur_plan_replenish_calc", sql)
-        self.assertIn("from tmp_pur_plan_replenish_calc;", sql)
+        self.assertIn("from tmp_pur_plan_replenish_calc calc", sql)
+        self.assertIn("left join tmp_asin_merge_assignments assign", sql)
+        self.assertIn("global_tags", sql)
+        self.assertIn("l.global_tags", sql)
         self.assertNotIn("length(seller_sku_adj) between 5 and 10", sql)
         self.assertNotIn("seller_name not regexp", sql)
         self.assertNotIn("seller_name_new not in", sql)
@@ -227,7 +252,39 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("coalesce(fo.fllow_flag, 1) as fllow_flag", sql)
         self.assertNotIn("1 as fllow_flag", sql)
 
-    def test_follow_sales_only_affects_replenishment_qty_not_support_layer(self):
+    def test_follow_sales_falls_back_to_top_asin_sales_when_self_asin_missing(self):
+        sql = replenishment_update.REPLENISHMENT_RESULT_SQL
+
+        self.assertIn("tmp_asin_origin_sales_fallback", sql)
+        self.assertIn("row_number() over (", sql)
+        self.assertIn("coalesce(metrics.sales_30, 0) desc", sql)
+        self.assertIn("fallback.origin_seller_name_new", sql)
+        self.assertIn("and not (", sql)
+        self.assertIn("bridge.seller_name_new = fallback.origin_seller_name_new", sql)
+        self.assertIn("bridge.seller_sku_adj = fallback.origin_seller_sku_adj", sql)
+        self.assertNotIn("max(seller_name_new) as self_store_name", sql)
+
+    def test_follow_sales_adds_origin_sales_for_all_short_windows(self):
+        sql = replenishment_update.REPLENISHMENT_RESULT_SQL
+
+        self.assertIn("else coalesce(m.sales_30, 0) + coalesce(fo.origin_sales_30, 0)", sql)
+        self.assertIn("else coalesce(m.sales_14, 0) + coalesce(fo.origin_sales_14, 0)", sql)
+        self.assertIn("else coalesce(m.sales_7, 0) + coalesce(fo.origin_sales_7, 0)", sql)
+        self.assertIn("else coalesce(m.sales_3, 0) + coalesce(fo.origin_sales_3, 0)", sql)
+
+    def test_follow_sales_uses_origin_salable_days_for_inherited_sales(self):
+        sql = replenishment_update.REPLENISHMENT_RESULT_SQL
+
+        self.assertIn("origin_r_30d_salable_days", sql)
+        self.assertIn("origin_r_14d_salable_days", sql)
+        self.assertIn("origin_r_7d_salable_days", sql)
+        self.assertIn("origin_r_3d_salable_days", sql)
+        self.assertIn("greatest(coalesce(ks.r_30d_salable_days, 0), coalesce(fm.origin_r_30d_salable_days, 0))", sql)
+        self.assertIn("greatest(coalesce(ks.r_14d_salable_days, 0), coalesce(fm.origin_r_14d_salable_days, 0))", sql)
+        self.assertIn("greatest(coalesce(ks.r_7d_salable_days, 0), coalesce(fm.origin_r_7d_salable_days, 0))", sql)
+        self.assertIn("greatest(coalesce(ks.r_3d_salable_days, 0), coalesce(fm.origin_r_3d_salable_days, 0))", sql)
+
+    def test_follow_sales_affects_replenishment_qty_and_support_layer(self):
         sql = replenishment_update.REPLENISHMENT_RESULT_SQL
 
         self.assertIn("left join tmp_prod_perf_sku_metrics m", sql)
@@ -237,8 +294,65 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("as final_adjusted_daily_sales_30d", sql)
         self.assertIn("end as daily_avg_sales", sql)
         self.assertIn("pre_replenish_comp_months * 30 * coalesce(daily_avg_sales, 0)", sql)
-        self.assertIn("base.support_inventory_qty / base.pre_daily_avg_sales", sql)
+        self.assertIn("base.support_inventory_qty / base.daily_avg_sales", sql)
+        self.assertNotIn("base.support_inventory_qty / base.pre_daily_avg_sales", sql)
         self.assertNotIn("left join tmp_prod_perf_sku_follow_metrics m", sql)
+
+    def test_replenishment_result_marks_followed_origin_and_blocks_replenishment(self):
+        sql = replenishment_update.REPLENISHMENT_RESULT_SQL
+
+        self.assertIn("tmp_followed_origin_links", sql)
+        self.assertIn("followed_by_count", sql)
+        self.assertIn("followed_by_links", sql)
+        self.assertIn("from tmp_prod_perf_sku_asin_metrics origin", sql)
+        self.assertIn("inner join etl_datasync.dashboard_replenishment_listing_basic_sync follower", sql)
+        self.assertIn("follower.max_asin = origin.asin", sql)
+        self.assertIn("follower.seller_sku", sql)
+        self.assertIn("case when followed_by_count > 0 then 1 else 0 end as followed_flag", sql)
+        self.assertIn("case when coalesce(followed_flag, 0) = 1 then 0", sql)
+        self.assertIn("then '被跟卖点不补货'", sql)
+        self.assertIn("replenish_block_reason", sql)
+
+    def test_replenishment_candidate_keys_include_listing_follow_links_only(self):
+        sql = replenishment_update.REPLENISHMENT_RESULT_SQL
+
+        self.assertIn("tmp_pur_plan_follow_listing_asins", sql)
+        self.assertIn("insert into tmp_pur_plan_candidate_keys", sql)
+        self.assertIn("from etl_datasync.dashboard_replenishment_listing_basic_sync listing", sql)
+        self.assertIn("inner join tmp_pur_plan_follow_listing_asins follow_asin", sql)
+        self.assertIn("on listing.country_category = follow_asin.country_category", sql)
+        self.assertIn("and listing.max_asin = follow_asin.max_asin", sql)
+        self.assertIn("left join tmp_pur_plan_candidate_keys existing", sql)
+        self.assertIn("left join etl_datasync.dashboard_replenishment_self_asin_sync listing_self", sql)
+        self.assertIn("and listing.max_asin = listing_self.asin", sql)
+        self.assertIn("where existing.seller_sku_adj is null", sql)
+        self.assertIn("and listing_self.asin is null", sql)
+        self.assertIn("and listing.seller_sku not like 'amzn.%%'", sql)
+        self.assertNotIn("from etl_datasync.dashboard_replenishment_listing_basic_sync listing\nwhere", sql)
+
+    def test_replenishment_result_merges_follow_groups_by_asin_once(self):
+        sql = replenishment_update.REPLENISHMENT_RESULT_SQL
+
+        self.assertIn("tmp_asin_merge_groups", sql)
+        self.assertIn("tmp_asin_merge_targets", sql)
+        self.assertIn("tmp_asin_merge_assignments", sql)
+        self.assertIn("group by country_category, max_asin", sql)
+        self.assertIn("having link_count > 1", sql)
+        self.assertIn("has_follow_link > 0 or has_followed_origin > 0", sql)
+        self.assertIn("max(coalesce(daily_avg_sales, 0)) as group_daily_avg_sales", sql)
+        self.assertIn("sum(coalesce(support_inventory_qty, 0)) as group_support_inventory_qty", sql)
+        self.assertIn("group_replenish_need_qty", sql)
+        self.assertIn("row_number() over (partition by calc.country_category, calc.max_asin", sql)
+        self.assertIn("eligible_target_link_count", sql)
+        self.assertIn("case when calc.sales_status <> '停售中' then 0 else 1 end", sql)
+        self.assertNotIn("calc.sales_status <> '停售中'\n      and grp.", sql)
+        self.assertNotIn("eligible_live_link_count", sql)
+        self.assertIn("同ASIN库存充足不补货", sql)
+        self.assertIn("同ASIN已合并至主链接", sql)
+        self.assertNotIn("同ASIN链接均停售", sql)
+        self.assertNotIn("同ASIN产品组库存充足", sql)
+        self.assertNotIn("同ASIN已合并补货", sql)
+        self.assertIn("产品组补货目标链接", sql)
 
     def test_replenishment_need_qty_does_not_subtract_purchase_plan_twice(self):
         sql = replenishment_update.REPLENISHMENT_RESULT_SQL

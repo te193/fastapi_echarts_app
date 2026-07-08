@@ -3161,6 +3161,34 @@ span.flatpickr-weekday {
   font-weight: 900;
 }
 
+.kanban-ag-grid .ag-truncate-column {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.kanban-ag-grid .ag-truncate-column .ag-cell-value {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.kanban-ag-grid .ag-truncate-cell {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kanban-ag-grid .listing-tags-column {
+  align-items: center;
+  font-size: 12px;
+  color: #334966;
+}
+
 .kanban-ag-grid .alert-type-cell {
   align-items: flex-start;
   padding-top: 8px;
@@ -5991,6 +6019,11 @@ body[data-page="matrix"] .matrix-cell-meta {
 .status-pill.level-6 {
   background: #f3e8ff;
   color: #6b21a8;
+}
+
+.status-pill.level-7 {
+  background: #e0f2fe;
+  color: #075985;
 }
 
 .country-summary-button {

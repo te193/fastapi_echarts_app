@@ -54,6 +54,9 @@ class RecordingCursor:
     def fetchall(self):
         return self.conn.rows
 
+    def fetchone(self):
+        return self.conn.rows[0] if self.conn.rows else None
+
 
 class RecordingConnection:
     def __init__(self, rows):
@@ -74,6 +77,12 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
                 {"column_name": "seller_sku_adj", "column_comment": ""},
                 {"column_name": "stockout_status", "column_comment": ""},
                 {"column_name": "fllow_flag", "column_comment": ""},
+                {"column_name": "followed_flag", "column_comment": ""},
+                {"column_name": "followed_by_links", "column_comment": ""},
+                {"column_name": "replenish_block_reason", "column_comment": ""},
+                {"column_name": "asin_merge_flag", "column_comment": ""},
+                {"column_name": "asin_merge_target", "column_comment": ""},
+                {"column_name": "asin_merge_reason", "column_comment": ""},
                 {"column_name": "gamount_30d", "column_comment": ""},
                 {"column_name": "gamount_14d", "column_comment": ""},
                 {"column_name": "gamount_7d", "column_comment": ""},
@@ -95,9 +104,23 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
         columns = service._export_columns(conn)
 
         names = [column["name"] for column in columns]
-        self.assertEqual(["seller_sku_adj", "fllow_flag", "replenish_qty"], names)
+        self.assertEqual(
+            [
+                "seller_sku_adj",
+                "fllow_flag",
+                "followed_flag",
+                "followed_by_links",
+                "replenish_block_reason",
+                "asin_merge_flag",
+                "asin_merge_target",
+                "asin_merge_reason",
+                "replenish_qty",
+            ],
+            names,
+        )
         labels = {column["name"]: column["label"] for column in columns}
         self.assertEqual("是否跟卖", labels["fllow_flag"])
+        self.assertEqual("是否被跟卖", labels["followed_flag"])
 
     def test_serialize_item_exposes_follow_status(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)
@@ -121,15 +144,51 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
                 "replenish_box_qty": 0,
                 "replenish_cost": 0,
                 "fllow_flag": 0,
+                "followed_flag": 1,
+                "followed_by_count": 2,
+                "followed_by_links": "store-a/MSKU-A | store-b/MSKU-B",
+                "replenish_block_reason": "被跟卖点不补货",
+                "asin_merge_flag": 1,
+                "asin_merge_target": "store-a/MSKU-A",
+                "asin_merge_reason": "同ASIN已合并补货",
+                "global_tags": "德国:清货8.8 | 英国:高风险产品",
             }
         )
 
         self.assertEqual("是", item["follow_status"])
+        self.assertEqual("是", item["followed_status"])
+        self.assertEqual(2, item["followed_by_count"])
+        self.assertEqual("store-a/MSKU-A | store-b/MSKU-B", item["followed_by_links"])
+        self.assertEqual("被跟卖点不补货", item["replenish_block_reason"])
+        self.assertEqual("是", item["asin_merge_status"])
+        self.assertEqual("store-a/MSKU-A", item["asin_merge_target"])
+        self.assertEqual("同ASIN已合并补货", item["asin_merge_reason"])
+        self.assertEqual("德国:清货8.8 | 英国:高风险产品", item["listing_tags"])
         self.assertNotIn("stockout_status", item)
+
+    def test_items_query_selects_and_sorts_listing_tags(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+        conn = RecordingConnection([])
+        metrics = service._product_category_metric_sql(30)
+
+        service._items(
+            conn,
+            filters="cur_date = %(snapshot_date)s",
+            params={"snapshot_date": "2026-07-07"},
+            sort_field="listing_tags",
+            sort_dir="asc",
+            page=1,
+            page_size=20,
+            period_metrics=metrics,
+        )
+
+        sql = conn.queries[1]
+        self.assertIn("global_tags", sql)
+        self.assertIn("order by global_tags asc", sql)
 
     def test_export_items_formats_follow_flag(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)
-        conn = FakeConnection([{"seller_sku_adj": "OYJ078a", "fllow_flag": 0}])
+        conn = FakeConnection([{"seller_sku_adj": "OYJ078a", "fllow_flag": 0, "followed_flag": 1}])
 
         rows = service._export_items(
             conn,
@@ -137,10 +196,11 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
             params={"snapshot_date": "2026-06-22"},
             sort_field="",
             sort_dir="",
-            columns=["seller_sku_adj", "fllow_flag"],
+            columns=["seller_sku_adj", "fllow_flag", "followed_flag"],
         )
 
         self.assertEqual("是", rows[0]["fllow_flag"])
+        self.assertEqual("是", rows[0]["followed_flag"])
 
 
     def test_export_items_uses_selected_period_category_expression(self):
@@ -199,9 +259,67 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
         self.assertIn("then %(level_history_recovery)s", level_expr)
         self.assertIn("then 6", sort_expr)
         self.assertEqual(
-            {"level_history_recovery": LEVEL_HISTORY_RECOVERY, "snapshot_date": "2026-06-24"},
+            {
+                "level_history_recovery": LEVEL_HISTORY_RECOVERY,
+                "level_sufficient": "库存充足",
+                "level_followed_block": "被跟卖点不补货",
+                "asin_merge_consolidated_block": "同ASIN已合并至主链接",
+                "asin_merge_sufficient_block": "同ASIN库存充足不补货",
+                "snapshot_date": "2026-06-24",
+            },
             service._with_display_level_params({"snapshot_date": "2026-06-24"}),
         )
+
+    def test_followed_block_does_not_override_display_layer(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+
+        condition = service._followed_block_display_condition()
+        level_expr = service._display_level_expr()
+        sort_expr = service._display_level_sort_expr()
+
+        self.assertIn("replenish_block_reason = %(level_followed_block)s", condition)
+        self.assertNotIn("then %(level_followed_block)s", level_expr)
+        self.assertNotIn("then 7", sort_expr)
+
+    def test_asin_merge_zero_qty_displays_as_sufficient_layer(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+
+        condition = service._asin_merge_zero_qty_display_condition()
+        level_expr = service._display_level_expr()
+        sort_expr = service._display_level_sort_expr()
+
+        self.assertIn("asin_merge_flag", condition)
+        self.assertIn("replenish_qty", condition)
+        self.assertIn("not (replenish_block_reason = %(level_followed_block)s)", condition)
+        self.assertIn("then %(level_sufficient)s", level_expr)
+        self.assertIn("then 4", sort_expr)
+        self.assertEqual(
+            {
+                "level_history_recovery": LEVEL_HISTORY_RECOVERY,
+                "level_sufficient": "库存充足",
+                "level_followed_block": "被跟卖点不补货",
+                "asin_merge_consolidated_block": "同ASIN已合并至主链接",
+                "asin_merge_sufficient_block": "同ASIN库存充足不补货",
+                "snapshot_date": "2026-07-07",
+            },
+            service._with_display_level_params({"snapshot_date": "2026-07-07"}),
+        )
+
+    def test_level_filter_uses_display_layer_expression(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+
+        filters, params = service._build_where(
+            snapshot_date="2026-07-07",
+            level="库存充足",
+            category="all",
+            site="all",
+            store="all",
+            keyword="",
+        )
+
+        self.assertIn(service._display_level_expr(), filters)
+        self.assertNotIn("support_replenish_level = %(level)s", filters)
+        self.assertEqual("库存充足", params["level"])
 
     def test_history_recovery_display_replenish_qty_restores_one_box(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)
@@ -215,6 +333,58 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
         self.assertIn("then 1 else 0", box_expr)
         self.assertIn("max_cg_price", cost_expr)
         self.assertIn("max_cg_transport_costs", cost_expr)
+
+    def test_calc_pool_condition_excludes_zero_qty_asin_merge_rows(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+
+        condition = service._calc_pool_condition()
+
+        self.assertIn("support_replenish_level_sort in (1, 2, 3)", condition)
+        self.assertIn("asin_merge_flag", condition)
+        self.assertIn("replenish_qty", condition)
+        self.assertIn("not (", condition)
+
+    def test_asin_merge_display_daily_sales_uses_group_daily_sales(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+        period_metrics = service._product_category_metric_sql(30)
+
+        expr = service._display_product_daily_sales_expr(period_metrics, "r")
+
+        self.assertIn("select max(", expr)
+        self.assertIn("grp.cur_date = r.cur_date", expr)
+        self.assertIn("grp.country_category <=> r.country_category", expr)
+        self.assertIn("grp.max_asin <=> r.max_asin", expr)
+        self.assertIn("coalesce(r.asin_merge_flag, 0) = 1", expr)
+
+    def test_display_block_reason_uses_final_asin_merge_copy(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+
+        expr = service._display_block_reason_expr("r")
+
+        self.assertIn("%(asin_merge_consolidated_block)s", expr)
+        self.assertIn("%(asin_merge_sufficient_block)s", expr)
+        self.assertIn("concat(r.seller_name_new, '/', r.seller_sku_adj)", expr)
+        self.assertNotIn("同ASIN链接均停售", expr)
+
+    def test_display_asin_merge_reason_uses_final_copy(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+
+        expr = service._display_asin_merge_reason_expr("r")
+
+        self.assertIn("%(asin_merge_consolidated_block)s", expr)
+        self.assertIn("%(asin_merge_sufficient_block)s", expr)
+        self.assertIn("concat(r.seller_name_new, '/', r.seller_sku_adj)", expr)
+        self.assertNotIn("同ASIN链接均停售", expr)
+
+    def test_summary_uses_calc_pool_condition_for_replenishment_pool(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+        conn = RecordingConnection([{"calc_msku_count": 0}])
+
+        service._summary(conn, "cur_date = %(snapshot_date)s", {"snapshot_date": "2026-07-07"})
+
+        sql = conn.queries[0]
+        self.assertIn(service._calc_pool_condition(), sql)
+        self.assertNotIn("sum(case when support_replenish_level_sort in (1, 2, 3) then 1 else 0 end) as calc_msku_count", sql)
 
     def test_serialize_country_metric_formats_display_fields(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)
