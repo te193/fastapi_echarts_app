@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 
 from app.services.replenishment_tracking_summary_data import (
@@ -8,6 +9,23 @@ from app.services.replenishment_tracking_summary_data import (
     purchase_status_label,
 )
 from etl import replenishment_tracking_summary_update
+
+
+def test_summary_etl_dry_run_exits_before_database_setup(monkeypatch, capsys):
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("dry-run must not initialize or connect to a database")
+
+    monkeypatch.setattr(replenishment_tracking_summary_update, "apply_database_ini_env", fail_if_called)
+    monkeypatch.setattr(replenishment_tracking_summary_update, "connect_target", fail_if_called)
+    monkeypatch.setattr(replenishment_tracking_summary_update, "connect_source", fail_if_called)
+    monkeypatch.setattr(sys, "argv", ["replenishment_tracking_summary_update", "--dry-run"])
+
+    replenishment_tracking_summary_update.main()
+
+    output = capsys.readouterr().out
+    assert "Replenishment tracking summary ETL plan" in output
+    assert "cutoff_date: latest replenishment date" in output
+    assert "[success] replenishment_tracking_summary dry_run=true writes=0" in output
 
 
 def test_summary_etl_syncs_qc_orders_for_qc_node():

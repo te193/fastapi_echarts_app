@@ -209,6 +209,36 @@ def test_success_markdown_uses_validated_business_results_and_tracking_log(tmp_p
     assert "补货追踪 ETL：成功" in text
 
 
+def test_success_markdown_reports_tracking_summary_result(tmp_path):
+    tracking_log = tmp_path / "tracking-summary.log"
+    tracking_log.write_text(
+        (
+            "[success] replenishment_tracking_summary cutoff_date=2026-07-10 "
+            "summary_rows=719 level_history_rows=1021 purchase_order_rows=154 "
+            "receipt_order_rows=81 qc_order_rows=60 elapsed=12.34s"
+        ),
+        encoding="utf-8",
+    )
+
+    payload = build_markdown(
+        status="success",
+        stage="all",
+        exit_code=0,
+        run_stamp="20260710_090000",
+        project_root=tmp_path,
+        dashboard_stdout=tmp_path / "dashboard.log",
+        dashboard_stderr=tmp_path / "dashboard.err.log",
+        replenishment_stdout=tmp_path / "replenishment.log",
+        replenishment_stderr=tmp_path / "replenishment.err.log",
+        tracking_stdout=tracking_log,
+        tracking_stderr=tmp_path / "tracking-summary.err.log",
+    )
+    text = json.loads(payload)["markdown"]["text"]
+
+    assert "补货追踪汇总：截至 7月10日，719 个 MSKU；历史分层 1,021 条" in text
+    assert "补货追踪 ETL：成功" in text
+
+
 def test_tracking_failure_markdown_reads_tracking_stderr(tmp_path):
     tracking_err = tmp_path / "tracking.err.log"
     tracking_err.write_text("tracking business result has 0 rows", encoding="utf-8")

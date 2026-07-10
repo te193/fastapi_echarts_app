@@ -1303,7 +1303,21 @@ def refresh_summary(conn, cutoff_date: date, source_conn=None) -> dict[str, int]
 def main() -> None:
     parser = argparse.ArgumentParser(description="Refresh replenishment tracking summary tables.")
     parser.add_argument("--cutoff-date", default="", help="截止日期，默认使用最新补货日期")
+    parser.add_argument("--dry-run", action="store_true", help="Print the execution plan without database access.")
     args = parser.parse_args()
+
+    if args.dry_run:
+        cutoff_date = args.cutoff_date or "latest replenishment date"
+        print("Replenishment tracking summary ETL plan")
+        print("  mode: dry-run")
+        print(f"  cutoff_date: {cutoff_date}")
+        print("  source_sync: purchase_orders, receipt_orders, qc_orders")
+        print(
+            "  target_tables: dashboard_replenishment_tracking_summary, "
+            "dashboard_replenishment_tracking_summary_level_history"
+        )
+        print("[success] replenishment_tracking_summary dry_run=true writes=0")
+        return
 
     apply_database_ini_env()
     with connect_target() as conn, connect_source() as source_conn:

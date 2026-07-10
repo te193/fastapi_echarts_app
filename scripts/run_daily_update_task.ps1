@@ -8,12 +8,15 @@ $LogDir = Join-Path $ProjectRoot "logs"
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
 $RunStamp = Get-Date -Format "yyyyMMdd_HHmmss"
+$IsDryRun = $args -contains "--dry-run"
 $PreflightStdoutLog = Join-Path $LogDir "etl_source_preflight_run_$RunStamp.log"
 $PreflightStderrLog = Join-Path $LogDir "etl_source_preflight_run_$RunStamp.err.log"
 $StdoutLog = Join-Path $LogDir "etl_daily_run_$RunStamp.log"
 $StderrLog = Join-Path $LogDir "etl_daily_run_$RunStamp.err.log"
 $ReplenishmentStdoutLog = Join-Path $LogDir "etl_replenishment_run_$RunStamp.log"
 $ReplenishmentStderrLog = Join-Path $LogDir "etl_replenishment_run_$RunStamp.err.log"
+$ReplenishmentTrackingStdoutLog = Join-Path $LogDir "etl_replenishment_tracking_summary_run_$RunStamp.log"
+$ReplenishmentTrackingStderrLog = Join-Path $LogDir "etl_replenishment_tracking_summary_run_$RunStamp.err.log"
 $ReturnGoodsStdoutLog = Join-Path $LogDir "etl_return_goods_run_$RunStamp.log"
 $ReturnGoodsStderrLog = Join-Path $LogDir "etl_return_goods_run_$RunStamp.err.log"
 $DingTalkNotifyScript = Join-Path $ProjectRoot "scripts\notify_daily_task_dingtalk.py"
@@ -27,6 +30,11 @@ function Send-DashboardDingTalkNotification {
         [int]$ExitCode = 0,
         [string]$ErrorMessage = ""
     )
+
+    if ($IsDryRun) {
+        Write-Host "DingTalk notification skipped in dry-run mode."
+        return
+    }
 
     if (-not (Test-Path -LiteralPath $DingTalkNotifyScript)) {
         Write-Warning "DingTalk notification script was not found: $DingTalkNotifyScript"
@@ -46,6 +54,8 @@ function Send-DashboardDingTalkNotification {
         "--dashboard-stderr", $StderrLog,
         "--replenishment-stdout", $ReplenishmentStdoutLog,
         "--replenishment-stderr", $ReplenishmentStderrLog,
+        "--tracking-stdout", $ReplenishmentTrackingStdoutLog,
+        "--tracking-stderr", $ReplenishmentTrackingStderrLog,
         "--return-goods-stdout", $ReturnGoodsStdoutLog,
         "--return-goods-stderr", $ReturnGoodsStderrLog
     )
@@ -121,7 +131,23 @@ if ($ReplenishmentExitCode -ne 0) {
 }
 
 Write-Host "Replenishment ETL finished at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-Write-Host "Replenishment tracking ETL is temporarily skipped."
+Write-Host "Replenishment tracking summary ETL started at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+Write-Host "Replenishment tracking summary stdout log : $ReplenishmentTrackingStdoutLog"
+Write-Host "Replenishment tracking summary stderr log : $ReplenishmentTrackingStderrLog"
+
+$PreviousErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+& $PythonExe -m etl.replenishment_tracking_summary_update @args > $ReplenishmentTrackingStdoutLog 2> $ReplenishmentTrackingStderrLog
+$ReplenishmentTrackingExitCode = $LASTEXITCODE
+$ErrorActionPreference = $PreviousErrorActionPreference
+
+if ($ReplenishmentTrackingExitCode -ne 0) {
+    Send-DashboardDingTalkNotification -Status "failed" -Stage "replenishment_tracking" -ExitCode $ReplenishmentTrackingExitCode -ErrorMessage "Replenishment tracking summary ETL failed with exit code $ReplenishmentTrackingExitCode."
+    Write-Error "Replenishment tracking summary ETL failed with exit code $ReplenishmentTrackingExitCode. See $ReplenishmentTrackingStdoutLog and $ReplenishmentTrackingStderrLog."
+    exit $ReplenishmentTrackingExitCode
+}
+
+Write-Host "Replenishment tracking summary ETL finished at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 Write-Host "Return goods ETL started at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 Write-Host "Return goods stdout log : $ReturnGoodsStdoutLog"
 Write-Host "Return goods stderr log : $ReturnGoodsStderrLog"
@@ -139,5 +165,5 @@ if ($ReturnGoodsExitCode -ne 0) {
 }
 
 Write-Host "Return goods ETL finished at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-Write-Host "Data update strategy includes rolling product refresh, current snapshots, preset period summaries, matrix summaries, replenishment results, and return goods. Replenishment tracking is temporarily skipped."
+Write-Host "Data update strategy includes rolling product refresh, current snapshots, preset period summaries, matrix summaries, replenishment results, replenishment tracking summary, and return goods."
 Send-DashboardDingTalkNotification -Status "success" -Stage "all" -ExitCode 0

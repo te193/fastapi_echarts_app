@@ -303,6 +303,23 @@ def _tracking_window_counts(detail: dict[str, object]) -> dict[int, int]:
     return counts
 
 
+def _tracking_summary_result(detail: dict[str, object]) -> dict[str, object]:
+    for line in detail.get("result_lines") or []:
+        text = str(line)
+        if not text.startswith("[success] replenishment_tracking_summary cutoff_date="):
+            continue
+        cutoff_match = re.search(r"\bcutoff_date=(\d{4}-\d{2}-\d{2})", text)
+        summary_match = re.search(r"\bsummary_rows=(\d+)", text)
+        history_match = re.search(r"\blevel_history_rows=(\d+)", text)
+        if cutoff_match and summary_match and history_match:
+            return {
+                "cutoff_date": cutoff_match.group(1),
+                "summary_rows": int(summary_match.group(1)),
+                "level_history_rows": int(history_match.group(1)),
+            }
+    return {}
+
+
 def _format_table_rows(label: str, count: int) -> str | None:
     if count <= 0:
         return None
@@ -351,6 +368,18 @@ def _format_business_result_summary(
     tracking_counts = _tracking_window_counts(tracking_detail)
     tracking_count = min(tracking_counts.values()) if tracking_counts else 0
     tracking_windows = "/".join(str(value) for value in sorted(tracking_counts))
+    tracking_summary = _tracking_summary_result(tracking_detail)
+    if tracking_summary:
+        tracking_result_line = (
+            f"- 补货追踪汇总：截至 {_format_month_day(tracking_summary['cutoff_date'])}，"
+            f"{_format_number(tracking_summary['summary_rows'])} 个 MSKU；历史分层 "
+            f"{_format_number(tracking_summary['level_history_rows'])} 条"
+        )
+    else:
+        tracking_result_line = (
+            f"- 补货追踪：{tracking_windows or '-'} 天窗口各 "
+            f"{_format_number(tracking_count)} 个 MSKU"
+        )
     country_metrics = _core_count(replenishment_detail, "country_metrics")
     if country_metrics > 100000:
         country_metrics = round(country_metrics / 2)
@@ -389,20 +418,14 @@ def _format_business_result_summary(
             f"- 补货结果：已重新计算，约 "
             f"{_format_approx_count(replenishment_result, '个补货 SKU')}"
         ),
-        (
-            f"- 补货追踪：{tracking_windows or '-'} 天窗口各 "
-            f"{_format_number(tracking_count)} 个 MSKU"
-        ),
+        tracking_result_line,
         f"- 国家维度补货明细：已重新计算，约 {_format_approx_count(country_metrics)}",
         f"- 价格复盘：已更新，约 {_format_approx_count(_core_count(dashboard_detail, 'price_review'), '条结果')}",
         "",
         "#### 业务验收",
         f"- 商品表现：{_format_number(product_result)} 条",
         f"- 补货结果：{_format_number(replenishment_result)} 个 MSKU",
-        (
-            f"- 补货追踪：{tracking_windows or '-'} 天窗口各 "
-            f"{_format_number(tracking_count)} 个 MSKU"
-        ),
+        tracking_result_line,
         "",
         "#### 数据健康",
         "- 远端源数据：已更新完整",
