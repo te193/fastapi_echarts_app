@@ -185,7 +185,7 @@
 
   function init() {
     [
-      "datePickerBtn", "datePickerValue", "datePickerPanel", "levelSelect", "categoryPeriodSelect", "siteSelect", "storeSelect", "keywordInput", "clearFiltersBtn",
+      "datePickerBtn", "datePickerValue", "datePickerPanel", "levelSelect", "categoryPeriodSelect", "siteSelect", "storeSelect", "keywordInput", "orderKeywordInput", "clearFiltersBtn",
       "periodHint", "summaryGrid", "layerVizGrid", "levelTabs", "tableWrap", "paginationInfo", "paginationNumbers", "pageSizeSelect",
       "prevPageBtn", "nextPageBtn", "sortQtyBtn", "sortSupportBtn", "openTrackingBtn", "exportReplenishmentBtn",
       "countryDrawerMask", "countryDrawer", "countryDrawerTitle", "countryDrawerSubtitle", "countryDrawerCloseBtn",
@@ -256,6 +256,7 @@
       state.sort_field = "";
       state.sort_dir = "";
       state.page = 1;
+      if (elements.orderKeywordInput) elements.orderKeywordInput.value = "";
       syncControls();
       render();
     });

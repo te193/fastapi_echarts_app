@@ -23,7 +23,8 @@ def test_summary_etl_uses_qc_order_good_bad_for_qc_passed_node():
     assert "qc_doc as" in sql
     assert "qo.delivery_order_sn = m.receipt_order_sn" in sql
     assert "qo.order_sn = m.business_order_sn" in sql
-    assert "replace(qo.sku, '-zu', '') = replace(m.sku" in sql
+    assert "replace(coalesce(qo.sku, ''), '-zu', '') regexp '[0-9][a-z]$'" in sql
+    assert "replace(coalesce(m.sku, ''), '-zu', '') regexp '[0-9][a-z]$'" in sql
     assert "coalesce(qd.qc_good_qty, 0) > 0 and coalesce(qd.qc_bad_qty, 0) = 0" in sql
 
 
@@ -41,18 +42,84 @@ def test_summary_etl_splits_current_and_historical_fba_plans():
     assert "all_fba_plan_match as" in sql
     assert "historical_fba_plan_doc as" in sql
     assert "fp.plan_create_time >= pp0.plan_create_time" in sql
-    assert "replace(fp.sku, '-zu', '') = replace(p0.max_sku, '-zu', '')" in sql
+    assert "replace(coalesce(fp.sku, ''), '-zu', '') regexp '[0-9][a-z]$'" in sql
+    assert "p0.tracking_sku" in sql
     assert "abs(coalesce(fp.shipment_plan_quantity, 0) - coalesce(pp0.quantity_plan, 0))" in sql
     assert "left join current_fba_plan_match cfpm" in sql
     assert "cfpm.order_sn is null" in sql
 
 
+def test_summary_etl_uses_real_fba_shipment_id_for_fba_outbound_node():
+    sql = replenishment_tracking_summary_update.INSERT_SUMMARY_SQL
+
+    assert "current_fba_shipped_doc as" in sql
+    assert "dashboard_tracking_inbound_item_sync ii" in sql
+    assert "ii.shipment_order_sn = cfpm.order_sn" in sql
+    assert "ii.shipment_id like 'FBA%%'" in sql
+    assert "case when coalesce(fbsd.fba_shipment_count, 0) > 0 then 1 else 0 end" in sql
+    assert "coalesce(fbsd.fba_shipped_qty, 0)" in sql
+
+
+def test_summary_etl_uses_current_fba_items_for_receiving_and_closed_nodes():
+    sql = replenishment_tracking_summary_update.INSERT_SUMMARY_SQL
+
+    assert "sum(coalesce(nullif(ii.shipment_quantity_received, 0), ii.quantity_receive, 0)) as fba_received_qty" in sql
+    assert "receiving_shipment_count" in sql
+    assert "closed_shipment_count" in sql
+    assert "upper(coalesce(ii.shipment_status, ii.status_text, ish.shipment_status, ish.status_name, '')) = 'RECEIVING'" in sql
+    assert "upper(coalesce(ii.shipment_status, ii.status_text, ish.shipment_status, ish.status_name, '')) = 'CLOSED'" in sql
+    assert "ish.receiving_time is not null" in sql
+    assert "ish.closed_time is not null" in sql
+    assert "coalesce(ish.quantity_received, 0) > 0" in sql
+    assert "case when coalesce(fbsd.receiving_shipment_count, 0) > 0 then 1 else 0 end" in sql
+    assert "coalesce(fbsd.closed_shipment_count, 0) = coalesce(fbsd.fba_shipment_count, 0)" in sql
+    assert "case when coalesce(t.received_qty, 0) > 0 then 1 else 0 end" not in sql
+
+
+def test_summary_etl_marks_fba_complete_only_after_all_current_shipments_close():
+    sql = replenishment_tracking_summary_update.INSERT_SUMMARY_SQL
+
+    assert "coalesce(fbsd.fba_shipment_count, 0) > 0" in sql
+    assert "coalesce(fbsd.closed_shipment_count, 0) = coalesce(fbsd.fba_shipment_count, 0)" in sql
+
+
+def test_summary_eta_uses_active_inbound_shipments_relative_to_cutoff_date():
+    sql = replenishment_tracking_summary_update.INSERT_SUMMARY_SQL
+
+    assert "active_fba_eta_doc as" in sql
+    assert "coalesce(ii.quantity_shipped, 0) > coalesce(nullif(ii.shipment_quantity_received, 0), ii.quantity_receive, 0)" in sql
+    assert "upper(coalesce(ii.shipment_status, ii.status_text, ish.shipment_status, ish.status_name, '')) <> 'CLOSED'" in sql
+    assert "ish.closed_time is null" in sql
+    assert "coalesce(eta.nearest_fba_eta_date, t.nearest_fba_eta_date)" not in sql
+    assert "eta.nearest_fba_eta_date" in sql
+
+
 def test_summary_detail_fba_match_uses_sku_and_quantity_tolerance():
     sql = ReplenishmentTrackingSummaryService()._detail_sql()
 
-    assert "replace(fp.sku, '-zu', '') = replace(s.sku, '-zu', '')" in sql
+    assert "replace(coalesce(fp.sku, ''), '-zu', '') regexp '[0-9][a-z]$'" in sql
+    assert "replace(coalesce(s.sku, ''), '-zu', '') regexp '[0-9][a-z]$'" in sql
     assert "abs(coalesce(fp.shipment_plan_quantity, 0) - coalesce(pp.quantity_plan, 0))" in sql
     assert "fp.plan_create_time >= pp.plan_create_time" in sql
+
+
+def test_summary_detail_includes_real_fba_shipment_rows():
+    sql = ReplenishmentTrackingSummaryService()._detail_sql()
+
+    assert "'fba_shipment' as source_type" in sql
+    assert "'FBA出库/在途' as source_type_label" in sql
+    assert "ii.shipment_order_sn = fp.order_sn" in sql
+    assert "ii.shipment_id like 'FBA%%'" in sql
+    assert "left join dashboard_tracking_inbound_shipment_sync ish" in sql
+
+
+def test_summary_detail_prefers_chinese_fba_shipment_status_over_raw_status_code():
+    sql = ReplenishmentTrackingSummaryService()._detail_sql()
+
+    assert "nullif(ish.status_name, '')" in sql
+    assert "when upper(coalesce(ii.shipment_status, ish.shipment_status, '')) = 'SHIPPED' then '已发货'" in sql
+    assert "when upper(coalesce(ii.shipment_status, ish.shipment_status, '')) = 'RECEIVING' then '接收中'" in sql
+    assert "when upper(coalesce(ii.shipment_status, ish.shipment_status, '')) = 'CLOSED' then '已完成'" in sql
 
 
 def test_map_summary_row_exposes_historical_fba_plan_metrics():
@@ -193,9 +260,10 @@ def test_summary_etl_uses_purchase_order_match_for_inbound_node():
     sql = replenishment_tracking_summary_update.INSERT_SUMMARY_SQL
 
     assert "purchase_order_doc as" in sql
-    assert "replace(po.sku, '-zu', '') = replace(p0.max_sku" in sql
-    assert "case when coalesce(pod.shipped_order_count, 0) > 0 then 1 else 0 end" in sql
-    assert "coalesce(pod.purchase_inbound_qty, 0)" in sql
+    assert "replace(coalesce(po.sku, ''), '-zu', '') regexp '[0-9][a-z]$'" in sql
+    assert "p0.tracking_sku" in sql
+    assert "coalesce(pod.shipped_order_count, 0) > 0 or coalesce(rd.local_received_qty, 0) > 0 or coalesce(qd.qc_good_qty, 0) > 0" in sql
+    assert "greatest(coalesce(pod.purchase_inbound_qty, 0), coalesce(rd.local_received_qty, 0), coalesce(qd.qc_good_qty, 0))" in sql
 
 
 def test_summary_etl_syncs_receipts_for_local_received_node():
@@ -210,7 +278,8 @@ def test_summary_etl_uses_receipt_match_for_local_received_node():
 
     assert "receipt_doc as" in sql
     assert "ro.business_order_sn = m.order_sn" in sql
-    assert "replace(ro.sku, '-zu', '') = replace(m.sku" in sql
+    assert "replace(coalesce(ro.sku, ''), '-zu', '') regexp '[0-9][a-z]$'" in sql
+    assert "replace(coalesce(m.sku, ''), '-zu', '') regexp '[0-9][a-z]$'" in sql
     assert "coalesce(rd.local_received_qty, 0)" in sql
     assert "case when coalesce(rd.local_received_qty, 0) > 0 then 1 else 0 end" in sql
 
@@ -241,6 +310,31 @@ def test_summary_stage_filters_match_level_cards():
     for stage, expected in checks.items():
         filters, _ = service._where("2026-06-29", 30, "all", "all", "all", stage, "all", "all", "all", "all", "", "product_category_30d")
         assert expected in filters
+
+
+def test_summary_keyword_filters_keep_object_and_order_keywords_separate():
+    service = ReplenishmentTrackingSummaryService()
+
+    filters, params = service._where(
+        "2026-06-29",
+        30,
+        "all",
+        "all",
+        "all",
+        "all",
+        "all",
+        "all",
+        "all",
+        "all",
+        "YJR008a",
+        "product_category_30d",
+        "PP260625013",
+    )
+
+    assert "s.seller_sku_adj like %(keyword)s" in filters
+    assert "coalesce(s.order_sn_summary, '') like %(order_keyword)s" in filters
+    assert params["keyword"] == "%YJR008a%"
+    assert params["order_keyword"] == "%PP260625013%"
 
 
 def test_level_purchase_plan_stage_filters_use_prestored_level_history():
@@ -313,9 +407,10 @@ def test_purchase_order_links_ignore_voided_and_match_sku():
     level_sql = replenishment_tracking_summary_update.INSERT_LEVEL_HISTORY_SQL
 
     assert "po.status <> '作废'" in detail_sql
-    assert "replace(po.sku, '-zu', '') = replace(s.sku" in detail_sql
+    assert "replace(coalesce(po.sku, ''), '-zu', '') regexp '[0-9][a-z]$'" in detail_sql
+    assert "replace(coalesce(s.sku, ''), '-zu', '') regexp '[0-9][a-z]$'" in detail_sql
     assert "po.status <> '作废'" in level_sql
-    assert "replace(po.sku, '-zu', '') = replace(ppm.max_sku" in level_sql
+    assert "replace(coalesce(ppm.max_sku, ''), '-zu', '') regexp '[0-9][a-z]$'" in level_sql
 
 
 def test_summary_chain_progress_uses_unambiguous_node_labels():
@@ -334,7 +429,8 @@ def test_summary_detail_includes_receipt_orders():
     assert "'receipt_order' as source_type" in sql
     assert "dashboard_tracking_receipt_order_sync ro" in sql
     assert "ro.business_order_sn = po.order_sn" in sql
-    assert "replace(ro.sku, '-zu', '') = replace(s.sku" in sql
+    assert "replace(coalesce(ro.sku, ''), '-zu', '') regexp '[0-9][a-z]$'" in sql
+    assert "replace(coalesce(s.sku, ''), '-zu', '') regexp '[0-9][a-z]$'" in sql
     assert "coalesce(ro.product_receive_num, 0) as quantity_received" in sql
 
 
@@ -351,7 +447,7 @@ def test_summary_page_shows_historical_fba_plan_separately():
     assert 'var isFbaPlan = row.source_type === "fba_plan"' in js
     assert 'Number(row.shipment_plan_quantity || row.purchase_plan_qty || 0)' in js
     assert 'isFbaPlan ? "计划数"' in js
-    assert 'headerName: "历史/待确认FBA"' in js
+    assert 'headerName: "候选/重复FBA"' in js
     assert 'historical_fba_summary' in js
     assert 'isHistoricalFbaPlan(row)' in js
 

@@ -10,7 +10,10 @@
     receipt_order: { label: "本地收货", tone: "receipt", qtyLabel: "到仓量" },
     qc_order: { label: "质检单", tone: "qc", qtyLabel: "良品数" },
     fba_plan: { label: "FBA计划", tone: "fba", qtyLabel: "计划数" },
-    shipment_plan: { label: "FBA出库", tone: "shipment", qtyLabel: "发货数" }
+    shipment_plan: { label: "FBA出库", tone: "shipment", qtyLabel: "发货数" },
+    fba_shipment: { label: "FBA货件单", tone: "shipment", qtyLabel: "发货数" },
+    candidate_fba_plan: { label: "候选FBA计划", tone: "candidate", qtyLabel: "计划数" },
+    candidate_fba_shipment: { label: "候选FBA货件", tone: "shipment", qtyLabel: "发货数" }
   };
 
   document.addEventListener("DOMContentLoaded", init);
@@ -72,10 +75,20 @@
         render();
       }
     }, 300));
+    var orderKeywordInput = document.getElementById("orderKeywordInput");
+    if (orderKeywordInput) orderKeywordInput.addEventListener("input", debounce(function () {
+      if (state.active) {
+        resetLinkedFilter();
+        state.page = 1;
+        render();
+      }
+    }, 300));
     var clearFiltersBtn = document.getElementById("clearFiltersBtn");
     if (clearFiltersBtn) clearFiltersBtn.addEventListener("click", function () {
       if (!state.active) return;
       resetLinkedFilter();
+      var orderKeywordInput = document.getElementById("orderKeywordInput");
+      if (orderKeywordInput) orderKeywordInput.value = "";
       setTimeout(function () {
         state.page = 1;
         render();
@@ -206,6 +219,7 @@
       site: valueOf("siteSelect", "all"),
       store: valueOf("storeSelect", "all"),
       keyword: valueOf("keywordInput", ""),
+      order_keyword: valueOf("orderKeywordInput", ""),
       page: state.page,
       page_size: state.page_size
     };
@@ -220,6 +234,7 @@
       ["质检通过未建FBA", summary.no_fba_plan_count || 0, "tone-2", "可推进FBA计划", "no_fba_plan"],
       ["FBA未出库", summary.fba_not_shipped_count || 0, "tone-2", "已建FBA计划但未出库", "fba_not_shipped"],
       ["FBA未接收", summary.fba_not_receiving_count || 0, "tone-2", "FBA在途未接收", "fba_not_receiving"],
+      ["历史FBA货件", summary.historical_fba_shipment_count || 0, "tone-2", "旁路货件量 " + formatNumber(summary.historical_fba_shipment_qty || 0), "historical_fba_shipment"],
       ["FBA已完成", summary.fba_closed_count || 0, "tone-1", "链路完成", "fba_closed"]
     ];
     el.trackingSummaryTopCards.innerHTML = topCards.map(function (card) {
@@ -233,7 +248,8 @@
       ["仓", "采购未到仓", summary.inbound_not_received_count || 0, "本地收货链路未确认", "inbound_not_received"],
       ["计", "未建FBA", summary.no_fba_plan_count || 0, "可推进FBA计划", "no_fba_plan"],
       ["出", "FBA未出库", summary.fba_not_shipped_count || 0, "已建计划未执行", "fba_not_shipped"],
-      ["收", "FBA未接收", summary.fba_not_receiving_count || 0, "在途未接收", "fba_not_receiving"]
+      ["收", "FBA未接收", summary.fba_not_receiving_count || 0, "在途未接收", "fba_not_receiving"],
+      ["历", "历史FBA货件", summary.historical_fba_shipment_count || 0, "旁路货件量 " + formatNumber(summary.historical_fba_shipment_qty || 0), "historical_fba_shipment"]
     ];
     el.trackingSummaryCards.innerHTML = sideCards.map(function (card) {
       var active = state.summary_stage === card[4] ? " active" : "";
@@ -322,7 +338,7 @@
       numberColumn("出现天数", "appearance_days", 104),
       { headerName: "标签", field: "replenishment_tags", width: 220, cellRenderer: function (params) { return splitTags(params.value, function () { return "positive"; }); } },
       numberColumn("建议数", "latest_replenishment_qty", 104),
-      { headerName: "链路进度", field: "__chain", width: 158, filter: false, sortable: false, cellRenderer: function (params) { return renderChainProgress(params.data || {}); } },
+      { headerName: "链路进度", field: "__chain", width: 330, filter: false, sortable: false, cellRenderer: function (params) { return renderChainProgress(params.data || {}); } },
       { headerName: "待推进节点", field: "current_node", width: 132, cellRenderer: function (params) { return renderNodePill(params.value); } },
       { headerName: "断点原因", field: "breakpoint_reason", width: 260, tooltipField: "breakpoint_reason", cellRenderer: function (params) { return renderReasonCell(params.value); } },
       numberColumn("采购计划数", "purchase_plan_qty", 112),
@@ -371,7 +387,7 @@
       store: row.store,
       msku: row.msku
     }).then(function (payload) {
-      renderDetailTable(payload.rows || []);
+      renderDetailOverview(payload.rows || [], row);
     }).catch(function (error) {
       console.error(error);
       el.summaryTrackingDetailWrap.innerHTML = '<div class="empty-state compact">明细加载失败。</div>';
@@ -387,6 +403,8 @@
     el.summaryTrackingDetailDrawer.setAttribute("aria-hidden", "false");
     el.summaryTrackingDetailTitle.textContent = (level || "全部") + " · 链路节点分布";
     el.summaryTrackingDetailSubtitle.textContent = "展示该分层当前仍在补货范围内的各链路 MSKU 数；点节点里的“查看MSKU”再联动下方列表。";
+    el.summaryTrackingDetailTitle.textContent = (level || "全部") + " · 链路转化";
+    el.summaryTrackingDetailSubtitle.textContent = "只展示链路转化；点击任一节点后联动下方 MSKU 表格查看明细。";
     renderStageDetailTable(row, stage);
   }
 
@@ -395,6 +413,300 @@
     el.summaryTrackingDetailMask.hidden = true;
     el.summaryTrackingDetailDrawer.hidden = true;
     el.summaryTrackingDetailDrawer.setAttribute("aria-hidden", "true");
+  }
+
+  function renderDetailOverview(rows, sourceRow) {
+    if (!rows.length) {
+      el.summaryTrackingDetailWrap.innerHTML = '<div class="empty-state compact">暂无采购、FBA 或货件明细。</div>';
+      return;
+    }
+    var batches = groupDetailRows(rows);
+    var stats = buildDetailOverviewStats(batches);
+    el.summaryTrackingDetailWrap.innerHTML = [
+      '<section class="summary-detail-redesign">',
+      renderDetailMilestoneStrip(stats),
+      '<div class="summary-detail-layout">',
+      '<section class="summary-detail-batches">',
+      '<div class="summary-detail-section-head"><b>批次链路</b><span>每个采购计划单独成组，按采购、到仓质检、FBA 节点查看。</span></div>',
+      batches.map(renderDetailBatchCard).join(""),
+      '</section>',
+      renderDetailAside(stats, batches),
+      '</div>',
+      '</section>'
+    ].join("");
+  }
+
+  function buildDetailOverviewStats(batches) {
+    var stats = {
+      batchCount: batches.length,
+      plannedQty: 0,
+      purchaseOrderQty: 0,
+      receiptQty: 0,
+      fbaPlanQty: 0,
+      purchaseOrderCount: 0,
+      receiptCount: 0,
+      qcCount: 0,
+      fbaPlanCount: 0,
+      normalFbaCount: 0,
+      earlyFbaCount: 0,
+      candidateFbaCount: 0,
+      shipmentCount: 0,
+      issueCount: 0,
+      latestStage: "purchase_plan"
+    };
+    batches.forEach(function (batch) {
+      stats.plannedQty += Number(batch.purchase_plan_qty || 0);
+      stats.purchaseOrderQty += Number(batch.purchase_order_qty || 0);
+      stats.receiptQty += Number(batch.receipt_qty || 0);
+      stats.fbaPlanQty += Number(batch.fba_plan_qty || 0);
+      var allLines = batch.order_summary || [];
+      stats.purchaseOrderCount += countDetailLines(allLines, ["purchase_order"]);
+      stats.receiptCount += countDetailLines(allLines, ["receipt_order"]);
+      stats.qcCount += countDetailLines(allLines, ["qc_order"]);
+      stats.fbaPlanCount += countDetailLines(allLines, ["fba_plan"]);
+      stats.candidateFbaCount += (batch.historical_fba_summary || []).length;
+      if (batch.has_current_fba_plan && batch.has_qc) stats.normalFbaCount += 1;
+      else if (batch.has_current_fba_plan) stats.earlyFbaCount += 1;
+      stats.shipmentCount += countDetailLines(allLines, ["shipment_plan", "fba_shipment"]);
+      if (batch.quantity_match_tone === "warning" || batch.link_type_tone === "warning") stats.issueCount += 1;
+      stats.latestStage = laterDetailStage(stats.latestStage, batchLatestStage(batch));
+    });
+    return stats;
+  }
+
+  function countDetailLines(lines, types) {
+    return (lines || []).filter(function (line) { return types.indexOf(line.type) >= 0; }).length;
+  }
+
+  function laterDetailStage(a, b) {
+    return detailStageRank(b) > detailStageRank(a) ? b : a;
+  }
+
+  function batchLatestStage(batch) {
+    var lines = (batch.order_summary || []).concat(batch.historical_fba_summary || []);
+    var latest = batch.purchase_plan_sn && batch.purchase_plan_sn !== "-" ? "purchase_plan" : "none";
+    lines.forEach(function (line) {
+      latest = laterDetailStage(latest, detailStageOfLine(line));
+    });
+    return latest;
+  }
+
+  function renderDetailMilestoneStrip(stats) {
+    var nodes = [
+      { stage: "purchase_plan", label: "采购计划", value: stats.batchCount, sub: "PP 批次" },
+      { stage: "purchase_order", label: "采购单", value: stats.purchaseOrderCount, sub: "采购量 " + formatNumber(stats.purchaseOrderQty) },
+      { stage: "receipt_order", label: "到本地仓", value: stats.receiptCount, sub: "到仓量 " + formatNumber(stats.receiptQty) },
+      { stage: "qc_order", label: "质检", value: stats.qcCount, sub: "质检记录" },
+      { stage: "fba_plan", label: "建FBA", value: stats.fbaPlanCount, sub: "计划数 " + formatNumber(stats.fbaPlanQty) },
+      { stage: "shipment_plan", label: "FBA出库", value: stats.shipmentCount, sub: "货件/出库" }
+    ];
+    return [
+      '<section class="summary-detail-rail-panel">',
+      '<div class="summary-detail-section-head"><b>链路总览</b><span>绿色为已出现节点，浅色为暂未确认。</span></div>',
+      '<div class="summary-detail-rail">',
+      nodes.map(function (node) {
+        var done = Number(node.value || 0) > 0;
+        return [
+          '<article class="summary-detail-rail-node ' + (done ? "done" : "todo") + '">',
+          '<span>' + escapeHtml(node.label) + '</span>',
+          '<strong>' + formatNumber(node.value || 0) + '</strong>',
+          '<small>' + escapeHtml(node.sub || "") + '</small>',
+          '</article>'
+        ].join("");
+      }).join(""),
+      '</div>',
+      '</section>'
+    ].join("");
+  }
+
+  function renderDetailFocusPanel(stats, row) {
+    return [
+      '<section class="summary-detail-focus-grid">',
+      renderDetailFocusCard("当前焦点", readableStage(stats.latestStage), row.current_node || "按右侧批次查看卡点", "blue"),
+      renderDetailFocusCard("主链路数量", formatNumber(stats.plannedQty), "采购计划数量合计", "green"),
+      renderDetailFocusCard("FBA 归因", "正常 " + formatNumber(stats.fbaPlanCount) + " / 候选 " + formatNumber(stats.candidateFbaCount), "提前创建或历史待确认会单独展示", "amber"),
+      renderDetailFocusCard("需要复核", formatNumber(stats.issueCount), "数量不一致或归因待确认批次", stats.issueCount ? "red" : "green"),
+      '</section>'
+    ].join("");
+  }
+
+  function renderDetailFocusCard(label, value, sub, tone) {
+    return [
+      '<article class="summary-detail-focus-card ' + escapeHtml(tone || "blue") + '">',
+      '<span>' + escapeHtml(label) + '</span>',
+      '<strong>' + escapeHtml(String(value || "-")) + '</strong>',
+      '<small>' + escapeHtml(sub || "") + '</small>',
+      '</article>'
+    ].join("");
+  }
+
+  function renderDetailBatchCard(batch, index) {
+    var lines = (batch.order_summary || []).slice().sort(function (a, b) {
+      return detailStageRank(detailStageOfLine(a)) - detailStageRank(detailStageOfLine(b));
+    });
+    var candidates = (batch.historical_fba_summary || []).slice().sort(compareDetailLines);
+    var purchaseLines = lines.filter(function (line) { return detailStageOfLine(line) === "purchase_order"; });
+    var localLines = lines.filter(function (line) {
+      var stage = detailStageOfLine(line);
+      return stage === "receipt_order" || stage === "qc_order";
+    });
+    var fbaLines = lines.filter(function (line) {
+      var stage = detailStageOfLine(line);
+      return stage === "fba_plan" || stage === "shipment_plan";
+    });
+    var statusTone = batch.link_type_tone === "positive" ? "positive" : batch.link_type_tone === "warning" ? "warning" : "neutral";
+    var statusText = batch.link_type || readableStage(batchLatestStage(batch));
+    return [
+      '<article class="summary-detail-batch-card ' + escapeHtml(statusTone) + '">',
+      '<header class="summary-detail-batch-head">',
+      '<div>',
+      '<span>批次 ' + escapeHtml(String.fromCharCode(65 + (index || 0))) + '</span>',
+      '<strong>' + escapeHtml(batch.purchase_plan_sn || "-") + ' · 计划 ' + formatNumber(batch.purchase_plan_qty || 0) + '</strong>',
+      '</div>',
+      '<div class="summary-detail-batch-badges">',
+      statusPill(statusText, statusTone),
+      statusPill(batch.quantity_match || "待匹配", batch.quantity_match_tone || "neutral"),
+      batch.stuck_days != null ? '<span class="status-pill neutral">卡点 ' + formatNumber(batch.stuck_days) + ' 天</span>' : '',
+      '</div>',
+      '</header>',
+      '<div class="summary-detail-batch-body">',
+      '<div class="summary-detail-time-rail">' + renderTimeSummary(batch.time_summary || []) + '</div>',
+      '<div class="summary-detail-path-groups">',
+      renderDetailPathGroup("采购", [renderPlanEvidenceCard(batch)].concat(purchaseLines.map(renderDetailEvidenceCard)).join(""), "purchase"),
+      renderDetailPathGroup("到仓 / 质检", localLines.map(renderDetailEvidenceCard).join(""), "local"),
+      renderDetailPathGroup("FBA", fbaLines.map(renderDetailEvidenceCard).join(""), "fba"),
+      '</div>',
+      candidates.length ? '<div class="summary-detail-candidates"><b>历史 / 待确认 FBA</b><div>' + candidates.map(renderDetailEvidenceCard).join("") + '</div></div>' : '',
+      '</div>',
+      '</article>'
+    ].join("");
+  }
+
+  function renderDetailPathGroup(label, content, tone) {
+    return [
+      '<section class="summary-detail-path-group ' + escapeHtml(tone || "neutral") + '">',
+      '<div class="summary-detail-path-label">' + escapeHtml(label) + '</div>',
+      '<div class="summary-detail-evidence-strip">',
+      content || '<span class="muted">暂无节点</span>',
+      '</div>',
+      '</section>'
+    ].join("");
+  }
+
+  function renderPlanEvidenceCard(batch) {
+    return renderDetailEvidenceCard({
+      type: "purchase_plan",
+      order: batch.purchase_plan_sn || "-",
+      status: batch.purchase_plan_status || "",
+      quantity: batch.purchase_plan_qty || 0,
+      quantity_label: "计划数",
+      created_at: batch.purchase_plan_time || "",
+      logistics: batch.purchase_expect_arrive_time ? "预计到达 " + batch.purchase_expect_arrive_time : ""
+    });
+  }
+
+  function renderDetailEvidenceCard(line) {
+    var stage = detailStageOfLine(line);
+    var time = line.created_at ? '<span class="summary-detail-evidence-time">' + escapeHtml(line.created_at) + '</span>' : "";
+    var note = line.note ? '<em>' + escapeHtml(line.note) + '</em>' : "";
+    var logistics = line.logistics ? '<small>' + escapeHtml(line.logistics) + '</small>' : "";
+    var status = line.status ? '<i class="summary-detail-evidence-status ' + escapeHtml(evidenceStatusTone(line.status)) + '">' + escapeHtml(line.status) + '</i>' : "";
+    return [
+      '<article class="summary-detail-evidence-card stage-' + escapeHtml(stage) + '">',
+      '<span>' + escapeHtml(readableStage(stage)) + note + '</span>',
+      '<strong>' + escapeHtml(line.order || "-") + '</strong>',
+      logistics,
+      '<b>' + escapeHtml(readableQtyLabel(line)) + ' ' + formatNumber(line.quantity || 0) + status + '</b>',
+      time,
+      '</article>'
+    ].join("");
+  }
+
+  function evidenceStatusTone(value) {
+    var text = String(value || "");
+    if (text.indexOf("驳回") >= 0 || text.indexOf("作废") >= 0 || text.indexOf("失败") >= 0) return "danger";
+    if (text.indexOf("待") >= 0 || text.indexOf("审核") >= 0 || text.indexOf("处理中") >= 0) return "warning";
+    if (text.indexOf("已") >= 0 || text.indexOf("完成") >= 0 || text.indexOf("通过") >= 0) return "positive";
+    return "neutral";
+  }
+
+  function renderDetailAside(stats, batches) {
+    var candidateLines = [];
+    batches.forEach(function (batch) {
+      (batch.historical_fba_summary || []).forEach(function (line) {
+        candidateLines.push({
+          batch: batch.purchase_plan_sn || "-",
+          line: line
+        });
+      });
+    });
+    var rows = [
+      ["批次数", stats.batchCount, "按采购计划或独立动作归并"],
+      ["采购单", stats.purchaseOrderCount, "采购量 " + formatNumber(stats.purchaseOrderQty)],
+      ["到仓", stats.receiptCount, "到仓量 " + formatNumber(stats.receiptQty)],
+      ["正常FBA", stats.normalFbaCount, "到仓质检后创建"],
+      ["提前FBA", stats.earlyFbaCount, "采购链路未走完已创建"],
+      ["候选FBA", stats.candidateFbaCount, "历史或待确认"],
+      ["待复核批次", stats.issueCount, "数量或归因异常"]
+    ];
+    return [
+      '<aside class="summary-detail-side">',
+      '<div class="summary-detail-section-head"><b>待确认 / 侧栏</b><span>先看归因和数量异常</span></div>',
+      rows.map(function (item) {
+        return '<article><span>' + escapeHtml(item[0]) + '</span><strong>' + formatNumber(item[1]) + '</strong><small>' + escapeHtml(item[2]) + '</small></article>';
+      }).join(""),
+      candidateLines.length ? '<div class="summary-detail-side-candidates"><b>候选 FBA</b>' + candidateLines.slice(0, 6).map(function (item) {
+        return '<div><span>' + escapeHtml(item.batch) + '</span><strong>' + escapeHtml(item.line.order || "-") + '</strong><small>' + escapeHtml((item.line.note || "待确认") + " · " + readableQtyLabel(item.line) + " " + formatNumber(item.line.quantity || 0)) + '</small></div>';
+      }).join("") + (candidateLines.length > 6 ? '<p>还有 ' + formatNumber(candidateLines.length - 6) + ' 条候选，展开批次卡可查看。</p>' : '') + '</div>' : '',
+      batches.some(function (batch) { return (batch.historical_fba_summary || []).length; }) ? '<p class="summary-detail-side-note">候选 FBA 不直接并入主链路，避免把历史或重复计划误判成本次履约进度。</p>' : '',
+      '</aside>'
+    ].join("");
+  }
+
+  function detailStageOfLine(line) {
+    var type = line && line.type;
+    if (type === "purchase_order") return "purchase_order";
+    if (type === "receipt_order") return "receipt_order";
+    if (type === "qc_order") return "qc_order";
+    if (type === "fba_plan" || type === "candidate_fba_plan") return "fba_plan";
+    if (type === "shipment_plan" || type === "fba_shipment") return "shipment_plan";
+    return "purchase_plan";
+  }
+
+  function detailStageRank(stage) {
+    return {
+      none: 0,
+      purchase_plan: 1,
+      purchase_order: 2,
+      receipt_order: 3,
+      qc_order: 4,
+      fba_plan: 5,
+      shipment_plan: 6,
+      fba_receiving: 7
+    }[stage] || 0;
+  }
+
+  function readableStage(stage) {
+    return {
+      purchase_plan: "采购计划",
+      purchase_order: "采购单",
+      receipt_order: "到本地仓",
+      qc_order: "质检",
+      fba_plan: "建FBA",
+      shipment_plan: "FBA出库",
+      fba_receiving: "FBA接收",
+      none: "待确认"
+    }[stage] || "待确认";
+  }
+
+  function readableQtyLabel(line) {
+    var stage = detailStageOfLine(line);
+    if (stage === "receipt_order") return "到仓量";
+    if (stage === "qc_order") return "良品数";
+    if (stage === "fba_plan") return "计划数";
+    if (stage === "shipment_plan") return "发货数";
+    if (stage === "purchase_plan") return "计划数";
+    return "采购数";
   }
 
   function renderDetailTable(rows) {
@@ -416,7 +728,7 @@
         { headerName: "计划状态", field: "purchase_plan_status", width: 150 },
         numberColumn("计划数", "purchase_plan_qty", 96),
         { headerName: "链路节点明细", field: "order_summary", minWidth: 520, flex: 1, autoHeight: true, wrapText: true, cellRenderer: function (params) { return renderDetailLines(params.value); } },
-        { headerName: "历史/待确认FBA", field: "historical_fba_summary", minWidth: 220, autoHeight: true, wrapText: true, cellRenderer: function (params) { return renderDetailLines(params.value); } },
+        { headerName: "候选/重复FBA", field: "historical_fba_summary", minWidth: 260, autoHeight: true, wrapText: true, cellRenderer: function (params) { return renderDetailLines(params.value, "无候选FBA"); } },
         numberColumn("采购数量", "purchase_order_qty", 104),
         numberColumn("到仓量", "receipt_qty", 96),
         { headerName: "采购时间", field: "purchase_plan_time", width: 170 },
@@ -447,6 +759,7 @@
           has_current_fba_plan: false,
           time_summary: [],
           seenOrderKeys: {},
+          fba_plan_lines: [],
           order_summary: [],
           historical_fba_summary: []
         };
@@ -464,6 +777,8 @@
       var isReceipt = row.source_type === "receipt_order";
       var isQc = row.source_type === "qc_order";
       var isFbaPlan = row.source_type === "fba_plan";
+      var isFbaShipment = row.source_type === "fba_shipment";
+      var isHistoricalFba = isHistoricalFbaPlan(row);
       var detailQty = isFbaPlan ? Number(row.shipment_plan_quantity || row.purchase_plan_qty || 0) : isReceipt || isQc ? Number(row.quantity_received || 0) : Number(row.quantity_shipped || 0);
       if (isReceipt) {
         grouped[key].receipt_qty += detailQty;
@@ -472,11 +787,7 @@
         grouped[key].has_qc = true;
       } else if (isFbaPlan) {
         grouped[key].has_fba_plan = true;
-        if (!isHistoricalFbaPlan(row)) {
-          grouped[key].fba_plan_qty += detailQty;
-          grouped[key].has_current_fba_plan = true;
-        }
-      } else if (!isQc && !isFbaPlan) {
+      } else if (!isQc && !isFbaPlan && !isFbaShipment) {
         grouped[key].purchase_order_qty += detailQty;
         grouped[key].has_purchase_order = true;
       }
@@ -484,20 +795,81 @@
       var detailLine = {
         type: row.source_type || "",
         source: row.source_type_label || row.source_type || "明细",
-        order: row.order_sn || row.shipment_sn || "-",
+        order: isFbaShipment && row.shipment_sn ? (row.order_sn || "-") + " / " + row.shipment_sn : row.order_sn || row.shipment_sn || "-",
         logistics: row.logistics_order || row.logistics_channel_name || row.method_name || "",
-        status: row.purchase_plan_status || "",
-        quantity: detailQty,
-        quantity_label: isFbaPlan ? "计划数" : isReceipt ? "到仓量" : isQc ? "良品数" : "采购数量"
-      };
-      if (isFbaPlan && isHistoricalFbaPlan(row)) grouped[key].historical_fba_summary.push(detailLine);
-      else grouped[key].order_summary.push(detailLine);
+	        status: row.purchase_plan_status || "",
+	        quantity: detailQty,
+	        created_at: row.plan_create_time || row.shipment_time || row.purchase_plan_time || "",
+	        is_historical_fba: (isFbaPlan || isFbaShipment) && isHistoricalFba,
+	        quantity_label: isFbaShipment ? "发货数" : isFbaPlan ? "计划数" : isReceipt ? "到仓量" : isQc ? "良品数" : "采购数量"
+	      };
+	      if (isFbaPlan) grouped[key].fba_plan_lines.push(detailLine);
+	      else if (isFbaShipment && isHistoricalFba) grouped[key].historical_fba_summary.push(Object.assign({}, detailLine, {
+	        type: "candidate_fba_shipment",
+	        note: "历史/待确认"
+	      }));
+	      else grouped[key].order_summary.push(detailLine);
     });
     return Object.keys(grouped).map(function (key) {
       delete grouped[key].seenOrderKeys;
+      finalizeFbaPlanLines(grouped[key]);
+      delete grouped[key].fba_plan_lines;
       applyDetailDerivedFields(grouped[key]);
       return grouped[key];
     });
+  }
+
+  function finalizeFbaPlanLines(row) {
+    var fbaLines = row.fba_plan_lines || [];
+    if (!fbaLines.length) return;
+    var planQty = Number(row.purchase_plan_qty || 0);
+    var historicalLines = fbaLines.filter(function (line) { return line.is_historical_fba; });
+    var currentLines = fbaLines.filter(function (line) { return !line.is_historical_fba; });
+    if (!currentLines.length) {
+      historicalLines.forEach(function (line) {
+        row.historical_fba_summary.push(Object.assign({}, line, {
+          type: "candidate_fba_plan",
+          note: candidateReason(line, planQty)
+        }));
+      });
+      return;
+    }
+    var sorted = currentLines.slice().sort(function (a, b) {
+      return fbaPlanLineScore(b, planQty) - fbaPlanLineScore(a, planQty);
+    });
+    var mainLine = sorted[0];
+    mainLine.note = mainLine.note || "主链路";
+    row.order_summary.push(mainLine);
+    row.fba_plan_qty = Number(mainLine.quantity || 0);
+    row.has_current_fba_plan = true;
+    sorted.slice(1).concat(historicalLines).forEach(function (line) {
+      var candidate = Object.assign({}, line, {
+        type: "candidate_fba_plan",
+        note: candidateReason(line, planQty)
+      });
+      row.historical_fba_summary.push(candidate);
+    });
+  }
+
+  function fbaPlanLineScore(line, planQty) {
+    var status = String(line.status || "");
+    var qty = Number(line.quantity || 0);
+    var score = 0;
+    if (!line.is_historical_fba) score += 1000;
+    if (status.indexOf("已处理") >= 0 || status.indexOf("已创建") >= 0) score += 500;
+    if (status.indexOf("待") >= 0) score -= 200;
+    if (planQty > 0) score -= Math.abs(qty - planQty);
+    if (line.created_at) score -= Math.min(daysSince(line.created_at) || 0, 30) * 0.1;
+    return score;
+  }
+
+  function candidateReason(line, planQty) {
+    var status = String(line.status || "");
+    var qty = Number(line.quantity || 0);
+    if (planQty > 0 && Math.abs(qty - planQty) > Math.max(planQty * 0.2, 5)) return "数量不匹配";
+    if (status.indexOf("待") >= 0) return "待处理候选";
+    if (line.is_historical_fba) return "历史/待确认";
+    return "重复候选";
   }
 
   function isHistoricalFbaPlan(row) {
@@ -579,6 +951,7 @@
       [row.source_type === "qc_order" ? "质检" : "", row.plan_create_time],
       [row.source_type === "fba_plan" ? "建FBA" : "", row.plan_create_time],
       [row.source_type === "fba_plan" ? "FBA发货" : "", row.shipment_time],
+      [row.source_type === "fba_shipment" ? "FBA货件" : "", row.shipment_time || row.plan_create_time],
       ["预计到达", row.expected_arrival_date || row.purchase_expect_arrive_time]
     ];
     items.forEach(function (item) {
@@ -607,15 +980,16 @@
     return statusPill("-", "neutral");
   }
 
-  function renderDetailLines(lines) {
-    if (!lines || !lines.length) return '<span class="muted">暂无采购单</span>';
-    return lines.map(function (line) {
+  function renderDetailLines(lines, emptyText) {
+    if (!lines || !lines.length) return '<span class="muted">' + escapeHtml(emptyText || "暂无采购单") + '</span>';
+    return lines.slice().sort(compareDetailLines).map(function (line) {
       var config = DETAIL_NODE_CONFIG[line.type] || { label: line.source || "明细", tone: "neutral", qtyLabel: line.quantity_label || "数量" };
       var logistics = line.logistics ? '<span class="detail-node-meta">' + escapeHtml(line.logistics) + '</span>' : "";
+      var note = line.note ? '<span class="detail-node-note">' + escapeHtml(line.note) + '</span>' : "";
       return [
         '<div class="detail-node-card ' + escapeHtml(config.tone) + '">',
         '<div class="detail-node-head">',
-        '<span>' + escapeHtml(config.label) + '</span>',
+        '<span>' + escapeHtml(config.label) + note + '</span>',
         '<strong>' + escapeHtml(line.order) + '</strong>',
         '</div>',
         '<div class="detail-node-body">',
@@ -625,6 +999,23 @@
         '</div>'
       ].join("");
     }).join("");
+  }
+
+  function compareDetailLines(a, b) {
+    var order = {
+      purchase_order: 1,
+      receipt_order: 2,
+      qc_order: 3,
+      fba_plan: 4,
+      candidate_fba_plan: 4,
+      candidate_fba_shipment: 5,
+      shipment_plan: 5,
+      fba_shipment: 5
+    };
+    var orderA = order[a.type] || 99;
+    var orderB = order[b.type] || 99;
+    if (orderA !== orderB) return orderA - orderB;
+    return String(a.created_at || "").localeCompare(String(b.created_at || ""));
   }
 
   function renderOrderSummary(value) {
@@ -654,6 +1045,110 @@
         '</article>'
       ].join("");
     }).join("") + '</div>';
+  }
+
+  function renderStageDetailTable(row, activeStage) {
+    var nodes = chainNodeRows(row);
+    if (!nodes.length) {
+      el.summaryTrackingDetailWrap.innerHTML = '<div class="empty-state compact">当前分层暂无链路节点。</div>';
+      return;
+    }
+    var demand = Number(row.demand_count || row.current_count || row.msku_count || 0);
+    var maxCount = Math.max.apply(null, [demand].concat(nodes.map(function (node) {
+      return Number(node.done || 0);
+    })));
+    var biggestMissingNode = nodes.slice().sort(function (a, b) {
+      return nodeMissing(b) - nodeMissing(a);
+    })[0];
+    var diagnostic = biggestMissingNode && nodeMissing(biggestMissingNode) > 0
+      ? "最大断点：" + biggestMissingNode.label + " 未完成 " + formatNumber(nodeMissing(biggestMissingNode)) + " 个"
+      : "当前链路暂无明显断点";
+    el.summaryTrackingDetailWrap.innerHTML = [
+      '<section class="summary-conversion-panel">',
+      '<div class="summary-conversion-head">',
+      '<div><b>链路转化</b><small>' + escapeHtml(diagnostic) + '</small></div>',
+      '<span>点击节点筛选下方 MSKU 明细</span>',
+      '</div>',
+      '<div class="summary-conversion-funnel">',
+      renderConversionDemandRow(row, demand, maxCount, activeStage),
+      nodes.map(function (node) {
+        return renderConversionNodeRow(row, node, activeStage, maxCount);
+      }).join(""),
+      '</div>',
+      '</section>'
+    ].join("");
+  }
+
+  function renderConversionDemandRow(row, demand, maxCount, activeStage) {
+    var active = activeStage === "all" ? " active" : "";
+    var width = maxCount ? Math.max(Math.round((Number(demand || 0) / maxCount) * 100), 1) : 0;
+    return [
+      '<button type="button" class="summary-conversion-row demand' + active + '" data-summary-stage-filter data-summary-level="' + escapeHtml(row.level || "all") + '" data-summary-stage="all">',
+      '<span class="conversion-name"><b>需要补货</b><small>历史进入该层级</small></span>',
+      '<strong>' + formatNumber(demand || 0) + '</strong>',
+      '<span class="conversion-bar"><i class="blue" style="width:' + width + '%"></i></span>',
+      '<span class="conversion-meta ok">100%</span>',
+      '<em>全部MSKU</em>',
+      '</button>'
+    ].join("");
+  }
+
+  function renderConversionNodeRow(row, node, activeStage, maxCount) {
+    var done = Number(node.done || 0);
+    var total = Number(node.total || 0);
+    var missing = nodeMissing(node);
+    var ratio = total > 0 ? done / total : 0;
+    var width = maxCount ? Math.max(Math.round((done / maxCount) * 100), done > 0 ? 1 : 0) : 0;
+    var active = activeStage === node.stage ? " active" : "";
+    var tone = conversionTone(node, ratio, missing);
+    var hint = node.hint || (node.baseLabel + " " + formatNumber(total) + " · 未完成 " + formatNumber(missing));
+    var isSplitFba = node.stage === "fba_plan_done" && Number(node.precreatedDone || 0) > 0;
+    var barHtml = isSplitFba ? renderFbaSplitBar(node, maxCount) : '<span class="conversion-bar"><i class="' + escapeHtml(tone) + '" style="width:' + width + '%"></i></span>';
+    var resultHtml = isSplitFba ? [
+      '<em class="conversion-breakdown">',
+      '<span class="normal">正常 ' + formatNumber(node.normalDone || 0) + '</span>',
+      '<span class="early">提前 ' + formatNumber(node.precreatedDone || 0) + '</span>',
+      missing > 0 ? '<span class="missing">未完成 ' + formatNumber(missing) + '</span>' : '',
+      '</em>'
+    ].join("") : '<em>' + (missing > 0 ? "未完成 " + formatNumber(missing) : "已完成") + '</em>';
+    return [
+      '<button type="button" class="summary-conversion-row ' + tone + (isSplitFba ? " split-fba" : "") + active + '" data-summary-stage-filter data-summary-level="' + escapeHtml(row.level || "all") + '" data-summary-stage="' + escapeHtml(node.stage) + '">',
+      '<span class="conversion-name"><b>' + escapeHtml(node.label) + '</b><small>' + escapeHtml(hint) + '</small></span>',
+      '<strong>' + formatNumber(done) + '</strong>',
+      barHtml,
+      '<span class="conversion-meta ' + escapeHtml(tone) + '">' + formatPercent(ratio) + '</span>',
+      resultHtml,
+      '</button>'
+    ].join("");
+  }
+
+  function renderFbaSplitBar(node, maxCount) {
+    var normal = Number(node.normalDone || 0);
+    var precreated = Number(node.precreatedDone || 0);
+    var normalWidth = maxCount ? Math.max(Math.round((normal / maxCount) * 100), normal > 0 ? 1 : 0) : 0;
+    var precreatedWidth = maxCount ? Math.max(Math.round((precreated / maxCount) * 100), precreated > 0 ? 1 : 0) : 0;
+    return [
+      '<span class="conversion-bar split" title="正常链路 ' + formatNumber(normal) + '，提前创建 ' + formatNumber(precreated) + '">',
+      '<i class="normal-fba" style="width:' + normalWidth + '%"></i>',
+      '<i class="early-fba" style="width:' + precreatedWidth + '%"></i>',
+      '</span>'
+    ].join("");
+  }
+
+  function nodeMissing(node) {
+    return Math.max(Number(node.total || 0) - Number(node.done || 0), 0);
+  }
+
+  function formatPercent(value) {
+    if (!Number.isFinite(value)) return "0%";
+    return (Math.round(value * 1000) / 10).toFixed(value >= 1 ? 0 : 1).replace(/\.0$/, "") + "%";
+  }
+
+  function conversionTone(node, ratio, missing) {
+    if (!Number(node.total || 0)) return "neutral";
+    if (node.stage === "fba_receiving_done" && missing > 0) return "danger";
+    if (missing <= 0 || ratio >= 1) return "ok";
+    return "warn";
   }
 
   function renderPagination(payload) {
@@ -712,17 +1207,25 @@
 
   function renderChainProgress(row) {
     var nodes = [
-      ["购", "建采购", row.purchase_plan_flag],
-      ["途", "采购在途", row.supplier_shipped_flag],
-      ["仓", "到本地仓", row.local_received_flag],
-      ["检", "质检通过", row.qc_passed_flag],
-      ["F", "建FBA", row.fba_plan_flag],
-      ["出", "FBA出库", row.fba_shipped_flag],
-      ["收", "FBA接收", row.fba_receiving_flag],
-      ["完", "完成", row.fba_closed_flag]
+      ["购", "建采购", row.purchase_plan_flag, row.purchase_plan_qty],
+      ["途", "采购在途", row.supplier_shipped_flag, row.purchase_inbound_qty],
+      ["仓", "到本地仓", row.local_received_flag, row.local_received_qty],
+      ["检", "质检通过", row.qc_passed_flag, row.qc_good_qty],
+      ["F", "建FBA", row.fba_plan_flag, row.fba_plan_qty],
+      ["出", "FBA出库", row.fba_shipped_flag, row.fba_shipped_qty],
+      ["收", "FBA接收", row.fba_receiving_flag, row.fba_received_qty],
+      ["完", "完成", row.fba_closed_flag, row.fba_received_qty]
     ];
     return '<span class="summary-chain-progress">' + nodes.map(function (node) {
-      return '<i class="' + (Number(node[2] || 0) ? "done" : "todo") + '" title="' + escapeHtml(node[1]) + '">' + escapeHtml(node[0]) + '</i>';
+      var qty = Number(node[3] || 0);
+      var done = Number(node[2] || 0) ? true : false;
+      var hasLaterDone = nodes.slice(nodes.indexOf(node) + 1).some(function (nextNode) {
+        return Number(nextNode[2] || 0) > 0;
+      });
+      var statusClass = done ? "done" : (hasLaterDone ? "gap" : "todo");
+      var title = node[1] + "：" + formatNumber(qty);
+      if (!done && hasLaterDone) title += "，后续节点已有动作，当前节点未确认";
+      return '<span class="summary-chain-step ' + statusClass + '" title="' + escapeHtml(title) + '"><i>' + escapeHtml(node[0]) + '</i><em>' + formatNumber(qty) + '</em></span>';
     }).join("") + '</span>';
   }
 
@@ -861,7 +1364,7 @@
       { label: "采购在途", done: shipped, total: purchase, baseLabel: "已建采购", stage: "supplier_shipped_done" },
       { label: "到本地仓", done: local, total: shipped, baseLabel: "采购在途", stage: "local_received_done" },
       { label: "质检通过", done: qc, total: local, baseLabel: "已到仓", stage: "qc_passed_done" },
-      { label: "建FBA", done: fbaPlan, total: fbaBase, baseLabel: "前置节点", hint: fbaPlanHint, stage: "fba_plan_done" },
+      { label: "建FBA", done: fbaPlan, total: fbaBase, baseLabel: "前置节点", hint: fbaPlanHint, stage: "fba_plan_done", normalDone: normalFbaPlan, precreatedDone: precreatedFbaPlan },
       { label: "FBA出库", done: fbaOut, total: fbaPlan, baseLabel: "已建FBA", stage: "fba_shipped_done" },
       { label: "FBA接收", done: fbaReceive, total: fbaOut, baseLabel: "已出库", stage: "fba_receiving_done" },
       { label: "完成", done: row.fba_closed_count || 0, total: fbaReceive, baseLabel: "已接收", stage: "fba_closed" }

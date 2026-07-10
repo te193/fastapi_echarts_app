@@ -373,6 +373,89 @@ def api_sales_role_export(
     return StreamingResponse(iter([output.getvalue()]), media_type="text/csv; charset=utf-8", headers=headers)
 
 
+@app.get("/api/sales-role/lifecycle")
+def api_sales_role_lifecycle(
+    period: str = "30d",
+    country_category: str = "all",
+    seller_name_new: str = "all",
+    lifecycle_label: str = "all",
+    sales_role: str = "all",
+    keyword: str = "",
+    page: int = 1,
+    page_size: int = 20,
+    sort_field: str = "sales_amount",
+    sort_dir: str = "desc",
+) -> dict:
+    return dashboard_service.get_sales_role_lifecycle_payload(
+        period=period,
+        country_category=country_category,
+        seller_name_new=seller_name_new,
+        lifecycle_label=lifecycle_label,
+        sales_role=sales_role,
+        keyword=keyword,
+        page=page,
+        page_size=page_size,
+        sort_field=sort_field,
+        sort_dir=sort_dir,
+    )
+
+
+@app.get("/api/sales-role/lifecycle/export")
+def api_sales_role_lifecycle_export(
+    period: str = "30d",
+    country_category: str = "all",
+    seller_name_new: str = "all",
+    lifecycle_label: str = "all",
+    sales_role: str = "all",
+    keyword: str = "",
+    sort_field: str = "sales_amount",
+    sort_dir: str = "desc",
+) -> StreamingResponse:
+    payload = dashboard_service.get_sales_role_lifecycle_export_payload(
+        period=period,
+        country_category=country_category,
+        seller_name_new=seller_name_new,
+        lifecycle_label=lifecycle_label,
+        sales_role=sales_role,
+        keyword=keyword,
+        sort_field=sort_field,
+        sort_dir=sort_dir,
+    )
+    output = io.StringIO(newline="")
+    output.write("\ufeff")
+    writer = csv.writer(output)
+    writer.writerow([
+        "生命周期", "销售角色", "国家类别", "店铺", "MSKU", "SKU示例", "覆盖国家数", "覆盖国家",
+        "销量", "日均销量", "销售额", "订单毛利润", "订单毛利率", "标签周期", "销售角色周期",
+        "广告花费", "广告销售额", "ACOS", "TACOS",
+    ])
+    for row in payload["rows"]:
+        writer.writerow([
+            csv_cell_value(row.get("lifecycle_label")),
+            csv_cell_value(row.get("sales_role")),
+            csv_cell_value(row.get("country_category")),
+            csv_cell_value(row.get("seller_name_new")),
+            csv_cell_value(row.get("seller_sku_adj")),
+            csv_cell_value(row.get("local_sku_sample")),
+            csv_cell_value(row.get("country_count")),
+            csv_cell_value(row.get("countries")),
+            csv_cell_value(row.get("sales_qty")),
+            csv_cell_value(row.get("daily_sales")),
+            csv_cell_value(row.get("sales_amount")),
+            csv_cell_value(row.get("order_gross_profit")),
+            csv_cell_value(row.get("order_gross_margin")),
+            csv_cell_value(row.get("label_period")),
+            csv_cell_value(row.get("sales_role_period")),
+            csv_cell_value(row.get("ad_spend")),
+            csv_cell_value(row.get("ad_sales")),
+            csv_cell_value(row.get("acos")),
+            csv_cell_value(row.get("tacos")),
+        ])
+    filename = f"sales_role_lifecycle_{period}_{date.today().isoformat()}.csv"
+    headers = {"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"}
+    return StreamingResponse(iter([output.getvalue()]), media_type="text/csv; charset=utf-8", headers=headers)
+
+
 @app.get("/api/dashboard")
 def api_dashboard(
     start_date: Optional[str] = Query(default=None),
@@ -941,6 +1024,7 @@ def api_replenishment_tracking_summary(
     site: str = Query(default="all"),
     store: str = Query(default="all"),
     keyword: str = Query(default=""),
+    order_keyword: str = Query(default=""),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=10, le=100),
 ) -> dict:
@@ -957,6 +1041,7 @@ def api_replenishment_tracking_summary(
         site=site,
         store=store,
         keyword=keyword,
+        order_keyword=order_keyword,
         page=page,
         page_size=page_size,
     )
