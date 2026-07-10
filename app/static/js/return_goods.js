@@ -278,7 +278,7 @@
   }
 
   function displayDateForSnapshot(snapshotDate) {
-    return addDays(snapshotDate, 1);
+    return snapshotDate || "";
   }
 
   function addDays(dateValue, offset) {

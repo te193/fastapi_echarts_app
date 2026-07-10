@@ -1455,6 +1455,7 @@ class ReplenishmentDataService:
             "followed_status": "followed_flag",
             "followed_by_count": "followed_by_count",
             "followed_by_links": "followed_by_links",
+            "follow_origin_link": "follow_origin_link",
             "listing_tags": "global_tags",
             "replenish_block_reason": display_block_reason_expr,
             "asin_merge_status": "asin_merge_flag",
@@ -1501,6 +1502,7 @@ class ReplenishmentDataService:
                     followed_flag,
                     followed_by_count,
                     followed_by_links,
+                    follow_origin_link,
                     global_tags,
                     {display_block_reason_expr} as replenish_block_reason,
                     asin_merge_flag,
@@ -1698,7 +1700,9 @@ class ReplenishmentDataService:
         sales_col = PRODUCT_CATEGORY_SALES_COLUMNS[safe_period_days]
         salable_col = f"r_{safe_period_days}d_salable_days"
         margin_col = f"pprofit_ratio_{safe_period_days}d"
-        daily_sales_expr = f"case when {salable_col} > 0 then {sales_col} / {salable_col} else 0 end"
+        salable_floor_days = math.ceil(safe_period_days / 2)
+        effective_salable_days_expr = f"greatest({salable_col}, {salable_floor_days})"
+        daily_sales_expr = f"case when {salable_col} > 0 then {sales_col} / {effective_salable_days_expr} else 0 end"
         category_expr = f"""
             case
                 when ({daily_sales_expr}) >= 5 and {margin_col} >= 0.15 then '明星产品'
@@ -1813,6 +1817,7 @@ class ReplenishmentDataService:
             "followed_status": format_yes_no_status(row.get("followed_flag")),
             "followed_by_count": to_int(row.get("followed_by_count")),
             "followed_by_links": row.get("followed_by_links"),
+            "follow_origin_link": row.get("follow_origin_link"),
             "listing_tags": row.get("global_tags"),
             "replenish_block_reason": row.get("replenish_block_reason"),
             "asin_merge_status": format_yes_no_status(row.get("asin_merge_flag")),

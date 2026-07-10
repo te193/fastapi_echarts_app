@@ -194,10 +194,21 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("l.max_cg_price", sql)
         self.assertIn("l.max_cg_transport_costs", sql)
         self.assertIn("l.max_cg_box_pcs", sql)
-        self.assertIn("* (max_cg_price + max_cg_transport_costs)", sql)
+        self.assertIn("* (effective_max_cg_price + effective_max_cg_transport_costs)", sql)
         self.assertNotIn("0 as max_cg_price", sql)
         self.assertNotIn("0 as max_cg_transport_costs", sql)
         self.assertNotIn("0 as replenish_cost", sql)
+
+    def test_replenishment_result_sql_inherits_purchase_fields_for_merged_asin_target(self):
+        sql = replenishment_update.REPLENISHMENT_RESULT_SQL
+
+        self.assertIn("tmp_asin_merge_purchase_fields", sql)
+        self.assertIn("purchase.effective_max_cg_box_pcs", sql)
+        self.assertIn("purchase.effective_max_cg_price", sql)
+        self.assertIn("purchase.effective_max_cg_transport_costs", sql)
+        self.assertIn("coalesce(purchase.effective_max_cg_box_pcs, max_cg_box_pcs)", sql)
+        self.assertIn("coalesce(purchase.effective_max_cg_price, max_cg_price)", sql)
+        self.assertIn("coalesce(purchase.effective_max_cg_transport_costs, max_cg_transport_costs)", sql)
 
     def test_replenishment_result_sql_keeps_original_replenishment_calculation_rules(self):
         sql = replenishment_update.REPLENISHMENT_RESULT_SQL
@@ -211,9 +222,9 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("as history_recovery_flag", sql)
         self.assertIn("l.max_cg_box_pcs", sql)
         self.assertIn("when coalesce(max_cg_box_pcs, 0) > 0 then max_cg_box_pcs", sql)
-        self.assertIn("and (max_cg_box_pcs = 0 or max_cg_box_pcs is null)", sql)
+        self.assertIn("and (effective_max_cg_box_pcs = 0 or effective_max_cg_box_pcs is null)", sql)
         self.assertIn("greatest(round(normal_replenish_need_qty * sales_adj_factor, 0), 50)", sql)
-        self.assertIn("normal_replenish_need_qty * sales_adj_factor /", sql)
+        self.assertIn("normal_replenish_need_qty * sales_adj_factor / effective_max_cg_box_pcs", sql)
         self.assertNotIn("50 as pre_replenish_trigger_qty", sql)
         self.assertNotIn("1 as sales_adj_factor", sql)
         self.assertNotIn("0 as history_recovery_flag", sql)
@@ -250,6 +261,7 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("when coalesce(fo.fllow_flag, 1) = 1 then coalesce(m.sales_30, 0)", sql)
         self.assertIn("else coalesce(m.sales_30, 0) + coalesce(fo.origin_sales_30, 0)", sql)
         self.assertIn("coalesce(fo.fllow_flag, 1) as fllow_flag", sql)
+        self.assertIn("fallback.origin_seller_sku_adj is null", sql)
         self.assertNotIn("1 as fllow_flag", sql)
 
     def test_follow_sales_falls_back_to_top_asin_sales_when_self_asin_missing(self):
@@ -263,6 +275,18 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("bridge.seller_name_new = fallback.origin_seller_name_new", sql)
         self.assertIn("bridge.seller_sku_adj = fallback.origin_seller_sku_adj", sql)
         self.assertNotIn("max(seller_name_new) as self_store_name", sql)
+
+    def test_follow_links_inherit_origin_listing_fields_when_missing(self):
+        sql = replenishment_update.REPLENISHMENT_RESULT_SQL
+
+        self.assertIn("follow_origin_link varchar(255) null", replenishment_update.CREATE_REPLENISHMENT_RESULT_SQL)
+        self.assertIn("origin_listing.max_sku as origin_max_sku", sql)
+        self.assertIn("else concat(fo.origin_seller_name_new, '/', fo.origin_seller_sku_adj)", sql)
+        self.assertIn("coalesce(nullif(l.max_sku, ''), fm.origin_max_sku, c.max_sku) as max_sku", sql)
+        self.assertIn("coalesce(nullif(l.max_brand_name, ''), fm.origin_max_brand_name) as max_brand_name", sql)
+        self.assertIn("coalesce(nullif(l.max_local_name, ''), fm.origin_max_local_name) as max_local_name", sql)
+        self.assertIn("coalesce(nullif(l.principal, ''), fm.origin_principal) as principal", sql)
+        self.assertIn("follow_origin_link,", sql)
 
     def test_follow_sales_adds_origin_sales_for_all_short_windows(self):
         sql = replenishment_update.REPLENISHMENT_RESULT_SQL

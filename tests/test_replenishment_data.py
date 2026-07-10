@@ -147,6 +147,7 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
                 "followed_flag": 1,
                 "followed_by_count": 2,
                 "followed_by_links": "store-a/MSKU-A | store-b/MSKU-B",
+                "follow_origin_link": "origin-store/ORIGIN-MSKU",
                 "replenish_block_reason": "被跟卖点不补货",
                 "asin_merge_flag": 1,
                 "asin_merge_target": "store-a/MSKU-A",
@@ -159,6 +160,7 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
         self.assertEqual("是", item["followed_status"])
         self.assertEqual(2, item["followed_by_count"])
         self.assertEqual("store-a/MSKU-A | store-b/MSKU-B", item["followed_by_links"])
+        self.assertEqual("origin-store/ORIGIN-MSKU", item["follow_origin_link"])
         self.assertEqual("被跟卖点不补货", item["replenish_block_reason"])
         self.assertEqual("是", item["asin_merge_status"])
         self.assertEqual("store-a/MSKU-A", item["asin_merge_target"])
@@ -219,7 +221,7 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
         )
 
         sql = conn.queries[0]
-        self.assertIn("sales_90d / r_90d_salable_days", sql)
+        self.assertIn("sales_90d / greatest(r_90d_salable_days, 45)", sql)
         self.assertIn("as `abcd_category`", sql)
         self.assertIn("as `gp_margin_range`", sql)
         self.assertIn("order by", sql)
@@ -242,10 +244,30 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
 
         metrics_90 = service._product_category_metric_sql(90)
         metrics_180 = service._product_category_metric_sql(180)
-        self.assertIn("sales_90d / r_90d_salable_days", metrics_90["daily_sales_expr"])
+        self.assertIn("sales_90d / greatest(r_90d_salable_days, 45)", metrics_90["daily_sales_expr"])
         self.assertEqual("pprofit_ratio_90d", metrics_90["margin_col"])
-        self.assertIn("sales_180d / r_180d_salable_days", metrics_180["daily_sales_expr"])
+        self.assertIn("sales_180d / greatest(r_180d_salable_days, 90)", metrics_180["daily_sales_expr"])
         self.assertEqual("pprofit_ratio_180d", metrics_180["margin_col"])
+
+    def test_product_category_daily_sales_uses_half_period_salable_day_floor(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+
+        expected_floors = {
+            7: ("final_sales_7d", "r_7d_salable_days", 4),
+            14: ("final_sales_14d", "r_14d_salable_days", 7),
+            30: ("final_sales_30d", "r_30d_salable_days", 15),
+            90: ("sales_90d", "r_90d_salable_days", 45),
+            180: ("sales_180d", "r_180d_salable_days", 90),
+        }
+
+        for period, (sales_col, salable_col, floor_days) in expected_floors.items():
+            with self.subTest(period=period):
+                metrics = service._product_category_metric_sql(period)
+                expr = metrics["daily_sales_expr"]
+
+                self.assertIn(f"case when {salable_col} > 0", expr)
+                self.assertIn(f"{sales_col} / greatest({salable_col}, {floor_days})", expr)
+                self.assertIn("else 0 end", expr)
 
     def test_history_recovery_display_layer_only_covers_passive_rows(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)

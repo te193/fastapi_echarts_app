@@ -20,19 +20,21 @@ def test_margin_price_assets_use_cache_busting_versions():
     replenishment_template = (ROOT / "app" / "templates" / "replenishment.html").read_text(encoding="utf-8")
 
     assert "styles.css') }}?v=20260708listingtags1" in base_template
-    assert "replenishment.js') }}?v=20260708listingtags1" in replenishment_template
+    assert "replenishment.js') }}?v=20260709followorigin1" in replenishment_template
     assert "replenishment_tracking_summary.js') }}?v=20260630chainv8" in replenishment_template
 
 
 def test_replenishment_grid_shows_followed_origin_columns():
     script = (ROOT / "app" / "static" / "js" / "replenishment.js").read_text(encoding="utf-8")
 
+    assert "followOriginLink" in script
     assert "followedStatus" in script
     assert "followedByLinks" in script
     assert "replenishBlockReason" in script
     assert "asinMergeStatus" in script
     assert "asinMergeTarget" in script
     assert "asinMergeReason" in script
+    assert 'field: "follow_origin_link"' in script
     assert 'field: "followed_status"' in script
     assert 'field: "followed_by_links"' in script
     assert 'field: "replenish_block_reason"' in script
