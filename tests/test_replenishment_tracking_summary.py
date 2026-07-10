@@ -417,7 +417,11 @@ def test_tracking_summary_same_day_count_uses_daily_dashboard_display_rules():
 
     assert "left join dashboard_pur_plan_replenish_data d" in sql
     assert "d.cur_date = s.cutoff_date" in sql
-    assert "d.support_replenish_level collate utf8mb4_unicode_ci = h.historical_replenishment_level" in sql
+    assert "d.support_replenish_level = h.historical_replenishment_level collate utf8mb4_0900_ai_ci" in sql
+    assert "d.country_category = s.country_category collate utf8mb4_0900_ai_ci" in sql
+    assert "d.seller_name_new = s.seller_name_new collate utf8mb4_0900_ai_ci" in sql
+    assert "d.seller_sku_adj = s.seller_sku_adj collate utf8mb4_0900_ai_ci" in sql
+    assert "d.country_category collate utf8mb4_unicode_ci" not in sql
     assert "coalesce(d.asin_merge_flag, 0) = 1" in sql
     assert "coalesce(d.replenish_qty, 0) = 0" in sql
     assert "coalesce(d.replenish_block_reason, '') <> '被跟卖点不补货'" in sql
