@@ -24,6 +24,13 @@ def test_margin_price_assets_use_cache_busting_versions():
     assert "replenishment_tracking_summary.js') }}?v=20260710release1" in replenishment_template
 
 
+def test_replenishment_tracking_summary_entry_is_visible():
+    template = (ROOT / "app" / "templates" / "replenishment.html").read_text(encoding="utf-8")
+
+    assert '<button id="summaryViewBtn" type="button">' in template
+    assert '<button id="summaryViewBtn" type="button" hidden>' not in template
+
+
 def test_replenishment_grid_shows_followed_origin_columns():
     script = (ROOT / "app" / "static" / "js" / "replenishment.js").read_text(encoding="utf-8")
 
