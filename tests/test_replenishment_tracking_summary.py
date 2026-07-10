@@ -391,6 +391,39 @@ def test_summary_detail_uses_visible_cutoff_date():
     assert 'cutoff_date: textOf("datePickerValue")' in js
 
 
+def test_tracking_summary_same_day_count_uses_daily_dashboard_display_rules():
+    queries = []
+
+    class Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, params=None):
+            queries.append(" ".join(str(sql).split()))
+
+        def fetchall(self):
+            return []
+
+    class Connection:
+        def cursor(self):
+            return Cursor()
+
+    service = ReplenishmentTrackingSummaryService()
+    service._level_flow(Connection(), "1 = 1", {}, "product_category_30d")
+    sql = queries[0]
+
+    assert "left join dashboard_pur_plan_replenish_data d" in sql
+    assert "d.cur_date = s.cutoff_date" in sql
+    assert "d.support_replenish_level collate utf8mb4_unicode_ci = h.historical_replenishment_level" in sql
+    assert "coalesce(d.asin_merge_flag, 0) = 1" in sql
+    assert "coalesce(d.replenish_qty, 0) = 0" in sql
+    assert "coalesce(d.replenish_block_reason, '') <> '被跟卖点不补货'" in sql
+    assert "h.is_current_level = 1 and s.latest_replenishment_date = s.cutoff_date" not in sql
+
+
 def test_summary_detail_labels_date_as_cutoff_date():
     js = Path("app/static/js/replenishment_tracking_summary.js").read_text(encoding="utf-8")
 

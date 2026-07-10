@@ -927,7 +927,16 @@ class ReplenishmentTrackingSummaryService:
                     h.historical_replenishment_level as level,
                     count(*) as msku_count,
                     sum(case when h.is_current_level = 1 then 1 else 0 end) as current_count,
-                    sum(case when h.is_current_level = 1 and s.latest_replenishment_date = s.cutoff_date then 1 else 0 end) as same_day_count,
+                    sum(case
+                        when d.cur_date = s.cutoff_date
+                         and d.support_replenish_level collate utf8mb4_unicode_ci = h.historical_replenishment_level collate utf8mb4_unicode_ci
+                         and not (
+                            coalesce(d.asin_merge_flag, 0) = 1
+                            and coalesce(d.replenish_qty, 0) = 0
+                            and coalesce(d.replenish_block_reason, '') <> '被跟卖点不补货'
+                         )
+                        then 1 else 0
+                    end) as same_day_count,
                     sum(case when h.purchase_plan_flag = 1 then 1 else 0 end) as purchased_count,
                     sum(case when s.purchase_status = 'none' then 1 else 0 end) as unpurchased_count,
                     sum(case when s.purchase_status <> 'none' and s.fba_status <> 'none' then 1 else 0 end) as fba_created_count,
@@ -950,6 +959,11 @@ class ReplenishmentTrackingSummaryService:
                  and h.country_category = s.country_category
                  and h.seller_name_new = s.seller_name_new
                  and h.seller_sku_adj = s.seller_sku_adj
+                left join dashboard_pur_plan_replenish_data d
+                  on d.cur_date = s.cutoff_date
+                 and d.country_category collate utf8mb4_unicode_ci = s.country_category collate utf8mb4_unicode_ci
+                 and d.seller_name_new collate utf8mb4_unicode_ci = s.seller_name_new collate utf8mb4_unicode_ci
+                 and d.seller_sku_adj collate utf8mb4_unicode_ci = s.seller_sku_adj collate utf8mb4_unicode_ci
                 where {filters}
                 group by h.historical_replenishment_level
                 order by
