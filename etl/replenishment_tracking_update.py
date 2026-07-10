@@ -188,10 +188,14 @@ create table if not exists dashboard_tracking_inbound_shipment_sync (
     expected_arrival_date datetime null comment 'expected arrival date',
     eta_date datetime null comment 'ETA date',
     delivery_date datetime null comment 'delivery date',
+    receiving_time datetime null comment 'FBA receiving time',
+    closed_time datetime null comment 'FBA closed time',
     logistics_status varchar(255) null comment 'logistics status',
     logistics_channel_name varchar(255) null comment 'logistics channel',
     logistics_provider_name varchar(255) null comment 'logistics provider',
     quantity_total decimal(18,4) not null default 0 comment 'shipment total quantity',
+    quantity_shipped decimal(18,4) not null default 0 comment 'FBA shipped quantity',
+    quantity_received decimal(18,4) not null default 0 comment 'FBA received quantity',
     source_create_time datetime null comment 'source sync create time',
     created_at datetime not null default current_timestamp comment 'created at',
     updated_at datetime not null default current_timestamp on update current_timestamp comment 'updated at',
@@ -327,47 +331,59 @@ where plan_create_time >= %(window_start)s
 
 SELECT_INBOUND_SHIPMENT_SYNC_SQL = """
 select
-    shipment_sn,
-    shipment_id,
-    status as shipment_status,
-    status_name,
+    s.shipment_sn,
+    s.shipment_id,
+    s.status as shipment_status,
+    s.status_name,
     coalesce(
-        str_to_date(nullif(shipment_time, ''), '%%Y-%%m-%%d %%H:%%i:%%s'),
-        str_to_date(nullif(shipment_time, ''), '%%Y-%%m-%%d')
+        str_to_date(nullif(s.shipment_time, ''), '%%Y-%%m-%%d %%H:%%i:%%s'),
+        str_to_date(nullif(s.shipment_time, ''), '%%Y-%%m-%%d')
     ) as shipment_time,
     coalesce(
-        str_to_date(nullif(actual_shipment_time, ''), '%%Y-%%m-%%d %%H:%%i:%%s'),
-        str_to_date(nullif(actual_shipment_time, ''), '%%Y-%%m-%%d')
+        str_to_date(nullif(s.actual_shipment_time, ''), '%%Y-%%m-%%d %%H:%%i:%%s'),
+        str_to_date(nullif(s.actual_shipment_time, ''), '%%Y-%%m-%%d')
     ) as actual_shipment_time,
     coalesce(
-        str_to_date(nullif(expected_arrival_date, ''), '%%Y-%%m-%%d %%H:%%i:%%s'),
-        str_to_date(nullif(expected_arrival_date, ''), '%%Y-%%m-%%d')
+        str_to_date(nullif(s.expected_arrival_date, ''), '%%Y-%%m-%%d %%H:%%i:%%s'),
+        str_to_date(nullif(s.expected_arrival_date, ''), '%%Y-%%m-%%d')
     ) as expected_arrival_date,
     coalesce(
-        str_to_date(nullif(eta_date, ''), '%%Y-%%m-%%d %%H:%%i:%%s'),
-        str_to_date(nullif(eta_date, ''), '%%Y-%%m-%%d')
+        str_to_date(nullif(s.eta_date, ''), '%%Y-%%m-%%d %%H:%%i:%%s'),
+        str_to_date(nullif(s.eta_date, ''), '%%Y-%%m-%%d')
     ) as eta_date,
     coalesce(
-        str_to_date(nullif(delivery_date, ''), '%%Y-%%m-%%d %%H:%%i:%%s'),
-        str_to_date(nullif(delivery_date, ''), '%%Y-%%m-%%d')
+        str_to_date(nullif(s.delivery_date, ''), '%%Y-%%m-%%d %%H:%%i:%%s'),
+        str_to_date(nullif(s.delivery_date, ''), '%%Y-%%m-%%d')
     ) as delivery_date,
-    order_logistics_status as logistics_status,
-    logistics_channel_name,
-    logistics_provider_name,
-    coalesce(quantity_total, 0) as quantity_total,
-    create_time as source_create_time
-from dwd_datasync.lx_inbound_shipment_detail
+    coalesce(
+        str_to_date(nullif(fs.receiving_time, ''), '%%Y-%%m-%%d %%H:%%i:%%s'),
+        str_to_date(nullif(fs.receiving_time, ''), '%%Y-%%m-%%d')
+    ) as receiving_time,
+    coalesce(
+        str_to_date(nullif(fs.closed_time, ''), '%%Y-%%m-%%d %%H:%%i:%%s'),
+        str_to_date(nullif(fs.closed_time, ''), '%%Y-%%m-%%d')
+    ) as closed_time,
+    s.order_logistics_status as logistics_status,
+    s.logistics_channel_name,
+    s.logistics_provider_name,
+    coalesce(s.quantity_total, 0) as quantity_total,
+    coalesce(fs.quantity_shipped + 0, 0) as quantity_shipped,
+    coalesce(fs.quantity_received + 0, 0) as quantity_received,
+    s.create_time as source_create_time
+from dwd_datasync.lx_inbound_shipment_detail s
+left join dwd_datasync.lx_fba_shipment fs
+  on fs.shipment_id = s.shipment_id
 where coalesce(
-        str_to_date(nullif(shipment_time, ''), '%%Y-%%m-%%d %%H:%%i:%%s'),
-        str_to_date(nullif(shipment_time, ''), '%%Y-%%m-%%d'),
-        create_time
+        str_to_date(nullif(s.shipment_time, ''), '%%Y-%%m-%%d %%H:%%i:%%s'),
+        str_to_date(nullif(s.shipment_time, ''), '%%Y-%%m-%%d'),
+        s.create_time
       ) >= %(window_start)s
   and coalesce(
-        str_to_date(nullif(shipment_time, ''), '%%Y-%%m-%%d %%H:%%i:%%s'),
-        str_to_date(nullif(shipment_time, ''), '%%Y-%%m-%%d'),
-        create_time
+        str_to_date(nullif(s.shipment_time, ''), '%%Y-%%m-%%d %%H:%%i:%%s'),
+        str_to_date(nullif(s.shipment_time, ''), '%%Y-%%m-%%d'),
+        s.create_time
       ) < %(window_end_exclusive)s
-  and coalesce(shipment_sn, '') <> '';
+  and coalesce(s.shipment_sn, '') <> '';
 """
 
 
@@ -433,10 +449,14 @@ INBOUND_SHIPMENT_SYNC_COLUMNS = (
     "expected_arrival_date",
     "eta_date",
     "delivery_date",
+    "receiving_time",
+    "closed_time",
     "logistics_status",
     "logistics_channel_name",
     "logistics_provider_name",
     "quantity_total",
+    "quantity_shipped",
+    "quantity_received",
     "source_create_time",
 )
 
@@ -806,12 +826,18 @@ left join (
         coalesce(
             min(case
                     when coalesce(it.quantity_shipped, 0) > 0
-                     and coalesce(sm.expected_arrival_date, sm.eta_date) >= curdate()
+                     and coalesce(it.quantity_shipped, 0) > coalesce(nullif(it.shipment_quantity_received, 0), it.quantity_receive, 0)
+                     and upper(coalesce(it.shipment_status, it.status_text, sm.shipment_status, sm.status_name, '')) <> 'CLOSED'
+                     and sm.closed_time is null
+                     and coalesce(sm.expected_arrival_date, sm.eta_date) >= p0.cur_date
                     then coalesce(sm.expected_arrival_date, sm.eta_date)
                 end),
             max(case
                     when coalesce(it.quantity_shipped, 0) > 0
-                     and coalesce(sm.expected_arrival_date, sm.eta_date) < curdate()
+                     and coalesce(it.quantity_shipped, 0) > coalesce(nullif(it.shipment_quantity_received, 0), it.quantity_receive, 0)
+                     and upper(coalesce(it.shipment_status, it.status_text, sm.shipment_status, sm.status_name, '')) <> 'CLOSED'
+                     and sm.closed_time is null
+                     and coalesce(sm.expected_arrival_date, sm.eta_date) < p0.cur_date
                     then coalesce(sm.expected_arrival_date, sm.eta_date)
                 end)
         ) as nearest_fba_eta_date
@@ -1224,6 +1250,7 @@ def sync_tracking_sources(
         cursor.execute(CREATE_INBOUND_SHIPMENT_SYNC_SQL)
         cursor.execute(CREATE_INBOUND_ITEM_SYNC_SQL)
     target_conn.commit()
+    ensure_inbound_shipment_sync_columns(target_conn)
     purchase_rows = copy_source_rows(
         source_conn,
         target_conn,
@@ -1357,6 +1384,30 @@ def ensure_tracking_detail_columns(conn) -> None:
     conn.commit()
 
 
+def ensure_inbound_shipment_sync_columns(conn) -> None:
+    required_columns = {
+        "receiving_time": "alter table dashboard_tracking_inbound_shipment_sync add column receiving_time datetime null comment 'FBA receiving time' after delivery_date",
+        "closed_time": "alter table dashboard_tracking_inbound_shipment_sync add column closed_time datetime null comment 'FBA closed time' after receiving_time",
+        "quantity_shipped": "alter table dashboard_tracking_inbound_shipment_sync add column quantity_shipped decimal(18,4) not null default 0 comment 'FBA shipped quantity' after quantity_total",
+        "quantity_received": "alter table dashboard_tracking_inbound_shipment_sync add column quantity_received decimal(18,4) not null default 0 comment 'FBA received quantity' after quantity_shipped",
+    }
+    with conn.cursor() as cursor:
+        cursor.execute(
+            """
+            select column_name
+            from information_schema.columns
+            where table_schema = database()
+              and table_name = 'dashboard_tracking_inbound_shipment_sync'
+              and column_name in ('receiving_time', 'closed_time', 'quantity_shipped', 'quantity_received')
+            """
+        )
+        existing = {row.get("column_name") or row.get("COLUMN_NAME") for row in cursor.fetchall()}
+        for column_name, statement in required_columns.items():
+            if column_name not in existing:
+                cursor.execute(statement)
+    conn.commit()
+
+
 def refresh_tracking(conn, snapshot_date: date, tracking_window_days: int) -> dict[str, int]:
     params = {"snapshot_date": snapshot_date, "tracking_window_days": tracking_window_days}
     with conn.cursor() as cursor:
@@ -1369,6 +1420,7 @@ def refresh_tracking(conn, snapshot_date: date, tracking_window_days: int) -> di
             CREATE_INBOUND_ITEM_SYNC_SQL,
         ):
             cursor.execute(statement)
+    ensure_inbound_shipment_sync_columns(conn)
     ensure_tracking_snapshot_columns(conn)
     ensure_tracking_detail_columns(conn)
     with conn.cursor() as cursor:

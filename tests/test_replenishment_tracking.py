@@ -216,6 +216,24 @@ def test_snapshot_sql_counts_purchase_entry_only_from_new_purchase_plans():
     assert "end as purchase_plan_qty" in sql
 
 
+def test_inbound_shipment_sync_includes_fba_receiving_fields():
+    ddl = replenishment_tracking_update.CREATE_INBOUND_SHIPMENT_SYNC_SQL
+    sql = replenishment_tracking_update.SELECT_INBOUND_SHIPMENT_SYNC_SQL
+    columns = replenishment_tracking_update.INBOUND_SHIPMENT_SYNC_COLUMNS
+
+    assert "receiving_time datetime" in ddl
+    assert "closed_time datetime" in ddl
+    assert "quantity_shipped decimal(18,4)" in ddl
+    assert "quantity_received decimal(18,4)" in ddl
+    assert "left join dwd_datasync.lx_fba_shipment fs" in sql
+    assert "fs.receiving_time" in sql
+    assert "fs.closed_time" in sql
+    assert "fs.quantity_received" in sql
+    assert "receiving_time" in columns
+    assert "closed_time" in columns
+    assert "quantity_received" in columns
+
+
 def test_snapshot_sql_labels_existing_purchase_in_transit_without_ambiguity():
     sql = replenishment_tracking_update.INSERT_SNAPSHOT_SQL
 
@@ -336,6 +354,15 @@ def test_snapshot_sql_tracks_nearest_fba_eta_only_from_fba_in_transit():
     nearest_eta_section = sql.split("as nearest_fba_eta_date", 1)[0].rsplit("coalesce(", 1)[-1]
     assert "purchase_expect_arrive_time" not in nearest_eta_section
     assert "delivery_date" not in nearest_eta_section
+
+
+def test_snapshot_eta_keeps_partial_receipts_and_excludes_closed_or_fully_received_shipments():
+    sql = replenishment_tracking_update.INSERT_SNAPSHOT_SQL
+
+    assert "coalesce(it.quantity_shipped, 0) > coalesce(nullif(it.shipment_quantity_received, 0), it.quantity_receive, 0)" in sql
+    assert "upper(coalesce(it.shipment_status, it.status_text, sm.shipment_status, sm.status_name, '')) <> 'CLOSED'" in sql
+    assert "sm.closed_time is null" in sql
+    assert "coalesce(sm.expected_arrival_date, sm.eta_date) >= p0.cur_date" in sql
 
 
 def test_tracking_service_serializes_nearest_fba_eta_label_and_days():

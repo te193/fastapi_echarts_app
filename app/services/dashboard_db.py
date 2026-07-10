@@ -1,6 +1,7 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import base64
+import configparser
 import hashlib
 import math
 import os
@@ -9,6 +10,7 @@ import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 import pymysql
@@ -60,6 +62,17 @@ SALES_ROLE_MARGIN_5 = Decimal("0.05")
 SALES_ROLE_MARGIN_10 = Decimal("0.10")
 SALES_ROLE_MARGIN_15 = Decimal("0.15")
 SALES_ROLE_MARGIN_25 = Decimal("0.25")
+LIFECYCLE_DETAIL_TABLE = "dws_datasync.dws_标签详情表"
+LIFECYCLE_TAG_TABLE = "dws_datasync.dws_标签表"
+LIFECYCLE_PARENT_LABEL_ID = 2
+LIFECYCLE_LABEL_IDS = [201, 202, 203, 204, 205]
+LIFECYCLE_WINDOW_BY_ID = {
+    201: {"key": "trial", "label": "测款期", "label_period": "上架≤30天", "window_days": 30, "tone": "info"},
+    202: {"key": "new", "label": "新品期", "label_period": "上架31-120天", "window_days": 90, "tone": "positive"},
+    203: {"key": "growth", "label": "成长期", "label_period": "上架121-300天", "window_days": 180, "tone": "warning"},
+    204: {"key": "mature", "label": "成熟期", "label_period": "上架>300天", "window_days": 180, "tone": "primary"},
+    205: {"key": "decline", "label": "衰退期", "label_period": "人工判断", "window_days": 180, "tone": "negative"},
+}
 
 
 def _to_decimal_or_none(value: Any) -> Decimal | None:
@@ -258,12 +271,27 @@ def decode_item_id(value: str) -> tuple[date, date, date, str] | None:
 
 class DashboardDbService:
     def __init__(self) -> None:
+        config = self._load_database_config()
+        target_config = config["target"] if config.has_section("target") else {}
+        source_config = config["source"] if config.has_section("source") else {}
         self.host = os.getenv("DASHBOARD_DB_HOST", os.getenv("MYSQL_HOST", "127.0.0.1"))
+        self.host = os.getenv("DASHBOARD_DB_HOST", os.getenv("MYSQL_HOST", target_config.get("host", self.host)))
         self.port = int(os.getenv("DASHBOARD_DB_PORT", os.getenv("MYSQL_PORT", "3306")))
+        self.port = int(os.getenv("DASHBOARD_DB_PORT", os.getenv("MYSQL_PORT", target_config.get("port", str(self.port)))))
         self.user = os.getenv("DASHBOARD_DB_USER", os.getenv("MYSQL_USER", ""))
+        self.user = os.getenv("DASHBOARD_DB_USER", os.getenv("MYSQL_USER", target_config.get("user", self.user)))
         self.password = os.getenv("DASHBOARD_DB_PASSWORD", os.getenv("MYSQL_PASSWORD", ""))
+        self.password = os.getenv("DASHBOARD_DB_PASSWORD", os.getenv("MYSQL_PASSWORD", target_config.get("password", self.password)))
         self.database = os.getenv("DASHBOARD_DB_NAME", os.getenv("MYSQL_DATABASE", "etl_datasync_test"))
+        self.database = os.getenv("DASHBOARD_DB_NAME", os.getenv("MYSQL_DATABASE", target_config.get("database", self.database)))
         self.charset = os.getenv("DASHBOARD_DB_CHARSET", "utf8mb4")
+        self.charset = os.getenv("DASHBOARD_DB_CHARSET", target_config.get("charset", self.charset))
+        self.source_host = os.getenv("DASHBOARD_SOURCE_DB_HOST", source_config.get("host", self.host))
+        self.source_port = int(os.getenv("DASHBOARD_SOURCE_DB_PORT", source_config.get("port", str(self.port))))
+        self.source_user = os.getenv("DASHBOARD_SOURCE_DB_USER", source_config.get("user", self.user))
+        self.source_password = os.getenv("DASHBOARD_SOURCE_DB_PASSWORD", source_config.get("password", self.password))
+        self.source_database = os.getenv("DASHBOARD_SOURCE_DB_NAME", source_config.get("database", self.database))
+        self.source_charset = os.getenv("DASHBOARD_SOURCE_DB_CHARSET", source_config.get("charset", self.charset))
         self.schemas = SchemaConfig(
             target_schema=os.getenv("DASHBOARD_TARGET_SCHEMA", self.database),
             etl_source_schema=self.database,
@@ -273,6 +301,13 @@ class DashboardDbService:
         self._meta_cache: dict[str, Any] | None = None
         self._meta_cache_at: datetime | None = None
 
+    def _load_database_config(self) -> configparser.ConfigParser:
+        config = configparser.ConfigParser()
+        config_path = Path(__file__).resolve().parents[2] / "config" / "database.ini"
+        if config_path.exists():
+            config.read(config_path, encoding="utf-8")
+        return config
+
     def connect(self, autocommit: bool = False):
         return pymysql.connect(
             host=self.host,
@@ -281,6 +316,18 @@ class DashboardDbService:
             password=self.password,
             database=self.database,
             charset=self.charset,
+            cursorclass=pymysql.cursors.DictCursor,
+            autocommit=autocommit,
+        )
+
+    def source_connect(self, autocommit: bool = True):
+        return pymysql.connect(
+            host=self.source_host,
+            port=self.source_port,
+            user=self.source_user,
+            password=self.source_password,
+            database=self.source_database,
+            charset=self.source_charset,
             cursorclass=pymysql.cursors.DictCursor,
             autocommit=autocommit,
         )
@@ -342,9 +389,11 @@ class DashboardDbService:
         period_table = self._render_sales_role_period_table(default_period)
         country_categories: list[str] = []
         stores: list[str] = []
+        lifecycle_labels = self._default_lifecycle_options()
         window = None
         try:
             with self.connect() as conn:
+                lifecycle_labels = self._fetch_lifecycle_options(conn)
                 window = self._latest_sales_role_window(conn, period_table, default_period)
                 if window:
                     params = {
@@ -399,6 +448,7 @@ class DashboardDbService:
             "country_categories": country_categories,
             "stores": stores,
             "roles": SALES_ROLE_OPTIONS,
+            "lifecycle_labels": lifecycle_labels,
             "daily_sales_bands": SALES_ROLE_DAILY_SALES_BANDS,
             "margin_bands": SALES_ROLE_MARGIN_BANDS,
             "window": self._sales_role_window_payload(window),
@@ -476,6 +526,95 @@ class DashboardDbService:
         filtered_rows = self._filter_sales_role_rows(base_rows, sales_role, daily_sales_band, margin_band)
         self._sort_sales_role_rows(filtered_rows, sort_field, sort_dir)
         return {"window": self._sales_role_window_payload(window), "rows": filtered_rows}
+
+    def get_sales_role_lifecycle_payload(
+        self,
+        period: str = "30d",
+        country_category: str = "all",
+        seller_name_new: str = "all",
+        lifecycle_label: str = "all",
+        sales_role: str = "all",
+        keyword: str = "",
+        page: int = 1,
+        page_size: int = 20,
+        sort_field: str = "sales_amount",
+        sort_dir: str = "desc",
+    ) -> dict[str, Any]:
+        with self.connect() as conn:
+            lifecycle_options = self._fetch_lifecycle_options(conn)
+            period_table = self._render_sales_role_period_table(period)
+            role_window = self._latest_sales_role_window(conn, period_table, period)
+            lifecycle_date = self._latest_lifecycle_data_date(conn)
+            base_rows = self._fetch_sales_role_lifecycle_rows(
+                conn,
+                period_table,
+                role_window,
+                lifecycle_date,
+                lifecycle_options,
+                country_category=country_category,
+                seller_name_new=seller_name_new,
+                keyword=keyword,
+            )
+
+        filtered_rows = self._filter_sales_role_lifecycle_rows(base_rows, lifecycle_label, sales_role)
+        self._sort_sales_role_lifecycle_rows(filtered_rows, sort_field, sort_dir)
+        safe_page_size = max(10, min(5000, int(page_size or 20)))
+        total = len(filtered_rows)
+        total_pages = max(1, math.ceil(total / safe_page_size))
+        safe_page = min(max(1, int(page or 1)), total_pages)
+        start = (safe_page - 1) * safe_page_size
+        return {
+            "meta": {**self.get_sales_role_meta(), "lifecycle_labels": lifecycle_options},
+            "window": {
+                "lifecycle_data_date": format_day(lifecycle_date) if lifecycle_date else "",
+                "sales_role": self._sales_role_window_payload(role_window),
+                "label": f"生命周期标签：{format_day(lifecycle_date)}" if lifecycle_date else "暂无生命周期标签数据",
+            },
+            "summary": self._build_sales_role_lifecycle_summary(base_rows),
+            "lifecycle_distribution": self._build_sales_role_lifecycle_distribution(base_rows, lifecycle_options),
+            "lifecycle_role_matrix": self._build_sales_role_lifecycle_matrix(base_rows, lifecycle_options),
+            "rows": filtered_rows[start:start + safe_page_size],
+            "total": total,
+            "page": safe_page,
+            "page_size": safe_page_size,
+            "total_pages": total_pages,
+        }
+
+    def get_sales_role_lifecycle_export_payload(
+        self,
+        period: str = "30d",
+        country_category: str = "all",
+        seller_name_new: str = "all",
+        lifecycle_label: str = "all",
+        sales_role: str = "all",
+        keyword: str = "",
+        sort_field: str = "sales_amount",
+        sort_dir: str = "desc",
+    ) -> dict[str, Any]:
+        with self.connect() as conn:
+            lifecycle_options = self._fetch_lifecycle_options(conn)
+            period_table = self._render_sales_role_period_table(period)
+            role_window = self._latest_sales_role_window(conn, period_table, period)
+            lifecycle_date = self._latest_lifecycle_data_date(conn)
+            base_rows = self._fetch_sales_role_lifecycle_rows(
+                conn,
+                period_table,
+                role_window,
+                lifecycle_date,
+                lifecycle_options,
+                country_category=country_category,
+                seller_name_new=seller_name_new,
+                keyword=keyword,
+            )
+        filtered_rows = self._filter_sales_role_lifecycle_rows(base_rows, lifecycle_label, sales_role)
+        self._sort_sales_role_lifecycle_rows(filtered_rows, sort_field, sort_dir)
+        return {
+            "window": {
+                "lifecycle_data_date": format_day(lifecycle_date) if lifecycle_date else "",
+                "sales_role": self._sales_role_window_payload(role_window),
+            },
+            "rows": filtered_rows,
+        }
 
     def get_monthly_goals_payload(self) -> dict[str, Any]:
         metrics = [
@@ -1720,6 +1859,510 @@ class DashboardDbService:
         return {
             "daily_sales_bands": SALES_ROLE_DAILY_SALES_BANDS,
             "margin_bands": SALES_ROLE_MARGIN_BANDS,
+            "cells": cells,
+            "total": len(rows),
+        }
+
+    def _default_lifecycle_options(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": label_id,
+                "key": str(label_id),
+                "label": config["label"],
+                "label_period": config["label_period"],
+                "window_days": config["window_days"],
+                "tone": config["tone"],
+                "rule": "",
+                "definition": "",
+            }
+            for label_id, config in LIFECYCLE_WINDOW_BY_ID.items()
+        ]
+
+    def _fetch_lifecycle_options(self, conn) -> list[dict[str, Any]]:
+        defaults = {option["id"]: option for option in self._default_lifecycle_options()}
+        rows: list[dict[str, Any]] = []
+        try:
+            rows = self._query_lifecycle_options(conn)
+        except pymysql.err.OperationalError as exc:
+            if not (exc.args and exc.args[0] == 1049):
+                raise
+            with self.source_connect() as source_conn:
+                rows = self._query_lifecycle_options(source_conn)
+        except pymysql.err.ProgrammingError as exc:
+            if exc.args and exc.args[0] == 1146:
+                try:
+                    with self.source_connect() as source_conn:
+                        rows = self._query_lifecycle_options(source_conn)
+                except pymysql.err.ProgrammingError as source_exc:
+                    if source_exc.args and source_exc.args[0] == 1146:
+                        return list(defaults.values())
+                    raise
+            else:
+                raise
+
+        for row in rows:
+            label_id = to_int(row.get("sub_label_id"))
+            if label_id not in defaults:
+                continue
+            defaults[label_id] = {
+                **defaults[label_id],
+                "label": row.get("sub_label_name") or defaults[label_id]["label"],
+                "rule": row.get("tag_rule") or "",
+                "definition": row.get("business_definition") or "",
+            }
+        return [defaults[label_id] for label_id in LIFECYCLE_LABEL_IDS if label_id in defaults]
+
+    def _query_lifecycle_options(self, conn) -> list[dict[str, Any]]:
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    select
+                        sub_label_id,
+                        sub_label_name,
+                        tag_rule,
+                        business_definition
+                    from {LIFECYCLE_DETAIL_TABLE}
+                    where label_id = %(label_id)s
+                      and sub_label_id in %(label_ids)s
+                    order by sub_label_id
+                    """,
+                    {"label_id": LIFECYCLE_PARENT_LABEL_ID, "label_ids": tuple(LIFECYCLE_LABEL_IDS)},
+                )
+                return cursor.fetchall()
+        except pymysql.err.ProgrammingError as exc:
+            if exc.args and exc.args[0] == 1146:
+                raise
+            raise
+        except pymysql.err.OperationalError:
+            raise
+
+    def _latest_lifecycle_data_date(self, conn) -> date | None:
+        try:
+            return self._query_latest_lifecycle_data_date(conn)
+        except pymysql.err.OperationalError as exc:
+            if not (exc.args and exc.args[0] == 1049):
+                raise
+            with self.source_connect() as source_conn:
+                return self._query_latest_lifecycle_data_date(source_conn)
+        except pymysql.err.ProgrammingError as exc:
+            if exc.args and exc.args[0] == 1146:
+                try:
+                    with self.source_connect() as source_conn:
+                        return self._query_latest_lifecycle_data_date(source_conn)
+                except pymysql.err.ProgrammingError as source_exc:
+                    if source_exc.args and source_exc.args[0] == 1146:
+                        return None
+                    raise
+            raise
+
+    def _query_latest_lifecycle_data_date(self, conn) -> date | None:
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    select max(data_date) as data_date
+                    from {LIFECYCLE_TAG_TABLE}
+                    where label_id in %(label_ids)s
+                    """,
+                    {"label_ids": tuple(LIFECYCLE_LABEL_IDS)},
+                )
+                row = cursor.fetchone() or {}
+        except pymysql.err.ProgrammingError as exc:
+            if exc.args and exc.args[0] == 1146:
+                raise
+            raise
+        except pymysql.err.OperationalError:
+            raise
+        return row.get("data_date")
+
+    def _lifecycle_filter_sql(
+        self,
+        country_category: str = "all",
+        seller_name_new: str = "all",
+        keyword: str = "",
+    ) -> tuple[str, dict[str, Any]]:
+        clauses = ["1 = 1"]
+        params: dict[str, Any] = {}
+        if country_category and country_category != "all":
+            clauses.append("t.country_category = %(country_category)s")
+            params["country_category"] = country_category
+        if seller_name_new and seller_name_new != "all":
+            clauses.append("t.store = %(seller_name_new)s")
+            params["seller_name_new"] = seller_name_new
+        keyword = str(keyword or "").strip()
+        if keyword:
+            params["keyword"] = f"%{keyword}%"
+            clauses.append("(coalesce(t.msku, '') like %(keyword)s or coalesce(t.store, '') like %(keyword)s)")
+        return " and ".join(clauses), params
+
+    def _fetch_lifecycle_label_rows(
+        self,
+        lifecycle_date: date,
+        country_category: str = "all",
+        seller_name_new: str = "all",
+        keyword: str = "",
+    ) -> list[dict[str, Any]]:
+        where_sql, params = self._lifecycle_filter_sql(country_category, seller_name_new, keyword)
+        params.update({"data_date": lifecycle_date, "label_ids": tuple(LIFECYCLE_LABEL_IDS)})
+        try:
+            with self.source_connect() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        f"""
+                        select distinct
+                            t.label_id as lifecycle_label_id,
+                            t.country_category,
+                            t.store as seller_name_new,
+                            t.msku as seller_sku_adj,
+                            case t.label_id
+                                when 201 then 30
+                                when 202 then 90
+                                else 180
+                            end as metric_days,
+                            case t.label_id
+                                when 201 then '上架≤30天'
+                                when 202 then '上架31-120天'
+                                when 203 then '上架121-300天'
+                                when 204 then '上架>300天'
+                                else '人工判断'
+                            end as label_period
+                        from {LIFECYCLE_TAG_TABLE} t
+                        where t.data_date = %(data_date)s
+                          and t.label_id in %(label_ids)s
+                          and {where_sql}
+                        """,
+                        params,
+                    )
+                    return cursor.fetchall()
+        except (pymysql.err.ProgrammingError, pymysql.err.OperationalError) as exc:
+            code = exc.args[0] if exc.args else None
+            if code in {1049, 1146}:
+                return []
+            raise
+
+    def _fetch_sales_role_lifecycle_rows(
+        self,
+        conn,
+        period_table: str,
+        role_window: dict[str, Any] | None,
+        lifecycle_date: date | None,
+        lifecycle_options: list[dict[str, Any]],
+        country_category: str = "all",
+        seller_name_new: str = "all",
+        keyword: str = "",
+    ) -> list[dict[str, Any]]:
+        if not lifecycle_date:
+            return []
+        label_rows = self._fetch_lifecycle_label_rows(
+            lifecycle_date,
+            country_category=country_category,
+            seller_name_new=seller_name_new,
+            keyword=keyword,
+        )
+        if not label_rows:
+            return []
+        return self._build_lifecycle_rows_from_period_snapshots(
+            conn,
+            period_table,
+            role_window,
+            lifecycle_date,
+            label_rows,
+            lifecycle_options,
+        )
+
+    def _build_lifecycle_rows_from_period_snapshots(
+        self,
+        conn,
+        sales_role_period_table: str,
+        role_window: dict[str, Any] | None,
+        lifecycle_date: date,
+        label_rows: list[dict[str, Any]],
+        lifecycle_options: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        lifecycle_by_id = {option["id"]: option for option in lifecycle_options}
+        snapshot_rows: dict[tuple[str, str, str], dict[str, Any]] = {}
+        result: list[dict[str, Any]] = []
+        sku_values = sorted({row.get("seller_sku_adj") or "" for row in label_rows if row.get("seller_sku_adj")})
+        if role_window and sku_values:
+            params = {
+                "snapshot_date": role_window["snapshot_date"],
+                "period_code": role_window["period_code"],
+                "period_start": role_window["period_start"],
+                "period_end": role_window["period_end"],
+            }
+            for sku_chunk in self._chunks(sku_values, 300):
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        f"""
+                        select
+                            seller_sku_adj,
+                            seller_name_new,
+                            country_category,
+                            local_sku_sample,
+                            country_count,
+                            countries,
+                            sales_qty,
+                            daily_sales,
+                            sales_amount,
+                            sales_amount_ex_tax,
+                            order_gross_profit,
+                            order_gross_margin,
+                            ad_spend,
+                            ad_sales,
+                            sales_role_code
+                        from {sales_role_period_table}
+                        where snapshot_date = %(snapshot_date)s
+                          and period_code = %(period_code)s
+                          and period_start = %(period_start)s
+                          and period_end = %(period_end)s
+                          and seller_sku_adj in %(sku_values)s
+                        """,
+                        {**params, "sku_values": tuple(sku_chunk)},
+                    )
+                    for period_row in cursor.fetchall():
+                        snapshot_rows[
+                            (
+                                period_row.get("seller_sku_adj") or "",
+                                period_row.get("seller_name_new") or "",
+                                period_row.get("country_category") or "",
+                            )
+                        ] = period_row
+
+        for row in label_rows:
+            label_id = to_int(row.get("lifecycle_label_id"))
+            sku = row.get("seller_sku_adj") or ""
+            store = row.get("seller_name_new") or ""
+            country_category = row.get("country_category") or ""
+            period_row = snapshot_rows.get((sku, store, country_category), {})
+            lifecycle = lifecycle_by_id.get(label_id) or LIFECYCLE_WINDOW_BY_ID.get(label_id) or {}
+            role_code = SALES_ROLE_SNAPSHOT_CODE_MAP.get(str(period_row.get("sales_role_code") or ""), "eliminate")
+            role = SALES_ROLE_BY_KEY.get(role_code, SALES_ROLE_BY_KEY["eliminate"])
+            sales_qty = to_float(period_row.get("sales_qty"))
+            sales_amount = to_float(period_row.get("sales_amount"))
+            order_gross_profit = to_float(period_row.get("order_gross_profit"))
+            ad_spend = to_float(period_row.get("ad_spend"))
+            ad_sales = to_float(period_row.get("ad_sales"))
+            result.append(
+                {
+                    "lifecycle_label_id": label_id,
+                    "lifecycle_label_key": str(label_id),
+                    "lifecycle_label": lifecycle.get("label") or "",
+                    "lifecycle_tone": lifecycle.get("tone") or "neutral",
+                    "label_period": row.get("label_period") or lifecycle.get("label_period") or "",
+                    "lifecycle_rule": lifecycle.get("rule") or "",
+                    "metric_days": to_int(role_window.get("period_days")) if role_window else 0,
+                    "sales_role": role["label"],
+                    "sales_role_code": role["key"],
+                    "sales_role_tone": role["tone"],
+                    "sales_role_period": role_window.get("period_code") if role_window else "",
+                    "country_category": country_category,
+                    "seller_name_new": store,
+                    "seller_sku_adj": sku,
+                    "local_sku_sample": period_row.get("local_sku_sample") or "",
+                    "country_count": to_int(period_row.get("country_count")),
+                    "countries": period_row.get("countries") or "",
+                    "sales_qty": round(sales_qty, 2),
+                    "daily_sales": round(to_float(period_row.get("daily_sales")), 2),
+                    "sales_amount": round(sales_amount, 2),
+                    "sales_amount_ex_tax": round(to_float(period_row.get("sales_amount_ex_tax")), 2),
+                    "order_gross_profit": round(order_gross_profit, 2),
+                    "order_gross_margin": round(to_float(period_row.get("order_gross_margin")), 4)
+                    if period_row
+                    else 0,
+                    "ad_spend": round(ad_spend, 2),
+                    "ad_sales": round(ad_sales, 2),
+                    "acos": round(ad_spend / ad_sales, 4) if ad_sales else 0,
+                    "tacos": round(ad_spend / sales_amount, 4) if sales_amount else 0,
+                }
+            )
+        return result
+
+    def _lifecycle_metric_table(self, metric_days: int) -> str:
+        if metric_days == 30:
+            return "etl_datasync.dashboard_product_period_30d_snapshot"
+        if metric_days == 90:
+            return "etl_datasync.dashboard_product_period_90d_snapshot"
+        return "etl_datasync.dashboard_product_period_snapshot"
+
+    def _period_snapshot_window(
+        self,
+        conn,
+        period_table: str,
+        preferred_end: date,
+        metric_days: int,
+    ) -> dict[str, Any] | None:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                select snapshot_date, period_start, period_end
+                from {period_table}
+                where period_end <= %(preferred_end)s
+                  and datediff(period_end, period_start) + 1 = %(metric_days)s
+                order by period_end desc, snapshot_date desc
+                limit 1
+                """,
+                {"preferred_end": preferred_end, "metric_days": metric_days},
+            )
+            return cursor.fetchone()
+
+    def _fetch_sales_role_snapshot_map(
+        self,
+        conn,
+        period_table: str,
+        role_window: dict[str, Any] | None,
+        sku_values: list[str],
+    ) -> dict[tuple[str, str, str], str]:
+        if not role_window or not sku_values:
+            return {}
+        role_map: dict[tuple[str, str, str], str] = {}
+        params = {
+            "snapshot_date": role_window["snapshot_date"],
+            "period_code": role_window["period_code"],
+            "period_start": role_window["period_start"],
+            "period_end": role_window["period_end"],
+        }
+        for sku_chunk in self._chunks(sku_values, 300):
+            chunk_params = {**params, "sku_values": tuple(sku_chunk)}
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    select
+                        seller_sku_adj,
+                        seller_name_new,
+                        country_category,
+                        sales_role_code
+                    from {period_table}
+                    where snapshot_date = %(snapshot_date)s
+                      and period_code = %(period_code)s
+                      and period_start = %(period_start)s
+                      and period_end = %(period_end)s
+                      and seller_sku_adj in %(sku_values)s
+                    """,
+                    chunk_params,
+                )
+                for row in cursor.fetchall():
+                    role_map[
+                        (
+                            row.get("seller_sku_adj") or "",
+                            row.get("seller_name_new") or "",
+                            row.get("country_category") or "",
+                        )
+                    ] = row.get("sales_role_code") or ""
+        return role_map
+
+    def _chunks(self, values: list[Any], size: int) -> list[list[Any]]:
+        return [values[index:index + size] for index in range(0, len(values), size)]
+
+    def _filter_sales_role_lifecycle_rows(
+        self,
+        rows: list[dict[str, Any]],
+        lifecycle_label: str = "all",
+        sales_role: str = "all",
+    ) -> list[dict[str, Any]]:
+        filtered = []
+        for row in rows:
+            if lifecycle_label and lifecycle_label != "all" and str(row.get("lifecycle_label_id")) != str(lifecycle_label):
+                continue
+            if sales_role and sales_role != "all" and row.get("sales_role_code") != sales_role:
+                continue
+            filtered.append(row)
+        return filtered
+
+    def _sort_sales_role_lifecycle_rows(self, rows: list[dict[str, Any]], sort_field: str, sort_dir: str) -> None:
+        sort_key = sort_field if sort_field in {
+            "lifecycle_label",
+            "sales_role",
+            "country_category",
+            "seller_name_new",
+            "seller_sku_adj",
+            "sales_qty",
+            "daily_sales",
+            "sales_amount",
+            "order_gross_profit",
+            "order_gross_margin",
+            "label_period",
+            "sales_role_period",
+        } else "sales_amount"
+        reverse = str(sort_dir or "desc").lower() != "asc"
+
+        def normalized(row: dict[str, Any]) -> tuple[int, Any]:
+            value = row.get(sort_key)
+            if value is None or value == "":
+                return (1, "")
+            if isinstance(value, (int, float)):
+                return (0, value)
+            return (0, str(value))
+
+        rows.sort(key=lambda row: (normalized(row), row.get("seller_sku_adj") or ""), reverse=reverse)
+
+    def _build_sales_role_lifecycle_summary(self, rows: list[dict[str, Any]]) -> dict[str, Any]:
+        sales_amount = sum(to_float(row.get("sales_amount")) for row in rows)
+        sales_qty = sum(to_float(row.get("sales_qty")) for row in rows)
+        gross_profit = sum(to_float(row.get("order_gross_profit")) for row in rows)
+        return {
+            "sku_count": len(rows),
+            "sales_amount": round(sales_amount, 2),
+            "sales_qty": round(sales_qty, 2),
+            "order_gross_profit": round(gross_profit, 2),
+            "order_gross_margin": round(gross_profit / sales_amount, 4) if sales_amount else 0,
+            "active_sku_count": sum(1 for row in rows if to_float(row.get("sales_qty")) > 0),
+            "mature_count": sum(1 for row in rows if to_int(row.get("lifecycle_label_id")) == 204),
+            "problem_count": sum(1 for row in rows if row.get("sales_role_code") == "eliminate"),
+        }
+
+    def _build_sales_role_lifecycle_distribution(
+        self,
+        rows: list[dict[str, Any]],
+        lifecycle_options: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        total = max(len(rows), 1)
+        result = []
+        for option in lifecycle_options:
+            lifecycle_rows = [row for row in rows if to_int(row.get("lifecycle_label_id")) == option["id"]]
+            sales_amount = sum(to_float(row.get("sales_amount")) for row in lifecycle_rows)
+            gross_profit = sum(to_float(row.get("order_gross_profit")) for row in lifecycle_rows)
+            result.append(
+                {
+                    **option,
+                    "count": len(lifecycle_rows),
+                    "ratio": round(len(lifecycle_rows) / total, 4),
+                    "sales_amount": round(sales_amount, 2),
+                    "daily_sales": round(sum(to_float(row.get("daily_sales")) for row in lifecycle_rows), 2),
+                    "order_gross_margin": round(gross_profit / sales_amount, 4) if sales_amount else 0,
+                }
+            )
+        return result
+
+    def _build_sales_role_lifecycle_matrix(
+        self,
+        rows: list[dict[str, Any]],
+        lifecycle_options: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        cells = []
+        total = max(len(rows), 1)
+        for lifecycle in lifecycle_options:
+            for role in SALES_ROLE_OPTIONS:
+                cell_rows = [
+                    row
+                    for row in rows
+                    if to_int(row.get("lifecycle_label_id")) == lifecycle["id"]
+                    and row.get("sales_role_code") == role["key"]
+                ]
+                cells.append(
+                    {
+                        "lifecycle_label_id": lifecycle["id"],
+                        "lifecycle_label": lifecycle["label"],
+                        "sales_role_code": role["key"],
+                        "sales_role": role["label"],
+                        "count": len(cell_rows),
+                        "ratio": round(len(cell_rows) / total, 4),
+                        "sales_amount": round(sum(to_float(row.get("sales_amount")) for row in cell_rows), 2),
+                    }
+                )
+        return {
+            "lifecycle_labels": lifecycle_options,
+            "roles": SALES_ROLE_OPTIONS,
             "cells": cells,
             "total": len(rows),
         }

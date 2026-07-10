@@ -217,6 +217,7 @@ class ReplenishmentTrackingSummaryService:
         site: str = "all",
         store: str = "all",
         keyword: str = "",
+        order_keyword: str = "",
         page: int = 1,
         page_size: int = 20,
     ) -> dict[str, Any]:
@@ -228,7 +229,7 @@ class ReplenishmentTrackingSummaryService:
                 return self._empty_payload(safe_page, safe_page_size)
             safe_category_period = self._normalize_category_period(category_period_days)
             category_column = PRODUCT_CATEGORY_COLUMNS[safe_category_period]
-            filters, params = self._where(selected_date, entry_batch_days, level, purchase_status, fba_status, summary_stage, history_level, product_category, site, store, keyword, category_column)
+            filters, params = self._where(selected_date, entry_batch_days, level, purchase_status, fba_status, summary_stage, history_level, product_category, site, store, keyword, category_column, order_keyword)
             summary = self._summary(conn, filters, params)
             level_flow = self._level_flow(conn, filters, params, category_column)
             total = self._total(conn, filters, params)
@@ -262,8 +263,27 @@ class ReplenishmentTrackingSummaryService:
                 rows = cursor.fetchall()
         return {"rows": [self._map_detail_row(row) for row in rows]}
 
+    @staticmethod
+    def _sku_parent_sql(expr: str) -> str:
+        return f"""
+            case
+                when replace(coalesce({expr}, ''), '-zu', '') regexp '[0-9][a-z]$'
+                    then left(replace(coalesce({expr}, ''), '-zu', ''), char_length(replace(coalesce({expr}, ''), '-zu', '')) - 1)
+                else replace(coalesce({expr}, ''), '-zu', '')
+            end
+        """.strip()
+
     def _detail_sql(self) -> str:
-        return """
+        s_sku = self._sku_parent_sql("s.sku")
+        po_sku = self._sku_parent_sql("po.sku")
+        ro_sku = self._sku_parent_sql("ro.sku")
+        qo_sku = self._sku_parent_sql("qo.sku")
+        fp_sku = self._sku_parent_sql("fp.sku")
+        ii_sku = self._sku_parent_sql("ii.sku")
+        po2_sku = self._sku_parent_sql("po2.sku")
+        ro2_sku = self._sku_parent_sql("ro2.sku")
+        qo2_sku = self._sku_parent_sql("qo2.sku")
+        return f"""
         select distinct
             'purchase_plan' as source_type,
             '采购计划' as source_type_label,
@@ -329,7 +349,7 @@ class ReplenishmentTrackingSummaryService:
         join dashboard_tracking_purchase_order_sync po
           on po.plan_sn = pp.plan_sn collate utf8mb4_unicode_ci
          and po.status <> '作废'
-         and replace(po.sku, '-zu', '') = replace(s.sku, '-zu', '') collate utf8mb4_unicode_ci
+         and {po_sku} = {s_sku} collate utf8mb4_unicode_ci
         where h.cutoff_date = %(cutoff_date)s
           and h.country_category = %(site)s
           and h.seller_name_new = %(store)s
@@ -378,10 +398,10 @@ class ReplenishmentTrackingSummaryService:
         join dashboard_tracking_purchase_order_sync po
           on po.plan_sn = pp.plan_sn collate utf8mb4_unicode_ci
          and po.status <> '作废'
-         and replace(po.sku, '-zu', '') = replace(s.sku, '-zu', '') collate utf8mb4_unicode_ci
+         and {po_sku} = {s_sku} collate utf8mb4_unicode_ci
         join dashboard_tracking_receipt_order_sync ro
           on ro.business_order_sn = po.order_sn collate utf8mb4_unicode_ci
-         and replace(ro.sku, '-zu', '') = replace(s.sku, '-zu', '') collate utf8mb4_unicode_ci
+         and {ro_sku} = {s_sku} collate utf8mb4_unicode_ci
          and coalesce(ro.product_receive_num, 0) > 0
         where h.cutoff_date = %(cutoff_date)s
           and h.country_category = %(site)s
@@ -422,15 +442,74 @@ class ReplenishmentTrackingSummaryService:
         join dashboard_tracking_purchase_order_sync po
           on po.plan_sn = pp.plan_sn collate utf8mb4_unicode_ci
          and po.status <> '作废'
-         and replace(po.sku, '-zu', '') = replace(s.sku, '-zu', '') collate utf8mb4_unicode_ci
+         and {po_sku} = {s_sku} collate utf8mb4_unicode_ci
         join dashboard_tracking_receipt_order_sync ro
           on ro.business_order_sn = po.order_sn collate utf8mb4_unicode_ci
-         and replace(ro.sku, '-zu', '') = replace(s.sku, '-zu', '') collate utf8mb4_unicode_ci
+         and {ro_sku} = {s_sku} collate utf8mb4_unicode_ci
          and coalesce(ro.product_receive_num, 0) > 0
         join dashboard_tracking_qc_order_sync qo
           on qo.delivery_order_sn = ro.order_sn collate utf8mb4_unicode_ci
          and qo.order_sn = ro.business_order_sn collate utf8mb4_unicode_ci
-         and replace(qo.sku, '-zu', '') = replace(ro.sku, '-zu', '') collate utf8mb4_unicode_ci
+         and {qo_sku} = {ro_sku} collate utf8mb4_unicode_ci
+        where h.cutoff_date = %(cutoff_date)s
+          and h.country_category = %(site)s
+          and h.seller_name_new = %(store)s
+          and h.seller_sku_adj = %(msku)s
+        union all
+        select distinct
+            'fba_shipment' as source_type,
+            'FBA出库/在途' as source_type_label,
+            '本次链路' as link_attribution,
+            pp.plan_sn as purchase_plan_sn,
+            pp.plan_create_time as purchase_plan_time,
+            case
+                when nullif(ish.status_name, '') is not null then ish.status_name
+                when upper(coalesce(ii.shipment_status, ish.shipment_status, '')) = 'SHIPPED' then '已发货'
+                when upper(coalesce(ii.shipment_status, ish.shipment_status, '')) = 'RECEIVING' then '接收中'
+                when upper(coalesce(ii.shipment_status, ish.shipment_status, '')) = 'CLOSED' then '已完成'
+                else coalesce(nullif(ii.shipment_status, ''), nullif(ii.status_text, ''))
+            end as purchase_plan_status,
+            coalesce(ii.quantity_shipped, 0) as purchase_plan_qty,
+            null as purchase_expect_arrive_time,
+            null as supplier_name,
+            null as purchaser_name,
+            ii.shipment_id as order_sn,
+            ish.logistics_provider_name,
+            concat_ws(' / ', nullif(ii.shipment_sn, ''), nullif(ii.status_text, ''), nullif(ish.logistics_status, '')) as logistics_order,
+            ii.shipment_sn,
+            coalesce(ii.shipment_time, ish.shipment_time, ii.source_create_time) as plan_create_time,
+            null as method_name,
+            ish.logistics_channel_name,
+            ii.shipment_plan_quantity,
+            ii.quantity_shipped,
+            coalesce(nullif(ii.shipment_quantity_received, 0), ii.quantity_receive, 0) as quantity_received,
+            coalesce(ii.shipment_time, ish.shipment_time) as shipment_time,
+            coalesce(ish.expected_arrival_date, ish.eta_date) as expected_arrival_date
+        from dashboard_replenishment_tracking_summary_level_history h
+        join dashboard_replenishment_tracking_summary s
+          on s.cutoff_date = h.cutoff_date
+         and s.country_category = h.country_category
+         and s.seller_name_new = h.seller_name_new
+         and s.seller_sku_adj = h.seller_sku_adj
+        join dashboard_tracking_purchase_plan_sync pp
+          on find_in_set(pp.plan_sn collate utf8mb4_unicode_ci, h.purchase_plan_sn_list)
+        join dashboard_tracking_fba_shipment_plan_sync fp
+          on fp.plan_create_time >= pp.plan_create_time
+         and fp.country_category = s.country_category collate utf8mb4_unicode_ci
+         and fp.seller_name_norm = s.seller_name_new collate utf8mb4_unicode_ci
+         and fp.msku = s.seller_sku_adj collate utf8mb4_unicode_ci
+         and {fp_sku} = {s_sku} collate utf8mb4_unicode_ci
+         and abs(coalesce(fp.shipment_plan_quantity, 0) - coalesce(pp.quantity_plan, 0)) <= greatest(coalesce(pp.quantity_plan, 0) * 0.2, 5)
+        join dashboard_tracking_inbound_item_sync ii
+          on ii.shipment_order_sn = fp.order_sn collate utf8mb4_unicode_ci
+         and ii.country_category = s.country_category collate utf8mb4_unicode_ci
+         and ii.seller_name_norm = s.seller_name_new collate utf8mb4_unicode_ci
+         and ii.msku = s.seller_sku_adj collate utf8mb4_unicode_ci
+         and {ii_sku} = {s_sku} collate utf8mb4_unicode_ci
+         and nullif(ii.shipment_id, '') is not null
+         and ii.shipment_id like 'FBA%%'
+        left join dashboard_tracking_inbound_shipment_sync ish
+          on ish.shipment_sn = ii.shipment_sn collate utf8mb4_unicode_ci
         where h.cutoff_date = %(cutoff_date)s
           and h.country_category = %(site)s
           and h.seller_name_new = %(store)s
@@ -470,15 +549,15 @@ class ReplenishmentTrackingSummaryService:
         left join dashboard_tracking_purchase_order_sync po
           on po.plan_sn = pp.plan_sn collate utf8mb4_unicode_ci
          and po.status <> '作废'
-         and replace(po.sku, '-zu', '') = replace(s.sku, '-zu', '') collate utf8mb4_unicode_ci
+         and {po_sku} = {s_sku} collate utf8mb4_unicode_ci
         left join dashboard_tracking_receipt_order_sync ro
           on ro.business_order_sn = po.order_sn collate utf8mb4_unicode_ci
-         and replace(ro.sku, '-zu', '') = replace(s.sku, '-zu', '') collate utf8mb4_unicode_ci
+         and {ro_sku} = {s_sku} collate utf8mb4_unicode_ci
          and coalesce(ro.product_receive_num, 0) > 0
         left join dashboard_tracking_qc_order_sync qo
           on qo.delivery_order_sn = ro.order_sn collate utf8mb4_unicode_ci
          and qo.order_sn = ro.business_order_sn collate utf8mb4_unicode_ci
-         and replace(qo.sku, '-zu', '') = replace(ro.sku, '-zu', '') collate utf8mb4_unicode_ci
+         and {qo_sku} = {ro_sku} collate utf8mb4_unicode_ci
          and coalesce(qo.product_good_num, 0) > 0
          and coalesce(qo.product_bad_num, 0) = 0
         join dashboard_tracking_fba_shipment_plan_sync fp
@@ -486,7 +565,7 @@ class ReplenishmentTrackingSummaryService:
          and fp.country_category = s.country_category collate utf8mb4_unicode_ci
          and fp.seller_name_norm = s.seller_name_new collate utf8mb4_unicode_ci
          and fp.msku = s.seller_sku_adj collate utf8mb4_unicode_ci
-         and replace(fp.sku, '-zu', '') = replace(s.sku, '-zu', '') collate utf8mb4_unicode_ci
+         and {fp_sku} = {s_sku} collate utf8mb4_unicode_ci
          and abs(coalesce(fp.shipment_plan_quantity, 0) - coalesce(pp.quantity_plan, 0)) <= greatest(coalesce(pp.quantity_plan, 0) * 0.2, 5)
         where h.cutoff_date = %(cutoff_date)s
           and h.country_category = %(site)s
@@ -523,6 +602,7 @@ class ReplenishmentTrackingSummaryService:
          and fp.country_category = s.country_category collate utf8mb4_unicode_ci
          and fp.seller_name_norm = s.seller_name_new collate utf8mb4_unicode_ci
          and fp.msku = s.seller_sku_adj collate utf8mb4_unicode_ci
+         and {fp_sku} = {s_sku} collate utf8mb4_unicode_ci
         where s.cutoff_date = %(cutoff_date)s
           and s.country_category = %(site)s
           and s.seller_name_new = %(store)s
@@ -535,15 +615,15 @@ class ReplenishmentTrackingSummaryService:
               left join dashboard_tracking_purchase_order_sync po2
                 on po2.plan_sn = pp2.plan_sn collate utf8mb4_unicode_ci
                and po2.status <> '作废'
-               and replace(po2.sku, '-zu', '') = replace(s.sku, '-zu', '') collate utf8mb4_unicode_ci
+               and {po2_sku} = {s_sku} collate utf8mb4_unicode_ci
               left join dashboard_tracking_receipt_order_sync ro2
                 on ro2.business_order_sn = po2.order_sn collate utf8mb4_unicode_ci
-               and replace(ro2.sku, '-zu', '') = replace(s.sku, '-zu', '') collate utf8mb4_unicode_ci
+               and {ro2_sku} = {s_sku} collate utf8mb4_unicode_ci
                and coalesce(ro2.product_receive_num, 0) > 0
               left join dashboard_tracking_qc_order_sync qo2
                 on qo2.delivery_order_sn = ro2.order_sn collate utf8mb4_unicode_ci
                and qo2.order_sn = ro2.business_order_sn collate utf8mb4_unicode_ci
-               and replace(qo2.sku, '-zu', '') = replace(ro2.sku, '-zu', '') collate utf8mb4_unicode_ci
+               and {qo2_sku} = {ro2_sku} collate utf8mb4_unicode_ci
                and coalesce(qo2.product_good_num, 0) > 0
                and coalesce(qo2.product_bad_num, 0) = 0
               where h2.cutoff_date = s.cutoff_date
@@ -551,7 +631,86 @@ class ReplenishmentTrackingSummaryService:
                 and h2.seller_name_new = s.seller_name_new
                 and h2.seller_sku_adj = s.seller_sku_adj
                 and fp.plan_create_time >= pp2.plan_create_time
-                and replace(fp.sku, '-zu', '') = replace(s.sku, '-zu', '') collate utf8mb4_unicode_ci
+                and {fp_sku} = {s_sku} collate utf8mb4_unicode_ci
+                and abs(coalesce(fp.shipment_plan_quantity, 0) - coalesce(pp2.quantity_plan, 0)) <= greatest(coalesce(pp2.quantity_plan, 0) * 0.2, 5)
+          )
+        union all
+        select distinct
+            'fba_shipment' as source_type,
+            'FBA出库/在途' as source_type_label,
+            '历史/待确认' as link_attribution,
+            null as purchase_plan_sn,
+            fp.plan_create_time as purchase_plan_time,
+            case
+                when nullif(ish.status_name, '') is not null then ish.status_name
+                when upper(coalesce(ii.shipment_status, ish.shipment_status, '')) = 'SHIPPED' then '已发货'
+                when upper(coalesce(ii.shipment_status, ish.shipment_status, '')) = 'RECEIVING' then '接收中'
+                when upper(coalesce(ii.shipment_status, ish.shipment_status, '')) = 'CLOSED' then '已完成'
+                else coalesce(nullif(ii.shipment_status, ''), nullif(ii.status_text, ''))
+            end as purchase_plan_status,
+            coalesce(ii.quantity_shipped, 0) as purchase_plan_qty,
+            null as purchase_expect_arrive_time,
+            null as supplier_name,
+            null as purchaser_name,
+            fp.order_sn,
+            ish.logistics_provider_name,
+            concat_ws(' / ', nullif(ii.shipment_id, ''), nullif(ii.shipment_sn, ''), nullif(ii.status_text, ''), nullif(ish.logistics_status, '')) as logistics_order,
+            ii.shipment_sn,
+            coalesce(ii.shipment_time, ish.shipment_time, ii.source_create_time) as plan_create_time,
+            null as method_name,
+            ish.logistics_channel_name,
+            ii.shipment_plan_quantity,
+            ii.quantity_shipped,
+            coalesce(nullif(ii.shipment_quantity_received, 0), ii.quantity_receive, 0) as quantity_received,
+            coalesce(ii.shipment_time, ish.shipment_time) as shipment_time,
+            coalesce(ish.expected_arrival_date, ish.eta_date) as expected_arrival_date
+        from dashboard_replenishment_tracking_summary s
+        join dashboard_tracking_fba_shipment_plan_sync fp
+          on fp.plan_create_time >= s.first_replenishment_date
+         and fp.plan_create_time < date_add(date_add(s.first_replenishment_date, interval 30 day), interval 1 day)
+         and fp.country_category = s.country_category collate utf8mb4_unicode_ci
+         and fp.seller_name_norm = s.seller_name_new collate utf8mb4_unicode_ci
+         and fp.msku = s.seller_sku_adj collate utf8mb4_unicode_ci
+         and {fp_sku} = {s_sku} collate utf8mb4_unicode_ci
+        join dashboard_tracking_inbound_item_sync ii
+          on ii.shipment_order_sn = fp.order_sn collate utf8mb4_unicode_ci
+         and ii.country_category = s.country_category collate utf8mb4_unicode_ci
+         and ii.seller_name_norm = s.seller_name_new collate utf8mb4_unicode_ci
+         and ii.msku = s.seller_sku_adj collate utf8mb4_unicode_ci
+         and {ii_sku} = {s_sku} collate utf8mb4_unicode_ci
+         and nullif(ii.shipment_id, '') is not null
+         and ii.shipment_id like 'FBA%%'
+        left join dashboard_tracking_inbound_shipment_sync ish
+          on ish.shipment_sn = ii.shipment_sn collate utf8mb4_unicode_ci
+        where s.cutoff_date = %(cutoff_date)s
+          and s.country_category = %(site)s
+          and s.seller_name_new = %(store)s
+          and s.seller_sku_adj = %(msku)s
+          and not exists (
+              select 1
+              from dashboard_replenishment_tracking_summary_level_history h2
+              join dashboard_tracking_purchase_plan_sync pp2
+                on find_in_set(pp2.plan_sn collate utf8mb4_unicode_ci, h2.purchase_plan_sn_list)
+              left join dashboard_tracking_purchase_order_sync po2
+                on po2.plan_sn = pp2.plan_sn collate utf8mb4_unicode_ci
+               and po2.status <> '作废'
+               and {po2_sku} = {s_sku} collate utf8mb4_unicode_ci
+              left join dashboard_tracking_receipt_order_sync ro2
+                on ro2.business_order_sn = po2.order_sn collate utf8mb4_unicode_ci
+               and {ro2_sku} = {s_sku} collate utf8mb4_unicode_ci
+               and coalesce(ro2.product_receive_num, 0) > 0
+              left join dashboard_tracking_qc_order_sync qo2
+                on qo2.delivery_order_sn = ro2.order_sn collate utf8mb4_unicode_ci
+               and qo2.order_sn = ro2.business_order_sn collate utf8mb4_unicode_ci
+               and {qo2_sku} = {ro2_sku} collate utf8mb4_unicode_ci
+               and coalesce(qo2.product_good_num, 0) > 0
+               and coalesce(qo2.product_bad_num, 0) = 0
+              where h2.cutoff_date = s.cutoff_date
+                and h2.country_category = s.country_category
+                and h2.seller_name_new = s.seller_name_new
+                and h2.seller_sku_adj = s.seller_sku_adj
+                and fp.plan_create_time >= pp2.plan_create_time
+                and {fp_sku} = {s_sku} collate utf8mb4_unicode_ci
                 and abs(coalesce(fp.shipment_plan_quantity, 0) - coalesce(pp2.quantity_plan, 0)) <= greatest(coalesce(pp2.quantity_plan, 0) * 0.2, 5)
           )
         order by purchase_plan_time desc, plan_create_time desc
@@ -581,7 +740,7 @@ class ReplenishmentTrackingSummaryService:
             period = 30
         return period if period in PRODUCT_CATEGORY_PERIODS else 30
 
-    def _where(self, cutoff_date, entry_batch_days, level, purchase_status, fba_status, summary_stage, history_level, product_category, site, store, keyword, category_column):
+    def _where(self, cutoff_date, entry_batch_days, level, purchase_status, fba_status, summary_stage, history_level, product_category, site, store, keyword, category_column, order_keyword=""):
         clauses = ["s.cutoff_date = %(cutoff_date)s"]
         params: dict[str, Any] = {"cutoff_date": cutoff_date}
         try:
@@ -612,6 +771,8 @@ class ReplenishmentTrackingSummaryService:
             clauses.append("s.fba_status in ('current', 'mixed')")
         elif summary_stage == "historical_fba":
             clauses.append("s.fba_status in ('historical', 'mixed')")
+        elif summary_stage == "historical_fba_shipment":
+            clauses.append("coalesce(s.historical_fba_inbound_qty, 0) > 0")
         elif summary_stage == "received":
             clauses.append("s.received_qty > 0")
         elif summary_stage == "eta_7d":
@@ -724,6 +885,9 @@ class ReplenishmentTrackingSummaryService:
         if keyword:
             clauses.append("(s.seller_sku_adj like %(keyword)s or s.seller_name_new like %(keyword)s or coalesce(s.sku, '') like %(keyword)s)")
             params["keyword"] = f"%{keyword.strip()}%"
+        if order_keyword:
+            clauses.append("coalesce(s.order_sn_summary, '') like %(order_keyword)s")
+            params["order_keyword"] = f"%{order_keyword.strip()}%"
         return " and ".join(clauses), params
 
     def _summary(self, conn, filters, params):
@@ -744,7 +908,9 @@ class ReplenishmentTrackingSummaryService:
                     sum(case when qc_passed_flag = 1 and fba_plan_flag = 0 then 1 else 0 end) as no_fba_plan_count,
                     sum(case when fba_plan_flag = 1 and fba_shipped_flag = 0 then 1 else 0 end) as fba_not_shipped_count,
                     sum(case when fba_shipped_flag = 1 and fba_receiving_flag = 0 then 1 else 0 end) as fba_not_receiving_count,
-                    sum(case when fba_closed_flag = 1 then 1 else 0 end) as fba_closed_count
+                    sum(case when fba_closed_flag = 1 then 1 else 0 end) as fba_closed_count,
+                    sum(case when coalesce(historical_fba_inbound_qty, 0) > 0 then 1 else 0 end) as historical_fba_shipment_count,
+                    sum(coalesce(historical_fba_inbound_qty, 0)) as historical_fba_shipment_qty
                 from dashboard_replenishment_tracking_summary s
                 where {filters}
                 """,

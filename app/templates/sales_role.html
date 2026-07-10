@@ -9,6 +9,10 @@
       <p id="summaryHint" class="sales-role-period"></p>
     </div>
     <div class="sales-role-top-actions">
+      <div id="viewToggle" class="sales-role-view-toggle" role="group" aria-label="切换分析视图">
+        <button type="button" data-view="role">销售角色</button>
+        <button type="button" data-view="lifecycle">生命周期</button>
+      </div>
       <button id="exportBtn" class="sales-role-action primary" type="button">导出明细</button>
       <button id="clearFiltersBtn" class="sales-role-action" type="button">重置</button>
     </div>
@@ -32,6 +36,10 @@
         <span>销售角色</span>
         <select id="salesRoleSelect"></select>
       </label>
+      <label id="lifecycleField" class="sales-role-field lifecycle-field" hidden>
+        <span>生命周期</span>
+        <select id="lifecycleSelect"></select>
+      </label>
       <label class="sales-role-field keyword-field">
         <span>关键词</span>
         <input id="keywordInput" type="search" placeholder="搜索 MSKU / SKU / 店铺">
@@ -47,8 +55,8 @@
     <div class="sales-role-panel summary-panel">
       <div class="sales-role-section-head">
         <div>
-          <p class="section-kicker">核心概览</p>
-          <h2>经营规模</h2>
+          <p id="summaryPanelKicker" class="section-kicker">核心概览</p>
+          <h2 id="summaryPanelTitle">经营规模</h2>
         </div>
       </div>
       <div id="summaryGrid" class="sales-role-summary-grid"></div>
@@ -57,8 +65,8 @@
     <div class="sales-role-panel role-panel">
       <div class="sales-role-section-head">
         <div>
-          <p class="section-kicker">角色分布</p>
-          <h2>四类销售角色</h2>
+          <p id="distributionKicker" class="section-kicker">角色分布</p>
+          <h2 id="distributionTitle">四类销售角色</h2>
         </div>
       </div>
       <div id="roleGrid" class="sales-role-grid"></div>
@@ -68,8 +76,8 @@
   <section class="sales-role-panel matrix-panel">
     <div class="sales-role-section-head">
       <div>
-        <p class="section-kicker">二维矩阵</p>
-        <h2>日销 × 毛利率</h2>
+        <p id="matrixKicker" class="section-kicker">二维矩阵</p>
+        <h2 id="matrixTitle">日销 × 毛利率</h2>
       </div>
     </div>
     <div id="matrixGrid" class="sales-role-matrix"></div>
@@ -78,8 +86,8 @@
   <section class="sales-role-panel detail-panel">
     <div class="sales-role-section-head">
       <div>
-        <p class="section-kicker">明细清单</p>
-        <h2>MSKU 销售角色明细</h2>
+        <p id="detailKicker" class="section-kicker">明细清单</p>
+        <h2 id="detailTitle">MSKU 销售角色明细</h2>
       </div>
       <p id="tableSummary" class="summary-hint"></p>
     </div>
@@ -90,5 +98,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', path='js/sales_role.js') }}?v=20260707j"></script>
+<script src="{{ url_for('static', path='js/sales_role.js') }}?v=20260708a"></script>
 {% endblock %}

@@ -442,8 +442,14 @@ insert into dashboard_replenishment_tracking_summary (
     latest_status
 )
 with base as (
-    select *
-    from dashboard_pur_plan_replenish_data
+    select
+        d.*,
+        case
+            when replace(coalesce(d.max_sku, ''), '-zu', '') regexp '[0-9][a-z]$'
+                then left(replace(coalesce(d.max_sku, ''), '-zu', ''), char_length(replace(coalesce(d.max_sku, ''), '-zu', '')) - 1)
+            else replace(coalesce(d.max_sku, ''), '-zu', '')
+        end as tracking_sku
+    from dashboard_pur_plan_replenish_data d
     where cur_date <= %(cutoff_date)s
       and support_replenish_level_sort in (1, 2, 3)
 ),
@@ -531,7 +537,11 @@ purchase_order_doc as (
         join dashboard_tracking_purchase_order_sync po
           on po.plan_sn = pp0.plan_sn collate utf8mb4_unicode_ci
          and po.status <> '作废'
-         and replace(po.sku, '-zu', '') = replace(p0.max_sku, '-zu', '') collate utf8mb4_unicode_ci
+         and case
+            when replace(coalesce(po.sku, ''), '-zu', '') regexp '[0-9][a-z]$'
+                then left(replace(coalesce(po.sku, ''), '-zu', ''), char_length(replace(coalesce(po.sku, ''), '-zu', '')) - 1)
+            else replace(coalesce(po.sku, ''), '-zu', '')
+         end = p0.tracking_sku collate utf8mb4_unicode_ci
     ) m
     group by m.country_category, m.seller_name_new, m.seller_sku_adj
 ),
@@ -563,14 +573,25 @@ receipt_doc as (
          and pp0.seller_name_norm = p0.seller_name_new collate utf8mb4_unicode_ci
          and pp0.msku = p0.seller_sku_adj collate utf8mb4_unicode_ci
         join dashboard_tracking_purchase_order_sync po
-          on po.plan_sn = pp0.plan_sn collate utf8mb4_unicode_ci
+         on po.plan_sn = pp0.plan_sn collate utf8mb4_unicode_ci
          and po.status <> '作废'
-         and replace(po.sku, '-zu', '') = replace(p0.max_sku, '-zu', '') collate utf8mb4_unicode_ci
-         and (nullif(po.logistics_provider, '') is not null or nullif(po.logistics_order, '') is not null)
+         and case
+            when replace(coalesce(po.sku, ''), '-zu', '') regexp '[0-9][a-z]$'
+                then left(replace(coalesce(po.sku, ''), '-zu', ''), char_length(replace(coalesce(po.sku, ''), '-zu', '')) - 1)
+            else replace(coalesce(po.sku, ''), '-zu', '')
+         end = p0.tracking_sku collate utf8mb4_unicode_ci
     ) m
     join dashboard_tracking_receipt_order_sync ro
       on ro.business_order_sn = m.order_sn collate utf8mb4_unicode_ci
-     and replace(ro.sku, '-zu', '') = replace(m.sku, '-zu', '') collate utf8mb4_unicode_ci
+     and case
+        when replace(coalesce(ro.sku, ''), '-zu', '') regexp '[0-9][a-z]$'
+            then left(replace(coalesce(ro.sku, ''), '-zu', ''), char_length(replace(coalesce(ro.sku, ''), '-zu', '')) - 1)
+        else replace(coalesce(ro.sku, ''), '-zu', '')
+     end = case
+        when replace(coalesce(m.sku, ''), '-zu', '') regexp '[0-9][a-z]$'
+            then left(replace(coalesce(m.sku, ''), '-zu', ''), char_length(replace(coalesce(m.sku, ''), '-zu', '')) - 1)
+        else replace(coalesce(m.sku, ''), '-zu', '')
+     end collate utf8mb4_unicode_ci
     group by m.country_category, m.seller_name_new, m.seller_sku_adj
 ),
 qc_doc as (
@@ -601,19 +622,38 @@ qc_doc as (
          and pp0.seller_name_norm = p0.seller_name_new collate utf8mb4_unicode_ci
          and pp0.msku = p0.seller_sku_adj collate utf8mb4_unicode_ci
         join dashboard_tracking_purchase_order_sync po
-          on po.plan_sn = pp0.plan_sn collate utf8mb4_unicode_ci
+         on po.plan_sn = pp0.plan_sn collate utf8mb4_unicode_ci
          and po.status <> '作废'
-         and replace(po.sku, '-zu', '') = replace(p0.max_sku, '-zu', '') collate utf8mb4_unicode_ci
-         and (nullif(po.logistics_provider, '') is not null or nullif(po.logistics_order, '') is not null)
+         and case
+            when replace(coalesce(po.sku, ''), '-zu', '') regexp '[0-9][a-z]$'
+                then left(replace(coalesce(po.sku, ''), '-zu', ''), char_length(replace(coalesce(po.sku, ''), '-zu', '')) - 1)
+            else replace(coalesce(po.sku, ''), '-zu', '')
+         end = p0.tracking_sku collate utf8mb4_unicode_ci
         join dashboard_tracking_receipt_order_sync ro
           on ro.business_order_sn = po.order_sn collate utf8mb4_unicode_ci
-         and replace(ro.sku, '-zu', '') = replace(po.sku, '-zu', '') collate utf8mb4_unicode_ci
+         and case
+            when replace(coalesce(ro.sku, ''), '-zu', '') regexp '[0-9][a-z]$'
+                then left(replace(coalesce(ro.sku, ''), '-zu', ''), char_length(replace(coalesce(ro.sku, ''), '-zu', '')) - 1)
+            else replace(coalesce(ro.sku, ''), '-zu', '')
+         end = case
+            when replace(coalesce(po.sku, ''), '-zu', '') regexp '[0-9][a-z]$'
+                then left(replace(coalesce(po.sku, ''), '-zu', ''), char_length(replace(coalesce(po.sku, ''), '-zu', '')) - 1)
+            else replace(coalesce(po.sku, ''), '-zu', '')
+         end collate utf8mb4_unicode_ci
          and coalesce(ro.product_receive_num, 0) > 0
     ) m
     join dashboard_tracking_qc_order_sync qo
       on qo.delivery_order_sn = m.receipt_order_sn collate utf8mb4_unicode_ci
      and qo.order_sn = m.business_order_sn collate utf8mb4_unicode_ci
-     and replace(qo.sku, '-zu', '') = replace(m.sku, '-zu', '') collate utf8mb4_unicode_ci
+     and case
+        when replace(coalesce(qo.sku, ''), '-zu', '') regexp '[0-9][a-z]$'
+            then left(replace(coalesce(qo.sku, ''), '-zu', ''), char_length(replace(coalesce(qo.sku, ''), '-zu', '')) - 1)
+        else replace(coalesce(qo.sku, ''), '-zu', '')
+     end = case
+        when replace(coalesce(m.sku, ''), '-zu', '') regexp '[0-9][a-z]$'
+            then left(replace(coalesce(m.sku, ''), '-zu', ''), char_length(replace(coalesce(m.sku, ''), '-zu', '')) - 1)
+        else replace(coalesce(m.sku, ''), '-zu', '')
+     end collate utf8mb4_unicode_ci
     group by m.country_category, m.seller_name_new, m.seller_sku_adj
 ),
 current_fba_plan_match as (
@@ -622,6 +662,7 @@ current_fba_plan_match as (
         p0.seller_name_new,
         p0.seller_sku_adj,
         fp.order_sn,
+        fp.sku,
         fp.plan_create_time,
         fp.shipment_plan_quantity
     from base p0
@@ -634,16 +675,36 @@ current_fba_plan_match as (
     left join dashboard_tracking_purchase_order_sync po
       on po.plan_sn = pp0.plan_sn collate utf8mb4_unicode_ci
      and po.status <> '作废'
-     and replace(po.sku, '-zu', '') = replace(p0.max_sku, '-zu', '') collate utf8mb4_unicode_ci
+     and case
+        when replace(coalesce(po.sku, ''), '-zu', '') regexp '[0-9][a-z]$'
+            then left(replace(coalesce(po.sku, ''), '-zu', ''), char_length(replace(coalesce(po.sku, ''), '-zu', '')) - 1)
+        else replace(coalesce(po.sku, ''), '-zu', '')
+     end = p0.tracking_sku collate utf8mb4_unicode_ci
      and (nullif(po.logistics_provider, '') is not null or nullif(po.logistics_order, '') is not null)
     left join dashboard_tracking_receipt_order_sync ro
       on ro.business_order_sn = po.order_sn collate utf8mb4_unicode_ci
-     and replace(ro.sku, '-zu', '') = replace(po.sku, '-zu', '') collate utf8mb4_unicode_ci
+     and case
+        when replace(coalesce(ro.sku, ''), '-zu', '') regexp '[0-9][a-z]$'
+            then left(replace(coalesce(ro.sku, ''), '-zu', ''), char_length(replace(coalesce(ro.sku, ''), '-zu', '')) - 1)
+        else replace(coalesce(ro.sku, ''), '-zu', '')
+     end = case
+        when replace(coalesce(po.sku, ''), '-zu', '') regexp '[0-9][a-z]$'
+            then left(replace(coalesce(po.sku, ''), '-zu', ''), char_length(replace(coalesce(po.sku, ''), '-zu', '')) - 1)
+        else replace(coalesce(po.sku, ''), '-zu', '')
+     end collate utf8mb4_unicode_ci
      and coalesce(ro.product_receive_num, 0) > 0
     left join dashboard_tracking_qc_order_sync qo
       on qo.delivery_order_sn = ro.order_sn collate utf8mb4_unicode_ci
      and qo.order_sn = ro.business_order_sn collate utf8mb4_unicode_ci
-     and replace(qo.sku, '-zu', '') = replace(ro.sku, '-zu', '') collate utf8mb4_unicode_ci
+     and case
+        when replace(coalesce(qo.sku, ''), '-zu', '') regexp '[0-9][a-z]$'
+            then left(replace(coalesce(qo.sku, ''), '-zu', ''), char_length(replace(coalesce(qo.sku, ''), '-zu', '')) - 1)
+        else replace(coalesce(qo.sku, ''), '-zu', '')
+     end = case
+        when replace(coalesce(ro.sku, ''), '-zu', '') regexp '[0-9][a-z]$'
+            then left(replace(coalesce(ro.sku, ''), '-zu', ''), char_length(replace(coalesce(ro.sku, ''), '-zu', '')) - 1)
+        else replace(coalesce(ro.sku, ''), '-zu', '')
+     end collate utf8mb4_unicode_ci
      and coalesce(qo.product_good_num, 0) > 0
      and coalesce(qo.product_bad_num, 0) = 0
     join dashboard_tracking_fba_shipment_plan_sync fp
@@ -652,7 +713,11 @@ current_fba_plan_match as (
      and fp.country_category = p0.country_category collate utf8mb4_unicode_ci
      and fp.seller_name_norm = p0.seller_name_new collate utf8mb4_unicode_ci
      and fp.msku = p0.seller_sku_adj collate utf8mb4_unicode_ci
-     and replace(fp.sku, '-zu', '') = replace(p0.max_sku, '-zu', '') collate utf8mb4_unicode_ci
+     and case
+        when replace(coalesce(fp.sku, ''), '-zu', '') regexp '[0-9][a-z]$'
+            then left(replace(coalesce(fp.sku, ''), '-zu', ''), char_length(replace(coalesce(fp.sku, ''), '-zu', '')) - 1)
+        else replace(coalesce(fp.sku, ''), '-zu', '')
+     end = p0.tracking_sku collate utf8mb4_unicode_ci
      and abs(coalesce(fp.shipment_plan_quantity, 0) - coalesce(pp0.quantity_plan, 0)) <= greatest(coalesce(pp0.quantity_plan, 0) * 0.2, 5)
 ),
 current_fba_plan_doc as (
@@ -665,6 +730,54 @@ current_fba_plan_doc as (
         group_concat(distinct order_sn order by plan_create_time separator ',') as fba_plan_sn_list
     from current_fba_plan_match
     group by country_category, seller_name_new, seller_sku_adj
+),
+current_fba_shipped_doc as (
+    select
+        cfpm.country_category,
+        cfpm.seller_name_new,
+        cfpm.seller_sku_adj,
+        count(distinct ii.shipment_id) as fba_shipment_count,
+        count(distinct ii.shipment_sn) as fba_internal_shipment_count,
+        sum(coalesce(ii.quantity_shipped, 0)) as fba_shipped_qty,
+        sum(coalesce(nullif(ii.shipment_quantity_received, 0), ii.quantity_receive, 0)) as fba_received_qty,
+        count(distinct case
+            when coalesce(nullif(ii.shipment_quantity_received, 0), ii.quantity_receive, 0) > 0
+              or coalesce(ish.quantity_received, 0) > 0
+              or upper(coalesce(ii.shipment_status, ii.status_text, ish.shipment_status, ish.status_name, '')) = 'RECEIVING'
+              or upper(coalesce(ii.shipment_status, ii.status_text, ish.shipment_status, ish.status_name, '')) = 'CLOSED'
+              or upper(coalesce(ish.shipment_status, ish.status_name, '')) in ('RECEIVING', 'CLOSED')
+              or ish.receiving_time is not null
+              or ish.closed_time is not null
+            then ii.shipment_id
+        end) as receiving_shipment_count,
+        count(distinct case
+            when upper(coalesce(ii.shipment_status, ii.status_text, ish.shipment_status, ish.status_name, '')) = 'CLOSED'
+              or upper(coalesce(ish.shipment_status, ish.status_name, '')) = 'CLOSED'
+              or ish.closed_time is not null
+            then ii.shipment_id
+        end) as closed_shipment_count,
+        group_concat(distinct ii.shipment_id order by coalesce(ii.shipment_time, ii.source_create_time) separator ',') as fba_shipment_id_list,
+        group_concat(distinct ii.shipment_sn order by coalesce(ii.shipment_time, ii.source_create_time) separator ',') as fba_shipment_sn_list
+    from current_fba_plan_match cfpm
+    join dashboard_tracking_inbound_item_sync ii
+      on ii.shipment_order_sn = cfpm.order_sn collate utf8mb4_unicode_ci
+     and ii.country_category = cfpm.country_category collate utf8mb4_unicode_ci
+     and ii.seller_name_norm = cfpm.seller_name_new collate utf8mb4_unicode_ci
+     and ii.msku = cfpm.seller_sku_adj collate utf8mb4_unicode_ci
+     and case
+        when replace(coalesce(ii.sku, ''), '-zu', '') regexp '[0-9][a-z]$'
+            then left(replace(coalesce(ii.sku, ''), '-zu', ''), char_length(replace(coalesce(ii.sku, ''), '-zu', '')) - 1)
+        else replace(coalesce(ii.sku, ''), '-zu', '')
+     end = case
+        when replace(coalesce(cfpm.sku, ''), '-zu', '') regexp '[0-9][a-z]$'
+            then left(replace(coalesce(cfpm.sku, ''), '-zu', ''), char_length(replace(coalesce(cfpm.sku, ''), '-zu', '')) - 1)
+        else replace(coalesce(cfpm.sku, ''), '-zu', '')
+     end collate utf8mb4_unicode_ci
+     and nullif(ii.shipment_id, '') is not null
+     and ii.shipment_id like 'FBA%%'
+    left join dashboard_tracking_inbound_shipment_sync ish
+      on ish.shipment_sn = ii.shipment_sn collate utf8mb4_unicode_ci
+    group by cfpm.country_category, cfpm.seller_name_new, cfpm.seller_sku_adj
 ),
 all_fba_plan_match as (
     select distinct
@@ -698,6 +811,46 @@ historical_fba_plan_doc as (
      and cfpm.order_sn = afpm.order_sn collate utf8mb4_unicode_ci
     where cfpm.order_sn is null
     group by afpm.country_category, afpm.seller_name_new, afpm.seller_sku_adj
+),
+active_fba_eta_doc as (
+    select
+        l.country_category,
+        l.seller_name_new,
+        l.seller_sku_adj,
+        coalesce(
+            min(case
+                    when coalesce(ish.expected_arrival_date, ish.eta_date) >= %(cutoff_date)s
+                    then coalesce(ish.expected_arrival_date, ish.eta_date)
+                end),
+            max(case
+                    when coalesce(ish.expected_arrival_date, ish.eta_date) < %(cutoff_date)s
+                    then coalesce(ish.expected_arrival_date, ish.eta_date)
+                end)
+        ) as nearest_fba_eta_date
+    from latest_row l
+    join agg a
+      on a.country_category = l.country_category
+     and a.seller_name_new = l.seller_name_new
+     and a.seller_sku_adj = l.seller_sku_adj
+    join dashboard_tracking_inbound_item_sync ii
+      on ii.country_category = l.country_category collate utf8mb4_unicode_ci
+     and ii.seller_name_norm = l.seller_name_new collate utf8mb4_unicode_ci
+     and ii.msku = l.seller_sku_adj collate utf8mb4_unicode_ci
+     and case
+        when replace(coalesce(ii.sku, ''), '-zu', '') regexp '[0-9][a-z]$'
+            then left(replace(coalesce(ii.sku, ''), '-zu', ''), char_length(replace(coalesce(ii.sku, ''), '-zu', '')) - 1)
+        else replace(coalesce(ii.sku, ''), '-zu', '')
+     end = l.tracking_sku collate utf8mb4_unicode_ci
+     and coalesce(ii.shipment_time, ii.source_create_time) >= date_sub(a.first_replenishment_date, interval 30 day)
+     and coalesce(ii.shipment_time, ii.source_create_time) < date_add(%(cutoff_date)s, interval 1 day)
+     and nullif(ii.shipment_id, '') is not null
+     and ii.shipment_id like 'FBA%%'
+    left join dashboard_tracking_inbound_shipment_sync ish
+      on ish.shipment_sn = ii.shipment_sn collate utf8mb4_unicode_ci
+    where coalesce(ii.quantity_shipped, 0) > coalesce(nullif(ii.shipment_quantity_received, 0), ii.quantity_receive, 0)
+      and upper(coalesce(ii.shipment_status, ii.status_text, ish.shipment_status, ish.status_name, '')) <> 'CLOSED'
+      and ish.closed_time is null
+    group by l.country_category, l.seller_name_new, l.seller_sku_adj
 )
 select
     %(cutoff_date)s,
@@ -726,7 +879,7 @@ select
     end as purchase_status,
     coalesce(ppd.purchase_plan_count, 0),
     coalesce(ppd.purchase_plan_total_qty, 0),
-    coalesce(pod.purchase_inbound_qty, 0),
+    greatest(coalesce(pod.purchase_inbound_qty, 0), coalesce(rd.local_received_qty, 0), coalesce(qd.qc_good_qty, 0)),
     coalesce(t.historical_purchase_shipping_qty, 0),
     coalesce(l.local_quantity, 0),
     case
@@ -738,14 +891,14 @@ select
     coalesce(t.current_fba_shipment_plan_qty, 0),
     coalesce(t.historical_fba_shipment_plan_qty, 0),
     coalesce(t.received_qty, 0),
-    t.nearest_fba_eta_date,
-    case when t.nearest_fba_eta_date is null then null else datediff(t.nearest_fba_eta_date, %(cutoff_date)s) end,
+    eta.nearest_fba_eta_date,
+    case when eta.nearest_fba_eta_date is null then null else datediff(eta.nearest_fba_eta_date, %(cutoff_date)s) end,
     case when coalesce(ppd.purchase_plan_count, 0) > 0 then 1 else 0 end,
     coalesce(ppd.purchase_plan_count, 0),
     coalesce(ppd.purchase_plan_total_qty, 0),
     case when coalesce(pod.purchase_order_count, 0) > 0 then 1 else 0 end,
-    case when coalesce(pod.shipped_order_count, 0) > 0 then 1 else 0 end,
-    coalesce(pod.purchase_inbound_qty, 0),
+    case when coalesce(pod.shipped_order_count, 0) > 0 or coalesce(rd.local_received_qty, 0) > 0 or coalesce(qd.qc_good_qty, 0) > 0 then 1 else 0 end,
+    greatest(coalesce(pod.purchase_inbound_qty, 0), coalesce(rd.local_received_qty, 0), coalesce(qd.qc_good_qty, 0)),
     case when coalesce(rd.local_received_qty, 0) > 0 then 1 else 0 end,
     coalesce(rd.local_received_qty, 0),
     case when coalesce(qd.qc_count, 0) > 0 then 1 else 0 end,
@@ -757,45 +910,49 @@ select
     coalesce(cfpd.fba_plan_qty, 0),
     coalesce(hfpd.historical_fba_plan_count, 0),
     coalesce(hfpd.historical_fba_plan_qty, 0),
-    case when coalesce(t.current_shipped_qty, 0) > 0 then 1 else 0 end,
-    coalesce(t.current_shipped_qty, 0),
-    case when coalesce(t.received_qty, 0) > 0 then 1 else 0 end,
-    coalesce(t.received_qty, 0),
-    case when coalesce(t.received_qty, 0) > 0 and coalesce(t.current_shipped_qty, 0) <= coalesce(t.received_qty, 0) then 1 else 0 end,
+    case when coalesce(fbsd.fba_shipment_count, 0) > 0 then 1 else 0 end,
+    coalesce(fbsd.fba_shipped_qty, 0),
+    case when coalesce(fbsd.receiving_shipment_count, 0) > 0 then 1 else 0 end,
+    coalesce(fbsd.fba_received_qty, 0),
     case
-        when coalesce(ppd.purchase_plan_count, 0) <= 0 then '建采购计划'
-        when coalesce(pod.purchase_inbound_qty, 0) <= 0 then '供应商发货'
-        when coalesce(rd.local_received_qty, 0) <= 0 then '到本地仓'
-        when coalesce(rd.local_received_qty, 0) > 0 then '质检通过'
-        when coalesce(cfpd.fba_plan_count, 0) <= 0 then '建FBA计划'
-        when coalesce(t.current_shipped_qty, 0) <= 0 then 'FBA出库'
-        when coalesce(t.received_qty, 0) <= 0 then 'FBA接收'
-        when coalesce(t.current_shipped_qty, 0) <= coalesce(t.received_qty, 0) then 'FBA完成'
-        else 'FBA接收'
+        when coalesce(fbsd.fba_shipment_count, 0) > 0
+         and coalesce(fbsd.closed_shipment_count, 0) = coalesce(fbsd.fba_shipment_count, 0)
+        then 1 else 0
     end,
     case
         when coalesce(ppd.purchase_plan_count, 0) <= 0 then '建采购计划'
-        when coalesce(pod.purchase_inbound_qty, 0) <= 0 then '供应商发货'
+        when greatest(coalesce(pod.purchase_inbound_qty, 0), coalesce(rd.local_received_qty, 0), coalesce(qd.qc_good_qty, 0)) <= 0 then '供应商发货'
         when coalesce(rd.local_received_qty, 0) <= 0 then '到本地仓'
         when coalesce(rd.local_received_qty, 0) > 0 then '质检通过'
         when coalesce(cfpd.fba_plan_count, 0) <= 0 then '建FBA计划'
-        when coalesce(t.current_shipped_qty, 0) <= 0 then 'FBA出库'
-        when coalesce(t.received_qty, 0) <= 0 then 'FBA接收'
-        when coalesce(t.current_shipped_qty, 0) <= coalesce(t.received_qty, 0) then '链路完成'
-        else 'FBA接收'
+        when coalesce(fbsd.fba_shipment_count, 0) <= 0 then 'FBA出库'
+        when coalesce(fbsd.receiving_shipment_count, 0) <= 0 then 'FBA接收'
+        when coalesce(fbsd.closed_shipment_count, 0) <= 0 then 'FBA完成'
+        else '链路完成'
+    end,
+    case
+        when coalesce(ppd.purchase_plan_count, 0) <= 0 then '建采购计划'
+        when greatest(coalesce(pod.purchase_inbound_qty, 0), coalesce(rd.local_received_qty, 0), coalesce(qd.qc_good_qty, 0)) <= 0 then '供应商发货'
+        when coalesce(rd.local_received_qty, 0) <= 0 then '到本地仓'
+        when coalesce(rd.local_received_qty, 0) > 0 then '质检通过'
+        when coalesce(cfpd.fba_plan_count, 0) <= 0 then '建FBA计划'
+        when coalesce(fbsd.fba_shipment_count, 0) <= 0 then 'FBA出库'
+        when coalesce(fbsd.receiving_shipment_count, 0) <= 0 then 'FBA接收'
+        when coalesce(fbsd.closed_shipment_count, 0) <= 0 then 'FBA完成'
+        else '链路完成'
     end,
     case
         when coalesce(ppd.purchase_plan_count, 0) <= 0 then '未匹配到补货后的采购计划'
-        when coalesce(pod.purchase_inbound_qty, 0) <= 0 then '已建采购计划，但未确认采购在途'
-        when coalesce(rd.local_received_qty, 0) <= 0 then concat('采购已在途，但未确认到本地仓 ', coalesce(pod.purchase_inbound_qty, 0))
+        when greatest(coalesce(pod.purchase_inbound_qty, 0), coalesce(rd.local_received_qty, 0), coalesce(qd.qc_good_qty, 0)) <= 0 then '已建采购计划，但未确认采购在途'
+        when coalesce(rd.local_received_qty, 0) <= 0 then concat('采购已在途，但未确认到本地仓 ', greatest(coalesce(pod.purchase_inbound_qty, 0), coalesce(rd.local_received_qty, 0), coalesce(qd.qc_good_qty, 0)))
         when coalesce(rd.local_received_qty, 0) > 0 then concat('已到本地仓，但未确认质检通过 ', coalesce(rd.local_received_qty, 0))
         when coalesce(cfpd.fba_plan_count, 0) <= 0 then '质检已通过，但未确认创建本次FBA计划'
-        when coalesce(t.current_shipped_qty, 0) <= 0 then '已建FBA计划，但未确认出库在途'
-        when coalesce(t.received_qty, 0) <= 0 then 'FBA在途，未开始接收'
-        when coalesce(t.current_shipped_qty, 0) <= coalesce(t.received_qty, 0) then '链路完成'
-        else 'FBA已接收，未确认完成'
+        when coalesce(fbsd.fba_shipment_count, 0) <= 0 then '已建FBA计划，但未确认出库在途'
+        when coalesce(fbsd.receiving_shipment_count, 0) <= 0 then 'FBA在途，未开始接收'
+        when coalesce(fbsd.closed_shipment_count, 0) <= 0 then 'FBA已开始接收，未确认收货完成'
+        else '链路完成'
     end,
-    concat_ws(' / ', nullif(ppd.purchase_plan_sn_list, ''), nullif(pod.purchase_order_sn_list, ''), nullif(rd.receipt_order_sn_list, ''), nullif(qd.qc_sn_list, ''), nullif(cfpd.fba_plan_sn_list, ''), nullif(hfpd.historical_fba_plan_sn_list, ''), nullif(t.shipment_order_sn_list, '')),
+    concat_ws(' / ', nullif(ppd.purchase_plan_sn_list, ''), nullif(pod.purchase_order_sn_list, ''), nullif(rd.receipt_order_sn_list, ''), nullif(qd.qc_sn_list, ''), nullif(cfpd.fba_plan_sn_list, ''), nullif(hfpd.historical_fba_plan_sn_list, ''), nullif(fbsd.fba_shipment_id_list, ''), nullif(fbsd.fba_shipment_sn_list, ''), nullif(t.shipment_order_sn_list, '')),
     coalesce(t.latest_status, '')
 from agg a
 join latest_row l
@@ -808,6 +965,10 @@ left join dashboard_replenishment_tracking_snapshot t
  and t.country_category = a.country_category
 and t.seller_name_new = a.seller_name_new
 and t.seller_sku_adj = a.seller_sku_adj
+left join active_fba_eta_doc eta
+  on eta.country_category = a.country_category
+ and eta.seller_name_new = a.seller_name_new
+ and eta.seller_sku_adj = a.seller_sku_adj
 left join purchase_plan_doc ppd
   on ppd.country_category = a.country_category
  and ppd.seller_name_new = a.seller_name_new
@@ -828,6 +989,10 @@ left join current_fba_plan_doc cfpd
   on cfpd.country_category = a.country_category
  and cfpd.seller_name_new = a.seller_name_new
  and cfpd.seller_sku_adj = a.seller_sku_adj
+left join current_fba_shipped_doc fbsd
+  on fbsd.country_category = a.country_category
+ and fbsd.seller_name_new = a.seller_name_new
+ and fbsd.seller_sku_adj = a.seller_sku_adj
 left join historical_fba_plan_doc hfpd
   on hfpd.country_category = a.country_category
  and hfpd.seller_name_new = a.seller_name_new
@@ -936,7 +1101,15 @@ purchase_order_match as (
     join dashboard_tracking_purchase_order_sync po
       on po.plan_sn = ppm.plan_sn collate utf8mb4_unicode_ci
      and po.status <> '作废'
-     and replace(po.sku, '-zu', '') = replace(ppm.max_sku, '-zu', '') collate utf8mb4_unicode_ci
+     and case
+        when replace(coalesce(po.sku, ''), '-zu', '') regexp '[0-9][a-z]$'
+            then left(replace(coalesce(po.sku, ''), '-zu', ''), char_length(replace(coalesce(po.sku, ''), '-zu', '')) - 1)
+        else replace(coalesce(po.sku, ''), '-zu', '')
+     end = case
+        when replace(coalesce(ppm.max_sku, ''), '-zu', '') regexp '[0-9][a-z]$'
+            then left(replace(coalesce(ppm.max_sku, ''), '-zu', ''), char_length(replace(coalesce(ppm.max_sku, ''), '-zu', '')) - 1)
+        else replace(coalesce(ppm.max_sku, ''), '-zu', '')
+     end collate utf8mb4_unicode_ci
 ),
 purchase_order_agg as (
     select
