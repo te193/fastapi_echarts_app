@@ -423,39 +423,7 @@ def execute_price_review_source_load(
         "finish_time", "raw_updated_at",
     )
 
-    select_sql = f"""
-        select
-            id as source_id,
-            date(finish_time) as adjust_date,
-            msku,
-            local_sku,
-            asin,
-            local_name as product_name,
-            store_name as store,
-            substring_index(store_name, '-', 1) as seller_name_new,
-            marketplace as country,
-            currency_icon as currency,
-            cast(nullif(adjust_before_obj_standard_price, '') as decimal(18,4)) as price_before,
-            cast(nullif(adjust_after_obj_standard_price, '') as decimal(18,4)) as price_after,
-            round(
-                (cast(nullif(adjust_before_obj_standard_price, '') as decimal(18,4))
-                 - cast(nullif(adjust_after_obj_standard_price, '') as decimal(18,4)))
-                / nullif(cast(nullif(adjust_before_obj_standard_price, '') as decimal(18,4)), 0),
-                6
-            ) as drop_ratio,
-            cast(finish_time as datetime) as finish_time,
-            coalesce(update_time, ods_update_time, backup_time) as raw_updated_at
-        from {queue_table}
-        where delete_flag = 0
-          and finish_time is not null
-          and finish_time <> ''
-          and finish_time >= %(adjust_start_at)s
-          and finish_time < %(adjust_end_exclusive)s
-          and msku is not null
-          and msku <> ''
-          and store_name is not null
-          and store_name <> ''
-    """
+    select_sql = _select_price_review_adjustment_source_sql(queue_table)
     insert_sql = _insert_sql(target_table(target_schema, "price_review_adjustment_source"), adjustment_columns)
 
     with target_conn.cursor() as target_cursor:
@@ -480,6 +448,42 @@ def execute_price_review_source_load(
             current_day += timedelta(days=1)
     target_conn.commit()
     return affected
+
+
+def _select_price_review_adjustment_source_sql(queue_table: str) -> str:
+    return f"""
+        select
+            id as source_id,
+            date(finish_time) as adjust_date,
+            msku,
+            local_sku,
+            asin,
+            local_name as product_name,
+            store_name as store,
+            substring_index(store_name, '-', 1) as seller_name_new,
+            marketplace as country,
+            currency_icon as currency,
+            cast(nullif(adjust_before_obj_standard_price, '') as decimal(18,4)) as price_before,
+            cast(nullif(adjust_after_obj_standard_price, '') as decimal(18,4)) as price_after,
+            round(
+                (cast(nullif(adjust_after_obj_standard_price, '') as decimal(18,4))
+                 - cast(nullif(adjust_before_obj_standard_price, '') as decimal(18,4)))
+                / nullif(cast(nullif(adjust_before_obj_standard_price, '') as decimal(18,4)), 0),
+                6
+            ) as drop_ratio,
+            cast(finish_time as datetime) as finish_time,
+            coalesce(update_time, ods_update_time, backup_time) as raw_updated_at
+        from {queue_table}
+        where delete_flag = 0
+          and finish_time is not null
+          and finish_time <> ''
+          and finish_time >= %(adjust_start_at)s
+          and finish_time < %(adjust_end_exclusive)s
+          and msku is not null
+          and msku <> ''
+          and store_name is not null
+          and store_name <> ''
+    """
 
 
 def execute_price_review_tracking(target_conn, target_schema: str, params: dict[str, object]) -> int:
@@ -677,7 +681,7 @@ def _tracking_insert_sql(target_schema: str) -> str:
             coalesce(p.product_name, b.product_name, '') as product_name,
             b.price_before,
             b.price_after,
-            coalesce(b.drop_ratio, (b.price_before - b.price_after) / nullif(b.price_before, 0), 0) as drop_ratio,
+            coalesce(b.drop_ratio, (b.price_after - b.price_before) / nullif(b.price_before, 0), 0) as drop_ratio,
             b.period_start,
             b.period_end,
             b.period_after_start,
@@ -724,19 +728,19 @@ def _tracking_insert_sql(target_schema: str) -> str:
         price_after,
         drop_ratio,
         case
-            when drop_ratio < -0.30 then '涨价>30%%'
-            when drop_ratio < -0.20 then '涨价20-30%%'
-            when drop_ratio < -0.15 then '涨价15-20%%'
-            when drop_ratio < -0.10 then '涨价10-15%%'
-            when drop_ratio < -0.05 then '涨价5-10%%'
-            when drop_ratio < 0 then '涨价0-5%%'
+            when drop_ratio < -0.30 then '降价>30%%'
+            when drop_ratio < -0.20 then '降价20-30%%'
+            when drop_ratio < -0.15 then '降价15-20%%'
+            when drop_ratio < -0.10 then '降价10-15%%'
+            when drop_ratio < -0.05 then '降价5-10%%'
+            when drop_ratio < 0 then '降价0-5%%'
             when drop_ratio = 0 then '持平'
-            when drop_ratio <= 0.05 then '降价0-5%%'
-            when drop_ratio <= 0.10 then '降价5-10%%'
-            when drop_ratio <= 0.15 then '降价10-15%%'
-            when drop_ratio <= 0.20 then '降价15-20%%'
-            when drop_ratio <= 0.30 then '降价20-30%%'
-            else '降价>30%%'
+            when drop_ratio <= 0.05 then '涨价0-5%%'
+            when drop_ratio <= 0.10 then '涨价5-10%%'
+            when drop_ratio <= 0.15 then '涨价10-15%%'
+            when drop_ratio <= 0.20 then '涨价15-20%%'
+            when drop_ratio <= 0.30 then '涨价20-30%%'
+            else '涨价>30%%'
         end as drop_range,
         concat('$', floor(coalesce(price_before, 0) / 20) * 20, '-', (floor(coalesce(price_before, 0) / 20) + 1) * 20) as price_band,
         period_start,

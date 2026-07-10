@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import configparser
 import os
+import re
 import sys
 import traceback
 from dataclasses import dataclass
@@ -36,6 +37,32 @@ DEFAULT_STEP_ORDER = [
     "replenishment_result",
     "country_metrics",
 ]
+
+REPLENISHMENT_WORK_TABLES = {
+    "tmp_pur_plan_candidate_keys": "etl_datasync.dashboard_replenishment_work_candidate_keys_v3",
+    "tmp_pur_plan_candidate_asins": "etl_datasync.dashboard_replenishment_work_candidate_asins_v3",
+    "tmp_pur_plan_follow_listing_asins": "etl_datasync.dashboard_replenishment_work_follow_listing_asins_v3",
+    "tmp_prod_perf_sku_asin_metrics": "etl_datasync.dashboard_replenishment_work_sku_asin_metrics_v3",
+    "tmp_prod_perf_sku_metrics": "etl_datasync.dashboard_replenishment_work_sku_metrics_v3",
+    "tmp_asin_origin_sales_fallback": "etl_datasync.dashboard_replenishment_work_asin_origin_sales_fallback_v3",
+    "tmp_prod_perf_follow_origin": "etl_datasync.dashboard_replenishment_work_follow_origin_v3",
+    "tmp_prod_perf_sku_follow_metrics": "etl_datasync.dashboard_replenishment_work_sku_follow_metrics_v3",
+    "tmp_followed_origin_links": "etl_datasync.dashboard_replenishment_work_followed_origin_links_v3",
+    "tmp_pur_plan_fba_current": "etl_datasync.dashboard_replenishment_work_fba_current_v3",
+    "tmp_pur_plan_replenish_sug_current": "etl_datasync.dashboard_replenishment_work_restock_current_v3",
+    "tmp_pur_plan_future_history_stat": "etl_datasync.dashboard_replenishment_work_future_history_stat_v3",
+    "tmp_pur_plan_prev_history_stat": "etl_datasync.dashboard_replenishment_work_prev_history_stat_v3",
+    "tmp_pur_plan_sales_change_rate": "etl_datasync.dashboard_replenishment_work_sales_change_rate_v3",
+    "tmp_pur_plan_support_metric_base": "etl_datasync.dashboard_replenishment_work_support_metric_base_v3",
+    "tmp_pur_plan_support_calc_base": "etl_datasync.dashboard_replenishment_work_support_calc_base_v3",
+    "tmp_pur_plan_support_layer_all": "etl_datasync.dashboard_replenishment_work_support_layer_all_v3",
+    "tmp_pur_plan_replenish_calc": "etl_datasync.dashboard_replenishment_work_replenish_calc_v3",
+    "tmp_asin_merge_groups": "etl_datasync.dashboard_replenishment_work_asin_merge_groups_v3",
+    "tmp_asin_merge_targets": "etl_datasync.dashboard_replenishment_work_asin_merge_targets_v3",
+    "tmp_asin_merge_assignments": "etl_datasync.dashboard_replenishment_work_asin_merge_assignments_v3",
+    "tmp_asin_merge_purchase_fields": "etl_datasync.dashboard_replenishment_work_asin_merge_purchase_fields_v3",
+    "tmp_replenishment_country_listing_price": "etl_datasync.dashboard_replenishment_work_country_listing_price_v3",
+}
 
 
 @dataclass(frozen=True)
@@ -182,6 +209,7 @@ create table if not exists etl_datasync.dashboard_replenishment_listing_basic_sy
     unsale_sites text null,
     sales_status varchar(64) null,
     marketplace_concat varchar(128) null,
+    global_tags text null,
     seller_name_copy varchar(255) null,
     seller_name_ue varchar(128) null,
     principal varchar(128) null,
@@ -230,6 +258,7 @@ create table if not exists etl_datasync.dashboard_pur_plan_replenish_data (
     unsale_sites text null,
     sales_status varchar(64) null,
     marketplace_concat varchar(128) null,
+    global_tags text null,
     seller_name_copy varchar(255) null,
     seller_name_ue varchar(128) null,
     seller_name_new varchar(128) not null,
@@ -333,12 +362,21 @@ create table if not exists etl_datasync.dashboard_pur_plan_replenish_data (
     amz_instock_sales_ratio decimal(18,6) null,
     instock_intrans_pur_sales_ratio decimal(18,6) null,
     fllow_flag tinyint null,
+    followed_flag tinyint not null default 0,
+    followed_by_count int not null default 0,
+    followed_by_links text null,
+    follow_origin_link varchar(255) null,
+    replenish_block_reason varchar(64) null,
+    asin_merge_flag tinyint not null default 0,
+    asin_merge_target varchar(255) null,
+    asin_merge_reason varchar(64) null,
     created_at datetime not null default current_timestamp,
     updated_at datetime not null default current_timestamp on update current_timestamp,
     primary key (cur_date, country_category, seller_name_new, seller_sku_adj),
     key idx_replenish_level (cur_date, support_replenish_level_sort, support_replenish_level),
     key idx_replenish_owner (cur_date, principal, sales_team_1),
     key idx_replenish_sku (seller_sku_adj),
+    key idx_replenish_follow_origin (cur_date, follow_origin_link),
     key idx_replenish_qty (cur_date, replenish_qty)
 ) engine=InnoDB default charset=utf8mb4;
 """
@@ -407,6 +445,7 @@ LISTING_BASIC_COLUMNS = (
     "onsale_sites",
     "unsale_sites",
     "sales_status",
+    "global_tags",
     "marketplace_concat",
     "seller_name_copy",
     "seller_name_ue",
@@ -441,6 +480,14 @@ select
         when max(onsale_sites) = 0 then '停售中'
         else '在售中'
     end as sales_status,
+    group_concat(
+        distinct case
+            when nullif(global_tags, '') is not null then concat(marketplace, ':', global_tags)
+            else null
+        end
+        order by marketplace
+        separator ' | '
+    ) as global_tags,
     '汇总' as marketplace_concat,
     case
         when country_category = '北美站' then concat(max(seller_name_ue), '-US')
@@ -463,6 +510,7 @@ from (
         sml.local_sku as max_sku,
         sml.marketplace,
         sml.status,
+        sml.global_tags,
         sml.seller_name,
         count(case when sml.status = '在售' then 1 end)
             over (partition by sml.country_category, sml.seller_name_new, sml.seller_sku) as onsale_sites,
@@ -474,17 +522,59 @@ from (
         sml.principal,
         sml.sales_team_1,
         inv_store.inventory_seller_name_copy,
-        max(local_name)
+        max(sml.local_name)
             over (partition by sml.country_category, sml.seller_name_new, sml.seller_sku) as max_local_name,
-        max(brand_name)
+        max(plpi.brand_name)
             over (partition by sml.country_category, sml.seller_name_new, sml.seller_sku) as max_brand_name,
-        max(cg_box_pcs)
+        max(plpi.cg_box_pcs)
             over (partition by sml.country_category, sml.seller_name_new, sml.seller_sku) as max_cg_box_pcs,
-        max(cg_price)
+        max(plpi.cg_price)
             over (partition by sml.country_category, sml.seller_name_new, sml.seller_sku) as max_cg_price,
-        max(cg_transport_costs)
+        max(plpi.cg_transport_costs)
             over (partition by sml.country_category, sml.seller_name_new, sml.seller_sku) as max_cg_transport_costs
-    from etl_datasync.etl_dispose_lx_sales_mws_listing as sml
+    from (
+        select
+            seller_sku,
+            fnsku,
+            asin,
+            local_sku,
+            local_name,
+            marketplace,
+            status,
+            global_tags,
+            seller_name,
+            seller_name_ue,
+            seller_name_new,
+            country_category,
+            principal,
+            sales_team_1
+        from etl_datasync.etl_dispose_lx_sales_mws_listing
+        union all
+        select
+            raw.seller_sku,
+            raw.fnsku,
+            raw.asin,
+            raw.local_sku,
+            null as local_name,
+            raw.marketplace,
+            raw.status,
+            raw.global_tags,
+            raw.seller_name,
+            substring_index(raw.seller_name, '-', 1) as seller_name_ue,
+            substring_index(raw.seller_name, '-', 1) as seller_name_new,
+            case
+                when upper(raw.marketplace) in ('US', 'CA', 'MX') then '北美站'
+                when upper(raw.marketplace) in ('UK', 'GB') then '英国站'
+                else '欧洲站'
+            end as country_category,
+            null as principal,
+            null as sales_team_1
+        from dwd_datasync.lx_sales_mws_listing raw
+        where raw.seller_sku is not null
+          and raw.seller_sku <> ''
+          and raw.asin is not null
+          and raw.asin <> ''
+    ) as sml
     left join etl_datasync.etl_dispose_lx_product_local_product_info as plpi
            on sml.seller_sku = plpi.seller_sku
           and sml.marketplace = plpi.country
@@ -514,7 +604,6 @@ from (
            on inv_store.sku = sml.local_sku
           and inv_store.msku = sml.seller_sku
           and inv_store.seller_name_new = sml.seller_name_new
-    where length(sml.seller_sku) between 5 and 10
 ) listing_basic
 group by country_category, seller_name_new, seller_sku
 """
@@ -698,11 +787,8 @@ with candidate_keys as (
         seller_sku_adj
     from etl_datasync.dashboard_product_performance_daily
     where dt_date between %(candidate_start_date)s and %(biz_date)s
-      and seller_name not regexp 'baihuiyi|Yuanoboo|Bailboo|Qianytyy'
-      and seller_name_new not in ('gushili', 'Joochees', 'ouhao', 'pingter')
       and seller_sku_adj is not null
       and seller_sku_adj <> ''
-      and length(seller_sku_adj) between 5 and 10
     group by country_category, seller_name_new, seller_sku_adj
 ),
 product_daily as (
@@ -719,7 +805,6 @@ product_daily as (
            and p.seller_name_new = c.seller_name_new
            and p.seller_sku_adj = c.seller_sku_adj
     where p.dt_date between %(product_start_date)s and %(biz_date)s
-      and p.seller_name not regexp 'baihuiyi|Yuanoboo|Bailboo|Qianytyy'
     group by
         p.dt_date,
         p.country_category,
@@ -798,12 +883,70 @@ select
     group_concat(distinct seller_name separator ',') as seller_name_concat
 from etl_datasync.dashboard_product_performance_daily
 where dt_date between %(candidate_start_date)s and %(biz_date)s
-  and seller_name not regexp 'baihuiyi|Yuanoboo|Bailboo|Qianytyy'
-  and seller_name_new not in ('gushili', 'Joochees', 'ouhao', 'pingter')
   and seller_sku_adj is not null
   and seller_sku_adj <> ''
-  and length(seller_sku_adj) between 5 and 10
 group by country_category, seller_name_new, seller_sku_adj;
+
+drop temporary table if exists tmp_pur_plan_candidate_asins;
+create temporary table tmp_pur_plan_candidate_asins as
+select distinct
+    candidate.country_category,
+    listing.max_asin
+from tmp_pur_plan_candidate_keys candidate
+inner join etl_datasync.dashboard_replenishment_listing_basic_sync listing
+        on candidate.country_category = listing.country_category
+       and candidate.seller_name_new = listing.seller_name_new
+       and candidate.seller_sku_adj = listing.seller_sku
+where listing.max_asin is not null
+  and listing.max_asin <> '';
+
+drop temporary table if exists tmp_pur_plan_follow_listing_asins;
+create temporary table tmp_pur_plan_follow_listing_asins as
+select
+    candidate_asin.country_category,
+    candidate_asin.max_asin
+from tmp_pur_plan_candidate_asins candidate_asin
+inner join etl_datasync.dashboard_replenishment_listing_basic_sync listing
+        on candidate_asin.country_category = listing.country_category
+       and candidate_asin.max_asin = listing.max_asin
+left join etl_datasync.dashboard_replenishment_self_asin_sync self_asin
+       on listing.seller_name_new = self_asin.seller_name_new
+      and listing.max_asin = self_asin.asin
+group by candidate_asin.country_category, candidate_asin.max_asin
+having count(distinct concat(listing.seller_name_new, '\0', listing.seller_sku)) > 1
+   and max(case when self_asin.asin is not null then 1 else 0 end) > 0
+   and max(case when self_asin.asin is null then 1 else 0 end) > 0;
+
+insert into tmp_pur_plan_candidate_keys (
+    country_category,
+    seller_name_new,
+    seller_sku_adj,
+    max_sku,
+    seller_name_concat
+)
+select
+    listing.country_category,
+    listing.seller_name_new,
+    listing.seller_sku as seller_sku_adj,
+    coalesce(nullif(max(listing.max_sku), ''), listing.seller_sku) as max_sku,
+    max(listing.seller_name_concat) as seller_name_concat
+from etl_datasync.dashboard_replenishment_listing_basic_sync listing
+inner join tmp_pur_plan_follow_listing_asins follow_asin
+        on listing.country_category = follow_asin.country_category
+       and listing.max_asin = follow_asin.max_asin
+left join tmp_pur_plan_candidate_keys existing
+       on listing.country_category = existing.country_category
+      and listing.seller_name_new = existing.seller_name_new
+      and listing.seller_sku = existing.seller_sku_adj
+left join etl_datasync.dashboard_replenishment_self_asin_sync listing_self
+       on listing.seller_name_new = listing_self.seller_name_new
+      and listing.max_asin = listing_self.asin
+where existing.seller_sku_adj is null
+  and listing_self.asin is null
+  and listing.seller_sku is not null
+  and listing.seller_sku <> ''
+  and listing.seller_sku not like 'amzn.%%'
+group by listing.country_category, listing.seller_name_new, listing.seller_sku;
 
 drop temporary table if exists tmp_prod_perf_sku_metrics;
 drop temporary table if exists tmp_prod_perf_sku_asin_metrics;
@@ -841,7 +984,6 @@ left join etl_datasync.dashboard_replenishment_listing_basic_sync l
       and p.seller_name_new = l.seller_name_new
       and p.seller_sku_adj = l.seller_sku
 where p.dt_date between %(product_start_date)s and %(biz_date)s
-  and p.seller_name not regexp 'baihuiyi|Yuanoboo|Bailboo|Qianytyy'
 group by p.country_category, p.seller_name_new, p.seller_sku_adj;
 
 create temporary table tmp_prod_perf_sku_metrics as
@@ -870,32 +1012,99 @@ select
 from tmp_prod_perf_sku_asin_metrics
 group by country_category, seller_name_new, seller_sku_adj;
 
-drop temporary table if exists tmp_asin_to_self_store;
-create temporary table tmp_asin_to_self_store as
+drop temporary table if exists tmp_asin_origin_sales_fallback;
+create temporary table tmp_asin_origin_sales_fallback as
 select
-    asin,
-    max(seller_name_new) as self_store_name
-from etl_datasync.dashboard_replenishment_self_asin_sync
-group by asin;
-
-drop temporary table if exists tmp_origin_sales_all;
-create temporary table tmp_origin_sales_all as
-select
-    target.asin,
-    target.self_store_name,
-    max(metrics.sales_3) as sales_3,
-    max(metrics.sales_7) as sales_7,
-    max(metrics.sales_14) as sales_14,
-    max(metrics.sales_30) as sales_30
-from tmp_asin_to_self_store target
-left join tmp_prod_perf_sku_asin_metrics origin
-       on origin.asin = target.asin
-      and origin.seller_name_new = target.self_store_name
-left join tmp_prod_perf_sku_metrics metrics
-       on origin.country_category = metrics.country_category
-      and origin.seller_name_new = metrics.seller_name_new
-      and origin.seller_sku_adj = metrics.seller_sku_adj
-group by target.asin, target.self_store_name;
+    ranked.country_category,
+    ranked.asin,
+    ranked.seller_name_new as origin_seller_name_new,
+    ranked.seller_sku_adj as origin_seller_sku_adj,
+    ranked.sales_3,
+    ranked.sales_7,
+    ranked.sales_14,
+    ranked.sales_30,
+    ranked.origin_r_3d_salable_days,
+    ranked.origin_r_7d_salable_days,
+    ranked.origin_r_14d_salable_days,
+    ranked.origin_r_30d_salable_days,
+    ranked.origin_max_sku,
+    ranked.origin_max_fnsku,
+    ranked.origin_new_old_product,
+    ranked.origin_marketplace_status,
+    ranked.origin_seller_name_concat,
+    ranked.origin_onsale_sites,
+    ranked.origin_unsale_sites,
+    ranked.origin_sales_status,
+    ranked.origin_marketplace_concat,
+    ranked.origin_global_tags,
+    ranked.origin_seller_name_copy,
+    ranked.origin_seller_name_ue,
+    ranked.origin_max_local_name,
+    ranked.origin_max_brand_name,
+    ranked.origin_principal,
+    ranked.origin_sales_team_1
+from (
+    select
+        origin.country_category,
+        origin.asin,
+        origin.seller_name_new,
+        origin.seller_sku_adj,
+        coalesce(metrics.sales_3, 0) as sales_3,
+        coalesce(metrics.sales_7, 0) as sales_7,
+        coalesce(metrics.sales_14, 0) as sales_14,
+        coalesce(metrics.sales_30, 0) as sales_30,
+        coalesce(origin_ks.r_3d_salable_days, 0) as origin_r_3d_salable_days,
+        coalesce(origin_ks.r_7d_salable_days, 0) as origin_r_7d_salable_days,
+        coalesce(origin_ks.r_14d_salable_days, 0) as origin_r_14d_salable_days,
+        coalesce(origin_ks.r_30d_salable_days, 0) as origin_r_30d_salable_days,
+        origin_listing.max_sku as origin_max_sku,
+        origin_listing.max_fnsku as origin_max_fnsku,
+        origin_listing.new_old_product as origin_new_old_product,
+        origin_listing.marketplace_status as origin_marketplace_status,
+        origin_listing.seller_name_concat as origin_seller_name_concat,
+        origin_listing.onsale_sites as origin_onsale_sites,
+        origin_listing.unsale_sites as origin_unsale_sites,
+        origin_listing.sales_status as origin_sales_status,
+        origin_listing.marketplace_concat as origin_marketplace_concat,
+        origin_listing.global_tags as origin_global_tags,
+        origin_listing.seller_name_copy as origin_seller_name_copy,
+        origin_listing.seller_name_ue as origin_seller_name_ue,
+        origin_listing.max_local_name as origin_max_local_name,
+        origin_listing.max_brand_name as origin_max_brand_name,
+        origin_listing.principal as origin_principal,
+        origin_listing.sales_team_1 as origin_sales_team_1,
+        row_number() over (
+            partition by origin.country_category, origin.asin
+            order by
+                case when self_asin.asin is not null then 0 else 1 end,
+                coalesce(metrics.sales_30, 0) desc,
+                coalesce(metrics.sales_14, 0) desc,
+                coalesce(metrics.sales_7, 0) desc,
+                coalesce(metrics.sales_3, 0) desc,
+                origin.seller_name_new,
+                origin.seller_sku_adj
+        ) as rn
+    from tmp_prod_perf_sku_asin_metrics origin
+    left join etl_datasync.dashboard_replenishment_self_asin_sync self_asin
+           on origin.seller_name_new = self_asin.seller_name_new
+          and origin.asin = self_asin.asin
+    left join tmp_prod_perf_sku_metrics metrics
+           on origin.country_category = metrics.country_category
+          and origin.seller_name_new = metrics.seller_name_new
+          and origin.seller_sku_adj = metrics.seller_sku_adj
+    left join etl_datasync.pur_plan_prod_perf_salable_days_stat origin_ks
+           on origin_ks.sta_dt = %(biz_date)s
+          and origin.country_category = origin_ks.country_category
+          and origin.seller_name_new = origin_ks.seller_name_new
+          and origin.seller_sku_adj = origin_ks.seller_sku_adj
+    left join etl_datasync.dashboard_replenishment_listing_basic_sync origin_listing
+           on origin.country_category = origin_listing.country_category
+          and origin.seller_name_new = origin_listing.seller_name_new
+          and origin.seller_sku_adj = origin_listing.seller_sku
+    where origin.asin is not null
+      and origin.asin <> ''
+) ranked
+where ranked.rn = 1;
 
 drop temporary table if exists tmp_prod_perf_follow_origin;
 create temporary table tmp_prod_perf_follow_origin as
@@ -903,18 +1112,113 @@ select
     bridge.country_category,
     bridge.seller_name_new,
     bridge.seller_sku_adj,
-    max(case when self_asin.asin is not null then 1 else 0 end) as fllow_flag,
-    max(case when self_asin.asin is null then origin.sales_3 else null end) as origin_sales_3,
-    max(case when self_asin.asin is null then origin.sales_7 else null end) as origin_sales_7,
-    max(case when self_asin.asin is null then origin.sales_14 else null end) as origin_sales_14,
-    max(case when self_asin.asin is null then origin.sales_30 else null end) as origin_sales_30
+    max(case
+        when self_asin.asin is not null
+          or fallback.origin_seller_sku_adj is null
+          or (
+                bridge.seller_name_new = fallback.origin_seller_name_new
+            and bridge.seller_sku_adj = fallback.origin_seller_sku_adj
+          )
+            then 1
+        else 0
+    end) as fllow_flag,
+    max(case
+        when self_asin.asin is null
+         and not (
+                bridge.seller_name_new = fallback.origin_seller_name_new
+            and bridge.seller_sku_adj = fallback.origin_seller_sku_adj
+         )
+            then fallback.sales_3
+        else null
+    end) as origin_sales_3,
+    max(case
+        when self_asin.asin is null
+         and not (
+                bridge.seller_name_new = fallback.origin_seller_name_new
+            and bridge.seller_sku_adj = fallback.origin_seller_sku_adj
+         )
+            then fallback.sales_7
+        else null
+    end) as origin_sales_7,
+    max(case
+        when self_asin.asin is null
+         and not (
+                bridge.seller_name_new = fallback.origin_seller_name_new
+            and bridge.seller_sku_adj = fallback.origin_seller_sku_adj
+         )
+            then fallback.sales_14
+        else null
+    end) as origin_sales_14,
+    max(case
+        when self_asin.asin is null
+         and not (
+                bridge.seller_name_new = fallback.origin_seller_name_new
+            and bridge.seller_sku_adj = fallback.origin_seller_sku_adj
+         )
+            then fallback.sales_30
+        else null
+    end) as origin_sales_30,
+    max(case
+        when self_asin.asin is null
+         and not (
+                bridge.seller_name_new = fallback.origin_seller_name_new
+            and bridge.seller_sku_adj = fallback.origin_seller_sku_adj
+         )
+            then fallback.origin_r_3d_salable_days
+        else null
+    end) as origin_r_3d_salable_days,
+    max(case
+        when self_asin.asin is null
+         and not (
+                bridge.seller_name_new = fallback.origin_seller_name_new
+            and bridge.seller_sku_adj = fallback.origin_seller_sku_adj
+         )
+            then fallback.origin_r_7d_salable_days
+        else null
+    end) as origin_r_7d_salable_days,
+    max(case
+        when self_asin.asin is null
+         and not (
+                bridge.seller_name_new = fallback.origin_seller_name_new
+            and bridge.seller_sku_adj = fallback.origin_seller_sku_adj
+         )
+            then fallback.origin_r_14d_salable_days
+        else null
+    end) as origin_r_14d_salable_days,
+    max(case
+        when self_asin.asin is null
+         and not (
+                bridge.seller_name_new = fallback.origin_seller_name_new
+            and bridge.seller_sku_adj = fallback.origin_seller_sku_adj
+         )
+            then fallback.origin_r_30d_salable_days
+        else null
+    end) as origin_r_30d_salable_days,
+    max(case when self_asin.asin is null and not (bridge.seller_name_new = fallback.origin_seller_name_new and bridge.seller_sku_adj = fallback.origin_seller_sku_adj) then fallback.origin_seller_name_new else null end) as origin_seller_name_new,
+    max(case when self_asin.asin is null and not (bridge.seller_name_new = fallback.origin_seller_name_new and bridge.seller_sku_adj = fallback.origin_seller_sku_adj) then fallback.origin_seller_sku_adj else null end) as origin_seller_sku_adj,
+    max(case when self_asin.asin is null and not (bridge.seller_name_new = fallback.origin_seller_name_new and bridge.seller_sku_adj = fallback.origin_seller_sku_adj) then fallback.origin_max_sku else null end) as origin_max_sku,
+    max(case when self_asin.asin is null and not (bridge.seller_name_new = fallback.origin_seller_name_new and bridge.seller_sku_adj = fallback.origin_seller_sku_adj) then fallback.origin_max_fnsku else null end) as origin_max_fnsku,
+    max(case when self_asin.asin is null and not (bridge.seller_name_new = fallback.origin_seller_name_new and bridge.seller_sku_adj = fallback.origin_seller_sku_adj) then fallback.origin_new_old_product else null end) as origin_new_old_product,
+    max(case when self_asin.asin is null and not (bridge.seller_name_new = fallback.origin_seller_name_new and bridge.seller_sku_adj = fallback.origin_seller_sku_adj) then fallback.origin_marketplace_status else null end) as origin_marketplace_status,
+    max(case when self_asin.asin is null and not (bridge.seller_name_new = fallback.origin_seller_name_new and bridge.seller_sku_adj = fallback.origin_seller_sku_adj) then fallback.origin_seller_name_concat else null end) as origin_seller_name_concat,
+    max(case when self_asin.asin is null and not (bridge.seller_name_new = fallback.origin_seller_name_new and bridge.seller_sku_adj = fallback.origin_seller_sku_adj) then fallback.origin_onsale_sites else null end) as origin_onsale_sites,
+    max(case when self_asin.asin is null and not (bridge.seller_name_new = fallback.origin_seller_name_new and bridge.seller_sku_adj = fallback.origin_seller_sku_adj) then fallback.origin_unsale_sites else null end) as origin_unsale_sites,
+    max(case when self_asin.asin is null and not (bridge.seller_name_new = fallback.origin_seller_name_new and bridge.seller_sku_adj = fallback.origin_seller_sku_adj) then fallback.origin_sales_status else null end) as origin_sales_status,
+    max(case when self_asin.asin is null and not (bridge.seller_name_new = fallback.origin_seller_name_new and bridge.seller_sku_adj = fallback.origin_seller_sku_adj) then fallback.origin_marketplace_concat else null end) as origin_marketplace_concat,
+    max(case when self_asin.asin is null and not (bridge.seller_name_new = fallback.origin_seller_name_new and bridge.seller_sku_adj = fallback.origin_seller_sku_adj) then fallback.origin_global_tags else null end) as origin_global_tags,
+    max(case when self_asin.asin is null and not (bridge.seller_name_new = fallback.origin_seller_name_new and bridge.seller_sku_adj = fallback.origin_seller_sku_adj) then fallback.origin_seller_name_copy else null end) as origin_seller_name_copy,
+    max(case when self_asin.asin is null and not (bridge.seller_name_new = fallback.origin_seller_name_new and bridge.seller_sku_adj = fallback.origin_seller_sku_adj) then fallback.origin_seller_name_ue else null end) as origin_seller_name_ue,
+    max(case when self_asin.asin is null and not (bridge.seller_name_new = fallback.origin_seller_name_new and bridge.seller_sku_adj = fallback.origin_seller_sku_adj) then fallback.origin_max_local_name else null end) as origin_max_local_name,
+    max(case when self_asin.asin is null and not (bridge.seller_name_new = fallback.origin_seller_name_new and bridge.seller_sku_adj = fallback.origin_seller_sku_adj) then fallback.origin_max_brand_name else null end) as origin_max_brand_name,
+    max(case when self_asin.asin is null and not (bridge.seller_name_new = fallback.origin_seller_name_new and bridge.seller_sku_adj = fallback.origin_seller_sku_adj) then fallback.origin_principal else null end) as origin_principal,
+    max(case when self_asin.asin is null and not (bridge.seller_name_new = fallback.origin_seller_name_new and bridge.seller_sku_adj = fallback.origin_seller_sku_adj) then fallback.origin_sales_team_1 else null end) as origin_sales_team_1
 from tmp_prod_perf_sku_asin_metrics bridge
 left join etl_datasync.dashboard_replenishment_self_asin_sync self_asin
        on bridge.seller_name_new = self_asin.seller_name_new
       and bridge.asin = self_asin.asin
-left join tmp_origin_sales_all origin
-       on origin.asin = bridge.asin
-      and self_asin.asin is null
+left join tmp_asin_origin_sales_fallback fallback
+       on fallback.country_category = bridge.country_category
+      and fallback.asin = bridge.asin
 group by bridge.country_category, bridge.seller_name_new, bridge.seller_sku_adj;
 
 drop temporary table if exists tmp_prod_perf_sku_follow_metrics;
@@ -953,12 +1257,64 @@ select
     m.pprofit_30,
     m.pprofit_14,
     m.pprofit_7,
-    m.pprofit_3
+    m.pprofit_3,
+    case when coalesce(fo.fllow_flag, 1) = 1 then null else fo.origin_r_30d_salable_days end as origin_r_30d_salable_days,
+    case when coalesce(fo.fllow_flag, 1) = 1 then null else fo.origin_r_14d_salable_days end as origin_r_14d_salable_days,
+    case when coalesce(fo.fllow_flag, 1) = 1 then null else fo.origin_r_7d_salable_days end as origin_r_7d_salable_days,
+    case when coalesce(fo.fllow_flag, 1) = 1 then null else fo.origin_r_3d_salable_days end as origin_r_3d_salable_days,
+    case when coalesce(fo.fllow_flag, 1) = 1 then null else concat(fo.origin_seller_name_new, '/', fo.origin_seller_sku_adj) end as follow_origin_link,
+    case when coalesce(fo.fllow_flag, 1) = 1 then null else fo.origin_max_sku end as origin_max_sku,
+    case when coalesce(fo.fllow_flag, 1) = 1 then null else fo.origin_max_fnsku end as origin_max_fnsku,
+    case when coalesce(fo.fllow_flag, 1) = 1 then null else fo.origin_new_old_product end as origin_new_old_product,
+    case when coalesce(fo.fllow_flag, 1) = 1 then null else fo.origin_marketplace_status end as origin_marketplace_status,
+    case when coalesce(fo.fllow_flag, 1) = 1 then null else fo.origin_seller_name_concat end as origin_seller_name_concat,
+    case when coalesce(fo.fllow_flag, 1) = 1 then null else fo.origin_onsale_sites end as origin_onsale_sites,
+    case when coalesce(fo.fllow_flag, 1) = 1 then null else fo.origin_unsale_sites end as origin_unsale_sites,
+    case when coalesce(fo.fllow_flag, 1) = 1 then null else fo.origin_sales_status end as origin_sales_status,
+    case when coalesce(fo.fllow_flag, 1) = 1 then null else fo.origin_marketplace_concat end as origin_marketplace_concat,
+    case when coalesce(fo.fllow_flag, 1) = 1 then null else fo.origin_global_tags end as origin_global_tags,
+    case when coalesce(fo.fllow_flag, 1) = 1 then null else fo.origin_seller_name_copy end as origin_seller_name_copy,
+    case when coalesce(fo.fllow_flag, 1) = 1 then null else fo.origin_seller_name_ue end as origin_seller_name_ue,
+    case when coalesce(fo.fllow_flag, 1) = 1 then null else fo.origin_max_local_name end as origin_max_local_name,
+    case when coalesce(fo.fllow_flag, 1) = 1 then null else fo.origin_max_brand_name end as origin_max_brand_name,
+    case when coalesce(fo.fllow_flag, 1) = 1 then null else fo.origin_principal end as origin_principal,
+    case when coalesce(fo.fllow_flag, 1) = 1 then null else fo.origin_sales_team_1 end as origin_sales_team_1
 from tmp_prod_perf_sku_metrics m
 left join tmp_prod_perf_follow_origin fo
        on m.country_category = fo.country_category
       and m.seller_name_new = fo.seller_name_new
       and m.seller_sku_adj = fo.seller_sku_adj;
+
+drop temporary table if exists tmp_followed_origin_links;
+create temporary table tmp_followed_origin_links as
+select
+    origin.country_category,
+    origin.seller_name_new,
+    origin.seller_sku_adj,
+    count(distinct concat(follower.seller_name_new, '\0', follower.seller_sku)) as followed_by_count,
+    group_concat(
+        distinct concat(follower.seller_name_new, '/', follower.seller_sku)
+        order by follower.seller_name_new, follower.seller_sku
+        separator ' | '
+    ) as followed_by_links
+from tmp_prod_perf_sku_asin_metrics origin
+inner join etl_datasync.dashboard_replenishment_self_asin_sync origin_self
+        on origin.seller_name_new = origin_self.seller_name_new
+       and origin.asin = origin_self.asin
+inner join etl_datasync.dashboard_replenishment_listing_basic_sync follower
+        on follower.country_category = origin.country_category
+       and follower.max_asin = origin.asin
+       and not (
+            follower.seller_name_new = origin.seller_name_new
+        and follower.seller_sku = origin.seller_sku_adj
+       )
+left join etl_datasync.dashboard_replenishment_self_asin_sync follower_self
+       on follower.seller_name_new = follower_self.seller_name_new
+      and follower.max_asin = follower_self.asin
+where origin.asin is not null
+  and origin.asin <> ''
+  and follower_self.asin is null
+group by origin.country_category, origin.seller_name_new, origin.seller_sku_adj;
 
 drop temporary table if exists tmp_pur_plan_fba_current;
 create temporary table tmp_pur_plan_fba_current as
@@ -1080,24 +1436,29 @@ from (
         c.seller_name_new,
         c.seller_sku_adj,
         coalesce(nullif(l.new_old_product, ''), '老品') as new_old_product,
-        l.max_fnsku,
+        coalesce(nullif(l.max_fnsku, ''), fm.origin_max_fnsku) as max_fnsku,
         l.max_asin,
-        coalesce(l.max_sku, c.max_sku) as max_sku,
-        l.marketplace_status,
-        coalesce(l.seller_name_concat, c.seller_name_concat) as seller_name_concat,
-        l.onsale_sites,
-        l.unsale_sites,
-        l.sales_status,
-        l.marketplace_concat,
-        l.seller_name_copy,
-        l.seller_name_ue,
-        l.max_local_name,
-        l.max_brand_name,
-        l.principal,
-        l.sales_team_1,
+        coalesce(nullif(l.max_sku, ''), fm.origin_max_sku, c.max_sku) as max_sku,
+        coalesce(nullif(l.marketplace_status, ''), fm.origin_marketplace_status) as marketplace_status,
+        coalesce(nullif(l.seller_name_concat, ''), fm.origin_seller_name_concat, c.seller_name_concat) as seller_name_concat,
+        coalesce(nullif(l.onsale_sites, ''), fm.origin_onsale_sites) as onsale_sites,
+        coalesce(nullif(l.unsale_sites, ''), fm.origin_unsale_sites) as unsale_sites,
+        coalesce(nullif(l.sales_status, ''), fm.origin_sales_status) as sales_status,
+        coalesce(nullif(l.marketplace_concat, ''), fm.origin_marketplace_concat) as marketplace_concat,
+        coalesce(nullif(l.global_tags, ''), fm.origin_global_tags) as global_tags,
+        coalesce(nullif(l.seller_name_copy, ''), fm.origin_seller_name_copy) as seller_name_copy,
+        coalesce(nullif(l.seller_name_ue, ''), fm.origin_seller_name_ue) as seller_name_ue,
+        coalesce(nullif(l.max_local_name, ''), fm.origin_max_local_name) as max_local_name,
+        coalesce(nullif(l.max_brand_name, ''), fm.origin_max_brand_name) as max_brand_name,
+        coalesce(nullif(l.principal, ''), fm.origin_principal) as principal,
+        coalesce(nullif(l.sales_team_1, ''), fm.origin_sales_team_1) as sales_team_1,
+        fm.follow_origin_link,
         fs.max_receiving_time,
         fs.receiving_cnt,
         coalesce(fm.fllow_flag, 1) as fllow_flag,
+        case when followed_by_count > 0 then 1 else 0 end as followed_flag,
+        coalesce(fol.followed_by_count, 0) as followed_by_count,
+        fol.followed_by_links,
         coalesce(m.sales_180, 0) as sales_180,
         coalesce(m.sales_90, 0) as sales_90,
         coalesce(m.sales_30, 0) as sales_30,
@@ -1190,41 +1551,94 @@ from (
             else coalesce(m.sales_30, 0) / greatest(coalesce(ks.r_30d_salable_days, 0), 15)
         end as adjusted_daily_sales_30d,
         case
-            when coalesce(ks.r_30d_salable_days, 0) >= 7 then
-                case when coalesce(ks.r_3d_salable_days, 0) > 0 then coalesce(fm.sales_3, m.sales_3, 0) / ks.r_3d_salable_days else 0 end
-            else coalesce(fm.sales_3, m.sales_3, 0) / greatest(coalesce(ks.r_3d_salable_days, 0), 2)
+            when greatest(coalesce(ks.r_30d_salable_days, 0), coalesce(fm.origin_r_30d_salable_days, 0)) >= 7 then
+                case
+                    when greatest(coalesce(ks.r_3d_salable_days, 0), coalesce(fm.origin_r_3d_salable_days, 0)) > 0
+                        then coalesce(fm.sales_3, m.sales_3, 0)
+                             / greatest(coalesce(ks.r_3d_salable_days, 0), coalesce(fm.origin_r_3d_salable_days, 0))
+                    else 0
+                end
+            else coalesce(fm.sales_3, m.sales_3, 0)
+                 / greatest(greatest(coalesce(ks.r_3d_salable_days, 0), coalesce(fm.origin_r_3d_salable_days, 0)), 2)
         end as final_adjusted_daily_sales_3d,
         case
-            when coalesce(ks.r_30d_salable_days, 0) >= 7 then
+            when greatest(coalesce(ks.r_30d_salable_days, 0), coalesce(fm.origin_r_30d_salable_days, 0)) >= 7 then
                 case
-                    when coalesce(ks.r_7d_salable_days, 0) >= 7 then coalesce(fm.sales_7, m.sales_7, 0) / ks.r_7d_salable_days
+                    when greatest(coalesce(ks.r_7d_salable_days, 0), coalesce(fm.origin_r_7d_salable_days, 0)) >= 7
+                        then coalesce(fm.sales_7, m.sales_7, 0)
+                             / greatest(coalesce(ks.r_7d_salable_days, 0), coalesce(fm.origin_r_7d_salable_days, 0))
                     else least(
-                        case when coalesce(ks.r_7d_salable_days, 0) > 0 then coalesce(fm.sales_7, m.sales_7, 0) / ks.r_7d_salable_days else 0 end,
-                        (case when coalesce(ks.r_7d_salable_days, 0) > 0 then coalesce(fm.sales_7, m.sales_7, 0) / ks.r_7d_salable_days else 0 end)
-                            * (ks.r_7d_salable_days / (ks.r_7d_salable_days + 3))
-                        + (coalesce(fm.sales_30, m.sales_30, 0) / ks.r_30d_salable_days)
-                            * (1 - ks.r_7d_salable_days / (ks.r_7d_salable_days + 3))
+                        case
+                            when greatest(coalesce(ks.r_7d_salable_days, 0), coalesce(fm.origin_r_7d_salable_days, 0)) > 0
+                                then coalesce(fm.sales_7, m.sales_7, 0)
+                                     / greatest(coalesce(ks.r_7d_salable_days, 0), coalesce(fm.origin_r_7d_salable_days, 0))
+                            else 0
+                        end,
+                        (case
+                            when greatest(coalesce(ks.r_7d_salable_days, 0), coalesce(fm.origin_r_7d_salable_days, 0)) > 0
+                                then coalesce(fm.sales_7, m.sales_7, 0)
+                                     / greatest(coalesce(ks.r_7d_salable_days, 0), coalesce(fm.origin_r_7d_salable_days, 0))
+                            else 0
+                        end)
+                            * (
+                                greatest(coalesce(ks.r_7d_salable_days, 0), coalesce(fm.origin_r_7d_salable_days, 0))
+                                / (greatest(coalesce(ks.r_7d_salable_days, 0), coalesce(fm.origin_r_7d_salable_days, 0)) + 3)
+                            )
+                        + (
+                            coalesce(fm.sales_30, m.sales_30, 0)
+                            / greatest(coalesce(ks.r_30d_salable_days, 0), coalesce(fm.origin_r_30d_salable_days, 0))
+                          )
+                            * (
+                                1 - greatest(coalesce(ks.r_7d_salable_days, 0), coalesce(fm.origin_r_7d_salable_days, 0))
+                                / (greatest(coalesce(ks.r_7d_salable_days, 0), coalesce(fm.origin_r_7d_salable_days, 0)) + 3)
+                            )
                     )
                 end
-            else coalesce(fm.sales_7, m.sales_7, 0) / greatest(coalesce(ks.r_7d_salable_days, 0), 3)
+            else coalesce(fm.sales_7, m.sales_7, 0)
+                 / greatest(greatest(coalesce(ks.r_7d_salable_days, 0), coalesce(fm.origin_r_7d_salable_days, 0)), 3)
         end as final_adjusted_daily_sales_7d,
         case
-            when coalesce(ks.r_30d_salable_days, 0) >= 7 then
+            when greatest(coalesce(ks.r_30d_salable_days, 0), coalesce(fm.origin_r_30d_salable_days, 0)) >= 7 then
                 case
-                    when coalesce(ks.r_14d_salable_days, 0) >= 14 then coalesce(fm.sales_14, m.sales_14, 0) / ks.r_14d_salable_days
+                    when greatest(coalesce(ks.r_14d_salable_days, 0), coalesce(fm.origin_r_14d_salable_days, 0)) >= 14
+                        then coalesce(fm.sales_14, m.sales_14, 0)
+                             / greatest(coalesce(ks.r_14d_salable_days, 0), coalesce(fm.origin_r_14d_salable_days, 0))
                     else least(
-                        case when coalesce(ks.r_14d_salable_days, 0) > 0 then coalesce(fm.sales_14, m.sales_14, 0) / ks.r_14d_salable_days else 0 end,
-                        (case when coalesce(ks.r_14d_salable_days, 0) > 0 then coalesce(fm.sales_14, m.sales_14, 0) / ks.r_14d_salable_days else 0 end)
-                            * (ks.r_14d_salable_days / (ks.r_14d_salable_days + 7))
-                        + (coalesce(fm.sales_30, m.sales_30, 0) / ks.r_30d_salable_days)
-                            * (1 - ks.r_14d_salable_days / (ks.r_14d_salable_days + 7))
+                        case
+                            when greatest(coalesce(ks.r_14d_salable_days, 0), coalesce(fm.origin_r_14d_salable_days, 0)) > 0
+                                then coalesce(fm.sales_14, m.sales_14, 0)
+                                     / greatest(coalesce(ks.r_14d_salable_days, 0), coalesce(fm.origin_r_14d_salable_days, 0))
+                            else 0
+                        end,
+                        (case
+                            when greatest(coalesce(ks.r_14d_salable_days, 0), coalesce(fm.origin_r_14d_salable_days, 0)) > 0
+                                then coalesce(fm.sales_14, m.sales_14, 0)
+                                     / greatest(coalesce(ks.r_14d_salable_days, 0), coalesce(fm.origin_r_14d_salable_days, 0))
+                            else 0
+                        end)
+                            * (
+                                greatest(coalesce(ks.r_14d_salable_days, 0), coalesce(fm.origin_r_14d_salable_days, 0))
+                                / (greatest(coalesce(ks.r_14d_salable_days, 0), coalesce(fm.origin_r_14d_salable_days, 0)) + 7)
+                            )
+                        + (
+                            coalesce(fm.sales_30, m.sales_30, 0)
+                            / greatest(coalesce(ks.r_30d_salable_days, 0), coalesce(fm.origin_r_30d_salable_days, 0))
+                          )
+                            * (
+                                1 - greatest(coalesce(ks.r_14d_salable_days, 0), coalesce(fm.origin_r_14d_salable_days, 0))
+                                / (greatest(coalesce(ks.r_14d_salable_days, 0), coalesce(fm.origin_r_14d_salable_days, 0)) + 7)
+                            )
                     )
                 end
-            else coalesce(fm.sales_14, m.sales_14, 0) / greatest(coalesce(ks.r_14d_salable_days, 0), 7)
+            else coalesce(fm.sales_14, m.sales_14, 0)
+                 / greatest(greatest(coalesce(ks.r_14d_salable_days, 0), coalesce(fm.origin_r_14d_salable_days, 0)), 7)
         end as final_adjusted_daily_sales_14d,
         case
-            when coalesce(ks.r_30d_salable_days, 0) >= 7 then coalesce(fm.sales_30, m.sales_30, 0) / ks.r_30d_salable_days
-            else coalesce(fm.sales_30, m.sales_30, 0) / greatest(coalesce(ks.r_30d_salable_days, 0), 15)
+            when greatest(coalesce(ks.r_30d_salable_days, 0), coalesce(fm.origin_r_30d_salable_days, 0)) >= 7
+                then coalesce(fm.sales_30, m.sales_30, 0)
+                     / greatest(coalesce(ks.r_30d_salable_days, 0), coalesce(fm.origin_r_30d_salable_days, 0))
+            else coalesce(fm.sales_30, m.sales_30, 0)
+                 / greatest(greatest(coalesce(ks.r_30d_salable_days, 0), coalesce(fm.origin_r_30d_salable_days, 0)), 15)
         end as final_adjusted_daily_sales_30d,
         l.max_cg_box_pcs,
         l.max_cg_price,
@@ -1240,6 +1654,10 @@ from (
            on c.country_category = fm.country_category
           and c.seller_name_new = fm.seller_name_new
           and c.seller_sku_adj = fm.seller_sku_adj
+    left join tmp_followed_origin_links fol
+           on c.country_category = fol.country_category
+          and c.seller_name_new = fol.seller_name_new
+          and c.seller_sku_adj = fol.seller_sku_adj
     left join tmp_pur_plan_fba_current f
            on c.country_category = f.country_category
           and c.seller_name_new = f.seller_name_new
@@ -1309,23 +1727,23 @@ create temporary table tmp_pur_plan_support_layer_all as
 select
     base.*,
     case
-        when coalesce(base.pre_daily_avg_sales, 0) <= 0 then null
-        else base.support_inventory_qty / base.pre_daily_avg_sales
+        when coalesce(base.daily_avg_sales, 0) <= 0 then null
+        else base.support_inventory_qty / base.daily_avg_sales
     end as inventory_support_days,
     case
-        when coalesce(base.pre_daily_avg_sales, 0) <= 0 then 5
-        when base.support_inventory_qty / base.pre_daily_avg_sales <= 35 then 1
-        when base.support_inventory_qty / base.pre_daily_avg_sales <= 65 then 2
-        when base.support_inventory_qty / base.pre_daily_avg_sales <= 90 then 3
-        when base.support_inventory_qty / base.pre_daily_avg_sales > 90 then 4
+        when coalesce(base.daily_avg_sales, 0) <= 0 then 5
+        when base.support_inventory_qty / base.daily_avg_sales <= 35 then 1
+        when base.support_inventory_qty / base.daily_avg_sales <= 65 then 2
+        when base.support_inventory_qty / base.daily_avg_sales <= 90 then 3
+        when base.support_inventory_qty / base.daily_avg_sales > 90 then 4
         else 2
     end as support_replenish_level_sort,
     case
-        when coalesce(base.pre_daily_avg_sales, 0) <= 0 then '日销为0'
-        when base.support_inventory_qty / base.pre_daily_avg_sales <= 35 then '紧急补货'
-        when base.support_inventory_qty / base.pre_daily_avg_sales <= 65 then '建议补货'
-        when base.support_inventory_qty / base.pre_daily_avg_sales <= 90 then '计划补货'
-        when base.support_inventory_qty / base.pre_daily_avg_sales > 90 then '库存充足'
+        when coalesce(base.daily_avg_sales, 0) <= 0 then '日销为0'
+        when base.support_inventory_qty / base.daily_avg_sales <= 35 then '紧急补货'
+        when base.support_inventory_qty / base.daily_avg_sales <= 65 then '建议补货'
+        when base.support_inventory_qty / base.daily_avg_sales <= 90 then '计划补货'
+        when base.support_inventory_qty / base.daily_avg_sales > 90 then '库存充足'
         else '建议补货'
     end as support_replenish_level
 from tmp_pur_plan_support_calc_base base;
@@ -1354,10 +1772,162 @@ select
     end as sales_adj_factor
 from tmp_pur_plan_support_layer_all support;
 
+drop temporary table if exists tmp_asin_merge_groups;
+create temporary table tmp_asin_merge_groups as
+select
+    country_category,
+    max_asin,
+    count(*) as link_count,
+    max(case when coalesce(fllow_flag, 1) = 0 then 1 else 0 end) as has_follow_link,
+    max(case when coalesce(followed_flag, 0) = 1 then 1 else 0 end) as has_followed_origin,
+    max(coalesce(daily_avg_sales, 0)) as group_daily_avg_sales,
+    max(coalesce(pre_replenish_comp_months, 4)) as group_replenish_comp_months,
+    sum(coalesce(support_inventory_qty, 0)) as group_support_inventory_qty,
+    sum(case when coalesce(followed_flag, 0) = 0 then 1 else 0 end) as eligible_target_link_count,
+    case
+        when max(coalesce(daily_avg_sales, 0)) <= 0 then null
+        else sum(coalesce(support_inventory_qty, 0)) / max(coalesce(daily_avg_sales, 0))
+    end as group_inventory_support_days,
+    max(coalesce(pre_replenish_comp_months, 4)) * 30 * max(coalesce(daily_avg_sales, 0))
+        - sum(coalesce(support_inventory_qty, 0)) as group_replenish_need_qty,
+    case
+        when max(coalesce(daily_avg_sales, 0)) <= 0 then 5
+        when sum(coalesce(support_inventory_qty, 0)) / max(coalesce(daily_avg_sales, 0)) <= 35 then 1
+        when sum(coalesce(support_inventory_qty, 0)) / max(coalesce(daily_avg_sales, 0)) <= 65 then 2
+        when sum(coalesce(support_inventory_qty, 0)) / max(coalesce(daily_avg_sales, 0)) <= 90 then 3
+        when sum(coalesce(support_inventory_qty, 0)) / max(coalesce(daily_avg_sales, 0)) > 90 then 4
+        else 2
+    end as group_support_replenish_level_sort
+from (
+    select
+        country_category,
+        max_asin,
+        seller_name_new,
+        seller_sku_adj,
+        fllow_flag,
+        followed_flag,
+        sales_status,
+        daily_avg_sales,
+        pre_replenish_comp_months,
+        support_inventory_qty
+    from tmp_pur_plan_replenish_calc
+    where max_asin is not null
+      and max_asin <> ''
+) group_base
+group by country_category, max_asin
+having link_count > 1
+   and (has_follow_link > 0 or has_followed_origin > 0);
+
+drop temporary table if exists tmp_asin_merge_targets;
+create temporary table tmp_asin_merge_targets as
+select
+    ranked.country_category,
+    ranked.max_asin,
+    ranked.seller_name_new as target_seller_name_new,
+    ranked.seller_sku_adj as target_seller_sku_adj,
+    concat(ranked.seller_name_new, '/', ranked.seller_sku_adj) as asin_merge_target
+from (
+    select
+        calc.country_category,
+        calc.max_asin,
+        calc.seller_name_new,
+        calc.seller_sku_adj,
+        row_number() over (partition by calc.country_category, calc.max_asin order by
+            case when coalesce(calc.followed_flag, 0) = 0 then 0 else 1 end,
+            case when calc.sales_status <> '停售中' then 0 else 1 end,
+            case
+                when coalesce(calc.max_cg_box_pcs, 0) > 0
+                 and calc.max_cg_price is not null
+                 and calc.max_cg_transport_costs is not null then 0
+                else 1
+            end,
+            case when coalesce(calc.support_inventory_qty, 0) > 0 then 0 else 1 end,
+            case when coalesce(calc.sales_30, 0) > 0 then 0 else 1 end,
+            calc.seller_name_new,
+            calc.seller_sku_adj
+        ) as rn
+    from tmp_pur_plan_replenish_calc calc
+    inner join tmp_asin_merge_groups grp
+            on calc.country_category = grp.country_category
+           and calc.max_asin = grp.max_asin
+    where coalesce(calc.followed_flag, 0) = 0
+      and grp.eligible_target_link_count > 0
+) ranked
+where ranked.rn = 1;
+
+drop temporary table if exists tmp_asin_merge_assignments;
+create temporary table tmp_asin_merge_assignments as
+select
+    calc.country_category,
+    calc.seller_name_new,
+    calc.seller_sku_adj,
+    calc.max_asin,
+    1 as asin_merge_flag,
+    target.asin_merge_target,
+    case
+        when grp.eligible_target_link_count = 0 then '同ASIN库存充足不补货'
+        when grp.group_replenish_need_qty <= 0
+          or grp.group_support_replenish_level_sort not in (1, 2, 3)
+            then '同ASIN库存充足不补货'
+        when target.asin_merge_target is null then '同ASIN库存充足不补货'
+        when calc.seller_name_new = target.target_seller_name_new
+         and calc.seller_sku_adj = target.target_seller_sku_adj
+            then '产品组补货目标链接'
+        else '同ASIN已合并至主链接'
+    end as asin_merge_reason,
+    case
+        when calc.seller_name_new = target.target_seller_name_new
+         and calc.seller_sku_adj = target.target_seller_sku_adj
+            then 1
+        else 0
+    end as asin_merge_target_flag,
+    grp.group_replenish_need_qty,
+    grp.group_support_replenish_level_sort
+from tmp_pur_plan_replenish_calc calc
+inner join tmp_asin_merge_groups grp
+        on calc.country_category = grp.country_category
+       and calc.max_asin = grp.max_asin
+left join tmp_asin_merge_targets target
+       on calc.country_category = target.country_category
+      and calc.max_asin = target.max_asin;
+
+drop temporary table if exists tmp_asin_merge_purchase_fields;
+create temporary table tmp_asin_merge_purchase_fields as
+select
+    ranked.country_category,
+    ranked.max_asin,
+    ranked.max_cg_box_pcs as effective_max_cg_box_pcs,
+    ranked.max_cg_price as effective_max_cg_price,
+    ranked.max_cg_transport_costs as effective_max_cg_transport_costs
+from (
+    select
+        calc.country_category,
+        calc.max_asin,
+        calc.max_cg_box_pcs,
+        calc.max_cg_price,
+        calc.max_cg_transport_costs,
+        row_number() over (partition by calc.country_category, calc.max_asin order by
+            case when coalesce(calc.followed_flag, 0) = 1 then 0 else 1 end,
+            case when coalesce(calc.fllow_flag, 1) = 1 then 0 else 1 end,
+            case when coalesce(calc.sales_30, 0) > 0 then 0 else 1 end,
+            coalesce(calc.sales_30, 0) desc,
+            calc.seller_name_new,
+            calc.seller_sku_adj
+        ) as rn
+    from tmp_pur_plan_replenish_calc calc
+    inner join tmp_asin_merge_groups grp
+            on calc.country_category = grp.country_category
+           and calc.max_asin = grp.max_asin
+    where coalesce(calc.max_cg_box_pcs, 0) > 0
+      and calc.max_cg_price is not null
+      and calc.max_cg_transport_costs is not null
+) ranked
+where ranked.rn = 1;
+
 insert into etl_datasync.dashboard_pur_plan_replenish_data (
     cur_date, new_old_product, seller_sku_adj, max_fnsku, max_asin, max_sku,
     marketplace_status, seller_name_concat, onsale_sites, unsale_sites, sales_status,
-    marketplace_concat, seller_name_copy, seller_name_ue, seller_name_new, country_category,
+    marketplace_concat, global_tags, seller_name_copy, seller_name_ue, seller_name_new, country_category,
     max_local_name, max_brand_name, principal, sales_team_1, max_receiving_time, receiving_cnt,
     max_cg_box_pcs, max_cg_price, max_cg_transport_costs, stockout_status,
     pre_daily_avg_sales, pre_normal_replenish_need_qty, pre_replenish_trigger_qty,
@@ -1376,7 +1946,9 @@ insert into etl_datasync.dashboard_pur_plan_replenish_data (
     `60d_stocko_qty`, `90d_stocko_qty`, `180d_stocko_qty`, replenish_dur_calc_stocko_qty,
     replenish_need_qty, replenish_trigger_qty, sales_change_rate_adj, sales_adj_factor, final_profit_rate,
     replenish_qty, replenish_box_qty, replenish_cost,
-    amz_instock_sales_ratio, instock_intrans_pur_sales_ratio, fllow_flag
+    amz_instock_sales_ratio, instock_intrans_pur_sales_ratio, fllow_flag,
+    followed_flag, followed_by_count, followed_by_links, follow_origin_link, replenish_block_reason,
+    asin_merge_flag, asin_merge_target, asin_merge_reason
 )
 select
     %(snapshot_date)s as cur_date,
@@ -1391,6 +1963,7 @@ select
     unsale_sites,
     sales_status,
     marketplace_concat,
+    global_tags,
     seller_name_copy,
     seller_name_ue,
     seller_name_new,
@@ -1401,9 +1974,9 @@ select
     sales_team_1,
     max_receiving_time,
     receiving_cnt,
-    max_cg_box_pcs,
-    max_cg_price,
-    max_cg_transport_costs,
+    effective_max_cg_box_pcs as max_cg_box_pcs,
+    effective_max_cg_price as max_cg_price,
+    effective_max_cg_transport_costs as max_cg_transport_costs,
     case
         when inventory_support_days > 60 then '不会缺货'
         when stock_up_num = 0 and local_quantity = 0 then '缺货未补货'
@@ -1503,46 +2076,134 @@ select
     sales_change_rate_adj,
     sales_adj_factor,
     pprofit_ratio_30 as final_profit_rate,
-    case
+    case when coalesce(followed_flag, 0) = 1 then 0
+        when coalesce(asin_merge_flag, 0) = 1 and coalesce(asin_merge_target_flag, 0) = 0 then 0
+        when coalesce(asin_merge_flag, 0) = 1 and asin_merge_reason = '同ASIN库存充足不补货' then 0
+        when coalesce(asin_merge_flag, 0) = 1
+             and coalesce(asin_merge_target_flag, 0) = 1
+             and group_support_replenish_level_sort in (1, 2, 3)
+             and group_replenish_need_qty > 0
+             and effective_max_cg_box_pcs > 0
+            then greatest(round(group_replenish_need_qty * sales_adj_factor / effective_max_cg_box_pcs, 0), 1) * effective_max_cg_box_pcs
+        when coalesce(asin_merge_flag, 0) = 1
+             and coalesce(asin_merge_target_flag, 0) = 1
+             and group_support_replenish_level_sort in (1, 2, 3)
+             and group_replenish_need_qty > 0
+             and (effective_max_cg_box_pcs = 0 or effective_max_cg_box_pcs is null)
+            then greatest(round(group_replenish_need_qty * sales_adj_factor, 0), 50)
         when support_replenish_level_sort in (1, 2, 3) and coalesce(history_recovery_flag, 0) = 1
-            then case when coalesce(max_cg_box_pcs, 0) > 0 then max_cg_box_pcs else 50 end
+            then case when coalesce(effective_max_cg_box_pcs, 0) > 0 then effective_max_cg_box_pcs else 50 end
         when support_replenish_level_sort in (1, 2, 3) and normal_replenish_need_qty > 0
-             and max_cg_box_pcs > 0
-            then greatest(round(normal_replenish_need_qty * sales_adj_factor / max_cg_box_pcs, 0), 1) * max_cg_box_pcs
+             and effective_max_cg_box_pcs > 0
+            then greatest(round(normal_replenish_need_qty * sales_adj_factor / effective_max_cg_box_pcs, 0), 1) * effective_max_cg_box_pcs
         when support_replenish_level_sort in (1, 2, 3) and normal_replenish_need_qty > 0
-             and (max_cg_box_pcs = 0 or max_cg_box_pcs is null)
+             and (effective_max_cg_box_pcs = 0 or effective_max_cg_box_pcs is null)
             then greatest(round(normal_replenish_need_qty * sales_adj_factor, 0), 50)
         else 0
     end as replenish_qty,
-    case
+    case when coalesce(followed_flag, 0) = 1 then 0
+        when coalesce(asin_merge_flag, 0) = 1 and coalesce(asin_merge_target_flag, 0) = 0 then 0
+        when coalesce(asin_merge_flag, 0) = 1 and asin_merge_reason = '同ASIN库存充足不补货' then 0
+        when coalesce(asin_merge_flag, 0) = 1
+             and coalesce(asin_merge_target_flag, 0) = 1
+             and group_support_replenish_level_sort in (1, 2, 3)
+             and group_replenish_need_qty > 0
+             and effective_max_cg_box_pcs > 0
+            then greatest(round(group_replenish_need_qty * sales_adj_factor / effective_max_cg_box_pcs, 0), 1)
+        when coalesce(asin_merge_flag, 0) = 1
+             and coalesce(asin_merge_target_flag, 0) = 1
+             and group_support_replenish_level_sort in (1, 2, 3)
+             and group_replenish_need_qty > 0
+             and (effective_max_cg_box_pcs = 0 or effective_max_cg_box_pcs is null)
+            then 0
         when support_replenish_level_sort in (1, 2, 3) and coalesce(history_recovery_flag, 0) = 1
-            then case when coalesce(max_cg_box_pcs, 0) > 0 then 1 else 0 end
+            then case when coalesce(effective_max_cg_box_pcs, 0) > 0 then 1 else 0 end
         when support_replenish_level_sort in (1, 2, 3) and normal_replenish_need_qty > 0
-             and max_cg_box_pcs > 0
-            then greatest(round(normal_replenish_need_qty * sales_adj_factor / max_cg_box_pcs, 0), 1)
+             and effective_max_cg_box_pcs > 0
+            then greatest(round(normal_replenish_need_qty * sales_adj_factor / effective_max_cg_box_pcs, 0), 1)
         when support_replenish_level_sort in (1, 2, 3) and normal_replenish_need_qty > 0
-             and (max_cg_box_pcs = 0 or max_cg_box_pcs is null)
+             and (effective_max_cg_box_pcs = 0 or effective_max_cg_box_pcs is null)
             then 0
         else null
     end as replenish_box_qty,
-    case
+    case when coalesce(followed_flag, 0) = 1 then 0
+        when coalesce(asin_merge_flag, 0) = 1 and coalesce(asin_merge_target_flag, 0) = 0 then 0
+        when coalesce(asin_merge_flag, 0) = 1 and asin_merge_reason = '同ASIN库存充足不补货' then 0
+        when coalesce(asin_merge_flag, 0) = 1
+             and coalesce(asin_merge_target_flag, 0) = 1
+             and group_support_replenish_level_sort in (1, 2, 3)
+             and group_replenish_need_qty > 0
+             and effective_max_cg_box_pcs > 0
+            then greatest(round(group_replenish_need_qty * sales_adj_factor / effective_max_cg_box_pcs, 0), 1) * effective_max_cg_box_pcs
+                 * (effective_max_cg_price + effective_max_cg_transport_costs)
+        when coalesce(asin_merge_flag, 0) = 1
+             and coalesce(asin_merge_target_flag, 0) = 1
+             and group_support_replenish_level_sort in (1, 2, 3)
+             and group_replenish_need_qty > 0
+             and (effective_max_cg_box_pcs = 0 or effective_max_cg_box_pcs is null)
+            then greatest(round(group_replenish_need_qty * sales_adj_factor, 0), 50)
+                 * (effective_max_cg_price + effective_max_cg_transport_costs)
         when support_replenish_level_sort in (1, 2, 3) and coalesce(history_recovery_flag, 0) = 1
-            then (case when coalesce(max_cg_box_pcs, 0) > 0 then max_cg_box_pcs else 50 end)
-                 * (max_cg_price + max_cg_transport_costs)
+            then (case when coalesce(effective_max_cg_box_pcs, 0) > 0 then effective_max_cg_box_pcs else 50 end)
+                 * (effective_max_cg_price + effective_max_cg_transport_costs)
         when support_replenish_level_sort in (1, 2, 3) and normal_replenish_need_qty > 0
-             and max_cg_box_pcs > 0
-            then greatest(round(normal_replenish_need_qty * sales_adj_factor / max_cg_box_pcs, 0), 1) * max_cg_box_pcs
-                 * (max_cg_price + max_cg_transport_costs)
+             and effective_max_cg_box_pcs > 0
+            then greatest(round(normal_replenish_need_qty * sales_adj_factor / effective_max_cg_box_pcs, 0), 1) * effective_max_cg_box_pcs
+                 * (effective_max_cg_price + effective_max_cg_transport_costs)
         when support_replenish_level_sort in (1, 2, 3) and normal_replenish_need_qty > 0
-             and (max_cg_box_pcs = 0 or max_cg_box_pcs is null)
+             and (effective_max_cg_box_pcs = 0 or effective_max_cg_box_pcs is null)
             then greatest(round(normal_replenish_need_qty * sales_adj_factor, 0), 50)
-                 * (max_cg_price + max_cg_transport_costs)
+                 * (effective_max_cg_price + effective_max_cg_transport_costs)
         else 0
     end as replenish_cost,
     case when sales_30 = 0 then null else available_total / sales_30 end as amz_instock_sales_ratio,
     case when sales_30 = 0 then null else (total + local_quantity) / sales_30 end as instock_intrans_pur_sales_ratio,
-    fllow_flag
-from tmp_pur_plan_replenish_calc;
+    fllow_flag,
+    coalesce(followed_flag, 0) as followed_flag,
+    coalesce(followed_by_count, 0) as followed_by_count,
+    followed_by_links,
+    follow_origin_link,
+    case
+        when coalesce(followed_flag, 0) = 1 then '被跟卖点不补货'
+        when coalesce(asin_merge_flag, 0) = 1 then asin_merge_reason
+        else null
+    end as replenish_block_reason,
+    coalesce(asin_merge_flag, 0) as asin_merge_flag,
+    asin_merge_target,
+    asin_merge_reason
+from (
+    select
+        calc.*,
+        coalesce(assign.asin_merge_flag, 0) as asin_merge_flag,
+        assign.asin_merge_target,
+        assign.asin_merge_reason,
+        coalesce(assign.asin_merge_target_flag, 0) as asin_merge_target_flag,
+        assign.group_replenish_need_qty,
+        assign.group_support_replenish_level_sort,
+        case
+            when coalesce(assign.asin_merge_target_flag, 0) = 1
+                then coalesce(purchase.effective_max_cg_box_pcs, max_cg_box_pcs)
+            else max_cg_box_pcs
+        end as effective_max_cg_box_pcs,
+        case
+            when coalesce(assign.asin_merge_target_flag, 0) = 1
+                then coalesce(purchase.effective_max_cg_price, max_cg_price)
+            else max_cg_price
+        end as effective_max_cg_price,
+        case
+            when coalesce(assign.asin_merge_target_flag, 0) = 1
+                then coalesce(purchase.effective_max_cg_transport_costs, max_cg_transport_costs)
+            else max_cg_transport_costs
+        end as effective_max_cg_transport_costs
+    from tmp_pur_plan_replenish_calc calc
+    left join tmp_asin_merge_assignments assign
+           on calc.country_category = assign.country_category
+          and calc.seller_name_new = assign.seller_name_new
+          and calc.seller_sku_adj = assign.seller_sku_adj
+    left join tmp_asin_merge_purchase_fields purchase
+           on calc.country_category = purchase.country_category
+          and calc.max_asin = purchase.max_asin
+) merged;
 """
 
 REPLENISHMENT_TEMPORARY_SQL = (
@@ -1802,6 +2463,74 @@ def render_replenishment_sql(sql: str, schemas: SchemaConfig) -> str:
     return rendered
 
 
+def split_sql_statements(sql: str) -> list[str]:
+    return [statement.strip() for statement in sql.split(";") if statement.strip()]
+
+
+def render_replenishment_work_sql(sql: str, schemas: SchemaConfig) -> str:
+    rendered = render_replenishment_sql(sql, schemas)
+    for temporary_name, work_table in REPLENISHMENT_WORK_TABLES.items():
+        rendered_work_table = render_replenishment_sql(work_table, schemas)
+        rendered = re.sub(rf"\b{re.escape(temporary_name)}\b", rendered_work_table, rendered)
+    return rendered
+
+
+def render_replenishment_work_table(temporary_name: str, schemas: SchemaConfig) -> str:
+    try:
+        work_table = REPLENISHMENT_WORK_TABLES[temporary_name]
+    except KeyError as exc:
+        raise KeyError(f"Missing replenishment work table mapping for {temporary_name}") from exc
+    return render_replenishment_sql(work_table, schemas)
+
+
+def build_replenishment_result_statements(schemas: SchemaConfig) -> list[str]:
+    statements = split_sql_statements(REPLENISHMENT_RESULT_SQL)
+    expanded: list[str] = []
+    for statement in statements:
+        drop_match = re.fullmatch(r"drop\s+temporary\s+table\s+if\s+exists\s+(\w+)", statement, re.IGNORECASE)
+        if drop_match:
+            render_replenishment_work_table(drop_match.group(1), schemas)
+            continue
+
+        create_match = re.fullmatch(
+            r"create\s+temporary\s+table\s+(\w+)\s+as\s+(.*)",
+            statement,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if create_match:
+            temporary_name = create_match.group(1)
+            work_table = render_replenishment_work_table(temporary_name, schemas)
+            select_sql = render_replenishment_work_sql(create_match.group(2), schemas)
+            expanded.extend(
+                [
+                    f"drop table if exists {work_table}",
+                    f"create table {work_table} as select * from ({select_sql}) as seed where 1 = 0",
+                    f"insert into {work_table}\n{select_sql}",
+                ]
+            )
+            continue
+
+        explicit_create_match = re.fullmatch(
+            r"create\s+temporary\s+table\s+(\w+)\s*(\(.*)",
+            statement,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if explicit_create_match:
+            temporary_name = explicit_create_match.group(1)
+            work_table = render_replenishment_work_table(temporary_name, schemas)
+            definition_sql = render_replenishment_work_sql(explicit_create_match.group(2), schemas)
+            expanded.extend(
+                [
+                    f"drop table if exists {work_table}",
+                    f"create table {work_table} {definition_sql}",
+                ]
+            )
+            continue
+
+        expanded.append(render_replenishment_work_sql(statement, schemas))
+    return expanded
+
+
 def parse_steps(raw_steps: str) -> list[str]:
     if raw_steps == "all":
         return DEFAULT_STEP_ORDER[:]
@@ -1828,7 +2557,11 @@ def ensure_replenishment_columns(cursor, schemas: SchemaConfig) -> None:
         "pur_plan_prod_perf_salable_days_stat": [
             ("r_180d_salable_days", "int not null default 0", "seller_sku_adj"),
         ],
+        "dashboard_replenishment_listing_basic_sync": [
+            ("global_tags", "text null", "marketplace_concat"),
+        ],
         "dashboard_pur_plan_replenish_data": [
+            ("global_tags", "text null", "marketplace_concat"),
             ("r_180d_salable_days", "int null", "local_quantity"),
             ("sales_180d", "decimal(18,4) null", "r_3d_salable_days"),
             ("amount_180d", "decimal(18,4) null", "final_sales_3d"),
@@ -1837,6 +2570,14 @@ def ensure_replenishment_columns(cursor, schemas: SchemaConfig) -> None:
             ("pprofit_90d", "decimal(18,4) null", "pprofit_180d"),
             ("pprofit_ratio_180d", "decimal(10,6) null", "pprofit_3d"),
             ("pprofit_ratio_90d", "decimal(10,6) null", "pprofit_ratio_180d"),
+            ("followed_flag", "tinyint not null default 0", "fllow_flag"),
+            ("followed_by_count", "int not null default 0", "followed_flag"),
+            ("followed_by_links", "text null", "followed_by_count"),
+            ("follow_origin_link", "varchar(255) null", "followed_by_links"),
+            ("replenish_block_reason", "varchar(64) null", "follow_origin_link"),
+            ("asin_merge_flag", "tinyint not null default 0", "replenish_block_reason"),
+            ("asin_merge_target", "varchar(255) null", "asin_merge_flag"),
+            ("asin_merge_reason", "varchar(64) null", "asin_merge_target"),
         ],
     }
     for table_name, columns in column_specs.items():
@@ -1880,6 +2621,38 @@ def check_daily_snapshots(conn, schemas: SchemaConfig, params: dict[str, object]
     )
 
 
+def validate_replenishment_result(
+    conn,
+    schemas: SchemaConfig,
+    params: dict[str, object],
+) -> int:
+    with conn.cursor() as cursor:
+        cursor.execute(
+            render_replenishment_sql(
+                """
+                select count(*) as row_count
+                from etl_datasync.dashboard_pur_plan_replenish_data
+                where cur_date = %(snapshot_date)s
+                """,
+                schemas,
+            ),
+            params,
+        )
+        row = cursor.fetchone() or {}
+    row_count = int(row.get("row_count") or 0)
+    if row_count <= 0:
+        raise RuntimeError(
+            "Business result validation failed: "
+            f"replenishment snapshot_date={params['snapshot_date']} has 0 rows "
+            f"for biz_date={params['biz_date']}."
+        )
+    print(
+        "[success] replenishment_business_result: "
+        f"snapshot_date={params['snapshot_date']} rows={row_count}"
+    )
+    return row_count
+
+
 def execute_sql_step(conn, schemas: SchemaConfig, step: ReplenishmentStep, params: dict[str, object]) -> None:
     if step.name == "check_daily_snapshots":
         check_daily_snapshots(conn, schemas, params)
@@ -1889,11 +2662,18 @@ def execute_sql_step(conn, schemas: SchemaConfig, step: ReplenishmentStep, param
     affected_rows = 0
     try:
         with conn.cursor() as cursor:
-            for statement in step.statements:
-                cursor.execute(render_replenishment_sql(statement, schemas), params)
+            statements = (
+                build_replenishment_result_statements(schemas)
+                if step.name == "replenishment_result"
+                else [render_replenishment_sql(statement, schemas) for statement in step.statements]
+            )
+            for statement in statements:
+                cursor.execute(statement, params)
                 if statement.lstrip().lower().startswith(("insert", "delete")):
                     affected_rows += max(cursor.rowcount, 0)
                 conn.commit()
+        if step.name == "replenishment_result":
+            validate_replenishment_result(conn, schemas, params)
         log_task(conn, schemas, step.name, params, "success", affected_rows, started_at)
         print(f"[success] {step.name}: affected_rows={affected_rows}")
     except Exception:

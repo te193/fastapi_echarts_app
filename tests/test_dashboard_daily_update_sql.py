@@ -15,6 +15,7 @@ from etl.dashboard_daily_update import (
     SourceLoadStep,
     build_params,
     execute_source_load_step,
+    validate_product_performance_result,
 )
 
 
@@ -120,6 +121,21 @@ class DashboardDailyUpdateSqlTests(unittest.TestCase):
         self.assertEqual(2, target_conn.commit_count)
         self.assertEqual([[{"snapshot_date": date(2026, 6, 10), "sku": "sku1"}]], target_conn.inserted_batches)
 
+    def test_product_performance_validation_rejects_empty_business_date(self):
+        conn = ResultCountConnection(0)
+
+        with self.assertRaisesRegex(RuntimeError, "2026-06-26.*0 rows"):
+            validate_product_performance_result(
+                conn,
+                SchemaConfig(
+                    target_schema="etl_datasync_test",
+                    etl_source_schema="etl_datasync",
+                    dwd_source_schema="dwd_datasync",
+                    pricing_source_schema="temporary_dwd",
+                ),
+                {"biz_date": date(2026, 6, 26)},
+            )
+
 
 class FakeSourceCursor:
     def __init__(self, conn):
@@ -192,6 +208,31 @@ class FakeTargetConnection:
 
     def commit(self):
         self.commit_count += 1
+
+
+class ResultCountCursor:
+    def __init__(self, row_count):
+        self.row_count = row_count
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def execute(self, sql, params=None):
+        return 1
+
+    def fetchone(self):
+        return {"row_count": self.row_count}
+
+
+class ResultCountConnection:
+    def __init__(self, row_count):
+        self.row_count = row_count
+
+    def cursor(self):
+        return ResultCountCursor(self.row_count)
 
 
 if __name__ == "__main__":

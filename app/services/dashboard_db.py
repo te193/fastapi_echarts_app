@@ -37,6 +37,7 @@ MATRIX_ALL_VALUE = "__ALL__"
 MATRIX_PERIOD_TABLE = "etl_datasync.dashboard_product_matrix_period_snapshot"
 ALERT_COMPARISON_TABLE = "etl_datasync.dashboard_alert_comparison_snapshot"
 ALERT_MONTHLY_METRIC_TABLE = "etl_datasync.dashboard_alert_monthly_metric_snapshot"
+OPPORTUNITY_COMPARISON_TABLE = "etl_datasync.dashboard_opportunity_comparison_snapshot"
 ALERT_DAY_COMPARISONS = {7: "d7", 14: "d14", 30: "d30", 60: "d60", 90: "d90"}
 MARGIN_TRANSITION_LAYERS = ["\u65e0\u6bdb\u5229", "<0%", "0-10%", "10-15%", "15-25%", "25-35%", ">35%"]
 SALES_ROLE_PERIOD_TABLE = "etl_datasync.dashboard_sales_role_period_snapshot"
@@ -290,7 +291,7 @@ class DashboardDbService:
         self.source_port = int(os.getenv("DASHBOARD_SOURCE_DB_PORT", source_config.get("port", str(self.port))))
         self.source_user = os.getenv("DASHBOARD_SOURCE_DB_USER", source_config.get("user", self.user))
         self.source_password = os.getenv("DASHBOARD_SOURCE_DB_PASSWORD", source_config.get("password", self.password))
-        self.source_database = os.getenv("DASHBOARD_SOURCE_DB_NAME", source_config.get("database", self.database))
+        self.source_database = os.getenv("DASHBOARD_SOURCE_DB_NAME", source_config.get("database", "")) or None
         self.source_charset = os.getenv("DASHBOARD_SOURCE_DB_CHARSET", source_config.get("charset", self.charset))
         self.schemas = SchemaConfig(
             target_schema=os.getenv("DASHBOARD_TARGET_SCHEMA", self.database),
@@ -858,6 +859,10 @@ class DashboardDbService:
         filters: dict[str, Any],
         opportunity_type: str = "all",
         compare_days: int = 14,
+        comparison_code: str = "",
+        comparison_mode: str = "days",
+        previous_month: str = "",
+        recent_month: str = "",
         stock_status: str = "all",
         transition_filter: str = "",
         sort_field: str = "",
@@ -866,16 +871,40 @@ class DashboardDbService:
         page_size: int = 20,
     ) -> dict[str, Any]:
         with self.connect() as conn:
-            window = self._resolve_opportunity_window(conn, filters, compare_days)
-            payload = self._fetch_opportunity_pool(
-                conn,
-                window,
-                filters,
-                compare_days=compare_days,
-                opportunity_type=opportunity_type,
-                stock_status=stock_status,
-                transition_filter=transition_filter,
-            )
+            if is_alert_month_mode(comparison_mode):
+                payload = self._fetch_opportunity_pool_monthly(
+                    conn,
+                    filters,
+                    previous_month=previous_month,
+                    recent_month=recent_month,
+                    opportunity_type=opportunity_type,
+                    stock_status=stock_status,
+                    transition_filter=transition_filter,
+                )
+            else:
+                selected_code = normalize_alert_comparison_code(comparison_code, compare_days)
+                compare_days = alert_compare_days_from_code(selected_code) or compare_days
+                available_months = self._fetch_alert_month_options(conn)
+                payload = self._fetch_opportunity_pool_snapshot(
+                    conn,
+                    filters,
+                    comparison_code=selected_code,
+                    compare_days=compare_days,
+                    opportunity_type=opportunity_type,
+                    stock_status=stock_status,
+                    transition_filter=transition_filter,
+                    available_months=available_months,
+                )
+                if payload is None:
+                    payload = self._fetch_opportunity_pool_precomputed(
+                        conn,
+                        filters,
+                        comparison_code=selected_code,
+                        compare_days=compare_days,
+                        opportunity_type=opportunity_type,
+                        stock_status=stock_status,
+                        transition_filter=transition_filter,
+                    )
 
         total = len(payload["items"])
         self._sort_items(
@@ -914,15 +943,41 @@ class DashboardDbService:
         filters: dict[str, Any],
         opportunity_type: str = "all",
         compare_days: int = 14,
+        comparison_code: str = "",
+        comparison_mode: str = "days",
+        previous_month: str = "",
+        recent_month: str = "",
         stock_status: str = "all",
         transition_filter: str = "",
     ) -> dict[str, Any]:
         with self.connect() as conn:
-            window = self._resolve_opportunity_window(conn, filters, compare_days)
-            return self._fetch_opportunity_pool(
+            if is_alert_month_mode(comparison_mode):
+                return self._fetch_opportunity_pool_monthly(
+                    conn,
+                    filters,
+                    previous_month=previous_month,
+                    recent_month=recent_month,
+                    opportunity_type=opportunity_type,
+                    stock_status=stock_status,
+                    transition_filter=transition_filter,
+                )
+            selected_code = normalize_alert_comparison_code(comparison_code, compare_days)
+            compare_days = alert_compare_days_from_code(selected_code) or compare_days
+            payload = self._fetch_opportunity_pool_snapshot(
                 conn,
-                window,
                 filters,
+                comparison_code=selected_code,
+                compare_days=compare_days,
+                opportunity_type=opportunity_type,
+                stock_status=stock_status,
+                transition_filter=transition_filter,
+            )
+            if payload is not None:
+                return payload
+            return self._fetch_opportunity_pool_precomputed(
+                conn,
+                filters,
+                comparison_code=selected_code,
                 compare_days=compare_days,
                 opportunity_type=opportunity_type,
                 stock_status=stock_status,
@@ -3885,6 +3940,35 @@ class DashboardDbService:
             rows = cursor.fetchall()
 
         items = [self._build_opportunity_item(row, days) for row in rows]
+        return self._build_opportunity_payload(
+            items,
+            opportunity_type=opportunity_type,
+            stock_status=stock_status,
+            transition_filter=transition_filter,
+            window=f"近{days}天 {format_day(recent_start)} ~ {format_day(recent_end)}",
+            comparison_window=f"前{days}天 {format_day(previous_start)} ~ {format_day(previous_end)}",
+            compare_days=days,
+            comparison_code=f"d{days}",
+            comparison_mode="days",
+        )
+
+    def _build_opportunity_payload(
+        self,
+        items: list[dict[str, Any]],
+        *,
+        opportunity_type: str,
+        stock_status: str,
+        transition_filter: str,
+        window: str,
+        comparison_window: str,
+        compare_days: int,
+        comparison_code: str,
+        comparison_mode: str = "days",
+        previous_month: str = "",
+        recent_month: str = "",
+        available_months: list[dict[str, Any]] | None = None,
+        empty_text: str = "当前筛选下没有符合加码条件的机会 SKU。",
+    ) -> dict[str, Any]:
         items = [item for item in items if item["opportunity_types"]]
         if opportunity_type != "all":
             items = [item for item in items if opportunity_type in item["opportunity_types"]]
@@ -3916,11 +4000,431 @@ class DashboardDbService:
                 "estimated_boost_revenue": round(boost_revenue, 2),
             },
             "types": type_defs,
-            "window": f"近{days}天 {format_day(recent_start)} ~ {format_day(recent_end)}",
-            "comparison_window": f"前{days}天 {format_day(previous_start)} ~ {format_day(previous_end)}",
-            "compare_days": days,
-            "empty_text": "当前筛选下没有符合加码条件的机会 SKU。",
+            "window": window,
+            "comparison_window": comparison_window,
+            "compare_days": compare_days,
+            "comparison_code": comparison_code,
+            "comparison_mode": comparison_mode,
+            "comparison_type": comparison_mode,
+            "previous_month": previous_month,
+            "recent_month": recent_month,
+            "available_comparisons": [
+                {"code": "d7", "label": "近7天 vs 前7天", "type": "days"},
+                {"code": "d14", "label": "近14天 vs 前14天", "type": "days"},
+                {"code": "d30", "label": "近30天 vs 前30天", "type": "days"},
+                {"code": "d60", "label": "近60天 vs 前60天", "type": "days"},
+                {"code": "d90", "label": "近90天 vs 前90天", "type": "days"},
+            ],
+            "available_months": available_months or [],
+            "empty_text": empty_text,
         }
+
+
+    def _latest_opportunity_comparison_snapshot(self, conn, comparison_code: str) -> date | None:
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    select max(snapshot_date) as snapshot_date
+                    from {render_sql(OPPORTUNITY_COMPARISON_TABLE, self.schemas)}
+                    where comparison_code = %(comparison_code)s
+                    """,
+                    {"comparison_code": comparison_code},
+                )
+                row = cursor.fetchone() or {}
+            return row.get("snapshot_date")
+        except pymysql.err.ProgrammingError as exc:
+            if exc.args and exc.args[0] == 1146:
+                return None
+            raise
+
+    def _fetch_opportunity_pool_snapshot(
+        self,
+        conn,
+        filters: dict[str, Any],
+        comparison_code: str,
+        compare_days: int,
+        opportunity_type: str = "all",
+        stock_status: str = "all",
+        transition_filter: str = "",
+        comparison_mode: str = "days",
+        previous_month: str = "",
+        recent_month: str = "",
+        available_months: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any] | None:
+        snapshot_date = self._latest_opportunity_comparison_snapshot(conn, comparison_code)
+        if not snapshot_date:
+            return None
+
+        filter_sql, params = self._filter_clause(filters, alias="o")
+        params.update({"snapshot_date": snapshot_date, "comparison_code": comparison_code})
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    select o.*
+                    from {render_sql(OPPORTUNITY_COMPARISON_TABLE, self.schemas)} o
+                    where o.snapshot_date = %(snapshot_date)s
+                      and o.comparison_code = %(comparison_code)s
+                      and o.filter_flag = 1
+                      and {filter_sql}
+                    order by o.score desc, o.recent_sales_amount desc, o.seller_sku_adj
+                    """,
+                    params,
+                )
+                rows = cursor.fetchall()
+        except pymysql.err.ProgrammingError as exc:
+            if exc.args and exc.args[0] == 1146:
+                return None
+            raise
+
+        items = [self._build_precomputed_opportunity_item(row) for row in rows]
+        first_row = rows[0] if rows else {}
+        return self._build_opportunity_payload(
+            items,
+            opportunity_type=opportunity_type,
+            stock_status=stock_status,
+            transition_filter=transition_filter,
+            window=self._opportunity_window_text(first_row, recent=True, fallback=f"近{compare_days}天"),
+            comparison_window=self._opportunity_window_text(first_row, recent=False, fallback=f"前{compare_days}天"),
+            compare_days=compare_days,
+            comparison_code=comparison_code,
+            comparison_mode=comparison_mode,
+            previous_month=previous_month or str(first_row.get("previous_month") or ""),
+            recent_month=recent_month or str(first_row.get("recent_month") or ""),
+            available_months=available_months,
+        )
+
+    def _opportunity_window_text(self, row: dict[str, Any], recent: bool, fallback: str = "") -> str:
+        if not row:
+            return fallback
+        if str(row.get("comparison_mode") or "") == "month":
+            month = row.get("recent_month") if recent else row.get("previous_month")
+            prefix = "观察月份" if recent else "对比月份"
+            return f"{prefix} {month}" if month else fallback
+        start = row.get("recent_start") if recent else row.get("previous_start")
+        end = row.get("recent_end") if recent else row.get("previous_end")
+        prefix = "观察" if recent else "对比"
+        if start and end:
+            return f"{prefix} {format_day(start)} ~ {format_day(end)}"
+        return fallback
+
+    def _build_precomputed_opportunity_item(self, row: dict[str, Any]) -> dict[str, Any]:
+        primary_type = str(row.get("primary_type") or "observe")
+        types = [item for item in str(row.get("opportunity_types") or "").split(",") if item]
+        if not types and primary_type != "observe":
+            types = [primary_type]
+        comparison_mode = str(row.get("comparison_mode") or "days")
+        previous_qty = to_float(row.get("previous_sales_qty"))
+        recent_qty = to_float(row.get("recent_sales_qty"))
+        previous_daily_sales = to_float(row.get("previous_daily_sales"))
+        recent_daily_sales = to_float(row.get("recent_daily_sales"))
+        sales_change_rate = to_float(row.get("sales_change_rate"))
+        previous_rank_raw = row.get("previous_rank")
+        recent_rank_raw = row.get("recent_rank")
+        previous_rank = int(round(to_float(previous_rank_raw))) if previous_rank_raw is not None else None
+        recent_rank = int(round(to_float(recent_rank_raw))) if recent_rank_raw is not None else None
+        recent_sales_amount = to_float(row.get("recent_sales_amount"))
+        recent_profit = to_float(row.get("recent_order_gross_profit"))
+        margin = to_float(row.get("recent_margin"))
+        previous_margin_raw = row.get("previous_margin")
+        previous_margin = to_float(previous_margin_raw) if previous_margin_raw is not None else None
+        recent_margin_raw = row.get("recent_margin")
+        recent_margin = to_float(recent_margin_raw) if recent_margin_raw is not None else None
+        sales_text = (
+            f"日均 {recent_daily_sales:.2f} / {previous_daily_sales:.2f}（总量 {recent_qty:.0f} / {previous_qty:.0f}，{sales_change_rate:+.1%}）"
+            if comparison_mode == "month"
+            else f"{recent_qty:.0f} / {previous_qty:.0f} ({sales_change_rate:+.1%})"
+        )
+        return {
+            "type": primary_type,
+            "opportunity_types": types,
+            "label": self._opportunity_label(primary_type),
+            "score": to_int(row.get("score")),
+            "msku": str(row.get("seller_sku_adj") or "-"),
+            "store": str(row.get("seller_name_new") or "-"),
+            "country": str(row.get("country") or "-"),
+            "keyword": str(row.get("seller_sku_adj") or ""),
+            "daily_sales": round(recent_daily_sales, 2),
+            "sales_change_rate": round(sales_change_rate, 4),
+            "recent_qty": round(recent_qty, 2),
+            "previous_qty": round(previous_qty, 2),
+            "sales_text": sales_text,
+            "scoped_revenue": round(recent_sales_amount, 2),
+            "profit": round(recent_profit, 2),
+            "margin": round(margin, 4),
+            "previous_margin": round(previous_margin, 4) if previous_margin is not None else None,
+            "recent_margin": round(recent_margin, 4) if recent_margin is not None else None,
+            "previous_margin_layer": self._margin_layer(previous_margin),
+            "recent_margin_layer": self._margin_layer(recent_margin),
+            "previous_rank": previous_rank,
+            "recent_rank": recent_rank,
+            "previous_rank_layer": self._rank_layer(previous_rank),
+            "recent_rank_layer": self._rank_layer(recent_rank),
+            "rank_text": f"{previous_rank or '—'} -> {recent_rank or '—'}",
+            "rank_delta": to_float(row.get("rank_delta")),
+            "recent_sessions": 0,
+            "conversion": 0,
+            "fba_sellable_inventory": round(to_float(row.get("fba_sellable_inventory"))),
+            "sellable_days": round(to_float(row.get("sellable_days")), 1),
+            "stock_status": str(row.get("stock_status") or "short"),
+            "acos": round(to_float(row.get("acos")), 4),
+            "tacos": round(to_float(row.get("tacos")), 4),
+            "ad_spend": round(to_float(row.get("ad_spend")), 2),
+            "current_price": round(to_float(row.get("current_price")), 2),
+            "limit_price_35": round(to_float(row.get("limit_price")), 2),
+            "limit_price_10": round(to_float(row.get("limit_price_10")), 2),
+            "over_limit": bool(row.get("over_limit_flag")),
+            "estimated_boost_revenue": round(to_float(row.get("estimated_boost_revenue")), 2),
+            "suggested_action": self._opportunity_action(primary_type),
+        }
+
+    def _fetch_opportunity_pool_precomputed(
+        self,
+        conn,
+        filters: dict[str, Any],
+        comparison_code: str,
+        compare_days: int,
+        opportunity_type: str = "all",
+        stock_status: str = "all",
+        transition_filter: str = "",
+    ) -> dict[str, Any]:
+        snapshot_date = self._latest_alert_comparison_snapshot(conn, comparison_code)
+        if not snapshot_date:
+            return self._build_opportunity_payload(
+                [],
+                opportunity_type=opportunity_type,
+                stock_status=stock_status,
+                transition_filter=transition_filter,
+                window="",
+                comparison_window="",
+                compare_days=compare_days,
+                comparison_code=comparison_code,
+                empty_text="当前比较口径暂无机会数据。",
+            )
+
+        period_snapshot_date = self._get_latest_snapshot_date(conn)
+        period_table = self._render_period_table(PERIOD_PRESET_TABLES["last_90_days"])
+        filter_sql, params = self._filter_clause(filters, alias="a")
+        params.update({"snapshot_date": snapshot_date, "comparison_code": comparison_code, "period_snapshot_date": period_snapshot_date})
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                select
+                    a.item_key,
+                    a.seller_sku_adj,
+                    a.seller_name_new,
+                    a.country,
+                    a.recent_sales_qty as sales_qty,
+                    a.recent_sales_amount as sales_amount,
+                    a.recent_order_gross_profit as order_gross_profit,
+                    a.recent_margin as order_gross_margin,
+                    a.recent_daily_sales as daily_sales,
+                    coalesce(a.fba_sellable_inventory, 0) as fba_sellable_inventory,
+                    coalesce(p.current_price, 0) as current_price,
+                    coalesce(p.limit_price, 0) as limit_price,
+                    coalesce(p.limit_price_10, 0) as limit_price_10,
+                    coalesce(p.over_limit_flag, a.over_limit_flag, 0) as over_limit_flag,
+                    coalesce(p.ad_spend, 0) as ad_spend,
+                    coalesce(p.ad_sales, 0) as ad_sales,
+                    coalesce(p.acos, 0) as acos,
+                    coalesce(p.tacos, 0) as tacos,
+                    a.recent_sales_qty as recent_sales_qty,
+                    a.previous_sales_qty as previous_sales_qty,
+                    a.recent_sales_amount as recent_sales_amount,
+                    a.previous_sales_amount as previous_sales_amount,
+                    a.recent_daily_sales as recent_daily_sales,
+                    a.previous_daily_sales as previous_daily_sales,
+                    a.recent_order_gross_profit as recent_order_gross_profit,
+                    a.previous_order_gross_profit as previous_order_gross_profit,
+                    a.recent_margin as recent_margin,
+                    a.previous_margin as previous_margin,
+                    a.recent_rank as recent_rank,
+                    a.previous_rank as previous_rank,
+                    0 as recent_sessions,
+                    0 as previous_sessions,
+                    'days' as comparison_type
+                from {render_sql(ALERT_COMPARISON_TABLE, self.schemas)} a
+                left join {period_table} p
+                  on p.snapshot_date = %(period_snapshot_date)s
+                 and p.item_key = a.item_key
+                where a.snapshot_date = %(snapshot_date)s
+                  and a.comparison_code = %(comparison_code)s
+                  and a.filter_flag = 1
+                  and {filter_sql}
+                """,
+                params,
+            )
+            rows = cursor.fetchall()
+
+        items = [self._build_opportunity_item(row, compare_days) for row in rows]
+        return self._build_opportunity_payload(
+            items,
+            opportunity_type=opportunity_type,
+            stock_status=stock_status,
+            transition_filter=transition_filter,
+            window=f"近{compare_days}天",
+            comparison_window=f"前{compare_days}天",
+            compare_days=compare_days,
+            comparison_code=comparison_code,
+            comparison_mode="days",
+        )
+
+    def _fetch_opportunity_pool_monthly(
+        self,
+        conn,
+        filters: dict[str, Any],
+        previous_month: str = "",
+        recent_month: str = "",
+        opportunity_type: str = "all",
+        stock_status: str = "all",
+        transition_filter: str = "",
+    ) -> dict[str, Any]:
+        snapshot_date = self._latest_alert_monthly_snapshot(conn)
+        available_months = self._fetch_alert_month_options(conn, snapshot_date)
+        previous_month, recent_month = self._resolve_alert_month_pair(available_months, previous_month, recent_month)
+        comparison_code = f"{previous_month}_vs_{recent_month}" if previous_month and recent_month else ""
+        if comparison_code:
+            payload = self._fetch_opportunity_pool_snapshot(
+                conn,
+                filters,
+                comparison_code=comparison_code,
+                compare_days=0,
+                opportunity_type=opportunity_type,
+                stock_status=stock_status,
+                transition_filter=transition_filter,
+                comparison_mode="month",
+                previous_month=previous_month,
+                recent_month=recent_month,
+                available_months=available_months,
+            )
+            if payload is not None:
+                return payload
+        if not snapshot_date or not previous_month or not recent_month:
+            return self._build_opportunity_payload(
+                [],
+                opportunity_type=opportunity_type,
+                stock_status=stock_status,
+                transition_filter=transition_filter,
+                window="",
+                comparison_window="",
+                compare_days=0,
+                comparison_code="",
+                comparison_mode="month",
+                previous_month=previous_month,
+                recent_month=recent_month,
+                available_months=available_months,
+                empty_text="当前月度对比暂无机会数据。",
+            )
+
+        period_snapshot_date = self._get_latest_snapshot_date(conn)
+        period_table = self._render_period_table(PERIOD_PRESET_TABLES["last_90_days"])
+        filter_sql, params = self._filter_clause(filters, alias="a")
+        params.update({
+            "snapshot_date": snapshot_date,
+            "previous_month": previous_month,
+            "recent_month": recent_month,
+            "period_snapshot_date": period_snapshot_date,
+        })
+        monthly_table = render_sql(ALERT_MONTHLY_METRIC_TABLE, self.schemas)
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                with joined as (
+                    select
+                        coalesce(r.item_key, p.item_key) as item_key,
+                        coalesce(r.seller_name_new, p.seller_name_new) as seller_name_new,
+                        coalesce(r.seller_name, p.seller_name) as seller_name,
+                        coalesce(r.seller_sku_adj, p.seller_sku_adj) as seller_sku_adj,
+                        coalesce(r.country_category, p.country_category) as country_category,
+                        coalesce(r.country, p.country) as country,
+                        coalesce(r.local_sku, p.local_sku) as local_sku,
+                        coalesce(r.filter_flag, p.filter_flag, 1) as filter_flag,
+                        coalesce(r.over_limit_flag, p.over_limit_flag, 0) as over_limit_flag,
+                        coalesce(r.daily_sales_band, '日销 0') as daily_sales_band,
+                        coalesce(r.margin_band, p.margin_band, '毛利率 <0%') as margin_band,
+                        coalesce(r.data_start, p.data_start) as recent_start,
+                        coalesce(r.data_end, p.data_end) as recent_end,
+                        coalesce(r.stat_days, 0) as recent_days,
+                        coalesce(p.data_start, r.data_start) as previous_start,
+                        coalesce(p.data_end, r.data_end) as previous_end,
+                        coalesce(p.stat_days, 0) as previous_days,
+                        coalesce(r.sales_qty, 0) as recent_sales_qty,
+                        coalesce(p.sales_qty, 0) as previous_sales_qty,
+                        coalesce(r.daily_sales, 0) as recent_daily_sales,
+                        coalesce(p.daily_sales, 0) as previous_daily_sales,
+                        coalesce(r.sales_amount, 0) as recent_sales_amount,
+                        coalesce(p.sales_amount, 0) as previous_sales_amount,
+                        coalesce(r.order_gross_profit, 0) as recent_order_gross_profit,
+                        coalesce(p.order_gross_profit, 0) as previous_order_gross_profit,
+                        r.margin as recent_margin,
+                        p.margin as previous_margin,
+                        r.avg_rank as recent_rank,
+                        p.avg_rank as previous_rank,
+                        coalesce(r.fba_sellable_inventory, p.fba_sellable_inventory, 0) as fba_sellable_inventory
+                    from {monthly_table} r
+                    left join {monthly_table} p
+                      on p.snapshot_date = r.snapshot_date
+                     and p.item_key = r.item_key
+                     and p.month_code = %(previous_month)s
+                    where r.snapshot_date = %(snapshot_date)s
+                      and r.month_code = %(recent_month)s
+                    union all
+                    select
+                        p.item_key, p.seller_name_new, p.seller_name, p.seller_sku_adj, p.country_category, p.country, p.local_sku,
+                        p.filter_flag, p.over_limit_flag, '日销 0', p.margin_band,
+                        p.data_start, p.data_end, 0,
+                        p.data_start, p.data_end, p.stat_days,
+                        0, p.sales_qty, 0, p.daily_sales, 0, p.sales_amount, 0, p.order_gross_profit,
+                        null, p.margin, null, p.avg_rank, p.fba_sellable_inventory
+                    from {monthly_table} p
+                    left join {monthly_table} r
+                      on r.snapshot_date = p.snapshot_date
+                     and r.item_key = p.item_key
+                     and r.month_code = %(recent_month)s
+                    where p.snapshot_date = %(snapshot_date)s
+                      and p.month_code = %(previous_month)s
+                      and r.item_key is null
+                )
+                select
+                    j.*,
+                    coalesce(ps.current_price, 0) as current_price,
+                    coalesce(ps.limit_price, 0) as limit_price,
+                    coalesce(ps.limit_price_10, 0) as limit_price_10,
+                    coalesce(ps.over_limit_flag, j.over_limit_flag, 0) as over_limit_flag,
+                    coalesce(ps.ad_spend, 0) as ad_spend,
+                    coalesce(ps.ad_sales, 0) as ad_sales,
+                    coalesce(ps.acos, 0) as acos,
+                    coalesce(ps.tacos, 0) as tacos,
+                    0 as recent_sessions,
+                    0 as previous_sessions,
+                    'month' as comparison_type
+                from joined j
+                left join {period_table} ps
+                  on ps.snapshot_date = %(period_snapshot_date)s
+                 and ps.item_key = j.item_key
+                where j.filter_flag = 1
+                  and {filter_sql}
+                """,
+                params,
+            )
+            rows = cursor.fetchall()
+
+        items = [self._build_opportunity_item(row, 0) for row in rows]
+        return self._build_opportunity_payload(
+            items,
+            opportunity_type=opportunity_type,
+            stock_status=stock_status,
+            transition_filter=transition_filter,
+            window=f"观察月份 {recent_month}",
+            comparison_window=f"对比月份 {previous_month}",
+            compare_days=0,
+            comparison_code=f"{previous_month}_vs_{recent_month}",
+            comparison_mode="month",
+            previous_month=previous_month,
+            recent_month=recent_month,
+            available_months=available_months,
+        )
 
     def _margin_layer(self, margin: float | None) -> str:
         if margin is None:
@@ -4191,16 +4695,22 @@ class DashboardDbService:
         ]
 
     def _build_opportunity_item(self, row: dict[str, Any], compare_days: int) -> dict[str, Any]:
+        comparison_type = str(row.get("comparison_type") or "days")
         sales_qty = to_float(row.get("sales_qty"))
         sales_amount = to_float(row.get("sales_amount"))
         profit = to_float(row.get("order_gross_profit"))
-        margin = to_float(row.get("order_gross_margin"))
+        margin = to_float(row.get("order_gross_margin", row.get("recent_margin")))
         daily_sales = to_float(row.get("daily_sales"))
         fba_sellable = to_float(row.get("fba_sellable_inventory"))
         sellable_days = fba_sellable / daily_sales if daily_sales > 0 else 0.0
         previous_qty = to_float(row.get("previous_sales_qty"))
         recent_qty = to_float(row.get("recent_sales_qty"))
-        sales_change_rate = (recent_qty - previous_qty) / previous_qty if previous_qty else (1.0 if recent_qty > 0 else 0.0)
+        previous_daily_sales = to_float(row.get("previous_daily_sales"))
+        recent_daily_sales = to_float(row.get("recent_daily_sales"))
+        if comparison_type in {"month", "month_to_date"}:
+            sales_change_rate = (recent_daily_sales - previous_daily_sales) / previous_daily_sales if previous_daily_sales else (1.0 if recent_daily_sales > 0 else 0.0)
+        else:
+            sales_change_rate = (recent_qty - previous_qty) / previous_qty if previous_qty else (1.0 if recent_qty > 0 else 0.0)
         previous_sessions = to_float(row.get("previous_sessions"))
         recent_sessions = to_float(row.get("recent_sessions"))
         sessions_change_rate = (recent_sessions - previous_sessions) / previous_sessions if previous_sessions else (1.0 if recent_sessions > 0 else 0.0)
@@ -4226,7 +4736,7 @@ class DashboardDbService:
         ad_sales = to_float(row.get("ad_sales"))
         acos = to_float(row.get("acos"))
         tacos = to_float(row.get("tacos"))
-        over_limit = bool(row.get("over_limit_flag"))
+        over_limit = bool(row.get("current_over_limit_flag", row.get("over_limit_flag")))
 
         types: list[str] = []
         if margin >= 0.25 and daily_sales >= 1 and sellable_days >= 21 and not over_limit:
@@ -4255,6 +4765,11 @@ class DashboardDbService:
         primary_type = types[0] if types else "observe"
         avg_price = sales_amount / sales_qty if sales_qty else 0
         estimated_boost_revenue = round(max(daily_sales, 0) * min(max(sellable_days, 0), 30) * 0.15 * avg_price, 2)
+        sales_text = (
+            f"日均 {recent_daily_sales:.2f} / {previous_daily_sales:.2f}（总量 {recent_qty:.0f} / {previous_qty:.0f}，{sales_change_rate:+.1%}）"
+            if comparison_type in {"month", "month_to_date"}
+            else f"{recent_qty:.0f} / {previous_qty:.0f} ({sales_change_rate:+.1%})"
+        )
         return {
             "type": primary_type,
             "opportunity_types": types,
@@ -4268,7 +4783,7 @@ class DashboardDbService:
             "sales_change_rate": round(sales_change_rate, 4),
             "recent_qty": round(recent_qty, 2),
             "previous_qty": round(previous_qty, 2),
-            "sales_text": f"{recent_qty:.0f} / {previous_qty:.0f} ({sales_change_rate:+.1%})",
+            "sales_text": sales_text,
             "scoped_revenue": round(sales_amount, 2),
             "profit": round(profit, 2),
             "margin": round(margin, 4),
@@ -4297,7 +4812,6 @@ class DashboardDbService:
             "estimated_boost_revenue": estimated_boost_revenue,
             "suggested_action": self._opportunity_action(primary_type),
         }
-
     def _opportunity_score(
         self,
         margin: float,

@@ -149,7 +149,7 @@
     var d = filterState.adjust_date;
     var parts = d.split("-");
     var label = parts.length === 3 ? parts[1] + "." + parts[2] : d;
-    elements.pageTitle.textContent = label + " 降价前后 " + filterState.compare_days + " 天追踪";
+    elements.pageTitle.textContent = label + " 调价前后 " + filterState.compare_days + " 天追踪";
   }
 
   function bindEvents() {

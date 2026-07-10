@@ -39,6 +39,7 @@ DEFAULT_STEP_ORDER = [
     "period_preset_snapshots",
     "alert_comparison_snapshots",
     "alert_monthly_metric_snapshots",
+    "opportunity_comparison_snapshots",
     "price_review_source_load",
     "price_review_tracking",
 ]
@@ -71,6 +72,11 @@ class AlertComparisonStep:
 
 @dataclass(frozen=True)
 class AlertMonthlyMetricStep:
+    name: str
+
+
+@dataclass(frozen=True)
+class OpportunityComparisonStep:
     name: str
 
 
@@ -565,6 +571,83 @@ create table if not exists etl_datasync.dashboard_alert_comparison_summary (
         alert_type, sales_trend, rank_trend, margin_status, stock_status
     ),
     key idx_alert_summary_lookup (snapshot_date, comparison_code, alert_type)
+) engine=InnoDB default charset=utf8mb4;
+"""
+
+CREATE_OPPORTUNITY_COMPARISON_SNAPSHOT_SQL = """
+create table if not exists etl_datasync.dashboard_opportunity_comparison_snapshot (
+    snapshot_date date not null,
+    comparison_code varchar(64) not null,
+    comparison_mode varchar(32) not null,
+    comparison_label varchar(128) not null,
+    recent_start date null,
+    recent_end date null,
+    previous_start date null,
+    previous_end date null,
+    previous_month char(7) not null default '',
+    recent_month char(7) not null default '',
+    item_key varchar(512) not null,
+    seller_name_new varchar(128) not null,
+    seller_name varchar(255) null,
+    seller_sku_adj varchar(128) not null,
+    country_category varchar(64) not null,
+    country varchar(64) not null,
+    local_sku varchar(128) null,
+    filter_flag tinyint not null default 1,
+    over_limit_flag tinyint not null default 0,
+    opportunity_types varchar(255) not null,
+    primary_type varchar(32) not null,
+    score int not null default 0,
+    stock_status varchar(16) not null,
+    recent_sales_qty decimal(18,4) not null default 0,
+    previous_sales_qty decimal(18,4) not null default 0,
+    recent_daily_sales decimal(18,6) not null default 0,
+    previous_daily_sales decimal(18,6) not null default 0,
+    sales_change_rate decimal(12,6) not null default 0,
+    recent_sales_amount decimal(18,4) not null default 0,
+    previous_sales_amount decimal(18,4) not null default 0,
+    recent_order_gross_profit decimal(18,4) not null default 0,
+    previous_order_gross_profit decimal(18,4) not null default 0,
+    recent_margin decimal(10,4) null,
+    previous_margin decimal(10,4) null,
+    recent_rank decimal(18,4) null,
+    previous_rank decimal(18,4) null,
+    rank_delta decimal(18,4) not null default 0,
+    fba_sellable_inventory decimal(18,4) not null default 0,
+    sellable_days decimal(18,4) not null default 0,
+    current_price decimal(18,4) not null default 0,
+    limit_price decimal(18,4) not null default 0,
+    limit_price_10 decimal(18,4) not null default 0,
+    ad_spend decimal(18,4) not null default 0,
+    ad_sales decimal(18,4) not null default 0,
+    acos decimal(12,6) not null default 0,
+    tacos decimal(12,6) not null default 0,
+    estimated_boost_revenue decimal(18,4) not null default 0,
+    created_at datetime not null default current_timestamp,
+    updated_at datetime not null default current_timestamp on update current_timestamp,
+    unique key uk_opportunity_comparison_item (snapshot_date, comparison_code, item_key),
+    key idx_opportunity_lookup (snapshot_date, comparison_code, primary_type, country, seller_name_new),
+    key idx_opportunity_filters (snapshot_date, comparison_code, stock_status, score),
+    key idx_opportunity_sku (seller_sku_adj)
+) engine=InnoDB default charset=utf8mb4;
+"""
+
+CREATE_OPPORTUNITY_COMPARISON_SUMMARY_SQL = """
+create table if not exists etl_datasync.dashboard_opportunity_comparison_summary (
+    snapshot_date date not null,
+    comparison_code varchar(64) not null,
+    country varchar(64) not null default '__ALL__',
+    seller_name_new varchar(128) not null default '__ALL__',
+    opportunity_type varchar(32) not null default '__ALL__',
+    stock_status varchar(16) not null default '__ALL__',
+    opportunity_count int not null default 0,
+    estimated_boost_revenue decimal(18,4) not null default 0,
+    created_at datetime not null default current_timestamp,
+    updated_at datetime not null default current_timestamp on update current_timestamp,
+    unique key uk_opportunity_summary (
+        snapshot_date, comparison_code, country, seller_name_new, opportunity_type, stock_status
+    ),
+    key idx_opportunity_summary_lookup (snapshot_date, comparison_code, opportunity_type)
 ) engine=InnoDB default charset=utf8mb4;
 """
 
@@ -1345,6 +1428,392 @@ where snapshot_date not in (
     from (
         select distinct snapshot_date
         from etl_datasync.dashboard_alert_comparison_summary
+        order by snapshot_date desc
+        limit %(period_snapshot_retention_days)s
+    ) keep_dates
+);
+"""
+
+DELETE_OPPORTUNITY_COMPARISON_SNAPSHOT_SQL = """
+delete from etl_datasync.dashboard_opportunity_comparison_snapshot
+where snapshot_date = %(snapshot_date)s
+  and comparison_code = %(comparison_code)s;
+"""
+
+INSERT_OPPORTUNITY_COMPARISON_FROM_ALERT_SQL = """
+insert into etl_datasync.dashboard_opportunity_comparison_snapshot (
+    snapshot_date, comparison_code, comparison_mode, comparison_label,
+    recent_start, recent_end, previous_start, previous_end, previous_month, recent_month,
+    item_key, seller_name_new, seller_name, seller_sku_adj, country_category, country, local_sku,
+    filter_flag, over_limit_flag, opportunity_types, primary_type, score, stock_status,
+    recent_sales_qty, previous_sales_qty, recent_daily_sales, previous_daily_sales, sales_change_rate,
+    recent_sales_amount, previous_sales_amount, recent_order_gross_profit, previous_order_gross_profit,
+    recent_margin, previous_margin, recent_rank, previous_rank, rank_delta,
+    fba_sellable_inventory, sellable_days, current_price, limit_price, limit_price_10,
+    ad_spend, ad_sales, acos, tacos, estimated_boost_revenue, created_at, updated_at
+)
+with source_rows as (
+    select
+        a.*,
+        coalesce(p.current_price, 0) as current_price,
+        coalesce(p.limit_price, 0) as limit_price,
+        coalesce(p.limit_price_10, 0) as limit_price_10,
+        coalesce(p.over_limit_flag, a.over_limit_flag, 0) as current_over_limit_flag,
+        coalesce(p.ad_spend, 0) as ad_spend,
+        coalesce(p.ad_sales, 0) as ad_sales,
+        coalesce(p.acos, 0) as acos,
+        coalesce(p.tacos, 0) as tacos
+    from etl_datasync.dashboard_alert_comparison_snapshot a
+    left join (
+        select
+            item_key,
+            max(current_price) as current_price,
+            max(limit_price) as limit_price,
+            max(limit_price_10) as limit_price_10,
+            max(over_limit_flag) as over_limit_flag,
+            max(ad_spend) as ad_spend,
+            max(ad_sales) as ad_sales,
+            max(acos) as acos,
+            max(tacos) as tacos
+        from etl_datasync.dashboard_product_period_90d_snapshot
+        where snapshot_date = %(snapshot_date)s
+        group by item_key
+    ) p
+      on p.item_key = a.item_key
+    where a.snapshot_date = %(snapshot_date)s
+      and a.comparison_code = %(comparison_code)s
+      and a.filter_flag = 1
+),
+classified as (
+    select
+        s.*,
+        case when coalesce(s.recent_daily_sales, 0) > 0 then coalesce(s.fba_sellable_inventory, 0) / s.recent_daily_sales else 0 end as calc_sellable_days,
+        case when s.previous_rank is not null and s.recent_rank is not null then s.previous_rank - s.recent_rank else 0 end as calc_rank_delta,
+        case when s.previous_rank is not null and s.previous_rank > 0 and s.recent_rank is not null then (s.previous_rank - s.recent_rank) / s.previous_rank else 0 end as rank_improve_ratio
+    from source_rows s
+),
+opportunity as (
+    select
+        c.*,
+        concat_ws(',',
+            if(coalesce(c.recent_margin, 0) >= 0.25 and c.recent_daily_sales >= 1 and c.calc_sellable_days >= 21 and c.current_over_limit_flag = 0, 'high_margin_scale', null),
+            if(c.calc_rank_delta >= 5 and c.rank_improve_ratio >= 0.20 and c.calc_sellable_days >= 14, 'rank_improve', null),
+            if(c.calc_sellable_days >= 30 and coalesce(c.recent_margin, 0) >= 0.15 and c.recent_daily_sales >= 0.5 and c.current_over_limit_flag = 0, 'inventory_push', null),
+            if(coalesce(c.recent_margin, 0) >= 0.35 and c.recent_daily_sales < 1 and c.calc_sellable_days >= 21 and c.current_over_limit_flag = 0, 'low_sales_high_margin', null),
+            if((c.tacos <= 0.05 or (c.acos > 0 and c.acos <= 0.20)) and coalesce(c.recent_margin, 0) >= 0.20 and (c.recent_sales_amount > 0 or c.ad_spend > 0), 'ad_efficiency', null)
+        ) as opportunity_types,
+        case
+            when coalesce(c.recent_margin, 0) >= 0.25 and c.recent_daily_sales >= 1 and c.calc_sellable_days >= 21 and c.current_over_limit_flag = 0 then 'high_margin_scale'
+            when c.calc_rank_delta >= 5 and c.rank_improve_ratio >= 0.20 and c.calc_sellable_days >= 14 then 'rank_improve'
+            when c.calc_sellable_days >= 30 and coalesce(c.recent_margin, 0) >= 0.15 and c.recent_daily_sales >= 0.5 and c.current_over_limit_flag = 0 then 'inventory_push'
+            when coalesce(c.recent_margin, 0) >= 0.35 and c.recent_daily_sales < 1 and c.calc_sellable_days >= 21 and c.current_over_limit_flag = 0 then 'low_sales_high_margin'
+            when (c.tacos <= 0.05 or (c.acos > 0 and c.acos <= 0.20)) and coalesce(c.recent_margin, 0) >= 0.20 and (c.recent_sales_amount > 0 or c.ad_spend > 0) then 'ad_efficiency'
+            else 'observe'
+        end as opportunity_primary_type,
+        case when c.calc_sellable_days >= 21 then 'enough' else 'short' end as opportunity_stock_status,
+        round(greatest(0, least(100,
+            least(greatest(coalesce(c.recent_margin, 0), 0) / 0.35, 1) * 25
+            + (least(greatest(c.sales_change_rate, 0), 1) * 0.4 + least(c.recent_daily_sales / 5, 1) * 0.35 + least(c.recent_sales_amount / 50000, 1) * 0.25) * 25
+            + least(greatest(c.rank_improve_ratio, 0), 0.5) / 0.5 * 20
+            + case when c.calc_sellable_days < 14 then 0 when c.calc_sellable_days <= 60 then least((c.calc_sellable_days - 14) / 46, 1) * 20 else 18 end
+            - if(c.current_over_limit_flag = 1, 4, 0)
+            - if(c.tacos > 0.12, 3, 0)
+            - if(c.calc_sellable_days < 14, 2, 0)
+            - if(coalesce(c.recent_margin, 0) < 0.15, 1, 0)
+        ))) as score,
+        round(greatest(c.recent_daily_sales, 0) * least(greatest(c.calc_sellable_days, 0), 30) * 0.15 * if(c.recent_sales_qty > 0, c.recent_sales_amount / c.recent_sales_qty, 0), 4) as estimated_boost_revenue
+    from classified c
+)
+select
+    snapshot_date,
+    comparison_code,
+    'days',
+    comparison_label,
+    recent_start,
+    recent_end,
+    previous_start,
+    previous_end,
+    '',
+    '',
+    item_key,
+    seller_name_new,
+    seller_name,
+    seller_sku_adj,
+    country_category,
+    country,
+    local_sku,
+    filter_flag,
+    current_over_limit_flag,
+    opportunity_types,
+    opportunity_primary_type,
+    score,
+    opportunity_stock_status,
+    recent_sales_qty,
+    previous_sales_qty,
+    recent_daily_sales,
+    previous_daily_sales,
+    sales_change_rate,
+    recent_sales_amount,
+    previous_sales_amount,
+    recent_order_gross_profit,
+    previous_order_gross_profit,
+    recent_margin,
+    previous_margin,
+    recent_rank,
+    previous_rank,
+    calc_rank_delta,
+    fba_sellable_inventory,
+    calc_sellable_days,
+    current_price,
+    limit_price,
+    limit_price_10,
+    ad_spend,
+    ad_sales,
+    acos,
+    tacos,
+    estimated_boost_revenue,
+    now(),
+    now()
+from opportunity
+where opportunity_types <> '';
+"""
+
+INSERT_OPPORTUNITY_COMPARISON_FROM_MONTH_SQL = """
+insert into etl_datasync.dashboard_opportunity_comparison_snapshot (
+    snapshot_date, comparison_code, comparison_mode, comparison_label,
+    recent_start, recent_end, previous_start, previous_end, previous_month, recent_month,
+    item_key, seller_name_new, seller_name, seller_sku_adj, country_category, country, local_sku,
+    filter_flag, over_limit_flag, opportunity_types, primary_type, score, stock_status,
+    recent_sales_qty, previous_sales_qty, recent_daily_sales, previous_daily_sales, sales_change_rate,
+    recent_sales_amount, previous_sales_amount, recent_order_gross_profit, previous_order_gross_profit,
+    recent_margin, previous_margin, recent_rank, previous_rank, rank_delta,
+    fba_sellable_inventory, sellable_days, current_price, limit_price, limit_price_10,
+    ad_spend, ad_sales, acos, tacos, estimated_boost_revenue, created_at, updated_at
+)
+with joined as (
+    select
+        coalesce(r.item_key, p.item_key) as item_key,
+        coalesce(r.seller_name_new, p.seller_name_new) as seller_name_new,
+        coalesce(r.seller_name, p.seller_name) as seller_name,
+        coalesce(r.seller_sku_adj, p.seller_sku_adj) as seller_sku_adj,
+        coalesce(r.country_category, p.country_category) as country_category,
+        coalesce(r.country, p.country) as country,
+        coalesce(r.local_sku, p.local_sku) as local_sku,
+        coalesce(r.filter_flag, p.filter_flag, 1) as filter_flag,
+        coalesce(r.over_limit_flag, p.over_limit_flag, 0) as over_limit_flag,
+        coalesce(r.data_start, p.data_start) as recent_start,
+        coalesce(r.data_end, p.data_end) as recent_end,
+        coalesce(p.data_start, r.data_start) as previous_start,
+        coalesce(p.data_end, r.data_end) as previous_end,
+        coalesce(r.sales_qty, 0) as recent_sales_qty,
+        coalesce(p.sales_qty, 0) as previous_sales_qty,
+        coalesce(r.daily_sales, 0) as recent_daily_sales,
+        coalesce(p.daily_sales, 0) as previous_daily_sales,
+        coalesce(r.sales_amount, 0) as recent_sales_amount,
+        coalesce(p.sales_amount, 0) as previous_sales_amount,
+        coalesce(r.order_gross_profit, 0) as recent_order_gross_profit,
+        coalesce(p.order_gross_profit, 0) as previous_order_gross_profit,
+        r.margin as recent_margin,
+        p.margin as previous_margin,
+        r.avg_rank as recent_rank,
+        p.avg_rank as previous_rank,
+        coalesce(r.fba_sellable_inventory, p.fba_sellable_inventory, 0) as fba_sellable_inventory
+    from etl_datasync.dashboard_alert_monthly_metric_snapshot r
+    left join etl_datasync.dashboard_alert_monthly_metric_snapshot p
+      on p.snapshot_date = r.snapshot_date
+     and p.item_key = r.item_key
+     and p.month_code = %(previous_month)s
+    where r.snapshot_date = %(snapshot_date)s
+      and r.month_code = %(recent_month)s
+    union all
+    select
+        p.item_key, p.seller_name_new, p.seller_name, p.seller_sku_adj, p.country_category, p.country, p.local_sku,
+        p.filter_flag, p.over_limit_flag, p.data_start, p.data_end, p.data_start, p.data_end,
+        0, p.sales_qty, 0, p.daily_sales, 0, p.sales_amount, 0, p.order_gross_profit,
+        null, p.margin, null, p.avg_rank, p.fba_sellable_inventory
+    from etl_datasync.dashboard_alert_monthly_metric_snapshot p
+    left join etl_datasync.dashboard_alert_monthly_metric_snapshot r
+      on r.snapshot_date = p.snapshot_date
+     and r.item_key = p.item_key
+     and r.month_code = %(recent_month)s
+    where p.snapshot_date = %(snapshot_date)s
+      and p.month_code = %(previous_month)s
+      and r.item_key is null
+),
+source_rows as (
+    select
+        j.*,
+        coalesce(ps.current_price, 0) as current_price,
+        coalesce(ps.limit_price, 0) as limit_price,
+        coalesce(ps.limit_price_10, 0) as limit_price_10,
+        coalesce(ps.over_limit_flag, j.over_limit_flag, 0) as current_over_limit_flag,
+        coalesce(ps.ad_spend, 0) as ad_spend,
+        coalesce(ps.ad_sales, 0) as ad_sales,
+        coalesce(ps.acos, 0) as acos,
+        coalesce(ps.tacos, 0) as tacos
+    from joined j
+    left join (
+        select
+            item_key,
+            max(current_price) as current_price,
+            max(limit_price) as limit_price,
+            max(limit_price_10) as limit_price_10,
+            max(over_limit_flag) as over_limit_flag,
+            max(ad_spend) as ad_spend,
+            max(ad_sales) as ad_sales,
+            max(acos) as acos,
+            max(tacos) as tacos
+        from etl_datasync.dashboard_product_period_90d_snapshot
+        where snapshot_date = %(snapshot_date)s
+        group by item_key
+    ) ps
+      on ps.item_key = j.item_key
+    where j.filter_flag = 1
+),
+classified as (
+    select
+        s.*,
+        case when coalesce(s.recent_daily_sales, 0) > 0 then coalesce(s.fba_sellable_inventory, 0) / s.recent_daily_sales else 0 end as calc_sellable_days,
+        case when s.previous_rank is not null and s.recent_rank is not null then s.previous_rank - s.recent_rank else 0 end as calc_rank_delta,
+        case when s.previous_rank is not null and s.previous_rank > 0 and s.recent_rank is not null then (s.previous_rank - s.recent_rank) / s.previous_rank else 0 end as rank_improve_ratio,
+        case when s.previous_daily_sales <> 0 then (s.recent_daily_sales - s.previous_daily_sales) / abs(s.previous_daily_sales) when s.recent_daily_sales > 0 then 1 else 0 end as sales_change_rate
+    from source_rows s
+),
+opportunity as (
+    select
+        c.*,
+        concat_ws(',',
+            if(coalesce(c.recent_margin, 0) >= 0.25 and c.recent_daily_sales >= 1 and c.calc_sellable_days >= 21 and c.current_over_limit_flag = 0, 'high_margin_scale', null),
+            if(c.calc_rank_delta >= 5 and c.rank_improve_ratio >= 0.20 and c.calc_sellable_days >= 14, 'rank_improve', null),
+            if(c.calc_sellable_days >= 30 and coalesce(c.recent_margin, 0) >= 0.15 and c.recent_daily_sales >= 0.5 and c.current_over_limit_flag = 0, 'inventory_push', null),
+            if(coalesce(c.recent_margin, 0) >= 0.35 and c.recent_daily_sales < 1 and c.calc_sellable_days >= 21 and c.current_over_limit_flag = 0, 'low_sales_high_margin', null),
+            if((c.tacos <= 0.05 or (c.acos > 0 and c.acos <= 0.20)) and coalesce(c.recent_margin, 0) >= 0.20 and (c.recent_sales_amount > 0 or c.ad_spend > 0), 'ad_efficiency', null)
+        ) as opportunity_types,
+        case
+            when coalesce(c.recent_margin, 0) >= 0.25 and c.recent_daily_sales >= 1 and c.calc_sellable_days >= 21 and c.current_over_limit_flag = 0 then 'high_margin_scale'
+            when c.calc_rank_delta >= 5 and c.rank_improve_ratio >= 0.20 and c.calc_sellable_days >= 14 then 'rank_improve'
+            when c.calc_sellable_days >= 30 and coalesce(c.recent_margin, 0) >= 0.15 and c.recent_daily_sales >= 0.5 and c.current_over_limit_flag = 0 then 'inventory_push'
+            when coalesce(c.recent_margin, 0) >= 0.35 and c.recent_daily_sales < 1 and c.calc_sellable_days >= 21 and c.current_over_limit_flag = 0 then 'low_sales_high_margin'
+            when (c.tacos <= 0.05 or (c.acos > 0 and c.acos <= 0.20)) and coalesce(c.recent_margin, 0) >= 0.20 and (c.recent_sales_amount > 0 or c.ad_spend > 0) then 'ad_efficiency'
+            else 'observe'
+        end as opportunity_primary_type,
+        case when c.calc_sellable_days >= 21 then 'enough' else 'short' end as opportunity_stock_status,
+        round(greatest(0, least(100,
+            least(greatest(coalesce(c.recent_margin, 0), 0) / 0.35, 1) * 25
+            + (least(greatest(c.sales_change_rate, 0), 1) * 0.4 + least(c.recent_daily_sales / 5, 1) * 0.35 + least(c.recent_sales_amount / 50000, 1) * 0.25) * 25
+            + least(greatest(c.rank_improve_ratio, 0), 0.5) / 0.5 * 20
+            + case when c.calc_sellable_days < 14 then 0 when c.calc_sellable_days <= 60 then least((c.calc_sellable_days - 14) / 46, 1) * 20 else 18 end
+            - if(c.current_over_limit_flag = 1, 4, 0)
+            - if(c.tacos > 0.12, 3, 0)
+            - if(c.calc_sellable_days < 14, 2, 0)
+            - if(coalesce(c.recent_margin, 0) < 0.15, 1, 0)
+        ))) as score,
+        round(greatest(c.recent_daily_sales, 0) * least(greatest(c.calc_sellable_days, 0), 30) * 0.15 * if(c.recent_sales_qty > 0, c.recent_sales_amount / c.recent_sales_qty, 0), 4) as estimated_boost_revenue
+    from classified c
+)
+select
+    %(snapshot_date)s,
+    %(comparison_code)s,
+    'month',
+    %(comparison_label)s,
+    recent_start,
+    recent_end,
+    previous_start,
+    previous_end,
+    %(previous_month)s,
+    %(recent_month)s,
+    item_key,
+    seller_name_new,
+    seller_name,
+    seller_sku_adj,
+    country_category,
+    country,
+    local_sku,
+    filter_flag,
+    current_over_limit_flag,
+    opportunity_types,
+    opportunity_primary_type,
+    score,
+    opportunity_stock_status,
+    recent_sales_qty,
+    previous_sales_qty,
+    recent_daily_sales,
+    previous_daily_sales,
+    sales_change_rate,
+    recent_sales_amount,
+    previous_sales_amount,
+    recent_order_gross_profit,
+    previous_order_gross_profit,
+    recent_margin,
+    previous_margin,
+    recent_rank,
+    previous_rank,
+    calc_rank_delta,
+    fba_sellable_inventory,
+    calc_sellable_days,
+    current_price,
+    limit_price,
+    limit_price_10,
+    ad_spend,
+    ad_sales,
+    acos,
+    tacos,
+    estimated_boost_revenue,
+    now(),
+    now()
+from opportunity
+where opportunity_types <> '';
+"""
+
+DELETE_OPPORTUNITY_COMPARISON_SUMMARY_SQL = """
+delete from etl_datasync.dashboard_opportunity_comparison_summary
+where snapshot_date = %(snapshot_date)s
+  and comparison_code = %(comparison_code)s;
+"""
+
+INSERT_OPPORTUNITY_COMPARISON_SUMMARY_SQL = """
+insert into etl_datasync.dashboard_opportunity_comparison_summary (
+    snapshot_date, comparison_code, country, seller_name_new,
+    opportunity_type, stock_status, opportunity_count, estimated_boost_revenue,
+    created_at, updated_at
+)
+select
+    snapshot_date,
+    comparison_code,
+    country,
+    seller_name_new,
+    primary_type,
+    stock_status,
+    count(*) as opportunity_count,
+    sum(estimated_boost_revenue) as estimated_boost_revenue,
+    now(),
+    now()
+from etl_datasync.dashboard_opportunity_comparison_snapshot
+where snapshot_date = %(snapshot_date)s
+  and comparison_code = %(comparison_code)s
+group by snapshot_date, comparison_code, country, seller_name_new, primary_type, stock_status;
+"""
+
+DELETE_OLD_OPPORTUNITY_COMPARISON_SNAPSHOT_SQL = """
+delete from etl_datasync.dashboard_opportunity_comparison_snapshot
+where snapshot_date not in (
+    select snapshot_date
+    from (
+        select distinct snapshot_date
+        from etl_datasync.dashboard_opportunity_comparison_snapshot
+        order by snapshot_date desc
+        limit %(period_snapshot_retention_days)s
+    ) keep_dates
+);
+"""
+
+DELETE_OLD_OPPORTUNITY_COMPARISON_SUMMARY_SQL = """
+delete from etl_datasync.dashboard_opportunity_comparison_summary
+where snapshot_date not in (
+    select snapshot_date
+    from (
+        select distinct snapshot_date
+        from etl_datasync.dashboard_opportunity_comparison_summary
         order by snapshot_date desc
         limit %(period_snapshot_retention_days)s
     ) keep_dates
@@ -2231,6 +2700,8 @@ DDL_STATEMENTS = (
     CREATE_MATRIX_PERIOD_SNAPSHOT_SQL,
     CREATE_ALERT_COMPARISON_SNAPSHOT_SQL,
     CREATE_ALERT_COMPARISON_SUMMARY_SQL,
+    CREATE_OPPORTUNITY_COMPARISON_SNAPSHOT_SQL,
+    CREATE_OPPORTUNITY_COMPARISON_SUMMARY_SQL,
     CREATE_ALERT_MONTHLY_METRIC_SNAPSHOT_SQL,
     CREATE_MONTHLY_GOAL_SQL,
     CREATE_MONTHLY_GOAL_ACTUAL_SNAPSHOT_SQL,
@@ -2364,6 +2835,7 @@ STEPS = {
     "period_preset_snapshots": PeriodPresetStep("period_preset_snapshots"),
     "alert_comparison_snapshots": AlertComparisonStep("alert_comparison_snapshots"),
     "alert_monthly_metric_snapshots": AlertMonthlyMetricStep("alert_monthly_metric_snapshots"),
+    "opportunity_comparison_snapshots": OpportunityComparisonStep("opportunity_comparison_snapshots"),
     "price_review_source_load": PriceReviewStep("price_review_source_load"),
     "price_review_tracking": PriceReviewStep("price_review_tracking"),
 }
@@ -2653,6 +3125,32 @@ def build_alert_monthly_metric_params(params: dict[str, object]) -> list[dict[st
     return result
 
 
+def build_opportunity_comparison_month_params(params: dict[str, object]) -> list[dict[str, object]]:
+    biz_date = params["biz_date"]
+    if not isinstance(biz_date, date):
+        raise RuntimeError("biz_date must be a date")
+
+    month_codes = [f"{biz_date.year}-{month:02d}" for month in range(1, biz_date.month + 1)]
+    result: list[dict[str, object]] = []
+    for previous_month in month_codes:
+        for recent_month in month_codes:
+            if previous_month == recent_month:
+                continue
+            next_params = dict(params)
+            next_params.update(
+                {
+                    "comparison_code": f"{previous_month}_vs_{recent_month}",
+                    "comparison_label": f"{previous_month} vs {recent_month}",
+                    "comparison_type": "month",
+                    "comparison_mode": "month",
+                    "previous_month": previous_month,
+                    "recent_month": recent_month,
+                }
+            )
+            result.append(next_params)
+    return result
+
+
 def execute_period_preset_step(
     conn,
     schemas: SchemaConfig,
@@ -2723,6 +3221,39 @@ def execute_alert_monthly_metric_step(
         )
         execute_target_step(conn, schemas, sub_step, month_params)
     cleanup_alert_monthly_metric_retention(conn, schemas, params)
+
+
+def execute_opportunity_comparison_step(
+    conn,
+    schemas: SchemaConfig,
+    step: OpportunityComparisonStep,
+    params: dict[str, object],
+) -> None:
+    for comparison_params in build_alert_comparison_params(params):
+        sub_step = SqlStep(
+            f"{step.name}.{comparison_params['comparison_code']}",
+            (
+                DELETE_OPPORTUNITY_COMPARISON_SNAPSHOT_SQL,
+                INSERT_OPPORTUNITY_COMPARISON_FROM_ALERT_SQL,
+                DELETE_OPPORTUNITY_COMPARISON_SUMMARY_SQL,
+                INSERT_OPPORTUNITY_COMPARISON_SUMMARY_SQL,
+            ),
+        )
+        execute_target_step(conn, schemas, sub_step, comparison_params)
+
+    for month_params in build_opportunity_comparison_month_params(params):
+        sub_step = SqlStep(
+            f"{step.name}.{month_params['comparison_code']}",
+            (
+                DELETE_OPPORTUNITY_COMPARISON_SNAPSHOT_SQL,
+                INSERT_OPPORTUNITY_COMPARISON_FROM_MONTH_SQL,
+                DELETE_OPPORTUNITY_COMPARISON_SUMMARY_SQL,
+                INSERT_OPPORTUNITY_COMPARISON_SUMMARY_SQL,
+            ),
+        )
+        execute_target_step(conn, schemas, sub_step, month_params)
+
+    cleanup_opportunity_comparison_retention(conn, schemas, params)
 
 
 def cleanup_period_snapshot_retention(
@@ -2831,6 +3362,40 @@ def cleanup_alert_monthly_metric_retention(conn, schemas: SchemaConfig, params: 
         raise
 
 
+def cleanup_opportunity_comparison_retention(conn, schemas: SchemaConfig, params: dict[str, object]) -> None:
+    cleanup_params = dict(params)
+    cleanup_params["period_snapshot_retention_days"] = PERIOD_SNAPSHOT_RETENTION_DAYS
+    started_at = datetime.now()
+    affected_rows = 0
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(render_sql(DELETE_OLD_OPPORTUNITY_COMPARISON_SNAPSHOT_SQL, schemas), cleanup_params)
+            affected_rows += max(cursor.rowcount, 0)
+            cursor.execute(render_sql(DELETE_OLD_OPPORTUNITY_COMPARISON_SUMMARY_SQL, schemas), cleanup_params)
+            affected_rows += max(cursor.rowcount, 0)
+        conn.commit()
+        log_task(conn, schemas, "opportunity_comparison_snapshots.retention_cleanup", params, "success", affected_rows, started_at)
+        print(
+            "[success] opportunity_comparison_snapshots.retention_cleanup: "
+            f"kept_latest_snapshot_dates={PERIOD_SNAPSHOT_RETENTION_DAYS}, affected_rows={affected_rows}"
+        )
+    except Exception:
+        conn.rollback()
+        error = traceback.format_exc()
+        log_task(
+            conn,
+            schemas,
+            "opportunity_comparison_snapshots.retention_cleanup",
+            params,
+            "failed",
+            affected_rows,
+            started_at,
+            error,
+        )
+        print("[failed] opportunity_comparison_snapshots.retention_cleanup", file=sys.stderr)
+        raise
+
+
 def execute_source_load_step(
     target_conn,
     source_conn,
@@ -2859,6 +3424,8 @@ def execute_source_load_step(
                     target_cursor.executemany(target_insert_sql, rows)
                     affected_rows += len(rows)
 
+            if step.name == "product_performance_daily":
+                validate_product_performance_result(target_conn, schemas, params)
             target_conn.commit()
             log_task(target_conn, schemas, step.name, params, "success", affected_rows, started_at)
             print(f"[success] {step.name}: affected_rows={affected_rows}")
@@ -2875,6 +3442,38 @@ def execute_source_load_step(
                 file=sys.stderr,
             )
             ensure_live_source_connection(source_conn)
+
+
+def validate_product_performance_result(
+    conn,
+    schemas: SchemaConfig,
+    params: dict[str, object],
+) -> int:
+    with conn.cursor() as cursor:
+        cursor.execute(
+            render_sql(
+                """
+                select count(*) as row_count
+                from etl_datasync.dashboard_product_performance_daily
+                where dt_date = %(biz_date)s
+                """,
+                schemas,
+            ),
+            params,
+        )
+        row = cursor.fetchone() or {}
+    row_count = int(row.get("row_count") or 0)
+    if row_count <= 0:
+        raise RuntimeError(
+            "Business result validation failed: "
+            f"product_performance_daily biz_date={params['biz_date']} has 0 rows. "
+            "The remote product-performance source is not ready."
+        )
+    print(
+        "[success] product_performance_business_result: "
+        f"biz_date={params['biz_date']} rows={row_count}"
+    )
+    return row_count
 
 
 def product_daily_is_empty(conn, schemas: SchemaConfig) -> bool:
@@ -3023,7 +3622,8 @@ def main() -> None:
         help="Comma separated step names or all. "
         "Available: product_performance_daily, monthly_goal_actual_snapshot, goal_dimension_snapshot, annual_goal_snapshot, restock_snapshot, inventory_snapshot, inventory_weekly_snapshot, inventory_weekly_remote_snapshot, "
         "listing_price_snapshot, limit_price_snapshot, period_snapshot, period_preset_snapshots, "
-        "alert_comparison_snapshots, alert_monthly_metric_snapshots, price_review_source_load, price_review_tracking.",
+        "alert_comparison_snapshots, alert_monthly_metric_snapshots, "
+        "opportunity_comparison_snapshots, price_review_source_load, price_review_tracking.",
     )
     parser.add_argument("--skip-ddl", action="store_true", help="Do not create target tables before running.")
     parser.add_argument("--batch-size", type=int, default=1000, help="Rows per local bulk insert from read-only source.")
@@ -3076,6 +3676,8 @@ def main() -> None:
                 execute_alert_comparison_step(target_conn, schemas, step, params)
             elif isinstance(step, AlertMonthlyMetricStep):
                 execute_alert_monthly_metric_step(target_conn, schemas, step, params)
+            elif isinstance(step, OpportunityComparisonStep):
+                execute_opportunity_comparison_step(target_conn, schemas, step, params)
             elif isinstance(step, PriceReviewStep):
                 if step.name != "price_review_tracking":
                     if source_conn is None:

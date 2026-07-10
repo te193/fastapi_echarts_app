@@ -3,6 +3,10 @@
   var query = new URLSearchParams(window.location.search);
   var state = app.readQueryState();
   state.compare_days = Number(query.get("compare_days") || 14);
+  state.comparison_code = query.get("comparison_code") || ("d" + (state.compare_days || 14));
+  state.comparison_mode = query.get("comparison_mode") || "days";
+  state.previous_month = query.get("previous_month") || "";
+  state.recent_month = query.get("recent_month") || "";
   state.opportunity_type = query.get("opportunity_type") || "all";
   state.stock_status = query.get("stock_status") || "all";
   state.over_limit = query.get("over_limit") || "no";
@@ -14,6 +18,7 @@
   var elements = {};
   var renderToken = 0;
   var charts = {};
+  var activeMonthTarget = "previous";
   var typeDefs = [
     { key: "all", label: "全部机会", tone: "neutral" },
     { key: "high_margin_scale", label: "高毛利可放量", tone: "positive" },
@@ -40,6 +45,9 @@
     [
       "compareDaysSelect", "siteSelect", "storeSelect", "opportunityTypeSelect",
       "stockStatusSelect", "overLimitSelect", "keywordInput", "clearFiltersBtn",
+      "monthCompareControl", "monthCompareToggleBtn", "previousMonthInput", "recentMonthInput",
+      "previousMonthValue", "recentMonthValue", "monthPickerGrid", "monthPickerYearLabel",
+      "applyMonthCompareBtn", "cancelMonthCompareBtn",
       "opportunityPeriodHint", "opportunityStatsGrid", "opportunityTypeTabs",
       "opportunityAnalysisPanel", "opportunityTableCard", "paginationInfo", "paginationNumbers", "prevPageBtn", "nextPageBtn"
     ].forEach(function (id) {
@@ -51,9 +59,13 @@
     app.setSelectOptions(elements.siteSelect, meta.sites, "全部站点");
     app.setSelectOptions(elements.storeSelect, meta.stores, "全部店铺");
     elements.compareDaysSelect.innerHTML = [
-      '<option value="7">近7天 vs 前7天</option>',
-      '<option value="14">近14天 vs 前14天</option>',
-      '<option value="30">近30天 vs 前30天</option>'
+      '<optgroup label="固定天数">',
+      '<option value="d7">近7天 vs 前7天</option>',
+      '<option value="d14">近14天 vs 前14天</option>',
+      '<option value="d30">近30天 vs 前30天</option>',
+      '<option value="d60">近60天 vs 前60天</option>',
+      '<option value="d90">近90天 vs 前90天</option>',
+      '</optgroup>'
     ].join("");
     elements.opportunityTypeSelect.innerHTML = typeDefs.map(function (item) {
       return '<option value="' + app.escapeHtml(item.key) + '">' + app.escapeHtml(item.label) + '</option>';
@@ -71,7 +83,17 @@
   }
 
   function syncControls() {
-    elements.compareDaysSelect.value = String(state.compare_days || 14);
+    elements.compareDaysSelect.value = state.comparison_code || ("d" + (state.compare_days || 14));
+    if (elements.previousMonthValue) elements.previousMonthValue.textContent = formatMonthLabel(state.previous_month);
+    if (elements.recentMonthValue) elements.recentMonthValue.textContent = formatMonthLabel(state.recent_month);
+    if (elements.previousMonthInput) elements.previousMonthInput.classList.toggle("active", activeMonthTarget === "previous");
+    if (elements.recentMonthInput) elements.recentMonthInput.classList.toggle("active", activeMonthTarget === "recent");
+    if (elements.monthCompareToggleBtn) {
+      elements.monthCompareToggleBtn.classList.toggle("active", state.comparison_mode === "month");
+      elements.monthCompareToggleBtn.textContent = state.comparison_mode === "month" && state.previous_month && state.recent_month
+        ? state.previous_month + " vs " + state.recent_month
+        : "月份对比";
+    }
     elements.siteSelect.value = state.site || "all";
     elements.storeSelect.value = state.store || "all";
     elements.opportunityTypeSelect.value = state.opportunity_type || "all";
@@ -82,7 +104,7 @@
 
   function bindEvents() {
     [
-      ["compareDaysSelect", "compare_days"],
+      ["compareDaysSelect", "comparison_code"],
       ["siteSelect", "site"],
       ["storeSelect", "store"],
       ["opportunityTypeSelect", "opportunity_type"],
@@ -91,12 +113,86 @@
     ].forEach(function (pair) {
       if (!elements[pair[0]]) return;
       elements[pair[0]].addEventListener("change", function () {
-        state[pair[1]] = pair[1] === "compare_days" ? Number(this.value || 14) : this.value;
+        if (pair[1] === "comparison_code") {
+          state.comparison_code = this.value || "d14";
+          if (/^d\d+$/.test(state.comparison_code)) state.compare_days = Number(state.comparison_code.slice(1));
+          state.comparison_mode = "days";
+        } else {
+          state[pair[1]] = this.value;
+        }
         state.page = 1;
         syncControls();
         render();
       });
     });
+
+    if (elements.previousMonthInput) {
+      elements.previousMonthInput.addEventListener("click", function (event) {
+        event.stopPropagation();
+        activeMonthTarget = "previous";
+        renderMonthPickerGrid();
+        syncControls();
+      });
+    }
+
+    if (elements.recentMonthInput) {
+      elements.recentMonthInput.addEventListener("click", function (event) {
+        event.stopPropagation();
+        activeMonthTarget = "recent";
+        renderMonthPickerGrid();
+        syncControls();
+      });
+    }
+
+    if (elements.monthPickerGrid) {
+      elements.monthPickerGrid.addEventListener("click", function (event) {
+        var button = event.target.closest("[data-month-code]");
+        if (!button || button.disabled) return;
+        if (activeMonthTarget === "recent") {
+          state.recent_month = button.dataset.monthCode;
+        } else {
+          state.previous_month = button.dataset.monthCode;
+        }
+        if (state.previous_month === state.recent_month) {
+          activeMonthTarget = activeMonthTarget === "recent" ? "previous" : "recent";
+        }
+        renderMonthPickerGrid();
+        syncControls();
+      });
+    }
+
+    if (elements.monthCompareToggleBtn) {
+      elements.monthCompareToggleBtn.addEventListener("click", function (event) {
+        event.stopPropagation();
+        toggleMonthPopover();
+      });
+    }
+
+    if (elements.monthCompareControl) {
+      elements.monthCompareControl.addEventListener("click", function (event) {
+        event.stopPropagation();
+      });
+    }
+
+    if (elements.applyMonthCompareBtn) {
+      elements.applyMonthCompareBtn.addEventListener("click", function () {
+        state.comparison_mode = "month";
+        state.page = 1;
+        closeMonthPopover();
+        syncControls();
+        render();
+      });
+    }
+
+    if (elements.cancelMonthCompareBtn) {
+      elements.cancelMonthCompareBtn.addEventListener("click", function () {
+        closeMonthPopover();
+        syncControls();
+      });
+    }
+
+    document.addEventListener("click", closeMonthPopover);
+
     elements.keywordInput.addEventListener("input", function () {
       state.keyword = this.value.trim();
       state.page = 1;
@@ -107,6 +203,10 @@
       state.store = "all";
       state.opportunity_type = "all";
       state.compare_days = 14;
+      state.comparison_code = "d14";
+      state.comparison_mode = "days";
+      state.previous_month = "";
+      state.recent_month = "";
       state.stock_status = "all";
       state.over_limit = "no";
       state.transition_filter = "";
@@ -126,11 +226,13 @@
 
   function render() {
     var token = ++renderToken;
-    app.writeQueryState(state);
+    var requestState = buildOpportunityRequestState();
+    app.writeQueryState(requestState);
     elements.opportunityTableCard.innerHTML = '<div class="empty-state compact">加载中...</div>';
-    app.apiGet("/api/opportunities", state).then(function (payload) {
+    app.apiGet("/api/opportunities", requestState).then(function (payload) {
       if (token !== renderToken) return;
       typeDefs = payload.types || typeDefs;
+      renderComparisonControls(payload);
       renderPeriod(payload);
       renderStats(payload);
       renderTabs(payload);
@@ -142,6 +244,108 @@
       console.error(error);
       elements.opportunityTableCard.innerHTML = '<div class="empty-state compact">加载失败，请稍后重试。</div>';
     });
+  }
+
+  function buildOpportunityRequestState() {
+    var params = Object.assign({}, state);
+    if (params.comparison_mode === "month") {
+      delete params.comparison_code;
+      delete params.compare_days;
+    } else {
+      params.comparison_mode = "days";
+      delete params.previous_month;
+      delete params.recent_month;
+    }
+    return params;
+  }
+
+  function openMonthPopover() {
+    if (!elements.monthCompareControl) return;
+    renderMonthPickerGrid();
+    elements.monthCompareControl.hidden = false;
+  }
+
+  function closeMonthPopover() {
+    if (elements.monthCompareControl) elements.monthCompareControl.hidden = true;
+  }
+
+  function toggleMonthPopover() {
+    if (!elements.monthCompareControl) return;
+    if (elements.monthCompareControl.hidden) openMonthPopover();
+    else closeMonthPopover();
+  }
+
+  function renderComparisonControls(payload) {
+    var options = payload.available_comparisons || [];
+    var dayOptions = options.filter(function (item) { return item.type === "days"; });
+    if (dayOptions.length && elements.compareDaysSelect) {
+      var html = ['<optgroup label="固定天数">'];
+      dayOptions.forEach(function (item) {
+        html.push('<option value="' + app.escapeHtml(item.code) + '">' + app.escapeHtml(item.label) + '</option>');
+      });
+      html.push('</optgroup>');
+      elements.compareDaysSelect.innerHTML = html.join("");
+    }
+    if ((payload.comparison_mode || "days") !== "month") {
+      state.comparison_code = payload.comparison_code || state.comparison_code || "d14";
+    }
+    if (/^d\d+$/.test(state.comparison_code || "")) state.compare_days = Number(state.comparison_code.slice(1));
+    state.comparison_mode = payload.comparison_mode || state.comparison_mode || "days";
+    renderMonthControls(payload);
+    syncControls();
+  }
+
+  function renderMonthControls(payload) {
+    var months = payload.available_months || state.available_months || [];
+    if (!months.length || !elements.monthPickerGrid) return;
+    state.available_months = months;
+    var codes = months.map(function (item) { return item.code; }).filter(Boolean);
+    if (!codes.length) return;
+    if (payload.previous_month) state.previous_month = payload.previous_month;
+    if (payload.recent_month) state.recent_month = payload.recent_month;
+    if (!state.recent_month || codes.indexOf(state.recent_month) === -1) {
+      state.recent_month = codes[codes.length - 1];
+    }
+    if (!state.previous_month || codes.indexOf(state.previous_month) === -1 || state.previous_month === state.recent_month) {
+      var recentIndex = codes.indexOf(state.recent_month);
+      state.previous_month = codes[Math.max(0, recentIndex - 1)];
+    }
+    renderMonthPickerGrid(months);
+  }
+
+  function formatMonthLabel(code) {
+    if (!code || !/^\d{4}-\d{2}$/.test(code)) return "-";
+    var parts = code.split("-");
+    return parts[0] + "年" + String(Number(parts[1])) + "月";
+  }
+
+  function monthShortLabel(code) {
+    if (!code || !/^\d{4}-\d{2}$/.test(code)) return code || "";
+    return String(Number(code.slice(5, 7))) + "月";
+  }
+
+  function renderMonthPickerGrid(months) {
+    if (!elements.monthPickerGrid) return;
+    months = months || state.available_months || [];
+    if (!months.length) {
+      elements.monthPickerGrid.innerHTML = '<div class="month-picker-empty">暂无可选月份</div>';
+      return;
+    }
+    state.available_months = months;
+    var latestYear = (state.recent_month || months[months.length - 1].code || "").slice(0, 4);
+    if (elements.monthPickerYearLabel) elements.monthPickerYearLabel.textContent = latestYear ? latestYear + " 年可选月份" : "可选月份";
+    elements.monthPickerGrid.innerHTML = months.map(function (item) {
+      var code = item.code;
+      var selected = code === state.previous_month || code === state.recent_month;
+      var role = code === state.previous_month ? "对比" : code === state.recent_month ? "观察" : "";
+      var active = (activeMonthTarget === "previous" && code === state.previous_month) || (activeMonthTarget === "recent" && code === state.recent_month);
+      return [
+        '<button type="button" class="month-picker-option ' + (selected ? "selected " : "") + (active ? "active" : "") + '" data-month-code="' + app.escapeHtml(code) + '">',
+        '  <strong>' + app.escapeHtml(monthShortLabel(code)) + '</strong>',
+        role ? '  <small>' + app.escapeHtml(role) + '</small>' : '  <small>&nbsp;</small>',
+        '</button>'
+      ].join("");
+    }).join("");
   }
 
   function renderPeriod(payload) {
@@ -554,8 +758,13 @@
 
   function exportOpportunities() {
     var params = new URLSearchParams();
-    ["site", "store", "country", "over_limit", "keyword", "opportunity_type", "compare_days", "stock_status", "transition_filter"].forEach(function (key) {
-      var value = state[key];
+    var requestState = buildOpportunityRequestState();
+    [
+      "site", "store", "country", "over_limit", "keyword", "opportunity_type",
+      "compare_days", "comparison_code", "comparison_mode", "previous_month", "recent_month",
+      "stock_status", "transition_filter"
+    ].forEach(function (key) {
+      var value = requestState[key];
       if (value !== undefined && value !== null && value !== "") params.set(key, value);
     });
     window.location.href = "/api/opportunities/export" + (params.toString() ? ("?" + params.toString()) : "");

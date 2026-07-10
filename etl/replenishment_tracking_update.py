@@ -273,6 +273,7 @@ select
     str_to_date(nullif(plan_create_time, ''), '%%Y-%%m-%%d %%H:%%i:%%s') as plan_create_time,
     seller_name,
     case
+        when upper(seller_name) regexp '-EU-[A-Z]{2}$' then substring(seller_name, 1, char_length(seller_name) - 6)
         when seller_name regexp '-[A-Za-z]{2}$' then substring(seller_name, 1, char_length(seller_name) - 3)
         else seller_name
     end as seller_name_norm,
@@ -303,6 +304,7 @@ select
     plan_create_time,
     sname as seller_name,
     case
+        when upper(sname) regexp '-EU-[A-Z]{2}$' then substring(sname, 1, char_length(sname) - 6)
         when sname regexp '-[A-Za-z]{2}$' then substring(sname, 1, char_length(sname) - 3)
         else sname
     end as seller_name_norm,
@@ -395,6 +397,7 @@ select
     from_unixtime(nullif(shipment_time, 0)) as shipment_time,
     sname as seller_name,
     case
+        when upper(sname) regexp '-EU-[A-Z]{2}$' then substring(sname, 1, char_length(sname) - 6)
         when sname regexp '-[A-Za-z]{2}$' then substring(sname, 1, char_length(sname) - 3)
         else sname
     end as seller_name_norm,
@@ -1440,6 +1443,20 @@ def refresh_tracking(conn, snapshot_date: date, tracking_window_days: int) -> di
     return {"snapshot_rows": snapshot_rows, "detail_rows": detail_rows}
 
 
+def validate_tracking_result(
+    snapshot_date: date,
+    tracking_window_days: int,
+    result: dict[str, int],
+) -> None:
+    snapshot_rows = int(result.get("snapshot_rows") or 0)
+    if snapshot_rows <= 0:
+        raise RuntimeError(
+            "Business result validation failed: "
+            f"replenishment tracking snapshot_date={snapshot_date} "
+            f"tracking_window_days={tracking_window_days} has 0 rows."
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Refresh replenishment purchase/shipment tracking tables.")
     parser.add_argument("--snapshot-date", default="", help="补货日期，默认使用最新补货日期")
@@ -1486,6 +1503,7 @@ def main() -> None:
                                 max(100, args.batch_size),
                             )
                         result = refresh_tracking(conn, refresh_date, window_days)
+                        validate_tracking_result(refresh_date, window_days, result)
                         totals["runs"] += 1
                         totals["snapshot_rows"] += result["snapshot_rows"]
                         totals["detail_rows"] += result["detail_rows"]
@@ -1525,6 +1543,7 @@ def main() -> None:
                         max(100, args.batch_size),
                     )
             result = refresh_tracking(conn, selected_date, args.tracking_window_days)
+            validate_tracking_result(selected_date, args.tracking_window_days, result)
             print(
                 f"[success] replenishment_tracking snapshot_date={selected_date} "
                 f"tracking_window_days={args.tracking_window_days} "

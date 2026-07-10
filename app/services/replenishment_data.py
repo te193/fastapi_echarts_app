@@ -19,7 +19,10 @@ LEVEL_PLANNED = "\u8ba1\u5212\u8865\u8d27"
 LEVEL_SUFFICIENT = "\u5e93\u5b58\u5145\u8db3"
 LEVEL_ZERO_SALES = "\u65e5\u9500\u4e3a0"
 LEVEL_HISTORY_RECOVERY = "\u5386\u53f2\u515c\u5e95"
+LEVEL_FOLLOWED_BLOCK = "\u88ab\u8ddf\u5356\u70b9\u4e0d\u8865\u8d27"
 LEVEL_UNKNOWN = "\u672a\u5206\u5c42"
+ASIN_MERGE_CONSOLIDATED_BLOCK = "\u540cASIN\u5df2\u5408\u5e76\u81f3\u4e3b\u94fe\u63a5"
+ASIN_MERGE_SUFFICIENT_BLOCK = "\u540cASIN\u5e93\u5b58\u5145\u8db3\u4e0d\u8865\u8d27"
 COUNTRY_METRIC_PERIODS = {7, 14, 30, 90}
 PRODUCT_CATEGORY_PERIODS = {7, 14, 30, 90, 180}
 MARGIN_PRICE_TARGETS = (35, 30, 25, 20, 15, 10, 5, 0)
@@ -171,6 +174,13 @@ REPLENISHMENT_COLUMN_LABELS = {
     "amz_instock_sales_ratio": "亚马逊有货销售占比",
     "instock_intrans_pur_sales_ratio": "有货在途采购销售占比",
     "fllow_flag": "是否跟卖",
+    "followed_flag": "是否被跟卖",
+    "followed_by_count": "被跟卖方数量",
+    "followed_by_links": "被跟卖方",
+    "replenish_block_reason": "不补货原因",
+    "asin_merge_flag": "是否ASIN合并",
+    "asin_merge_target": "ASIN合并目标",
+    "asin_merge_reason": "ASIN合并原因",
     "created_at": "创建时间",
     "updated_at": "更新时间",
 }
@@ -208,6 +218,10 @@ def to_int(value: Any) -> int:
 
 def format_follow_status(value: Any) -> str:
     return "是" if to_int(value) == 0 else "否"
+
+
+def format_yes_no_status(value: Any) -> str:
+    return "是" if to_int(value) == 1 else "否"
 
 
 def format_day(value: date | None) -> str | None:
@@ -625,16 +639,10 @@ class ReplenishmentDataService:
         category_expr: str | None = None,
     ) -> tuple[str, dict[str, Any]]:
         clauses = ["cur_date = %(snapshot_date)s"]
-        params: dict[str, Any] = {"snapshot_date": snapshot_date, "level_history_recovery": LEVEL_HISTORY_RECOVERY}
+        params: dict[str, Any] = self._with_display_level_params({"snapshot_date": snapshot_date})
         if level and level != "all":
-            if level == LEVEL_HISTORY_RECOVERY:
-                clauses.append(self._history_recovery_display_condition())
-            elif level in REPLENISHMENT_PASSIVE_LEVELS:
-                clauses.append(f"support_replenish_level = %(level)s and not ({self._history_recovery_display_condition()})")
-                params["level"] = level
-            else:
-                clauses.append("support_replenish_level = %(level)s")
-                params["level"] = level
+            clauses.append(f"{self._display_level_expr()} = %(level)s")
+            params["level"] = level
         if category and category != "all" and category_expr:
             clauses.append(f"coalesce({category_expr}, '未分类') = %(category)s")
             params["category"] = category
@@ -671,6 +679,7 @@ class ReplenishmentDataService:
         display_replenish_qty_expr = self._display_replenish_qty_expr()
         display_replenish_box_qty_expr = self._display_replenish_box_qty_expr()
         display_replenish_cost_expr = self._display_replenish_cost_expr()
+        calc_pool_condition = self._calc_pool_condition()
         with conn.cursor() as cursor:
             cursor.execute(
                 f"""
@@ -678,7 +687,7 @@ class ReplenishmentDataService:
                     count(*) as sku_count,
                     count(*) as all_msku_count,
                     count(*) as detail_row_count,
-                    sum(case when support_replenish_level_sort in (1, 2, 3) then 1 else 0 end) as calc_msku_count,
+                    sum(case when {calc_pool_condition} then 1 else 0 end) as calc_msku_count,
                     sum({display_replenish_qty_expr}) as replenish_qty,
                     sum({display_replenish_box_qty_expr}) as replenish_box_qty,
                     sum({display_replenish_cost_expr}) as replenish_cost,
@@ -717,6 +726,7 @@ class ReplenishmentDataService:
         display_level_sort_expr = self._display_level_sort_expr()
         display_replenish_qty_expr = self._display_replenish_qty_expr()
         display_replenish_cost_expr = self._display_replenish_cost_expr()
+        calc_pool_condition = self._calc_pool_condition()
         query_params = self._with_display_level_params(params)
         with conn.cursor() as cursor:
             cursor.execute(
@@ -727,7 +737,7 @@ class ReplenishmentDataService:
                     count(*) as sku_count,
                     count(*) as all_msku_count,
                     count(*) as detail_row_count,
-                    sum(case when support_replenish_level_sort in (1, 2, 3) then 1 else 0 end) as calc_msku_count,
+                    sum(case when {calc_pool_condition} then 1 else 0 end) as calc_msku_count,
                     sum({display_replenish_qty_expr}) as replenish_qty,
                     sum({display_replenish_cost_expr}) as replenish_cost,
                     avg(inventory_support_days) as avg_support_days
@@ -806,6 +816,13 @@ class ReplenishmentDataService:
             for row in rows
         ]
 
+    def _calc_pool_condition(self, prefix: str = "") -> str:
+        return (
+            f"{prefix}support_replenish_level_sort in (1, 2, 3) "
+            f"and not (coalesce({prefix}asin_merge_flag, 0) = 1 "
+            f"and coalesce({prefix}replenish_qty, 0) = 0)"
+        )
+
     def _level_flow_summary(
         self,
         conn,
@@ -870,17 +887,31 @@ class ReplenishmentDataService:
             f"and coalesce({prefix}support_replenish_level_sort, 99) not in (1, 2, 3)"
         )
 
+    def _asin_merge_zero_qty_display_condition(self, alias: str = "") -> str:
+        prefix = f"{alias}." if alias else ""
+        return (
+            f"coalesce({prefix}asin_merge_flag, 0) = 1 "
+            f"and coalesce({prefix}replenish_qty, 0) = 0 "
+            f"and not ({self._followed_block_display_condition(alias)})"
+        )
+
+    def _followed_block_display_condition(self, alias: str = "") -> str:
+        prefix = f"{alias}." if alias else ""
+        return f"{prefix}replenish_block_reason = %(level_followed_block)s"
+
     def _display_level_expr(self, alias: str = "") -> str:
         prefix = f"{alias}." if alias else ""
         return (
-            f"case when {self._history_recovery_display_condition(alias)} "
+            f"case when {self._asin_merge_zero_qty_display_condition(alias)} "
+            f"then %(level_sufficient)s when {self._history_recovery_display_condition(alias)} "
             f"then %(level_history_recovery)s else {prefix}support_replenish_level end"
         )
 
     def _display_level_sort_expr(self, alias: str = "") -> str:
         prefix = f"{alias}." if alias else ""
         return (
-            f"case when {self._history_recovery_display_condition(alias)} "
+            f"case when {self._asin_merge_zero_qty_display_condition(alias)} "
+            f"then 4 when {self._history_recovery_display_condition(alias)} "
             f"then 6 else {prefix}support_replenish_level_sort end"
         )
 
@@ -912,8 +943,57 @@ class ReplenishmentDataService:
             f"else coalesce({prefix}replenish_cost, 0) end"
         )
 
+    def _display_block_reason_expr(self, alias: str = "") -> str:
+        prefix = f"{alias}." if alias else ""
+        current_link_expr = f"concat({prefix}seller_name_new, '/', {prefix}seller_sku_adj)"
+        return (
+            f"case when {self._followed_block_display_condition(alias)} then %(level_followed_block)s "
+            f"when coalesce({prefix}asin_merge_flag, 0) = 1 "
+            f"and coalesce({prefix}replenish_qty, 0) = 0 "
+            f"and coalesce({prefix}asin_merge_target, '') <> '' "
+            f"and {current_link_expr} <> {prefix}asin_merge_target then %(asin_merge_consolidated_block)s "
+            f"when coalesce({prefix}asin_merge_flag, 0) = 1 "
+            f"and coalesce({prefix}replenish_qty, 0) = 0 then %(asin_merge_sufficient_block)s "
+            f"when coalesce({prefix}asin_merge_flag, 0) = 1 then {prefix}asin_merge_reason "
+            f"else {prefix}replenish_block_reason end"
+        )
+
+    def _display_asin_merge_reason_expr(self, alias: str = "") -> str:
+        prefix = f"{alias}." if alias else ""
+        current_link_expr = f"concat({prefix}seller_name_new, '/', {prefix}seller_sku_adj)"
+        return (
+            f"case when coalesce({prefix}asin_merge_flag, 0) = 1 "
+            f"and coalesce({prefix}replenish_qty, 0) = 0 "
+            f"and coalesce({prefix}asin_merge_target, '') <> '' "
+            f"and {current_link_expr} <> {prefix}asin_merge_target then %(asin_merge_consolidated_block)s "
+            f"when coalesce({prefix}asin_merge_flag, 0) = 1 "
+            f"and coalesce({prefix}replenish_qty, 0) = 0 then %(asin_merge_sufficient_block)s "
+            f"else {prefix}asin_merge_reason end"
+        )
+
+    def _display_product_daily_sales_expr(self, period_metrics: dict[str, str], alias: str = "") -> str:
+        prefix = f"{alias}." if alias else ""
+        daily_sales_expr = self._qualify_product_category_expr(period_metrics["daily_sales_expr"], alias) if alias else period_metrics["daily_sales_expr"]
+        group_daily_sales_expr = self._qualify_product_category_expr(period_metrics["daily_sales_expr"], "grp")
+        return (
+            f"case when coalesce({prefix}asin_merge_flag, 0) = 1 then coalesce(("
+            f"select max({group_daily_sales_expr}) "
+            f"from dashboard_pur_plan_replenish_data grp "
+            f"where grp.cur_date = {prefix}cur_date "
+            f"and grp.country_category <=> {prefix}country_category "
+            f"and grp.max_asin <=> {prefix}max_asin"
+            f"), {daily_sales_expr}) else {daily_sales_expr} end"
+        )
+
     def _with_display_level_params(self, params: dict[str, Any]) -> dict[str, Any]:
-        return {**params, "level_history_recovery": LEVEL_HISTORY_RECOVERY}
+        return {
+            **params,
+            "level_history_recovery": LEVEL_HISTORY_RECOVERY,
+            "level_sufficient": LEVEL_SUFFICIENT,
+            "level_followed_block": LEVEL_FOLLOWED_BLOCK,
+            "asin_merge_consolidated_block": ASIN_MERGE_CONSOLIDATED_BLOCK,
+            "asin_merge_sufficient_block": ASIN_MERGE_SUFFICIENT_BLOCK,
+        }
 
     def _level_flow_rows(
         self,
@@ -931,6 +1011,11 @@ class ReplenishmentDataService:
         filters, params = self._level_flow_filters(selected_date, prev_date, category, site, store, keyword)
         prev_category_expr = self._qualify_product_category_expr(category_expr, "p")
         cur_category_expr = self._qualify_product_category_expr(category_expr, "c")
+        prev_level_expr = self._display_level_expr("p")
+        prev_level_sort_expr = self._display_level_sort_expr("p")
+        cur_level_expr = self._display_level_expr("c")
+        cur_level_sort_expr = self._display_level_sort_expr("c")
+        query_params = self._with_display_level_params(params)
         with conn.cursor() as cursor:
             cursor.execute(
                 f"""
@@ -941,10 +1026,10 @@ class ReplenishmentDataService:
                         coalesce(c.seller_name_new, p.seller_name_new) as seller_name_new,
                         coalesce(c.seller_sku_adj, p.seller_sku_adj) as seller_sku_adj,
                         coalesce(c.max_sku, p.max_sku) as max_sku,
-                        p.support_replenish_level as prev_level,
-                        p.support_replenish_level_sort as prev_level_sort,
-                        c.support_replenish_level as cur_level,
-                        c.support_replenish_level_sort as cur_level_sort,
+                        case when p.seller_sku_adj is null then null else {prev_level_expr} end as prev_level,
+                        case when p.seller_sku_adj is null then null else {prev_level_sort_expr} end as prev_level_sort,
+                        {cur_level_expr} as cur_level,
+                        {cur_level_sort_expr} as cur_level_sort,
                         p.replenish_qty as prev_replenish_qty,
                         c.replenish_qty as cur_replenish_qty,
                         p.replenish_cost as prev_replenish_cost,
@@ -980,8 +1065,8 @@ class ReplenishmentDataService:
                         p.seller_name_new,
                         p.seller_sku_adj,
                         p.max_sku,
-                        p.support_replenish_level as prev_level,
-                        p.support_replenish_level_sort as prev_level_sort,
+                        {prev_level_expr} as prev_level,
+                        {prev_level_sort_expr} as prev_level_sort,
                         null as cur_level,
                         null as cur_level_sort,
                         p.replenish_qty as prev_replenish_qty,
@@ -1018,7 +1103,7 @@ class ReplenishmentDataService:
                 where {filters}
                 order by coalesce(cur_level_sort, prev_level_sort, 99), seller_sku_adj
                 """,
-                params,
+                query_params,
             )
             rows = cursor.fetchall()
         return rows
@@ -1035,12 +1120,12 @@ class ReplenishmentDataService:
         clauses = ["1 = 1"]
         params: dict[str, Any] = {"snapshot_date": selected_date, "prev_date": prev_date}
         if category and category != "all":
-            unknown_category = "\u672a\u5206\u7c7b"
             clauses.append(
-                f"(coalesce(cur_category, '{unknown_category}') = %(category)s "
-                f"or coalesce(prev_category, '{unknown_category}') = %(category)s)"
+                "(coalesce(cur_category, %(uncategorized)s) = %(category)s "
+                "or coalesce(prev_category, %(uncategorized)s) = %(category)s)"
             )
             params["category"] = category
+            params["uncategorized"] = "\u672a\u5206\u7c7b"
         if site and site != "all":
             clauses.append("country_category = %(site)s")
             params["site"] = site
@@ -1343,6 +1428,9 @@ class ReplenishmentDataService:
         display_replenish_qty_expr = self._display_replenish_qty_expr()
         display_replenish_box_qty_expr = self._display_replenish_box_qty_expr()
         display_replenish_cost_expr = self._display_replenish_cost_expr()
+        display_product_daily_sales_expr = self._display_product_daily_sales_expr(period_metrics, "r")
+        display_block_reason_expr = self._display_block_reason_expr("r")
+        display_asin_merge_reason_expr = self._display_asin_merge_reason_expr("r")
         sort_map = {
             "level": display_level_sort_expr,
             "country": "country_category",
@@ -1352,7 +1440,7 @@ class ReplenishmentDataService:
             "sku": "max_sku",
             "support_days": "inventory_support_days",
             "daily_sales": "daily_avg_sales",
-            "category_daily_sales_30d": period_metrics["daily_sales_expr"],
+            "category_daily_sales_30d": display_product_daily_sales_expr,
             "profit_rate_30d": period_metrics["margin_col"],
             "available_total": "available_total",
             "stock_up_num": "stock_up_num",
@@ -1364,6 +1452,15 @@ class ReplenishmentDataService:
             "need_qty": "replenish_need_qty",
             "box_qty": display_replenish_box_qty_expr,
             "follow_status": "fllow_flag",
+            "followed_status": "followed_flag",
+            "followed_by_count": "followed_by_count",
+            "followed_by_links": "followed_by_links",
+            "follow_origin_link": "follow_origin_link",
+            "listing_tags": "global_tags",
+            "replenish_block_reason": display_block_reason_expr,
+            "asin_merge_status": "asin_merge_flag",
+            "asin_merge_target": "asin_merge_target",
+            "asin_merge_reason": display_asin_merge_reason_expr,
             "category": period_metrics["category_expr"],
             "margin_range": period_metrics["margin_range_expr"],
         }
@@ -1388,7 +1485,7 @@ class ReplenishmentDataService:
                     seller_sku_adj,
                     max_sku,
                     daily_avg_sales,
-                    {period_metrics["daily_sales_expr"]} as category_daily_sales_30d,
+                    {display_product_daily_sales_expr} as category_daily_sales_30d,
                     {period_metrics["margin_col"]} as pprofit_ratio_30d,
                     inventory_support_days,
                     support_inventory_qty,
@@ -1402,9 +1499,18 @@ class ReplenishmentDataService:
                     {display_replenish_box_qty_expr} as replenish_box_qty,
                     {display_replenish_cost_expr} as replenish_cost,
                     fllow_flag,
+                    followed_flag,
+                    followed_by_count,
+                    followed_by_links,
+                    follow_origin_link,
+                    global_tags,
+                    {display_block_reason_expr} as replenish_block_reason,
+                    asin_merge_flag,
+                    asin_merge_target,
+                    {display_asin_merge_reason_expr} as asin_merge_reason,
                     {period_metrics["category_expr"]} as abcd_category,
                     {period_metrics["margin_range_expr"]} as gp_margin_range
-                from dashboard_pur_plan_replenish_data
+                from dashboard_pur_plan_replenish_data r
                 where {filters}
                 order by {sort_column} {direction}, replenish_qty desc, seller_sku_adj
                 limit %(limit)s offset %(offset)s
@@ -1447,6 +1553,13 @@ class ReplenishmentDataService:
             "need_qty": "replenish_need_qty",
             "box_qty": "replenish_box_qty",
             "follow_status": "fllow_flag",
+            "followed_status": "followed_flag",
+            "followed_by_count": "followed_by_count",
+            "followed_by_links": "followed_by_links",
+            "replenish_block_reason": "replenish_block_reason",
+            "asin_merge_status": "asin_merge_flag",
+            "asin_merge_target": "asin_merge_target",
+            "asin_merge_reason": "asin_merge_reason",
             "category": period_metrics["category_expr"],
             "margin_range": period_metrics["margin_range_expr"],
         }
@@ -1471,6 +1584,10 @@ class ReplenishmentDataService:
         for row in rows:
             if "fllow_flag" in row:
                 row["fllow_flag"] = format_follow_status(row.get("fllow_flag"))
+            if "followed_flag" in row:
+                row["followed_flag"] = format_yes_no_status(row.get("followed_flag"))
+            if "asin_merge_flag" in row:
+                row["asin_merge_flag"] = format_yes_no_status(row.get("asin_merge_flag"))
         return rows
 
     def _export_select_expression(self, column: str, period_metrics: dict[str, str]) -> str:
@@ -1583,7 +1700,9 @@ class ReplenishmentDataService:
         sales_col = PRODUCT_CATEGORY_SALES_COLUMNS[safe_period_days]
         salable_col = f"r_{safe_period_days}d_salable_days"
         margin_col = f"pprofit_ratio_{safe_period_days}d"
-        daily_sales_expr = f"case when {salable_col} > 0 then {sales_col} / {salable_col} else 0 end"
+        salable_floor_days = math.ceil(safe_period_days / 2)
+        effective_salable_days_expr = f"greatest({salable_col}, {salable_floor_days})"
+        daily_sales_expr = f"case when {salable_col} > 0 then {sales_col} / {effective_salable_days_expr} else 0 end"
         category_expr = f"""
             case
                 when ({daily_sales_expr}) >= 5 and {margin_col} >= 0.15 then '明星产品'
@@ -1695,6 +1814,15 @@ class ReplenishmentDataService:
             "box_qty": round(to_float(row.get("replenish_box_qty")), 2),
             "cost": round(to_float(row.get("replenish_cost")), 2),
             "follow_status": format_follow_status(row.get("fllow_flag")),
+            "followed_status": format_yes_no_status(row.get("followed_flag")),
+            "followed_by_count": to_int(row.get("followed_by_count")),
+            "followed_by_links": row.get("followed_by_links"),
+            "follow_origin_link": row.get("follow_origin_link"),
+            "listing_tags": row.get("global_tags"),
+            "replenish_block_reason": row.get("replenish_block_reason"),
+            "asin_merge_status": format_yes_no_status(row.get("asin_merge_flag")),
+            "asin_merge_target": row.get("asin_merge_target"),
+            "asin_merge_reason": row.get("asin_merge_reason"),
             "country_summary": self._country_summary(row),
             "category": row.get("abcd_category"),
             "margin_range": row.get("gp_margin_range"),

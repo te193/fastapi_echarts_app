@@ -86,9 +86,9 @@ _PRODUCT_TYPES = [
 ]
 
 _DROP_RANGES = [
-    "涨价>30%", "涨价20-30%", "涨价15-20%", "涨价10-15%", "涨价5-10%", "涨价0-5%",
+    "降价>30%", "降价20-30%", "降价15-20%", "降价10-15%", "降价5-10%", "降价0-5%",
     "持平",
-    "降价0-5%", "降价5-10%", "降价10-15%", "降价15-20%", "降价20-30%", "降价>30%",
+    "涨价0-5%", "涨价5-10%", "涨价10-15%", "涨价15-20%", "涨价20-30%", "涨价>30%",
 ]
 # Excel real band definitions
 _SALES_BANDS = ["0个", "1-2个", "3-5个", "6-10个", "11-20个", ">20个"]
@@ -161,29 +161,29 @@ def _drop_range_for(ratio: float) -> str:
     if ratio < 0:
         abs_ratio = abs(ratio)
         if abs_ratio <= 0.05:
-            return "涨价0-5%"
+            return "降价0-5%"
         if abs_ratio <= 0.10:
-            return "涨价5-10%"
+            return "降价5-10%"
         if abs_ratio <= 0.15:
-            return "涨价10-15%"
+            return "降价10-15%"
         if abs_ratio <= 0.20:
-            return "涨价15-20%"
+            return "降价15-20%"
         if abs_ratio <= 0.30:
-            return "涨价20-30%"
-        return "涨价>30%"
+            return "降价20-30%"
+        return "降价>30%"
     if ratio == 0:
         return "持平"
     if ratio <= 0.05:
-        return "降价0-5%"
+        return "涨价0-5%"
     if ratio <= 0.10:
-        return "降价5-10%"
+        return "涨价5-10%"
     if ratio <= 0.15:
-        return "降价10-15%"
+        return "涨价10-15%"
     if ratio <= 0.20:
-        return "降价15-20%"
+        return "涨价15-20%"
     if ratio <= 0.30:
-        return "降价20-30%"
-    return "降价>30%"
+        return "涨价20-30%"
+    return "涨价>30%"
 
 
 def _generate_skus(rng: random.Random, adjust_date: date, compare_days: int) -> list[dict[str, Any]]:
@@ -199,11 +199,11 @@ def _generate_skus(rng: random.Random, adjust_date: date, compare_days: int) -> 
 
         # Price before: 5 ~ 120 USD
         price_before = round(rng.uniform(5.0, 120.0), 2)
-        # Drop ratio: most are 5-25%
+        # Adjustment ratio: most are 5-25% price drops.
         drop_ratio = rng.gauss(0.15, 0.08)
         drop_ratio = max(0.01, min(0.45, drop_ratio))
         price_after = _fmt_price(price_before * (1 - drop_ratio))
-        drop_ratio = round((price_before - price_after) / price_before, 4)
+        drop_ratio = round((price_after - price_before) / price_before, 4)
 
         # Sales before: mostly 0-200 with a few outliers
         sales_before = max(0, int(rng.gauss(40, 50)))

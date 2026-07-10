@@ -20,3 +20,7 @@ $ErrorActionPreference = "Stop"
 # Web server.
 # $env:DASHBOARD_HOST = "0.0.0.0"
 # $env:DASHBOARD_PORT = "8000"
+
+# Optional DingTalk robot notifications for scripts\run_daily_update_task.ps1.
+# $env:DASHBOARD_DINGTALK_WEBHOOK = "https://oapi.dingtalk.com/robot/send?access_token=..."
+# $env:DASHBOARD_DINGTALK_SECRET = "SEC..."

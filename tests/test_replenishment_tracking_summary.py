@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 
 from app.services.replenishment_tracking_summary_data import (
@@ -8,6 +9,23 @@ from app.services.replenishment_tracking_summary_data import (
     purchase_status_label,
 )
 from etl import replenishment_tracking_summary_update
+
+
+def test_summary_etl_dry_run_exits_before_database_setup(monkeypatch, capsys):
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("dry-run must not initialize or connect to a database")
+
+    monkeypatch.setattr(replenishment_tracking_summary_update, "apply_database_ini_env", fail_if_called)
+    monkeypatch.setattr(replenishment_tracking_summary_update, "connect_target", fail_if_called)
+    monkeypatch.setattr(replenishment_tracking_summary_update, "connect_source", fail_if_called)
+    monkeypatch.setattr(sys, "argv", ["replenishment_tracking_summary_update", "--dry-run"])
+
+    replenishment_tracking_summary_update.main()
+
+    output = capsys.readouterr().out
+    assert "Replenishment tracking summary ETL plan" in output
+    assert "cutoff_date: latest replenishment date" in output
+    assert "[success] replenishment_tracking_summary dry_run=true writes=0" in output
 
 
 def test_summary_etl_syncs_qc_orders_for_qc_node():
@@ -371,6 +389,43 @@ def test_summary_detail_uses_visible_cutoff_date():
 
     assert "cutoff_date: state.date" not in js
     assert 'cutoff_date: textOf("datePickerValue")' in js
+
+
+def test_tracking_summary_same_day_count_uses_daily_dashboard_display_rules():
+    queries = []
+
+    class Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, params=None):
+            queries.append(" ".join(str(sql).split()))
+
+        def fetchall(self):
+            return []
+
+    class Connection:
+        def cursor(self):
+            return Cursor()
+
+    service = ReplenishmentTrackingSummaryService()
+    service._level_flow(Connection(), "1 = 1", {}, "product_category_30d")
+    sql = queries[0]
+
+    assert "left join dashboard_pur_plan_replenish_data d" in sql
+    assert "d.cur_date = s.cutoff_date" in sql
+    assert "d.support_replenish_level = h.historical_replenishment_level collate utf8mb4_0900_ai_ci" in sql
+    assert "d.country_category = s.country_category collate utf8mb4_0900_ai_ci" in sql
+    assert "d.seller_name_new = s.seller_name_new collate utf8mb4_0900_ai_ci" in sql
+    assert "d.seller_sku_adj = s.seller_sku_adj collate utf8mb4_0900_ai_ci" in sql
+    assert "d.country_category collate utf8mb4_unicode_ci" not in sql
+    assert "coalesce(d.asin_merge_flag, 0) = 1" in sql
+    assert "coalesce(d.replenish_qty, 0) = 0" in sql
+    assert "coalesce(d.replenish_block_reason, '') <> '被跟卖点不补货'" in sql
+    assert "h.is_current_level = 1 and s.latest_replenishment_date = s.cutoff_date" not in sql
 
 
 def test_summary_detail_labels_date_as_cutoff_date():
