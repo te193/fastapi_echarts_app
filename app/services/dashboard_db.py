@@ -291,7 +291,7 @@ class DashboardDbService:
         self.source_port = int(os.getenv("DASHBOARD_SOURCE_DB_PORT", source_config.get("port", str(self.port))))
         self.source_user = os.getenv("DASHBOARD_SOURCE_DB_USER", source_config.get("user", self.user))
         self.source_password = os.getenv("DASHBOARD_SOURCE_DB_PASSWORD", source_config.get("password", self.password))
-        self.source_database = os.getenv("DASHBOARD_SOURCE_DB_NAME", source_config.get("database", self.database))
+        self.source_database = os.getenv("DASHBOARD_SOURCE_DB_NAME", source_config.get("database", "")) or None
         self.source_charset = os.getenv("DASHBOARD_SOURCE_DB_CHARSET", source_config.get("charset", self.charset))
         self.schemas = SchemaConfig(
             target_schema=os.getenv("DASHBOARD_TARGET_SCHEMA", self.database),

@@ -1,5 +1,6 @@
 import sys
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -79,6 +80,16 @@ class SalesRoleLifecycleDataTests(unittest.TestCase):
         self.assertEqual(1, len(rows))
         self.assertEqual(202, rows[0]["lifecycle_label_id"])
         self.assertEqual("potential", rows[0]["sales_role_code"])
+
+    def test_source_connection_does_not_fall_back_to_target_database(self):
+        with patch.dict(
+            "os.environ",
+            {"DASHBOARD_DB_NAME": "etl_datasync_test"},
+            clear=True,
+        ):
+            service = DashboardDbService()
+
+        self.assertIsNone(service.source_database)
 
 
 if __name__ == "__main__":
