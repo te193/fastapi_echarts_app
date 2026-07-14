@@ -13,6 +13,8 @@ $PreflightStdoutLog = Join-Path $LogDir "etl_source_preflight_run_$RunStamp.log"
 $PreflightStderrLog = Join-Path $LogDir "etl_source_preflight_run_$RunStamp.err.log"
 $StdoutLog = Join-Path $LogDir "etl_daily_run_$RunStamp.log"
 $StderrLog = Join-Path $LogDir "etl_daily_run_$RunStamp.err.log"
+$SalesRoleStdoutLog = Join-Path $LogDir "etl_sales_role_run_$RunStamp.log"
+$SalesRoleStderrLog = Join-Path $LogDir "etl_sales_role_run_$RunStamp.err.log"
 $ReplenishmentStdoutLog = Join-Path $LogDir "etl_replenishment_run_$RunStamp.log"
 $ReplenishmentStderrLog = Join-Path $LogDir "etl_replenishment_run_$RunStamp.err.log"
 $ReplenishmentTrackingStdoutLog = Join-Path $LogDir "etl_replenishment_tracking_summary_run_$RunStamp.log"
@@ -114,6 +116,23 @@ if ($ExitCode -ne 0) {
 }
 
 Write-Host "Dashboard ETL finished at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+Write-Host "Sales role ETL started at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+Write-Host "Sales role stdout log : $SalesRoleStdoutLog"
+Write-Host "Sales role stderr log : $SalesRoleStderrLog"
+
+$PreviousErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+& $PythonExe -m etl.sales_role_snapshot_update @args > $SalesRoleStdoutLog 2> $SalesRoleStderrLog
+$SalesRoleExitCode = $LASTEXITCODE
+$ErrorActionPreference = $PreviousErrorActionPreference
+
+if ($SalesRoleExitCode -ne 0) {
+    Send-DashboardDingTalkNotification -Status "failed" -Stage "dashboard" -ExitCode $SalesRoleExitCode -ErrorMessage "Sales role ETL failed with exit code $SalesRoleExitCode."
+    Write-Error "Sales role ETL failed with exit code $SalesRoleExitCode. See $SalesRoleStdoutLog and $SalesRoleStderrLog."
+    exit $SalesRoleExitCode
+}
+
+Write-Host "Sales role ETL finished at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 Write-Host "Replenishment ETL started at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 Write-Host "Replenishment stdout log : $ReplenishmentStdoutLog"
 Write-Host "Replenishment stderr log : $ReplenishmentStderrLog"
@@ -165,5 +184,5 @@ if ($ReturnGoodsExitCode -ne 0) {
 }
 
 Write-Host "Return goods ETL finished at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-Write-Host "Data update strategy includes rolling product refresh, current snapshots, preset period summaries, matrix summaries, replenishment results, replenishment tracking summary, and return goods."
+Write-Host "Data update strategy includes rolling product refresh, current snapshots, preset period summaries, sales role snapshots, matrix summaries, replenishment results, replenishment tracking summary, and return goods."
 Send-DashboardDingTalkNotification -Status "success" -Stage "all" -ExitCode 0

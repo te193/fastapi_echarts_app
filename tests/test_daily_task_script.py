@@ -9,6 +9,7 @@ def test_daily_update_task_runs_tracking_summary_between_replenishment_and_retur
 
     assert "-m etl.dashboard_source_preflight" in script
     assert "-m etl.dashboard_daily_update" in script
+    assert "-m etl.sales_role_snapshot_update" in script
     assert "-m etl.replenishment_update" in script
     assert "-m etl.replenishment_tracking_summary_update" in script
     assert "-m etl.replenishment_tracking_update" not in script
@@ -16,6 +17,7 @@ def test_daily_update_task_runs_tracking_summary_between_replenishment_and_retur
     assert (
         script.index("-m etl.dashboard_source_preflight")
         < script.index("-m etl.dashboard_daily_update")
+        < script.index("-m etl.sales_role_snapshot_update")
         < script.index("-m etl.replenishment_update")
         < script.index("-m etl.replenishment_tracking_summary_update")
         < script.index("-m etl.return_goods_update")
@@ -30,6 +32,8 @@ def test_daily_update_task_writes_separate_tracking_summary_logs():
     assert "etl_source_preflight_run_$RunStamp.err.log" in script
     assert "etl_replenishment_run_$RunStamp.log" in script
     assert "etl_replenishment_run_$RunStamp.err.log" in script
+    assert "etl_sales_role_run_$RunStamp.log" in script
+    assert "etl_sales_role_run_$RunStamp.err.log" in script
     assert "etl_replenishment_tracking_summary_run_$RunStamp.log" in script
     assert "etl_replenishment_tracking_summary_run_$RunStamp.err.log" in script
     assert "etl_return_goods_run_$RunStamp.log" in script
