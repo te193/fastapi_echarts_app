@@ -466,8 +466,23 @@
         state.sort_dir = sorted ? sorted.sort : "desc";
         state.page = 1;
         render();
+      },
+      onCellClicked: function (event) {
+        if (event.column && event.column.getColId() === "label_hub") viewLabelHub(event.data);
       }
     });
+  }
+
+  function viewLabelHub(row) {
+    if (!row) return;
+    var params = new URLSearchParams({
+      country_category: row.country_category || "all",
+      store: row.seller_name_new || "all",
+      keyword: row.seller_sku_adj || ""
+    });
+    var href;
+    href = "/label-hub?" + params.toString();
+    window.location.href = href;
   }
 
   function salesRoleColumns() {
@@ -489,6 +504,7 @@
       { headerName: "广告销售额", field: "ad_sales", width: 126, sort: colSort("ad_sales"), cellClass: "ag-grid-number-cell", valueFormatter: moneyFormatter },
       { headerName: "ACOS", field: "acos", width: 96, sort: colSort("acos"), cellClass: "ag-grid-number-cell", valueFormatter: percentFormatter },
       { headerName: "TACOS", field: "tacos", width: 96, sort: colSort("tacos"), cellClass: "ag-grid-number-cell", valueFormatter: percentFormatter }
+      , { headerName: "标签", colId: "label_hub", width: 108, cellRenderer: function () { return window.kanbanGrid.action("查看全部标签"); } }
     ];
   }
 
@@ -507,6 +523,7 @@
       { headerName: "订单毛利率", field: "order_gross_margin", width: 126, sort: colSort("order_gross_margin"), cellClass: "ag-grid-number-cell", valueFormatter: percentFormatter },
       { headerName: "上架天数", field: "label_period", width: 128, sort: colSort("label_period") },
       { headerName: "销售角色周期", field: "sales_role_period", width: 128, sort: colSort("sales_role_period") }
+      , { headerName: "标签", colId: "label_hub", width: 108, cellRenderer: function () { return window.kanbanGrid.action("查看全部标签"); } }
     ];
   }
 

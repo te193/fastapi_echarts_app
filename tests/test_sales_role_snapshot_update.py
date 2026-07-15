@@ -24,6 +24,19 @@ def test_sales_role_snapshot_uses_full_daily_pool_and_target_grain():
     assert "p.dt_date between %(period_start)s and %(period_end)s" in INSERT_SALES_ROLE_PERIOD_SNAPSHOT_SQL
 
 
+def test_sales_role_snapshot_deduplicates_shared_country_inventory_at_period_end():
+    sql = INSERT_SALES_ROLE_PERIOD_SNAPSHOT_SQL
+
+    assert (
+        "max(case when p.dt_date = %(period_end)s "
+        "then p.afn_fulfillable_quantity else 0 end) as ending_inventory_qty"
+    ) in sql
+    assert (
+        "sum(case when p.dt_date = %(period_end)s "
+        "then p.afn_fulfillable_quantity else 0 end) as ending_inventory_qty"
+    ) not in sql
+
+
 def test_sales_role_snapshot_contains_label_threshold_rules():
     sql = INSERT_SALES_ROLE_PERIOD_SNAPSHOT_SQL
 

@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="sales-role-page label-hub-page">
+  <header class="sales-role-topbar label-hub-topbar">
+    <div>
+      <p class="section-kicker">标签分析</p>
+      <h1>标签看板</h1>
+      <div id="labelHubScope" class="label-hub-scope" aria-live="polite"></div>
+      <p id="labelHubHint" class="sales-role-period"></p>
+    </div>
+    <button id="labelHubClear" class="sales-role-action" type="button">重置筛选</button>
+  </header>
+
+  <section class="sales-role-filter-panel label-hub-filters" aria-label="公共筛选">
+    <div class="sales-role-filter-main label-hub-filter-primary">
+      <label class="sales-role-field"><span>经营周期</span><select id="labelHubMetricPeriod"></select></label>
+      <label id="labelHubPeriodField" class="sales-role-field compact" hidden><span>标签周期</span><select id="labelHubPeriod"></select></label>
+      <label class="sales-role-field"><span>国家类别</span><select id="labelHubCountry"></select></label>
+      <label class="sales-role-field"><span>店铺</span><select id="labelHubStore"></select></label>
+      <label class="sales-role-field keyword-field"><span>MSKU</span><input id="labelHubKeyword" type="search" placeholder="搜索 MSKU / 店铺"></label>
+    </div>
+    <select id="labelHubParent" hidden aria-hidden="true" tabindex="-1"></select>
+    <div id="labelHubConditionRow" class="label-hub-condition-row" hidden>
+      <span class="toolbar-label">已选条件</span>
+      <div id="labelHubConditions" class="sales-role-chip-list"></div>
+    </div>
+  </section>
+
+  <section class="sales-role-panel label-hub-section-panel label-hub-overview-section">
+    <div class="sales-role-section-head">
+      <div><p class="section-kicker">标签覆盖全景</p><h2>每个标签覆盖多少 MSKU</h2></div>
+      <p class="summary-hint">覆盖板只跟随公共筛选，子标签数量允许因周期或非互斥关系重叠。</p>
+    </div>
+    <div id="labelHubCategories" class="label-hub-categories"></div>
+    <div id="labelHubCategoryDetail" class="label-hub-category-detail" aria-live="polite"></div>
+  </section>
+
+  <section class="sales-role-panel label-hub-section-panel label-hub-cohort label-hub-diagnosis-panel">
+    <div class="sales-role-section-head">
+      <div><p class="section-kicker">群体问题</p><h2>选中标签群体的问题概览</h2></div>
+      <p class="summary-hint">统计当前标签条件内各类问题 MSKU，点击问题项可直接筛选下方明细。</p>
+    </div>
+    <div id="labelHubDiagnosis" class="label-hub-diagnosis" aria-live="polite"></div>
+  </section>
+
+  <section class="sales-role-panel label-hub-section-panel label-hub-breakdown-section">
+    <div class="sales-role-section-head label-hub-analysis-head">
+      <div><p class="section-kicker">多维联动</p><h2>这批 MSKU 在其他分类中的表现</h2><p class="summary-hint">先看群体结构，再点击分类联动筛选下方矩阵与明细。</p></div>
+      <div id="labelHubMeasureTabs" class="label-hub-measure-tabs" role="group" aria-label="图表指标">
+        <button type="button" data-measure="msku_count" class="active">MSKU 数</button>
+        <button type="button" data-measure="sales_amount">销售额</button>
+        <button type="button" data-measure="order_gross_profit">毛利润</button>
+      </div>
+    </div>
+    <div id="labelHubBreakdowns" class="label-hub-breakdowns"></div>
+  </section>
+
+  <div class="label-hub-insight-grid">
+    <section id="labelHubMatrixPanel" class="sales-role-panel label-hub-secondary-panel label-hub-matrix-panel">
+      <div class="sales-role-section-head">
+        <div><p class="section-kicker">标签关系</p><h2>当前标签与对比标签共现</h2></div>
+        <label class="sales-role-field compact"><span>对比大类</span><select id="labelHubCompare"></select></label>
+      </div>
+      <div id="labelHubMatrix" class="sales-role-matrix"></div>
+    </section>
+  </div>
+
+  <section class="sales-role-panel detail-panel label-hub-secondary-panel label-hub-detail-panel">
+    <div class="sales-role-section-head">
+      <div><p class="section-kicker">问题队列</p><h2>MSKU 明细与下钻</h2></div>
+      <div class="label-hub-table-tools">
+        <p id="labelHubTableSummary" class="summary-hint"></p>
+        <label class="page-size-control label-hub-table-view-control" for="labelHubTableView">
+          <span>字段</span>
+          <select id="labelHubTableView" aria-label="明细字段视图">
+            <option value="overview">综合视图</option>
+            <option value="labels">标签视图</option>
+            <option value="metrics">经营视图</option>
+          </select>
+        </label>
+        <label class="page-size-control" for="labelHubPageSize">
+          <span>每页</span>
+          <select id="labelHubPageSize" aria-label="每页显示条数">
+            <option value="20">20 条</option>
+            <option value="50">50 条</option>
+            <option value="100">100 条</option>
+          </select>
+        </label>
+      </div>
+    </div>
+    <div id="labelHubTable" class="detail-table-wrap"></div>
+    <div id="labelHubPagination" class="pagination sales-role-pagination"></div>
+  </section>
+</div>
+{% endblock %}
+
+{% block overlay %}
+<div id="labelHubDrawer" class="label-hub-drawer" hidden>
+  <div class="label-hub-drawer-card" role="dialog" aria-modal="true" aria-labelledby="labelHubDrawerTitle">
+    <button id="labelHubDrawerClose" class="text-button" type="button">关闭</button>
+    <div id="labelHubDrawerContent"></div>
+  </div>
+</div>
+<div id="labelHubRuleDrawer" class="label-hub-drawer label-hub-rule-drawer" hidden>
+  <div class="label-hub-drawer-card label-hub-rule-drawer-card" role="dialog" aria-modal="true" aria-labelledby="labelHubRuleDrawerTitle">
+    <header class="label-hub-rule-drawer-toolbar">
+      <div><span>标签详情表规则</span><strong id="labelHubRuleDrawerTitle">规则详情</strong></div>
+      <button id="labelHubRuleDrawerClose" class="text-button" type="button">关闭</button>
+    </header>
+    <div id="labelHubRuleDrawerContent"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', path='js/label_hub.js') }}?v=20260715p"></script>
+{% endblock %}
