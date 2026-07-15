@@ -680,7 +680,7 @@
     if (type === "receipt_order") return "receipt_order";
     if (type === "qc_order") return "qc_order";
     if (type === "fba_plan" || type === "candidate_fba_plan") return "fba_plan";
-    if (type === "shipment_plan" || type === "fba_shipment") return "shipment_plan";
+    if (type === "shipment_plan" || type === "fba_shipment" || type === "candidate_fba_shipment") return "shipment_plan";
     return "purchase_plan";
   }
 

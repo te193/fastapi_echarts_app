@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta
 
 from etl.dashboard_daily_update import connect_source, connect_target, parse_day
 from etl.replenishment_update import apply_database_ini_env
-from etl.replenishment_tracking_update import copy_source_rows
+from etl.replenishment_tracking_update import copy_source_rows, sync_tracking_sources
 
 
 def product_category_case(sales_col: str, salable_col: str, margin_col: str) -> str:
@@ -1338,6 +1338,14 @@ def sync_qc_orders(target_conn, source_conn, cutoff_date: date, batch_size: int 
 
 
 def refresh_summary(conn, cutoff_date: date, source_conn=None) -> dict[str, int]:
+    tracking_source_rows = {
+        "purchase_source_rows": 0,
+        "fba_source_rows": 0,
+        "inbound_shipment_source_rows": 0,
+        "inbound_item_source_rows": 0,
+    }
+    if source_conn:
+        tracking_source_rows = sync_tracking_sources(conn, source_conn, cutoff_date, 30, 1000)
     purchase_order_rows = sync_purchase_orders(conn, source_conn, cutoff_date) if source_conn else 0
     receipt_order_rows = sync_receipt_orders(conn, source_conn, cutoff_date) if source_conn else 0
     qc_order_rows = sync_qc_orders(conn, source_conn, cutoff_date) if source_conn else 0
@@ -1359,6 +1367,7 @@ def refresh_summary(conn, cutoff_date: date, source_conn=None) -> dict[str, int]
         level_history_rows = max(cursor.rowcount, 0)
     conn.commit()
     return {
+        **tracking_source_rows,
         "summary_rows": summary_rows,
         "level_history_rows": level_history_rows,
         "purchase_order_rows": purchase_order_rows,
@@ -1378,7 +1387,10 @@ def main() -> None:
         print("Replenishment tracking summary ETL plan")
         print("  mode: dry-run")
         print(f"  cutoff_date: {cutoff_date}")
-        print("  source_sync: purchase_orders, receipt_orders, qc_orders")
+        print(
+            "  source_sync: purchase_plans, fba_shipment_plans, inbound_shipments, "
+            "inbound_items, purchase_orders, receipt_orders, qc_orders"
+        )
         print(
             "  target_tables: dashboard_replenishment_tracking_summary, "
             "dashboard_replenishment_tracking_summary_level_history"
@@ -1398,6 +1410,10 @@ def main() -> None:
         f"[success] cutoff_date={selected_date} "
         f"summary_rows={result['summary_rows']} "
         f"level_history_rows={result['level_history_rows']} "
+        f"purchase_source_rows={result['purchase_source_rows']} "
+        f"fba_source_rows={result['fba_source_rows']} "
+        f"inbound_shipment_source_rows={result['inbound_shipment_source_rows']} "
+        f"inbound_item_source_rows={result['inbound_item_source_rows']} "
         f"purchase_order_rows={result['purchase_order_rows']} "
         f"receipt_order_rows={result['receipt_order_rows']} "
         f"qc_order_rows={result['qc_order_rows']} "

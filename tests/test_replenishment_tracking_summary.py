@@ -26,6 +26,7 @@ def test_summary_etl_dry_run_exits_before_database_setup(monkeypatch, capsys):
     output = capsys.readouterr().out
     assert "Replenishment tracking summary ETL plan" in output
     assert "cutoff_date: latest replenishment date" in output
+    assert "purchase_plans, fba_shipment_plans, inbound_shipments, inbound_items" in output
     assert "[success] replenishment_tracking_summary dry_run=true writes=0" in output
 
 
@@ -275,6 +276,57 @@ def test_summary_etl_syncs_purchase_orders_for_second_link():
     assert "logistics_order" in replenishment_tracking_summary_update.PURCHASE_ORDER_SYNC_COLUMNS
 
 
+def test_refresh_summary_syncs_tracking_sources_before_rebuild(monkeypatch):
+    events = []
+
+    class Cursor:
+        rowcount = 0
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, params=None):
+            events.append("rebuild")
+
+    class Connection:
+        def cursor(self):
+            return Cursor()
+
+        def commit(self):
+            events.append("commit")
+
+    def sync_tracking_sources(target_conn, source_conn, cutoff_date, tracking_window_days, batch_size):
+        events.append("tracking_sources")
+        assert tracking_window_days == 30
+        return {
+            "purchase_source_rows": 11,
+            "fba_source_rows": 12,
+            "inbound_shipment_source_rows": 13,
+            "inbound_item_source_rows": 14,
+        }
+
+    monkeypatch.setattr(replenishment_tracking_summary_update, "sync_tracking_sources", sync_tracking_sources)
+    monkeypatch.setattr(replenishment_tracking_summary_update, "sync_purchase_orders", lambda *args: 21)
+    monkeypatch.setattr(replenishment_tracking_summary_update, "sync_receipt_orders", lambda *args: 22)
+    monkeypatch.setattr(replenishment_tracking_summary_update, "sync_qc_orders", lambda *args: 23)
+    monkeypatch.setattr(replenishment_tracking_summary_update, "ensure_summary_columns", lambda cursor: None)
+    monkeypatch.setattr(replenishment_tracking_summary_update, "ensure_level_history_columns", lambda cursor: None)
+
+    result = replenishment_tracking_summary_update.refresh_summary(Connection(), date(2026, 7, 14), object())
+
+    assert events[0] == "tracking_sources"
+    assert result["purchase_source_rows"] == 11
+    assert result["fba_source_rows"] == 12
+    assert result["inbound_shipment_source_rows"] == 13
+    assert result["inbound_item_source_rows"] == 14
+    assert result["purchase_order_rows"] == 21
+    assert result["receipt_order_rows"] == 22
+    assert result["qc_order_rows"] == 23
+
+
 def test_summary_etl_uses_purchase_order_match_for_inbound_node():
     sql = replenishment_tracking_summary_update.INSERT_SUMMARY_SQL
 
@@ -522,6 +574,15 @@ def test_summary_separates_historical_fba_in_transit_from_unattributed_plan_only
     assert "历史FBA在途" in js
     assert "待归因FBA计划" in js
     assert "历史FBA货件" not in js
+
+
+def test_historical_fba_shipment_card_uses_fba_shipment_stage():
+    js = Path("app/static/js/replenishment_tracking_summary.js").read_text(encoding="utf-8")
+    start = js.index("function detailStageOfLine")
+    end = js.index("function detailStageRank", start)
+    block = js[start:end]
+
+    assert 'type === "shipment_plan" || type === "fba_shipment" || type === "candidate_fba_shipment"' in block
 
 
 def test_tracking_summary_help_popover_is_not_clipped_by_metric_cards():
