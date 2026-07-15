@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from etl.dashboard_daily_update import COLUMN_COMMENTS
 
 from .services.dashboard_db import dashboard_service
+from .services.label_hub_data import label_hub_service
 from .services.price_review_data import price_review_service
 from .services.replenishment_data import replenishment_service
 from .services.replenishment_tracking_data import replenishment_tracking_service
@@ -275,6 +276,51 @@ def sales_role_page(request: Request) -> HTMLResponse:
         "sales_role.html",
         {"page": "sales_role", "title": "销售角色分析"},
     )
+
+
+@app.get("/label-hub", response_class=HTMLResponse)
+def label_hub_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "label_hub.html",
+        {"page": "label_hub", "title": "标签看板"},
+    )
+
+
+@app.get("/api/label-hub/meta")
+def api_label_hub_meta() -> dict:
+    return label_hub_service.get_meta()
+
+
+@app.get("/api/label-hub")
+def api_label_hub(
+    data_date: str = "", country_category: str = "all", store: str = "all", keyword: str = "",
+    parent_label_id: int = 0, compare_parent_id: int = 0, conditions: str = "", label_period: str = "all",
+    metric_period: str = "30d", analysis_parent_ids: str = "",
+    sales_roles: str = "", sales_trends: str = "", daily_sales_bands: str = "", margin_bands: str = "", problem: str = "all",
+    page: int = 1, page_size: int = 20, sort_field: str = "sales_amount", sort_dir: str = "desc",
+) -> dict:
+    try:
+        return label_hub_service.get_payload(
+            data_date=data_date, country_category=country_category, store=store, keyword=keyword,
+            parent_label_id=parent_label_id, compare_parent_id=compare_parent_id,
+            conditions=conditions, label_period=label_period, metric_period=metric_period,
+            analysis_parent_ids=analysis_parent_ids, sales_roles=sales_roles, sales_trends=sales_trends,
+            daily_sales_bands=daily_sales_bands, margin_bands=margin_bands, problem=problem,
+            page=page, page_size=page_size, sort_field=sort_field, sort_dir=sort_dir,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="标签数据暂不可用，请稍后重试") from exc
+
+
+@app.get("/api/label-hub/msku")
+def api_label_hub_msku(data_date: str, country_category: str, store: str, msku: str, metric_period: str = "30d") -> dict:
+    try:
+        return label_hub_service.get_msku_profile(data_date=data_date, country_category=country_category, store=store, msku=msku, metric_period=metric_period)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.get("/api/meta")

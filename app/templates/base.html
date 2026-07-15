@@ -7,7 +7,7 @@
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community/styles/ag-grid.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community/styles/ag-theme-quartz.css">
-  <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}?v=20260710trackingstate1">
+  <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}?v=20260715labelhub2">
 </head>
 <body data-page="{{ page }}">
   <div class="app-shell">
@@ -60,8 +60,8 @@
             </div>
           </section>
 
-          <section class="nav-v2-group {% if page in ['alerts', 'opportunities', 'sales_role', 'price_review'] %}open{% endif %}" data-nav-group="operation">
-            <button class="nav-v2-group-toggle" type="button" aria-expanded="{% if page in ['alerts', 'opportunities', 'sales_role', 'price_review'] %}true{% else %}false{% endif %}">
+          <section class="nav-v2-group {% if page in ['alerts', 'opportunities', 'sales_role', 'label_hub', 'price_review'] %}open{% endif %}" data-nav-group="operation">
+            <button class="nav-v2-group-toggle" type="button" aria-expanded="{% if page in ['alerts', 'opportunities', 'sales_role', 'label_hub', 'price_review'] %}true{% else %}false{% endif %}">
               <span><i>⌄</i> 经营诊断</span>
               <b>4</b>
             </button>
@@ -77,6 +77,10 @@
               <a class="nav-v2-link {% if page == 'sales_role' %}active{% endif %}" href="/sales-role">
                 <span class="nav-v2-icon">销</span>
                 <span><strong>销售角色分析</strong><small>MSKU角色 / 毛利 / 日销</small></span>
+              </a>
+              <a class="nav-v2-link {% if page == 'label_hub' %}active{% endif %}" href="/label-hub">
+                <span class="nav-v2-icon">标</span>
+                <span><strong>标签看板</strong><small>标签覆盖 / 联动分析</small></span>
               </a>
               <a class="nav-v2-link {% if page == 'price_review' %}active{% endif %}" href="/price-review">
                 <span class="nav-v2-icon">复</span>
@@ -123,7 +127,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/ag-grid-community/dist/ag-grid-community.min.js"></script>
-  <script src="{{ url_for('static', path='js/common.js') }}?v=20260707nav5"></script>
+  <script src="{{ url_for('static', path='js/common.js') }}?v=20260715cache2"></script>
   <script src="{{ url_for('static', path='js/ag_grid_helper.js') }}?v=20260604a"></script>
   {% block scripts %}{% endblock %}
 </body>

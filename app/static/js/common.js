@@ -159,7 +159,7 @@
     var timeoutId = setTimeout(function () {
       if (controller) controller.abort();
     }, 45000);
-    return fetch(url.toString(), controller ? { signal: controller.signal } : {}).then(function (response) {
+    return fetch(url.toString(), controller ? { signal: controller.signal, cache: "no-store" } : { cache: "no-store" }).then(function (response) {
       if (!response.ok) throw new Error("Request failed: " + response.status);
       return response.json();
     }).finally(function () {
