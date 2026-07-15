@@ -22,7 +22,7 @@
     [
       "dailyViewBtn", "summaryViewBtn", "dailyReplenishmentSection", "trackingSummarySection",
       "trackingSummaryTopCards", "trackingSummaryLevelTabs", "trackingSummaryCards", "trackingSummaryLevelFlow", "trackingSummaryTable", "trackingSummaryPaginationInfo",
-      "trackingSummaryPrevBtn", "trackingSummaryNextBtn", "summaryBatchSelect",
+      "trackingSummaryPageSizeSelect", "trackingSummaryPrevBtn", "trackingSummaryNextBtn", "summaryBatchSelect",
       "summaryPurchaseStatusSelect", "summaryFbaStatusSelect", "summaryTrackingDetailMask",
       "summaryTrackingDetailDrawer", "summaryTrackingDetailTitle", "summaryTrackingDetailSubtitle",
       "summaryTrackingDetailCloseBtn", "summaryTrackingDetailWrap"
@@ -109,6 +109,11 @@
     });
     el.trackingSummaryNextBtn.addEventListener("click", function () {
       state.page += 1;
+      render();
+    });
+    el.trackingSummaryPageSizeSelect.addEventListener("change", function () {
+      state.page_size = Number(el.trackingSummaryPageSizeSelect.value) || 20;
+      state.page = 1;
       render();
     });
     el.trackingSummaryLevelFlow.addEventListener("click", function (event) {
@@ -234,12 +239,12 @@
       ["质检通过未建FBA", summary.no_fba_plan_count || 0, "tone-2", "可推进FBA计划", "no_fba_plan"],
       ["FBA未出库", summary.fba_not_shipped_count || 0, "tone-2", "已建FBA计划但未出库", "fba_not_shipped"],
       ["FBA未接收", summary.fba_not_receiving_count || 0, "tone-2", "FBA在途未接收", "fba_not_receiving"],
-      ["历史FBA货件", summary.historical_fba_shipment_count || 0, "tone-2", "旁路货件量 " + formatNumber(summary.historical_fba_shipment_qty || 0), "historical_fba_shipment"],
+      ["历史FBA在途", summary.historical_fba_in_transit_count || 0, "tone-2", "在途数量 " + formatNumber(summary.historical_fba_in_transit_qty || 0), "historical_fba_in_transit", "未归入本次采购链路、已实际发货且尚未全部接收或关闭的 FBA 货件。它会影响库存与预计到货，但不计入本次链路完成率。"],
       ["FBA已完成", summary.fba_closed_count || 0, "tone-1", "链路完成", "fba_closed"]
     ];
     el.trackingSummaryTopCards.innerHTML = topCards.map(function (card) {
       var active = state.history_level === "all" && state.summary_stage === card[4] ? " active" : "";
-      return '<button type="button" class="alert-stat-card tracking-stat-card summary-stat-card ' + card[2] + active + '" data-summary-stage="' + escapeHtml(card[4]) + '"><span>' + escapeHtml(card[0]) + '</span><strong>' + formatNumber(card[1]) + '</strong><small>' + escapeHtml(card[3]) + '</small></button>';
+      return '<button type="button" class="alert-stat-card tracking-stat-card summary-stat-card ' + card[2] + active + '" data-summary-stage="' + escapeHtml(card[4]) + '"><span>' + escapeHtml(card[0]) + summaryHelp(card[5]) + '</span><strong>' + formatNumber(card[1]) + '</strong><small>' + escapeHtml(card[3]) + '</small></button>';
     }).join("");
 
     var sideCards = [
@@ -249,18 +254,24 @@
       ["计", "未建FBA", summary.no_fba_plan_count || 0, "可推进FBA计划", "no_fba_plan"],
       ["出", "FBA未出库", summary.fba_not_shipped_count || 0, "已建计划未执行", "fba_not_shipped"],
       ["收", "FBA未接收", summary.fba_not_receiving_count || 0, "在途未接收", "fba_not_receiving"],
-      ["历", "历史FBA货件", summary.historical_fba_shipment_count || 0, "旁路货件量 " + formatNumber(summary.historical_fba_shipment_qty || 0), "historical_fba_shipment"]
+      ["历", "历史FBA在途", summary.historical_fba_in_transit_count || 0, "已实际发货、尚未全部接收", "historical_fba_in_transit", "未归入本次采购链路的在途货件；会影响库存和预计到货，但不影响本次链路完成率。"],
+      ["待", "待归因FBA计划", summary.unattributed_fba_plan_count || 0, "仅有计划，尚未实际发货", "unattributed_fba_plan", "无法归入本次采购链路，且尚未找到实际 FBA 货件的计划。它不影响库存，也不影响本次链路完成率。"]
     ];
     el.trackingSummaryCards.innerHTML = sideCards.map(function (card) {
       var active = state.summary_stage === card[4] ? " active" : "";
       return [
         '<button class="summary-side-item' + active + '" type="button" data-summary-stage="' + escapeHtml(card[4]) + '">',
         '<span class="summary-side-icon">' + escapeHtml(card[0]) + '</span>',
-        '<span class="summary-side-copy"><b>' + escapeHtml(card[1]) + '</b><small>' + escapeHtml(card[3]) + '</small></span>',
+        '<span class="summary-side-copy"><b>' + escapeHtml(card[1]) + summaryHelp(card[5]) + '</b><small>' + escapeHtml(card[3]) + '</small></span>',
         '<strong>' + formatNumber(card[2]) + '</strong>',
         '</button>'
       ].join("");
     }).join("");
+  }
+
+  function summaryHelp(text) {
+    if (!text) return "";
+    return '<span class="tracking-help-anchor"><i aria-hidden="true">?</i><span class="tracking-help-popover" role="tooltip">' + escapeHtml(text) + '</span></span>';
   }
 
   function renderLevelTabs(rows, summary) {
@@ -1155,6 +1166,7 @@
     var total = payload.total || 0;
     var page = payload.page || 1;
     var pages = payload.total_pages || 1;
+    el.trackingSummaryPageSizeSelect.value = String(payload.page_size || state.page_size || 20);
     el.trackingSummaryPaginationInfo.textContent = "共 " + total + " 条，第 " + page + " / " + pages + " 页";
     el.trackingSummaryPrevBtn.disabled = page <= 1;
     el.trackingSummaryNextBtn.disabled = page >= pages;

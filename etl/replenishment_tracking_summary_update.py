@@ -79,6 +79,11 @@ create table if not exists dashboard_replenishment_tracking_summary (
     fba_plan_qty decimal(18,4) not null default 0 comment 'FBA计划数量',
     historical_fba_plan_count int not null default 0 comment '历史或待确认FBA计划单数',
     historical_fba_plan_qty decimal(18,4) not null default 0 comment '历史或待确认FBA计划数量',
+    unattributed_fba_plan_count int not null default 0 comment '待归因且尚未发货的FBA计划单数',
+    unattributed_fba_plan_qty decimal(18,4) not null default 0 comment '待归因且尚未发货的FBA计划数量',
+    historical_fba_in_transit_count int not null default 0 comment '历史未归因且实际发货在途的FBA货件数',
+    historical_fba_in_transit_qty decimal(18,4) not null default 0 comment '历史未归因且实际发货在途的FBA数量',
+    historical_fba_completed_count int not null default 0 comment '历史未归因且已完成的FBA货件数',
     fba_shipped_flag tinyint not null default 0 comment '是否FBA出库在途',
     fba_shipped_qty decimal(18,4) not null default 0 comment 'FBA已发数量',
     fba_receiving_flag tinyint not null default 0 comment 'FBA是否开始接收',
@@ -149,6 +154,11 @@ ENSURE_SUMMARY_COLUMNS_SQL = (
     "alter table dashboard_replenishment_tracking_summary add column fba_plan_qty decimal(18,4) not null default 0 comment 'FBA计划数量'",
     "alter table dashboard_replenishment_tracking_summary add column historical_fba_plan_count int not null default 0 comment '历史或待确认FBA计划单数'",
     "alter table dashboard_replenishment_tracking_summary add column historical_fba_plan_qty decimal(18,4) not null default 0 comment '历史或待确认FBA计划数量'",
+    "alter table dashboard_replenishment_tracking_summary add column unattributed_fba_plan_count int not null default 0 comment '待归因且尚未发货的FBA计划单数'",
+    "alter table dashboard_replenishment_tracking_summary add column unattributed_fba_plan_qty decimal(18,4) not null default 0 comment '待归因且尚未发货的FBA计划数量'",
+    "alter table dashboard_replenishment_tracking_summary add column historical_fba_in_transit_count int not null default 0 comment '历史未归因且实际发货在途的FBA货件数'",
+    "alter table dashboard_replenishment_tracking_summary add column historical_fba_in_transit_qty decimal(18,4) not null default 0 comment '历史未归因且实际发货在途的FBA数量'",
+    "alter table dashboard_replenishment_tracking_summary add column historical_fba_completed_count int not null default 0 comment '历史未归因且已完成的FBA货件数'",
     "alter table dashboard_replenishment_tracking_summary add column fba_shipped_flag tinyint not null default 0 comment '是否FBA出库在途'",
     "alter table dashboard_replenishment_tracking_summary add column fba_shipped_qty decimal(18,4) not null default 0 comment 'FBA已发数量'",
     "alter table dashboard_replenishment_tracking_summary add column fba_receiving_flag tinyint not null default 0 comment 'FBA是否开始接收'",
@@ -437,6 +447,8 @@ insert into dashboard_replenishment_tracking_summary (
     local_received_flag, local_received_qty, qc_flag, qc_passed_flag, qc_good_qty, qc_bad_qty,
     fba_plan_flag, fba_plan_count, fba_plan_qty,
     historical_fba_plan_count, historical_fba_plan_qty,
+    unattributed_fba_plan_count, unattributed_fba_plan_qty,
+    historical_fba_in_transit_count, historical_fba_in_transit_qty, historical_fba_completed_count,
     fba_shipped_flag, fba_shipped_qty, fba_receiving_flag, fba_received_qty, fba_closed_flag,
     current_node, breakpoint_node, breakpoint_reason, order_sn_summary,
     latest_status
@@ -785,6 +797,7 @@ all_fba_plan_match as (
         p0.seller_name_new,
         p0.seller_sku_adj,
         fp.order_sn,
+        fp.sku,
         fp.plan_create_time,
         fp.shipment_plan_quantity
     from base p0
@@ -795,14 +808,8 @@ all_fba_plan_match as (
      and fp.seller_name_norm = p0.seller_name_new collate utf8mb4_unicode_ci
      and fp.msku = p0.seller_sku_adj collate utf8mb4_unicode_ci
 ),
-historical_fba_plan_doc as (
-    select
-        afpm.country_category,
-        afpm.seller_name_new,
-        afpm.seller_sku_adj,
-        count(distinct afpm.order_sn) as historical_fba_plan_count,
-        sum(coalesce(afpm.shipment_plan_quantity, 0)) as historical_fba_plan_qty,
-        group_concat(distinct afpm.order_sn order by afpm.plan_create_time separator ',') as historical_fba_plan_sn_list
+historical_fba_plan_match as (
+    select afpm.*
     from all_fba_plan_match afpm
     left join current_fba_plan_match cfpm
       on cfpm.country_category = afpm.country_category collate utf8mb4_unicode_ci
@@ -810,7 +817,62 @@ historical_fba_plan_doc as (
      and cfpm.seller_sku_adj = afpm.seller_sku_adj collate utf8mb4_unicode_ci
      and cfpm.order_sn = afpm.order_sn collate utf8mb4_unicode_ci
     where cfpm.order_sn is null
-    group by afpm.country_category, afpm.seller_name_new, afpm.seller_sku_adj
+),
+fba_shipment_status_doc as (
+    select
+        ii.shipment_order_sn,
+        case
+            when replace(coalesce(ii.sku, ''), '-zu', '') regexp '[0-9][a-z]$'
+                then left(replace(coalesce(ii.sku, ''), '-zu', ''), char_length(replace(coalesce(ii.sku, ''), '-zu', '')) - 1)
+            else replace(coalesce(ii.sku, ''), '-zu', '')
+        end as tracking_sku,
+        count(distinct ii.shipment_id) as fba_shipment_count,
+        count(distinct case
+            when coalesce(ii.quantity_shipped, 0) > coalesce(nullif(ii.shipment_quantity_received, 0), ii.quantity_receive, 0)
+              and upper(coalesce(ii.shipment_status, ii.status_text, ish.shipment_status, ish.status_name, '')) <> 'CLOSED'
+              and ish.closed_time is null
+            then ii.shipment_id
+        end) as active_fba_shipment_count,
+        sum(case
+            when coalesce(ii.quantity_shipped, 0) > coalesce(nullif(ii.shipment_quantity_received, 0), ii.quantity_receive, 0)
+              and upper(coalesce(ii.shipment_status, ii.status_text, ish.shipment_status, ish.status_name, '')) <> 'CLOSED'
+              and ish.closed_time is null
+            then greatest(coalesce(ii.quantity_shipped, 0) - coalesce(nullif(ii.shipment_quantity_received, 0), ii.quantity_receive, 0), 0)
+            else 0
+        end) as active_fba_in_transit_qty
+    from dashboard_tracking_inbound_item_sync ii
+    left join dashboard_tracking_inbound_shipment_sync ish
+      on ish.shipment_sn = ii.shipment_sn collate utf8mb4_unicode_ci
+    where nullif(ii.shipment_id, '') is not null
+      and ii.shipment_id like 'FBA%%'
+    group by ii.shipment_order_sn, case
+        when replace(coalesce(ii.sku, ''), '-zu', '') regexp '[0-9][a-z]$'
+            then left(replace(coalesce(ii.sku, ''), '-zu', ''), char_length(replace(coalesce(ii.sku, ''), '-zu', '')) - 1)
+        else replace(coalesce(ii.sku, ''), '-zu', '')
+    end
+),
+historical_fba_plan_doc as (
+    select
+        hfp.country_category,
+        hfp.seller_name_new,
+        hfp.seller_sku_adj,
+        count(distinct hfp.order_sn) as historical_fba_plan_count,
+        sum(coalesce(hfp.shipment_plan_quantity, 0)) as historical_fba_plan_qty,
+        count(distinct case when coalesce(fsd.fba_shipment_count, 0) = 0 then hfp.order_sn end) as unattributed_fba_plan_count,
+        sum(case when coalesce(fsd.fba_shipment_count, 0) = 0 then coalesce(hfp.shipment_plan_quantity, 0) else 0 end) as unattributed_fba_plan_qty,
+        count(distinct case when coalesce(fsd.active_fba_shipment_count, 0) > 0 then hfp.order_sn end) as historical_fba_in_transit_count,
+        sum(coalesce(fsd.active_fba_in_transit_qty, 0)) as historical_fba_in_transit_qty,
+        count(distinct case when coalesce(fsd.fba_shipment_count, 0) > 0 and coalesce(fsd.active_fba_shipment_count, 0) = 0 then hfp.order_sn end) as historical_fba_completed_count,
+        group_concat(distinct hfp.order_sn order by hfp.plan_create_time separator ',') as historical_fba_plan_sn_list
+    from historical_fba_plan_match hfp
+    left join fba_shipment_status_doc fsd
+      on fsd.shipment_order_sn = hfp.order_sn collate utf8mb4_unicode_ci
+     and fsd.tracking_sku = case
+        when replace(coalesce(hfp.sku, ''), '-zu', '') regexp '[0-9][a-z]$'
+            then left(replace(coalesce(hfp.sku, ''), '-zu', ''), char_length(replace(coalesce(hfp.sku, ''), '-zu', '')) - 1)
+        else replace(coalesce(hfp.sku, ''), '-zu', '')
+     end collate utf8mb4_unicode_ci
+    group by hfp.country_category, hfp.seller_name_new, hfp.seller_sku_adj
 ),
 active_fba_eta_doc as (
     select
@@ -910,6 +972,11 @@ select
     coalesce(cfpd.fba_plan_qty, 0),
     coalesce(hfpd.historical_fba_plan_count, 0),
     coalesce(hfpd.historical_fba_plan_qty, 0),
+    coalesce(hfpd.unattributed_fba_plan_count, 0),
+    coalesce(hfpd.unattributed_fba_plan_qty, 0),
+    coalesce(hfpd.historical_fba_in_transit_count, 0),
+    coalesce(hfpd.historical_fba_in_transit_qty, 0),
+    coalesce(hfpd.historical_fba_completed_count, 0),
     case when coalesce(fbsd.fba_shipment_count, 0) > 0 then 1 else 0 end,
     coalesce(fbsd.fba_shipped_qty, 0),
     case when coalesce(fbsd.receiving_shipment_count, 0) > 0 then 1 else 0 end,

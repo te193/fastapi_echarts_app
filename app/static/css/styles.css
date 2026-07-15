@@ -6499,8 +6499,14 @@ body[data-page="matrix"] .matrix-cell-meta {
   grid-template-columns: repeat(7, minmax(150px, 1fr));
 }
 
-.tracking-stat-card {
+.replenishment-page-section .alert-stat-card.tracking-stat-card {
   min-height: 116px;
+  overflow: visible;
+}
+
+.replenishment-page-section .alert-stat-card.tracking-stat-card:hover,
+.replenishment-page-section .alert-stat-card.tracking-stat-card:focus-within {
+  z-index: 20;
 }
 
 .tracking-stat-card small {
@@ -8746,6 +8752,73 @@ body[data-page="return_goods"] .alert-stats-grid {
   color: #0d2a4d;
   font-size: 12px;
   font-weight: 950;
+}
+
+.tracking-help-anchor {
+  position: relative;
+  display: inline-flex;
+  margin-left: 5px;
+  vertical-align: middle;
+}
+
+.alert-stat-card .tracking-help-anchor,
+.summary-side-copy .tracking-help-anchor {
+  display: inline-flex;
+  width: auto;
+  color: inherit;
+}
+
+.tracking-help-anchor > i {
+  display: inline-grid;
+  width: 15px;
+  height: 15px;
+  place-items: center;
+  border: 1px solid #9dc0ef;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #1769e0;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.tracking-help-popover {
+  position: absolute;
+  z-index: 140;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 250px;
+  padding: 10px 12px;
+  border: 1px solid #d5dfeb;
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: 0 16px 32px rgba(15, 27, 45, 0.18);
+  color: #41556f;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.5;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.alert-stat-card .tracking-help-popover,
+.summary-side-copy .tracking-help-popover {
+  display: block;
+  width: 250px;
+  margin: 0;
+  color: #41556f;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.tracking-help-anchor:hover .tracking-help-popover,
+.tracking-help-anchor:focus-within .tracking-help-popover {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
 }
 
 .return-goods-help-list small {

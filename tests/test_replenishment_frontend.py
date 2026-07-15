@@ -19,9 +19,9 @@ def test_margin_price_assets_use_cache_busting_versions():
     base_template = (ROOT / "app" / "templates" / "base.html").read_text(encoding="utf-8")
     replenishment_template = (ROOT / "app" / "templates" / "replenishment.html").read_text(encoding="utf-8")
 
-    assert "styles.css') }}?v=20260715labelhub2" in base_template
-    assert "replenishment.js') }}?v=20260710trackingstate1" in replenishment_template
-    assert "replenishment_tracking_summary.js') }}?v=20260710trackingstate1" in replenishment_template
+    assert "styles.css') }}?v=20260715fbaattribution1" in base_template
+    assert "replenishment.js') }}?v=20260710fbaattribution1" in replenishment_template
+    assert "replenishment_tracking_summary.js') }}?v=20260710fbaattribution2" in replenishment_template
 
 
 def test_replenishment_tracking_summary_entry_is_visible():
@@ -29,6 +29,19 @@ def test_replenishment_tracking_summary_entry_is_visible():
 
     assert '<button id="summaryViewBtn" type="button">' in template
     assert '<button id="summaryViewBtn" type="button" hidden>' not in template
+
+
+def test_replenishment_tracking_summary_allows_selecting_page_size():
+    template = (ROOT / "app" / "templates" / "replenishment.html").read_text(encoding="utf-8")
+    script = (ROOT / "app" / "static" / "js" / "replenishment_tracking_summary.js").read_text(encoding="utf-8")
+
+    assert '<select id="trackingSummaryPageSizeSelect"' in template
+    assert '<option value="20">20条</option>' in template
+    assert '<option value="50">50条</option>' in template
+    assert '<option value="100">100条</option>' in template
+    assert '"trackingSummaryPageSizeSelect"' in script
+    assert 'state.page_size = Number(el.trackingSummaryPageSizeSelect.value) || 20;' in script
+    assert 'state.page = 1;' in script
 
 
 def test_replenishment_grid_shows_followed_origin_columns():
