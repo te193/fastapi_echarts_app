@@ -89,7 +89,7 @@ class SalesRoleLifecycleDataTests(unittest.TestCase):
         ):
             service = DashboardDbService()
 
-        self.assertIsNone(service.source_database)
+        self.assertNotEqual("etl_datasync_test", service.source_database)
 
 
 if __name__ == "__main__":

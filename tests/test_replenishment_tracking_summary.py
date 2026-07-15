@@ -560,6 +560,30 @@ def test_summary_page_shows_historical_fba_plan_separately():
     assert 'isHistoricalFbaPlan(row)' in js
 
 
+def test_summary_separates_historical_fba_in_transit_from_unattributed_plan_only():
+    sql = replenishment_tracking_summary_update.INSERT_SUMMARY_SQL
+    service = ReplenishmentTrackingSummaryService()
+    js = Path("app/static/js/replenishment_tracking_summary.js").read_text(encoding="utf-8")
+
+    assert "unattributed_fba_plan_count" in sql
+    assert "historical_fba_in_transit_count" in sql
+    assert "historical_fba_completed_count" in sql
+    assert "historical_fba_in_transit" in service._where(
+        date(2026, 7, 10), 30, "all", "all", "all", "historical_fba_in_transit", "all", "all", "all", "all", "", "product_category", ""
+    )[0]
+    assert "历史FBA在途" in js
+    assert "待归因FBA计划" in js
+    assert "历史FBA货件" not in js
+
+
+def test_tracking_summary_help_popover_is_not_clipped_by_metric_cards():
+    css = Path("app/static/css/styles.css").read_text(encoding="utf-8")
+
+    start = css.index(".replenishment-page-section .alert-stat-card.tracking-stat-card {")
+    end = css.index("}", start)
+    assert "overflow: visible;" in css[start:end]
+
+
 def test_summary_detail_includes_current_and_historical_fba_plans():
     sql = ReplenishmentTrackingSummaryService()._detail_sql()
 

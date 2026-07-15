@@ -178,6 +178,14 @@
   <div class="pagination-bar">
     <div id="trackingSummaryPaginationInfo" class="pagination-info"></div>
     <div class="pagination-controls">
+      <label class="page-size-control" for="trackingSummaryPageSizeSelect">
+        <span>每页</span>
+        <select id="trackingSummaryPageSizeSelect" aria-label="每页显示条数">
+          <option value="20">20条</option>
+          <option value="50">50条</option>
+          <option value="100">100条</option>
+        </select>
+      </label>
       <button id="trackingSummaryPrevBtn" class="ghost-button" type="button">上一页</button>
       <button id="trackingSummaryNextBtn" class="ghost-button" type="button">下一页</button>
     </div>
@@ -239,6 +247,6 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', path='js/replenishment.js') }}?v=20260710release1"></script>
-<script src="{{ url_for('static', path='js/replenishment_tracking_summary.js') }}?v=20260710release1"></script>
+<script src="{{ url_for('static', path='js/replenishment.js') }}?v=20260710fbaattribution1"></script>
+<script src="{{ url_for('static', path='js/replenishment_tracking_summary.js') }}?v=20260710fbaattribution2"></script>
 {% endblock %}

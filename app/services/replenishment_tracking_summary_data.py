@@ -168,6 +168,11 @@ def map_summary_row(row: dict[str, Any]) -> dict[str, Any]:
         "fba_plan_qty": to_float(row.get("fba_plan_qty")),
         "historical_fba_plan_count": to_int(row.get("historical_fba_plan_count")),
         "historical_fba_plan_qty": to_float(row.get("historical_fba_plan_qty")),
+        "unattributed_fba_plan_count": to_int(row.get("unattributed_fba_plan_count")),
+        "unattributed_fba_plan_qty": to_float(row.get("unattributed_fba_plan_qty")),
+        "historical_fba_in_transit_count": to_int(row.get("historical_fba_in_transit_count")),
+        "historical_fba_in_transit_qty": to_float(row.get("historical_fba_in_transit_qty")),
+        "historical_fba_completed_count": to_int(row.get("historical_fba_completed_count")),
         "fba_shipped_flag": to_int(row.get("fba_shipped_flag")),
         "fba_shipped_qty": to_float(row.get("fba_shipped_qty")),
         "fba_receiving_flag": to_int(row.get("fba_receiving_flag")),
@@ -773,6 +778,10 @@ class ReplenishmentTrackingSummaryService:
             clauses.append("s.fba_status in ('historical', 'mixed')")
         elif summary_stage == "historical_fba_shipment":
             clauses.append("coalesce(s.historical_fba_inbound_qty, 0) > 0")
+        elif summary_stage == "historical_fba_in_transit":
+            clauses.append("coalesce(s.historical_fba_in_transit_count, 0) > 0")
+        elif summary_stage == "unattributed_fba_plan":
+            clauses.append("coalesce(s.unattributed_fba_plan_count, 0) > 0")
         elif summary_stage == "received":
             clauses.append("s.received_qty > 0")
         elif summary_stage == "eta_7d":
@@ -909,8 +918,11 @@ class ReplenishmentTrackingSummaryService:
                     sum(case when fba_plan_flag = 1 and fba_shipped_flag = 0 then 1 else 0 end) as fba_not_shipped_count,
                     sum(case when fba_shipped_flag = 1 and fba_receiving_flag = 0 then 1 else 0 end) as fba_not_receiving_count,
                     sum(case when fba_closed_flag = 1 then 1 else 0 end) as fba_closed_count,
-                    sum(case when coalesce(historical_fba_inbound_qty, 0) > 0 then 1 else 0 end) as historical_fba_shipment_count,
-                    sum(coalesce(historical_fba_inbound_qty, 0)) as historical_fba_shipment_qty
+                    sum(case when coalesce(unattributed_fba_plan_count, 0) > 0 then 1 else 0 end) as unattributed_fba_plan_count,
+                    sum(coalesce(unattributed_fba_plan_qty, 0)) as unattributed_fba_plan_qty,
+                    sum(case when coalesce(historical_fba_in_transit_count, 0) > 0 then 1 else 0 end) as historical_fba_in_transit_count,
+                    sum(coalesce(historical_fba_in_transit_qty, 0)) as historical_fba_in_transit_qty,
+                    sum(case when coalesce(historical_fba_completed_count, 0) > 0 then 1 else 0 end) as historical_fba_completed_count
                 from dashboard_replenishment_tracking_summary s
                 where {filters}
                 """,
