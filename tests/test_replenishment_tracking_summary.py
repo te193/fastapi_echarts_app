@@ -576,6 +576,15 @@ def test_summary_separates_historical_fba_in_transit_from_unattributed_plan_only
     assert "历史FBA货件" not in js
 
 
+def test_historical_fba_shipment_card_uses_fba_shipment_stage():
+    js = Path("app/static/js/replenishment_tracking_summary.js").read_text(encoding="utf-8")
+    start = js.index("function detailStageOfLine")
+    end = js.index("function detailStageRank", start)
+    block = js[start:end]
+
+    assert 'type === "shipment_plan" || type === "fba_shipment" || type === "candidate_fba_shipment"' in block
+
+
 def test_tracking_summary_help_popover_is_not_clipped_by_metric_cards():
     css = Path("app/static/css/styles.css").read_text(encoding="utf-8")
 

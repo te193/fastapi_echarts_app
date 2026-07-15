@@ -21,7 +21,7 @@ def test_margin_price_assets_use_cache_busting_versions():
 
     assert "styles.css') }}?v=20260715fbaattribution1" in base_template
     assert "replenishment.js') }}?v=20260710fbaattribution1" in replenishment_template
-    assert "replenishment_tracking_summary.js') }}?v=20260710fbaattribution2" in replenishment_template
+    assert "replenishment_tracking_summary.js') }}?v=20260715fbashipment1" in replenishment_template
 
 
 def test_replenishment_tracking_summary_entry_is_visible():
