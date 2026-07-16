@@ -11634,6 +11634,16 @@ body[data-page="label_hub"] .label-hub-topbar .sales-role-period { color: rgba(2
 .label-hub-cohort,
 .label-hub-breakdown-section { display: grid; gap: 14px; }
 .label-hub-section-panel { min-width: 0; }
+.label-hub-population-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+.label-hub-population-card { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 14px; min-width: 0; padding: 12px 14px; overflow: hidden; border: 1px solid #dce7f3; border-radius: 10px; background: #f7faff; }
+.label-hub-population-card::before { position: absolute; inset: 0 auto 0 0; width: 3px; background: #4b86d1; content: ""; }
+.label-hub-population-card.tone-1 { background: #f7fbfa; }
+.label-hub-population-card.tone-1::before { background: #2f9d78; }
+.label-hub-population-card.tone-2 { background: #fffaf2; }
+.label-hub-population-card.tone-2::before { background: #d9952f; }
+.label-hub-population-card span { color: #49627d; font-size: 12px; font-weight: 750; }
+.label-hub-population-card strong { grid-row: span 2; align-self: center; color: #173f6d; font-size: 24px; font-variant-numeric: tabular-nums; }
+.label-hub-population-card small { overflow: hidden; color: #7b8da1; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .label-hub-categories { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .label-hub-category-card { min-width: 0; padding: 14px; border: 1px solid var(--border-color); border-radius: 10px; background: #fff; box-shadow: none; transition: border-color .16s ease, box-shadow .16s ease; }
 .label-hub-category-card:hover { border-color: #afc9e8; box-shadow: 0 7px 18px rgba(32, 79, 132, .08); }
@@ -11649,6 +11659,12 @@ body[data-page="label_hub"] .label-hub-topbar .sales-role-period { color: rgba(2
 .label-hub-coverage { height: 4px; margin: 12px 0 7px; overflow: hidden; border-radius: 999px; background: #edf2f7; }
 .label-hub-coverage i { display: block; height: 100%; border-radius: inherit; background: #4387dd; }
 .label-hub-category-meta { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 10px; color: #8090a4; font-size: 10px; }
+.label-hub-category-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #8090a4; font-size: 10px; }
+.label-hub-category-foot .label-hub-rule-link { margin: 0; }
+.label-hub-rule-priority { display: grid; gap: 5px; margin: 12px 0; padding: 12px 14px; border: 1px solid #d8e6f5; border-radius: 9px; background: #f7faff; }
+.label-hub-rule-priority b { color: #173f6d; font-size: 12px; }
+.label-hub-rule-priority span { color: #315678; font-size: 12px; font-weight: 700; line-height: 1.6; }
+.label-hub-rule-priority small { color: #75889e; font-size: 11px; line-height: 1.6; }
 .label-hub-children { display: grid; gap: 5px; max-height: 154px; overflow-y: auto; scrollbar-width: thin; }
 .label-hub-child { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; padding: 6px 8px; border: 1px solid transparent; border-radius: 7px; background: #f7f9fc; color: #506982; text-align: left; cursor: pointer; }
 .label-hub-child span { min-width: 0; overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
@@ -11800,6 +11816,7 @@ body[data-page="label_hub"] .label-hub-topbar .sales-role-period { color: rgba(2
   .label-hub-table-tools .page-size-control { justify-content: space-between; }
   #labelHubTable { height: 520px; min-height: 520px; }
   .label-hub-filters .sales-role-filter-main { grid-template-columns: 1fr; }
+  .label-hub-population-summary { grid-template-columns: 1fr; }
   .label-hub-categories,
   .label-hub-breakdowns,
   .label-hub-kpis,

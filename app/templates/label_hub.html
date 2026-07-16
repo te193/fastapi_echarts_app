@@ -30,8 +30,9 @@
   <section class="sales-role-panel label-hub-section-panel label-hub-overview-section">
     <div class="sales-role-section-head">
       <div><p class="section-kicker">标签覆盖全景</p><h2>每个标签覆盖多少 MSKU</h2></div>
-      <p class="summary-hint">覆盖板只跟随公共筛选，子标签数量允许因周期或非互斥关系重叠。</p>
+      <p class="summary-hint">主数按 MSKU 去重；经营单元保留国家类别、店铺和 MSKU 的完整口径。</p>
     </div>
+    <div id="labelHubPopulationSummary" class="label-hub-population-summary" aria-live="polite"></div>
     <div id="labelHubCategories" class="label-hub-categories"></div>
     <div id="labelHubCategoryDetail" class="label-hub-category-detail" aria-live="polite"></div>
   </section>
@@ -114,5 +115,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', path='js/label_hub.js') }}?v=20260715p"></script>
+<script src="{{ url_for('static', path='js/label_hub.js') }}?v=20260716c"></script>
 {% endblock %}

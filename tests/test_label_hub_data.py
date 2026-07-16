@@ -192,6 +192,127 @@ class LabelHubDataTests(unittest.TestCase):
         self.assertEqual(2, payload["kpis"]["metric_msku_count"])
         self.assertEqual(1, payload["issue_counts"]["negative_profit"])
 
+    def test_overview_exposes_unique_msku_and_business_unit_aggregation(self):
+        cross_scope_fact = {
+            **FACTS[0],
+            "country_category": "美国站",
+            "store": "StoreB",
+        }
+
+        payload = self.service.build_payload(
+            details=DETAILS, facts=[*FACTS, cross_scope_fact], metrics=METRICS, data_date="2026-07-13",
+            parent_label_id=1, compare_parent_id=2, conditions={}, label_period="all",
+            country_category="all", store="all", keyword="", page=1, page_size=20,
+            sort_field="sales_amount", sort_dir="desc",
+        )
+
+        self.assertEqual(
+            {"business_unit_count": 3, "unique_msku_count": 2, "cross_scope_msku_count": 1},
+            payload["population_summary"],
+        )
+        sales_role = next(item for item in payload["overview"] if item["id"] == 1)
+        self.assertEqual(3, sales_role["business_unit_count"])
+        self.assertEqual(2, sales_role["unique_msku_count"])
+        self.assertEqual(1.0, sales_role["unique_msku_coverage_rate"])
+        star = next(item for item in sales_role["children"] if item["id"] == 101)
+        self.assertEqual(3, star["business_unit_count"])
+        self.assertEqual(2, star["unique_msku_count"])
+
+    def test_analysis_panels_deduplicate_msku_but_detail_keeps_business_units(self):
+        cross_scope_facts = [
+            {**FACTS[0], "country_category": "美国站", "store": "StoreB"},
+            {**FACTS[1], "country_category": "美国站", "store": "StoreB"},
+            {**FACTS[2], "country_category": "美国站", "store": "StoreB"},
+            {**FACTS[3], "country_category": "美国站", "store": "StoreB"},
+        ]
+        metrics = {
+            **METRICS,
+            ("美国站", "StoreB", "A1"): {**METRICS[("欧洲站", "StoreA", "A1")]},
+            ("美国站", "StoreB", "A2"): {**METRICS[("欧洲站", "StoreA", "A2")]},
+        }
+
+        payload = self.service.build_payload(
+            details=DETAILS, facts=[*FACTS, *cross_scope_facts], metrics=metrics, data_date="2026-07-13",
+            parent_label_id=1, compare_parent_id=2, conditions={}, label_period="all",
+            country_category="all", store="all", keyword="", page=1, page_size=20,
+            sort_field="sales_amount", sort_dir="desc",
+            metric_scope={"status": "available", "window": {"period_code": "30d"}},
+        )
+
+        self.assertEqual(4, payload["total"])
+        self.assertEqual(4, len(payload["rows"]))
+        self.assertEqual(2, payload["kpis"]["sku_count"])
+        self.assertEqual(2, payload["kpis"]["metric_msku_count"])
+        self.assertEqual(2, payload["issue_counts"]["all"])
+        self.assertEqual(1, payload["issue_counts"]["problem_role"])
+        self.assertEqual(1, payload["issue_counts"]["zero_sales"])
+        self.assertEqual(2, payload["diagnosis"]["subject"]["msku_count"])
+
+        distribution = {item["id"]: item["count"] for item in payload["distribution"]}
+        self.assertEqual(2, distribution[101])
+        self.assertEqual(0, distribution[102])
+        sales_trend = next(item for item in payload["breakdowns"] if item["key"] == "sales_trend")
+        buckets = {item["key"]: item["msku_count"] for item in sales_trend["buckets"]}
+        self.assertEqual(1, buckets["accelerating"])
+        self.assertEqual(1, buckets["stopped"])
+        lifecycle_cell = next(
+            item for item in payload["matrix"]["cells"]
+            if item["row_id"] == 101 and item["col_id"] == 201
+        )
+        self.assertEqual(1, lifecycle_cell["count"])
+
+    def test_aggregated_panels_choose_best_label_per_msku(self):
+        details = [
+            *DETAILS,
+            {**DETAILS[0], "sub_label_id": 103, "sub_label_name": "瘦狗产品"},
+            {**DETAILS[0], "sub_label_id": 104, "sub_label_name": "问题产品"},
+        ]
+        facts = [
+            {**FACTS[0], "label_period": "7d"},
+            {**FACTS[0], "country_category": "美国站", "store": "StoreB", "label_id": 104, "label_period": "7d"},
+            {**FACTS[2], "label_id": 103, "label_period": "7d"},
+            {**FACTS[2], "country_category": "美国站", "store": "StoreB", "label_id": 102, "label_period": "7d"},
+        ]
+        metrics = {
+            ("欧洲站", "StoreA", "A1"): {**METRICS[("欧洲站", "StoreA", "A1")]},
+            ("美国站", "StoreB", "A1"): {
+                **METRICS[("欧洲站", "StoreA", "A2")],
+                "sales_trend": "明显下降",
+                "sales_trend_code": "declining",
+            },
+            ("欧洲站", "StoreA", "A2"): {
+                **METRICS[("欧洲站", "StoreA", "A2")],
+                "sales_role": "瘦狗产品",
+                "sales_role_code": "incubation",
+            },
+            ("美国站", "StoreB", "A2"): {
+                **METRICS[("欧洲站", "StoreA", "A1")],
+                "sales_role": "潜力产品",
+                "sales_role_code": "potential",
+                "sales_trend": "基本稳定",
+                "sales_trend_code": "stable",
+            },
+        }
+
+        payload = self.service.build_payload(
+            details=details, facts=facts, metrics=metrics, data_date="2026-07-13",
+            parent_label_id=1, compare_parent_id=2, conditions={}, label_period="7d",
+            country_category="all", store="all", keyword="", page=1, page_size=20,
+            sort_field="sales_amount", sort_dir="desc",
+            metric_scope={"status": "available", "window": {"period_code": "30d"}},
+        )
+
+        distribution = {item["id"]: item["count"] for item in payload["distribution"]}
+        self.assertEqual({101: 1, 102: 1, 103: 0, 104: 0}, distribution)
+        self.assertEqual(payload["kpis"]["sku_count"], sum(distribution.values()))
+        self.assertEqual([101, 102, 103, 104], payload["rules"]["aggregation_priority_ids"])
+        trend_panel = next(item for item in payload["breakdowns"] if item["key"] == "sales_trend")
+        trend_counts = {item["key"]: item["msku_count"] for item in trend_panel["buckets"]}
+        self.assertEqual(1, trend_counts["accelerating"])
+        self.assertEqual(1, trend_counts["stable"])
+        self.assertEqual(0, trend_counts["declining"])
+        self.assertEqual(0, payload["issue_counts"]["problem_role"])
+
     def test_sales_trend_breakdown_ignores_its_own_filter_but_final_rows_apply_it(self):
         payload = self.service.build_payload(
             details=DETAILS, facts=FACTS, metrics=METRICS, data_date="2026-07-13",
@@ -464,6 +585,8 @@ class LabelHubDataTests(unittest.TestCase):
         self.assertEqual([101, 201], [item["label_id"] for item in facts])
         self.assertIn("group_concat", connection.cursor_instance.sql.lower())
         self.assertIn("group by data_date, country_category, store, msku", connection.cursor_instance.sql.lower())
+        self.assertIn("dws_标签详情表", connection.cursor_instance.sql)
+        self.assertIn("not in (4, 7, 13)", connection.cursor_instance.sql.lower())
 
 
 if __name__ == "__main__":

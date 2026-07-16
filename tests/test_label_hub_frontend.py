@@ -28,7 +28,7 @@ def test_label_hub_template_exposes_overview_diagnosis_and_breakdowns():
     template = (ROOT / "app" / "templates" / "label_hub.html").read_text(encoding="utf-8")
 
     for element_id in (
-        "labelHubMetricPeriod", "labelHubScope", "labelHubCategories", "labelHubBreakdowns",
+        "labelHubMetricPeriod", "labelHubScope", "labelHubPopulationSummary", "labelHubCategories", "labelHubBreakdowns",
         "labelHubMeasureTabs", "labelHubDiagnosis", "labelHubMatrixPanel", "labelHubDrawerContent",
     ):
         assert f'id="{element_id}"' in template
@@ -58,6 +58,10 @@ def test_label_hub_uses_progressive_coverage_and_problem_first_analysis_layout()
     assert 'id="labelHubRulesPanel"' not in template
     assert template.index('id="labelHubDiagnosis"') < template.index('id="labelHubBreakdowns"')
     assert "function renderCategoryDetail(payload)" in script
+    assert "function renderPopulationSummary(payload)" in script
+    assert "renderPopulationSummary(payload);" in script
+    for label in ("去重 MSKU", "经营单元", "跨范围 MSKU"):
+        assert label in script
     assert "renderCategoryDetail(payload);" in script
     assert ".label-hub-categories { display: grid; grid-template-columns: repeat(4" in label_styles
     assert "font-size: 9px" not in label_styles
@@ -176,7 +180,7 @@ def test_remote_breakdown_nodes_have_enough_distinct_colors_for_long_status_list
     assert len(colors) >= 12
     assert len(set(colors)) == len(colors)
     assert "remoteBucketColor(panel, bucket)" in script
-    assert "?v=20260715" in template
+    assert "?v=20260716" in template
 
 
 def test_label_hub_issue_overview_shows_selected_group_problem_counts():
@@ -195,6 +199,14 @@ def test_label_hub_issue_overview_shows_selected_group_problem_counts():
         assert f'"{key}"' in script
     assert "占当前群体" in script
     assert 'data-problem="' in script
+
+
+def test_label_hub_explains_primary_label_priority_for_aggregated_msku():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+
+    assert "aggregation_priority_labels" in script
+    assert "跨经营单元按业务优先级只保留一个主标签" in script
+    assert "主标签优先级" in script
 
 
 def test_label_hub_profile_does_not_render_site_scope_labels():
@@ -319,7 +331,7 @@ def test_current_category_detail_uses_period_scoped_distribution():
     assert "distributionById" in script
     assert 'cache: "no-store"' in common
     assert "js/common.js') }}?v=20260715cache2" in base
-    assert "js/label_hub.js') }}?v=20260715p" in template
+    assert "js/label_hub.js') }}?v=20260716c" in template
 
 
 def test_sales_role_has_label_hub_return_link():

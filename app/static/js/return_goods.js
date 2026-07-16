@@ -332,17 +332,21 @@
       ["恢复不足", "50%-70%", overview.operating_recovery_insufficient_msku_count, "warn", "overview_operating_recovery_insufficient"],
       ["数据不足", "无法计算", overview.operating_data_insufficient_msku_count, "neutral", "overview_operating_data_insufficient"]
     ];
-    var drillItems = [
-      ["21天无恢复", overview.no_recovery_21d_msku_count, "danger", "返场开始后21天内销量合计 = 0", "overview_no_recovery_21d"],
-      ["低恢复", overview.low_recovery_msku_count, "danger", "0 < 21天销量恢复率 < 30%", "overview_low_recovery"],
-      ["弱恢复", overview.weak_recovery_msku_count, "warn", "30% <= 21天销量恢复率 < 50%", "overview_weak_recovery"],
-      ["高价值未达标", overview.high_value_failed_msku_count, "danger", "明星/潜力产品，且21天销量恢复率 < 50%", "overview_high_value_failed"]
+    var followupSummaryItems = [
+      ["严重恢复不足", overview.current_severe_low_recovery_msku_count, "danger", "截至目前累计平均恢复率 < 50%", "overview_current_severe_low_recovery"],
+      ["恢复提升中", overview.recovery_improving_msku_count, "warn", "50% <= 截至目前累计平均恢复率 < 70%", "overview_recovery_improving"],
+      ["数据不足", overview.followup_data_insufficient_msku_count, "neutral", "断货前21天销量为0，无法计算恢复率", "overview_followup_data_insufficient"]
     ];
+    var followupItems = [
+      ["返场后始终无销量", overview.severe_no_sales_msku_count, "danger", "返场开始至统计日累计销量 = 0", "overview_severe_no_sales"],
+      ["极低恢复", overview.severe_rate_0_10_msku_count, "danger", "0 < 累计平均恢复率 < 10%", "overview_severe_rate_0_10"],
+      ["低恢复", overview.severe_rate_10_30_msku_count, "warn", "10% <= 累计平均恢复率 < 30%", "overview_severe_rate_10_30"],
+      ["恢复仍不足", overview.severe_rate_30_50_msku_count, "warn", "30% <= 累计平均恢复率 < 50%", "overview_severe_rate_30_50"]
+    ];
+    var d21StandardExit = Math.max(0, Number(overview.success_exit_msku_count || 0) - Number(overview.late_standard_exit_msku_count || 0));
     var exitItems = [
-      ["达标退出", overview.success_exit_msku_count, "success", "21天销量恢复率 >= 70%，按达标退出。", "overview_success_exit"],
-      ["21天未达标运营持续干预", overview.failed_exit_msku_count, "danger", "21天销量恢复率 < 50%，需要持续运营干预。", "overview_failed_exit"],
-      ["恢复不足", overview.recovery_insufficient_msku_count, "warn", "50% <= 21天销量恢复率 < 70%，需要复盘动作和补量。", "overview_recovery_insufficient"],
-      ["数据不足", overview.data_insufficient_msku_count, "info", "断货前对比销量为0，无法进入恢复率分层。", "overview_data_insufficient"]
+      ["D21达标退出", d21StandardExit, "success", "返场D1-D21总销量 ÷ 断货前21天总销量 >= 70%。", "overview_d21_standard_exit"],
+      ["21天后恢复达标", overview.late_standard_exit_msku_count, "success", "D21未达标，后续累计平均恢复率首次达到70%时退出。", "overview_late_standard_exit"]
     ];
 
     el.summaryGrid.innerHTML = [
@@ -355,7 +359,7 @@
         ["已返场MSKU", "触发断货后，后续FBA可售库存恢复到 > 5并生成返场事件的去重MSKU。"],
         ["观察中", "最新一轮未退出，返场开始后1-7天。"],
         ["干预期", "最新一轮未退出，返场开始后8-21天。"],
-        ["已退出", "最新一轮已在统计日前结束，包含达标、未达标、恢复不足、数据不足等分类。"]
+        ["已退出", "最新一轮已在统计日前达到退出标准，包括D21达标和D21后累计平均恢复率达标。"]
       ]) + '</span>',
       '</span>',
       '<strong>' + formatNumber(returnedMsku) + '</strong>',
@@ -364,6 +368,7 @@
       miniMetric("触发断货MSKU", stockoutMsku, false, "overview_stockout_msku"),
       miniMetric("观察中", overview.observe_msku_count, false, "overview_observe"),
       miniMetric("干预期", overview.operating_msku_count, false, "overview_operating"),
+      miniMetric("D21持续追踪", overview.followup_active_msku_count, false, "overview_followup_active"),
       miniMetric("已退出", overview.exited_msku_count, false, "overview_exited"),
       '</div>',
       '</article>',
@@ -380,15 +385,32 @@
       '<div class="return-goods-command-head"><span class="return-goods-help-anchor">已退出明细</span><strong>' + formatNumber(overview.exited_msku_count) + '个</strong></div>',
       '<div class="return-goods-mini-grid">' + exitItems.map(function (item) { return miniTile(item[0], item[3], item[1], item[2], item[4]); }).join("") + '</div>',
       stackedBar([
-        ["success", overview.success_exit_msku_count],
-        ["danger", overview.failed_exit_msku_count],
-        ["warn", overview.recovery_insufficient_msku_count],
-        ["info", overview.data_insufficient_msku_count]
+        ["success", d21StandardExit],
+        ["info", overview.late_standard_exit_msku_count]
       ], overview.exited_msku_count),
       '</article>',
+      '<article class="return-goods-command-card">',
+      '<div class="return-goods-command-head"><span class="return-goods-help-anchor">D21持续追踪</span><strong>' + formatNumber(overview.followup_active_msku_count) + '个</strong></div>',
+      '<div class="return-goods-mini-grid three-items">' + followupSummaryItems.map(function (item) { return miniTile(item[0], item[3], item[1], item[2], item[4]); }).join("") + '</div>',
+      '<button type="button" class="return-goods-followup-all info' + quickFilterClass("overview_followup_active") + '" data-return-filter="overview_followup_active"><span>查看全部D21持续追踪 MSKU</span><strong>' + formatNumber(overview.followup_active_msku_count) + '个</strong><i>›</i></button>',
+      '</article>',
       '<article class="return-goods-command-card return-goods-command-card-danger">',
-      '<div class="return-goods-command-head"><span class="return-goods-help-anchor">21天未达标运营持续干预明细</span><strong>截至统计日</strong></div>',
-      '<div class="return-goods-mini-grid">' + drillItems.map(function (item) { return miniTile(item[0], item[3], item[1], item[2], item[4]); }).join("") + '</div>',
+      '<div class="return-goods-command-head"><span class="return-goods-help-anchor">截至目前严重恢复不足',
+      '<button class="return-goods-help-button" type="button" aria-label="查看严重恢复不足与近期趋势说明">?</button>',
+      '<span class="return-goods-help-popover" role="tooltip">' + metricHelp("严重恢复不足与近期趋势", [
+        ["严重恢复不足", "进入D21持续追踪且尚未退出，截止统计日累计平均恢复率 < 50%。"],
+        ["累计平均恢复率", "（返场开始至统计日累计销量 ÷ 已返场天数）÷（断货前21天总销量 ÷ 21）。"],
+        ["近期持续改善", "从D22开始判断：最近连续3个自然日，每天销量均达到或超过断货前21天平均日销的50%。"],
+        ["改善后回落", "从D22开始曾经连续3个自然日达到改善标准，但最近连续3个自然日不再全部达标。"],
+        ["指标关系", "近期持续改善和改善后回落是辅助趋势标签，不参与严重恢复不足MSKU的分类加总；没有满足两项条件的MSKU不会计入这两个趋势数。"]
+      ]) + '</span>',
+      '</span><strong>' + formatNumber(overview.current_severe_low_recovery_msku_count) + '个</strong></div>',
+      '<div class="return-goods-mini-grid">' + followupItems.map(function (item) { return miniTile(item[0], item[3], item[1], item[2], item[4]); }).join("") + '</div>',
+      '<div class="return-goods-followup-trends"><span><b>近期趋势</b><small>辅助信号，不参与上方加总</small></span>',
+      '<button type="button" class="' + quickFilterClass("overview_severe_current_stable") + '" data-return-filter="overview_severe_current_stable"><small>近期持续改善</small><strong>' + formatNumber(overview.severe_current_stable_msku_count) + '</strong></button>',
+      '<button type="button" class="' + quickFilterClass("overview_severe_recovery_fallback") + '" data-return-filter="overview_severe_recovery_fallback"><small>改善后回落</small><strong>' + formatNumber(overview.severe_recovery_fallback_msku_count) + '</strong></button>',
+      '</div>',
+      '<button type="button" class="return-goods-followup-all' + quickFilterClass("overview_current_severe_low_recovery") + '" data-return-filter="overview_current_severe_low_recovery"><span>查看全部严重恢复不足 MSKU</span><strong>' + formatNumber(overview.current_severe_low_recovery_msku_count) + '个</strong><i>›</i></button>',
       '</article>',
       '</section>'
     ].join("");
@@ -574,8 +596,9 @@
       not_arrived: "FBA可售=0 且在途>0",
       observe: "已返场<=7天且未退出",
       operating: "8-21天且未退出",
-      recovery_insufficient: "50% <= 21天销量恢复率 < 70%",
-      over21_low_recovery: ">21天且21天销量恢复率<50%"
+      followup_improving: "D21未达标，累计平均恢复率50%-70%",
+      followup_severe: "D21未达标，累计平均恢复率<50%",
+      followup_data_insufficient: "断货前21天销量为0"
     }[key] || "";
   }
 
@@ -603,9 +626,9 @@
       priority_valuable_low_recovery: { icon: "!", tone: "warn" },
       priority_manual: { icon: "?", tone: "manual" },
       priority_today_operating: { icon: "↗", tone: "info" },
-      overview_failed_exit: { icon: "!", tone: "danger" },
-      overview_recovery_insufficient: { icon: "!", tone: "warn" },
-      overview_not_arrived: { icon: "!", tone: "info" },
+      overview_current_severe_low_recovery: { icon: "!", tone: "danger" },
+      overview_recovery_improving: { icon: "↗", tone: "warn" },
+      overview_recovery_fallback: { icon: "!", tone: "danger" },
       overview_high_value_failed: { icon: "!", tone: "danger" }
     }[filter] || { icon: "!", tone: "danger" };
   }
@@ -645,10 +668,12 @@
         { headerName: "断货前角色", field: "pre_stockout_sales_role", width: 118, cellRenderer: function (params) { return statusPill(params.value || "-"); } },
         numberColumn("FBA可售", "current_fba_sellable", 104, 0),
         numberColumn("FBA在途", "current_fba_inbound", 104, 0),
-        numberColumn("恢复统计天数", "recovery_window_days", 118, 0),
+        numberColumn("恢复统计天数", "recovery_statistics_days", 118, 0),
         numberColumn("断货前对比销量", "pre_recovery_sales_qty", 136, 0),
         numberColumn("返场后对比销量", "post_recovery_sales_qty", 136, 0),
         { headerName: "销量恢复率", field: "sales_recovery_rate_text", width: 112, type: "numericColumn", cellRenderer: function (params) { return '<span class="ag-number-strong">' + escapeHtml(params.value || "-") + '</span>'; } },
+        { headerName: "当前累计恢复率", field: "cumulative_avg_recovery_rate_text", width: 132, type: "numericColumn", cellRenderer: function (params) { return '<span class="ag-number-strong">' + escapeHtml(params.value || "-") + '</span>'; } },
+        { headerName: "近期趋势", field: "recovery_followup_status", width: 132, cellRenderer: function (params) { return statusPill(recoveryTrendText(params.data || {})); } },
         { headerName: "国家售价 / 定价", field: "listing_preview", minWidth: 500, flex: 1.7, cellRenderer: function (params) { return renderListingPreviewCell(params.value || {}, params.data || {}); } },
         { headerName: "广告概览", field: "listing_preview", width: 260, cellRenderer: function (params) { return renderAdPreviewCell(params.value || {}); } },
                 { headerName: "退出原因", field: "exit_reason", width: 126, cellRenderer: function (params) { return statusPill(params.value || "-"); } },
@@ -829,12 +854,29 @@
       detailMetric("断货前角色", event.pre_stockout_sales_role),
       detailMetric("FBA可售", formatNumber(event.current_fba_sellable)),
       detailMetric("FBA在途", formatNumber(event.current_fba_inbound)),
-      detailMetric("恢复统计天数", formatNumber(event.recovery_window_days)),
+      detailMetric("恢复统计天数", formatNumber(event.recovery_statistics_days)),
       detailMetric("断货前对比销量", formatDecimal(event.pre_recovery_sales_qty)),
       detailMetric("返场后对比销量", formatDecimal(event.post_recovery_sales_qty)),
       detailMetric("销量恢复率", event.sales_recovery_rate_text || "-"),
       detailMetric("退出原因", event.exit_reason || "-"),
       detailMetric("预警", event.warning_type || "-"),
+      '</div>',
+      '</section>',
+      '<section class="drawer-block">',
+      '<h3>D21未达标持续恢复追踪</h3>',
+      '<div class="return-goods-detail-grid">',
+      detailMetric("断货前21天销量", formatDecimal(event.pre_21d_sales_qty)),
+      detailMetric("返场D1-D21销量", formatDecimal(event.post_first_21d_sales_qty)),
+      detailMetric("D21恢复率", event.d21_recovery_rate_text || "-"),
+      detailMetric("D21初始结论", d21Conclusion(event)),
+      detailMetric("返场后累计销量", formatDecimal(event.post_cumulative_sales_qty)),
+      detailMetric("当前累计平均恢复率", event.cumulative_avg_recovery_rate_text || "-"),
+      detailMetric("当前追踪状态", event.recovery_followup_status || "-"),
+      detailMetric("开始稳定恢复日期", event.stable_recovery_start_date || "-"),
+      detailMetric("当前是否稳定", event.current_stable_recovery_flag ? "是" : "否"),
+      detailMetric("是否恢复后回落", event.recovery_fallback_flag ? "是" : "否"),
+      detailMetric("21天后达标日期", event.recovery_followup_status === "21天后恢复达标" ? event.exit_date : "-"),
+      detailMetric("返场至达标天数", event.days_to_standard == null ? "-" : formatNumber(event.days_to_standard)),
       '</div>',
       '</section>',
       '<section class="drawer-block">',
@@ -929,22 +971,39 @@
     return '<span class="return-goods-detail-metric"><small>' + escapeHtml(label) + '</small><b>' + escapeHtml(value == null || value === "" ? "-" : value) + '</b></span>';
   }
 
+  function recoveryTrendText(row) {
+    if (!row || !row.recovery_followup_flag) return "-";
+    if (row.current_stable_recovery_flag) return "近期持续改善";
+    if (row.recovery_fallback_flag) return "改善后回落";
+    return "尚未持续改善";
+  }
+
+  function d21Conclusion(event) {
+    if (Number(event.return_days || 0) < 21 || event.d21_recovery_rate === null || event.d21_recovery_rate === undefined) {
+      return Number(event.return_days || 0) < 21 ? "尚未形成D21结论" : "数据不足，持续关注";
+    }
+    return Number(event.d21_recovery_rate) >= 0.7 ? "D21达标" : "D21未达标，进入持续追踪";
+  }
+
   function renderDailyTable(rows) {
     if (!rows.length) return '<div class="empty-state compact">暂无每日明细。</div>';
+    var showFollowup = rows.some(function (row) { return Number(row.return_day || 0) > 21; });
     return [
       '<div class="return-goods-detail-table-wrap"><table class="data-table return-goods-detail-table">',
-      '<thead><tr><th>日期</th><th>节点</th><th>FBA可售</th><th>FBA在途</th><th>销量</th><th>销售额</th><th>毛利率</th></tr></thead>',
+      '<thead><tr><th>日期</th><th>节点</th>' + (showFollowup ? '<th>返场日</th>' : '') + '<th>FBA可售</th><th>FBA在途</th><th>销量</th><th>销售额</th><th>毛利率</th>' + (showFollowup ? '<th>单日恢复率</th><th>累计平均恢复率</th>' : '') + '</tr></thead>',
       '<tbody>',
       rows.map(function (row) {
         return [
           '<tr>',
           '<td>' + escapeHtml(row.dt_date || "-") + '</td>',
           '<td>' + escapeHtml(row.day_tag || "-") + '</td>',
+          (showFollowup ? '<td>' + (row.return_day ? 'D' + escapeHtml(row.return_day) : '-') + '</td>' : ''),
           '<td>' + escapeHtml(formatNumber(row.fba_sellable)) + '</td>',
           '<td>' + escapeHtml(formatNumber(row.fba_inbound)) + '</td>',
           '<td>' + escapeHtml(formatDecimal(row.sales_qty)) + '</td>',
           '<td>' + escapeHtml(formatDecimal(row.sales_amount)) + '</td>',
           '<td>' + escapeHtml(row.gross_margin_rate_text || "-") + '</td>',
+          (showFollowup ? '<td>' + escapeHtml(row.daily_recovery_rate_text || "-") + '</td><td>' + escapeHtml(row.cumulative_avg_recovery_rate_text || "-") + '</td>' : ''),
           '</tr>'
         ].join("");
       }).join(""),
@@ -983,7 +1042,7 @@
       cell(item.stage),
       cell(formatNumber(item.current_fba_sellable)),
       cell(formatNumber(item.current_fba_inbound)),
-      cell(formatNumber(item.recovery_window_days)),
+      cell(formatNumber(item.recovery_statistics_days)),
       cell(formatDecimal(item.pre_recovery_sales_qty)),
       cell(formatDecimal(item.post_recovery_sales_qty)),
       cell(item.sales_recovery_rate_text || "-"),

@@ -13,8 +13,9 @@ STATUS_COLUMNS = [
     ("not_arrived", "断货未到货"),
     ("observe", "观察中"),
     ("operating", "干预中"),
-    ("recovery_insufficient", "恢复不足"),
-    ("over21_low_recovery", "过21天低恢复"),
+    ("followup_severe", "严重恢复不足"),
+    ("followup_improving", "恢复提升中"),
+    ("followup_data_insufficient", "数据不足"),
 ]
 
 
@@ -308,7 +309,11 @@ class ReturnGoodsDataService:
         quick_filter: str = "all",
         return_day: int | str = 0,
     ) -> tuple[str, dict[str, Any]]:
-        clauses = ["snapshot_date = %(snapshot_date)s", "seller_sku_adj not like %(excluded_msku_pattern)s"]
+        clauses = [
+            "snapshot_date = %(snapshot_date)s",
+            "seller_sku_adj not like %(excluded_msku_pattern)s",
+            "item_key in (select item_key from dashboard_return_goods_stockout_pool where snapshot_date = %(snapshot_date)s)",
+        ]
         params: dict[str, Any] = {"snapshot_date": snapshot_date, "excluded_msku_pattern": "amzn.gr.%"}
         if country_category and country_category != "all":
             clauses.append("country_category = %(country_category)s")
@@ -343,16 +348,22 @@ class ReturnGoodsDataService:
             "manual": "exit_date between %(start_date)s and %(end_date)s and exit_reason = '待人工判断'",
             "recovery_insufficient": "exit_date is not null and exit_date <= %(end_date)s and sales_recovery_rate >= 0.5 and sales_recovery_rate < 0.7",
             "over21_low_recovery": "exit_date is not null and exit_date <= %(end_date)s and sales_recovery_rate is not null and sales_recovery_rate < 0.5",
+            "followup_improving": "recovery_followup_flag = 1 and exit_date is null and cumulative_avg_recovery_rate >= 0.5 and cumulative_avg_recovery_rate < 0.7",
+            "followup_severe": "recovery_followup_flag = 1 and exit_date is null and cumulative_avg_recovery_rate is not null and cumulative_avg_recovery_rate < 0.5",
+            "followup_stable": "recovery_followup_flag = 1 and exit_date is null and current_stable_recovery_flag = 1",
+            "followup_data_insufficient": "recovery_followup_flag = 1 and exit_date is null and cumulative_avg_recovery_rate is null",
         }
         matrix_status_conditions = {
-            "over21_low_recovery": status_conditions["over21_low_recovery"],
-            "recovery_insufficient": status_conditions["recovery_insufficient"],
+            "followup_severe": status_conditions["followup_severe"],
+            "followup_improving": status_conditions["followup_improving"],
+            "followup_data_insufficient": status_conditions["followup_data_insufficient"],
             "operating": status_conditions["operating"],
             "observe": status_conditions["observe"],
             "not_arrived": (
                 status_conditions["not_arrived"]
-                + " and not (" + status_conditions["over21_low_recovery"] + ")"
-                + " and not (" + status_conditions["recovery_insufficient"] + ")"
+                + " and not (" + status_conditions["followup_severe"] + ")"
+                + " and not (" + status_conditions["followup_improving"] + ")"
+                + " and not (" + status_conditions["followup_data_insufficient"] + ")"
                 + " and not (" + status_conditions["operating"] + ")"
                 + " and not (" + status_conditions["observe"] + ")"
             ),
@@ -421,13 +432,30 @@ class ReturnGoodsDataService:
             "overview_operating_recovery_insufficient": latest_event_filter + " and " + in_stockout_pool_filter + " and " + status_conditions["operating"] + " and sales_recovery_rate >= 0.5 and sales_recovery_rate < 0.7",
             "overview_operating_data_insufficient": latest_event_filter + " and " + in_stockout_pool_filter + " and " + status_conditions["operating"] + " and sales_recovery_rate is null",
             "overview_success_exit": latest_event_filter + " and " + in_stockout_pool_filter + " and exit_date is not null and exit_date <= %(end_date)s and exit_reason = '达标退出'",
+            "overview_d21_standard_exit": latest_event_filter + " and " + in_stockout_pool_filter + " and coalesce(recovery_followup_flag, 0) = 0 and exit_date is not null and exit_date <= %(end_date)s and exit_reason = '达标退出'",
             "overview_failed_exit": latest_event_filter + " and " + in_stockout_pool_filter + " and exit_date is not null and exit_date <= %(end_date)s and exit_reason = '未达标退出'",
             "overview_recovery_insufficient": latest_event_filter + " and " + in_stockout_pool_filter + " and exit_date is not null and exit_date <= %(end_date)s and sales_recovery_rate >= 0.5 and sales_recovery_rate < 0.7",
             "overview_no_recovery_21d": latest_event_filter + " and " + in_stockout_pool_filter + " and exit_date is not null and exit_date <= %(end_date)s and coalesce(post_recovery_sales_qty, 0) = 0",
             "overview_low_recovery": latest_event_filter + " and " + in_stockout_pool_filter + " and exit_date is not null and exit_date <= %(end_date)s and sales_recovery_rate > 0 and sales_recovery_rate < 0.3",
             "overview_weak_recovery": latest_event_filter + " and " + in_stockout_pool_filter + " and exit_date is not null and exit_date <= %(end_date)s and sales_recovery_rate >= 0.3 and sales_recovery_rate < 0.5",
-            "overview_high_value_failed": latest_event_filter + " and " + in_stockout_pool_filter + " and exit_date is not null and exit_date <= %(end_date)s and pre_stockout_sales_role in ('明星产品', '潜力产品') and sales_recovery_rate < 0.5",
+            "overview_high_value_failed": latest_event_filter + " and " + in_stockout_pool_filter + " and pre_stockout_sales_role in ('明星产品', '潜力产品') and " + status_conditions["followup_severe"],
             "overview_data_insufficient": latest_event_filter + " and " + in_stockout_pool_filter + " and exit_date is not null and exit_date <= %(end_date)s and sales_recovery_rate is null",
+            "overview_current_severe_low_recovery": latest_event_filter + " and " + in_stockout_pool_filter + " and " + status_conditions["followup_severe"],
+            "overview_recovery_improving": latest_event_filter + " and " + in_stockout_pool_filter + " and " + status_conditions["followup_improving"],
+            "overview_started_stable_recovery": latest_event_filter + " and " + in_stockout_pool_filter + " and recovery_followup_flag = 1 and exit_date is null and stable_recovery_start_date is not null",
+            "overview_current_stable_recovery": latest_event_filter + " and " + in_stockout_pool_filter + " and " + status_conditions["followup_stable"],
+            "overview_recovery_fallback": latest_event_filter + " and " + in_stockout_pool_filter + " and recovery_followup_flag = 1 and exit_date is null and recovery_fallback_flag = 1",
+            "overview_late_standard_exit": latest_event_filter + " and " + in_stockout_pool_filter + " and recovery_followup_flag = 1 and exit_date is not null and exit_date <= %(end_date)s and recovery_followup_status = '21天后恢复达标'",
+            "overview_followup_data_insufficient": latest_event_filter + " and " + in_stockout_pool_filter + " and " + status_conditions["followup_data_insufficient"],
+            "overview_followup_active": latest_event_filter + " and " + in_stockout_pool_filter + " and recovery_followup_flag = 1 and exit_date is null",
+            "overview_followup_no_sales_since_return": latest_event_filter + " and " + in_stockout_pool_filter + " and recovery_followup_flag = 1 and exit_date is null and coalesce(post_cumulative_sales_qty, 0) = 0",
+            "overview_severe_no_sales": latest_event_filter + " and " + in_stockout_pool_filter + " and " + status_conditions["followup_severe"] + " and coalesce(post_cumulative_sales_qty, 0) = 0",
+            "overview_severe_rate_0_10": latest_event_filter + " and " + in_stockout_pool_filter + " and " + status_conditions["followup_severe"] + " and cumulative_avg_recovery_rate > 0 and cumulative_avg_recovery_rate < 0.1",
+            "overview_severe_rate_10_30": latest_event_filter + " and " + in_stockout_pool_filter + " and " + status_conditions["followup_severe"] + " and cumulative_avg_recovery_rate >= 0.1 and cumulative_avg_recovery_rate < 0.3",
+            "overview_severe_rate_30_50": latest_event_filter + " and " + in_stockout_pool_filter + " and " + status_conditions["followup_severe"] + " and cumulative_avg_recovery_rate >= 0.3 and cumulative_avg_recovery_rate < 0.5",
+            "overview_severe_recovery_fallback": latest_event_filter + " and " + in_stockout_pool_filter + " and " + status_conditions["followup_severe"] + " and coalesce(post_cumulative_sales_qty, 0) > 0 and recovery_fallback_flag = 1",
+            "overview_severe_current_stable": latest_event_filter + " and " + in_stockout_pool_filter + " and " + status_conditions["followup_severe"] + " and coalesce(post_cumulative_sales_qty, 0) > 0 and coalesce(recovery_fallback_flag, 0) = 0 and current_stable_recovery_flag = 1",
+            "overview_severe_never_stable": latest_event_filter + " and " + in_stockout_pool_filter + " and " + status_conditions["followup_severe"] + " and coalesce(post_cumulative_sales_qty, 0) > 0 and coalesce(recovery_fallback_flag, 0) = 0 and coalesce(current_stable_recovery_flag, 0) = 0",
         }
         for role_key, role_sql in role_conditions.items():
             quick_filters[f"role_{role_key}"] = role_sql
@@ -499,6 +527,22 @@ class ReturnGoodsDataService:
                     count(distinct case when exit_date is not null and exit_date <= %(end_date)s and exit_reason = '待人工判断' then item_key end) as manual_judgment_msku_count,
                     count(distinct case when exit_date is not null and exit_date <= %(end_date)s and exit_reason = '二次断货' then item_key end) as secondary_stockout_msku_count,
                     count(distinct case when {active_condition} and stage = '超期未处理' then item_key end) as overdue_msku_count,
+                    count(distinct case when recovery_followup_flag = 1 and exit_date is null and cumulative_avg_recovery_rate is not null and cumulative_avg_recovery_rate < 0.5 then item_key end) as current_severe_low_recovery_msku_count,
+                    count(distinct case when recovery_followup_flag = 1 and exit_date is null and cumulative_avg_recovery_rate >= 0.5 and cumulative_avg_recovery_rate < 0.7 then item_key end) as recovery_improving_msku_count,
+                    count(distinct case when recovery_followup_flag = 1 and exit_date is null then item_key end) as followup_active_msku_count,
+                    count(distinct case when recovery_followup_flag = 1 and exit_date is null and stable_recovery_start_date is not null then item_key end) as started_stable_recovery_msku_count,
+                    count(distinct case when recovery_followup_flag = 1 and exit_date is null and current_stable_recovery_flag = 1 then item_key end) as current_stable_recovery_msku_count,
+                    count(distinct case when recovery_followup_flag = 1 and exit_date is null and recovery_fallback_flag = 1 then item_key end) as recovery_fallback_msku_count,
+                    count(distinct case when recovery_followup_flag = 1 and exit_date is not null and exit_date <= %(end_date)s and recovery_followup_status = '21天后恢复达标' then item_key end) as late_standard_exit_msku_count,
+                    count(distinct case when recovery_followup_flag = 1 and exit_date is null and cumulative_avg_recovery_rate is null then item_key end) as followup_data_insufficient_msku_count,
+                    count(distinct case when recovery_followup_flag = 1 and exit_date is null and coalesce(post_cumulative_sales_qty, 0) = 0 then item_key end) as followup_no_sales_since_return_msku_count,
+                    count(distinct case when recovery_followup_flag = 1 and exit_date is null and cumulative_avg_recovery_rate is not null and cumulative_avg_recovery_rate < 0.5 and coalesce(post_cumulative_sales_qty, 0) = 0 then item_key end) as severe_no_sales_msku_count,
+                    count(distinct case when recovery_followup_flag = 1 and exit_date is null and cumulative_avg_recovery_rate > 0 and cumulative_avg_recovery_rate < 0.1 then item_key end) as severe_rate_0_10_msku_count,
+                    count(distinct case when recovery_followup_flag = 1 and exit_date is null and cumulative_avg_recovery_rate >= 0.1 and cumulative_avg_recovery_rate < 0.3 then item_key end) as severe_rate_10_30_msku_count,
+                    count(distinct case when recovery_followup_flag = 1 and exit_date is null and cumulative_avg_recovery_rate >= 0.3 and cumulative_avg_recovery_rate < 0.5 then item_key end) as severe_rate_30_50_msku_count,
+                    count(distinct case when recovery_followup_flag = 1 and exit_date is null and cumulative_avg_recovery_rate is not null and cumulative_avg_recovery_rate < 0.5 and coalesce(post_cumulative_sales_qty, 0) > 0 and coalesce(recovery_fallback_flag, 0) = 0 and coalesce(current_stable_recovery_flag, 0) = 0 then item_key end) as severe_never_stable_msku_count,
+                    count(distinct case when recovery_followup_flag = 1 and exit_date is null and cumulative_avg_recovery_rate is not null and cumulative_avg_recovery_rate < 0.5 and coalesce(post_cumulative_sales_qty, 0) > 0 and recovery_fallback_flag = 1 then item_key end) as severe_recovery_fallback_msku_count,
+                    count(distinct case when recovery_followup_flag = 1 and exit_date is null and cumulative_avg_recovery_rate is not null and cumulative_avg_recovery_rate < 0.5 and coalesce(post_cumulative_sales_qty, 0) > 0 and coalesce(recovery_fallback_flag, 0) = 0 and current_stable_recovery_flag = 1 then item_key end) as severe_current_stable_msku_count,
                     count(distinct case when coalesce(current_fba_sellable, 0) > 0 and coalesce(current_fba_sellable, 0) <= 5 and coalesce(current_fba_inbound, 0) > 0 then item_key end) as receiving_msku_count,
                     count(distinct case when coalesce(current_fba_sellable, 0) = 0 and coalesce(current_fba_inbound, 0) > 0 then item_key end) as not_arrived_msku_count,
                     avg(case when sales_recovery_rate is not null then sales_recovery_rate end) as avg_sales_recovery_rate
@@ -617,6 +661,22 @@ class ReturnGoodsDataService:
             "manual_judgment_msku_count": int(row.get("manual_judgment_msku_count") or 0),
             "secondary_stockout_msku_count": int(row.get("secondary_stockout_msku_count") or 0),
             "overdue_msku_count": int(row.get("overdue_msku_count") or 0),
+            "current_severe_low_recovery_msku_count": int(row.get("current_severe_low_recovery_msku_count") or 0),
+            "recovery_improving_msku_count": int(row.get("recovery_improving_msku_count") or 0),
+            "followup_active_msku_count": int(row.get("followup_active_msku_count") or 0),
+            "started_stable_recovery_msku_count": int(row.get("started_stable_recovery_msku_count") or 0),
+            "current_stable_recovery_msku_count": int(row.get("current_stable_recovery_msku_count") or 0),
+            "recovery_fallback_msku_count": int(row.get("recovery_fallback_msku_count") or 0),
+            "late_standard_exit_msku_count": int(row.get("late_standard_exit_msku_count") or 0),
+            "followup_data_insufficient_msku_count": int(row.get("followup_data_insufficient_msku_count") or 0),
+            "followup_no_sales_since_return_msku_count": int(row.get("followup_no_sales_since_return_msku_count") or 0),
+            "severe_no_sales_msku_count": int(row.get("severe_no_sales_msku_count") or 0),
+            "severe_rate_0_10_msku_count": int(row.get("severe_rate_0_10_msku_count") or 0),
+            "severe_rate_10_30_msku_count": int(row.get("severe_rate_10_30_msku_count") or 0),
+            "severe_rate_30_50_msku_count": int(row.get("severe_rate_30_50_msku_count") or 0),
+            "severe_never_stable_msku_count": int(row.get("severe_never_stable_msku_count") or 0),
+            "severe_recovery_fallback_msku_count": int(row.get("severe_recovery_fallback_msku_count") or 0),
+            "severe_current_stable_msku_count": int(row.get("severe_current_stable_msku_count") or 0),
             "receiving_msku_count": int(row.get("receiving_msku_count") or 0),
             "not_arrived_msku_count": int(row.get("not_arrived_msku_count") or 0),
             "avg_sales_recovery_rate": number_value(row.get("avg_sales_recovery_rate")),
@@ -641,7 +701,7 @@ class ReturnGoodsDataService:
                   and return_start_date <= %(end_date)s
                   and (exit_date is null or exit_date > %(end_date)s)
                 group by stage
-                order by field(stage, '观察期', '运营干预期', '超期未处理', '已退出'), stage
+                order by field(stage, '观察期', '运营干预期', '持续干预期', '超期未处理', '已退出'), stage
                 """,
                 params,
             )
@@ -680,6 +740,9 @@ class ReturnGoodsDataService:
                 f"""
                 select item_key, pre_stockout_sales_role, current_fba_sellable, current_fba_inbound,
                        return_start_date, exit_date, exit_reason, return_days, stage, sales_recovery_rate,
+                       d21_recovery_rate, recovery_followup_flag, post_cumulative_sales_qty,
+                       cumulative_avg_recovery_rate, recovery_followup_status, stable_recovery_start_date,
+                       current_stable_recovery_flag, recovery_fallback_flag, days_to_standard,
                        pre_7d_sales_qty, observe_7d_sales_qty, post_7d_sales_qty,
                        pre_7d_sales_avg, observe_7d_sales_avg, post_7d_sales_avg, pre_7d_gross_margin_rate
                 from dashboard_return_goods_events
@@ -724,7 +787,11 @@ class ReturnGoodsDataService:
         return sum(values) / len(values) if values else None
 
     def _status_matrix(self, rows: list[dict[str, Any]], start_date: date, end_date: date) -> dict[str, Any]:
-        total = len(rows)
+        total = sum(
+            1
+            for row in rows
+            if any(self._matrix_status_matches(row, status_key, start_date, end_date) for status_key, _ in STATUS_COLUMNS)
+        )
         cells = []
         for role_key, role_label in SALES_ROLES:
             for status_key, status_label in STATUS_COLUMNS:
@@ -743,7 +810,7 @@ class ReturnGoodsDataService:
                         "count": count,
                         "ratio": count / total if total else 0,
                         "quick_filter": f"matrix_{role_key}_{status_key}",
-                        "priority": role_key in {"star", "potential"} and status_key in {"not_arrived", "operating", "over21_low_recovery"},
+                        "priority": role_key in {"star", "potential"} and status_key in {"not_arrived", "operating", "followup_severe"},
                     }
                 )
         return {
@@ -757,34 +824,31 @@ class ReturnGoodsDataService:
         valuable_roles = {"明星产品", "潜力产品"}
         items = [
             (
-                "21天未达标运营持续干预",
-                "恢复率 < 50%，优先复盘动作和补量",
-                "overview_failed_exit",
-                lambda row: row.get("exit_date") is not None
-                and row.get("exit_date") <= end_date
-                and row.get("exit_reason") == "未达标退出",
+                "截至目前严重恢复不足",
+                "累计平均恢复率 < 50%，优先复盘动作和补量",
+                "overview_current_severe_low_recovery",
+                lambda row: self._status_matches(row, "followup_severe", start_date, end_date),
             ),
             (
-                "恢复不足",
-                "50% <= 恢复率 < 70%，检查动作承接",
-                "overview_recovery_insufficient",
-                lambda row: self._status_matches(row, "recovery_insufficient", start_date, end_date),
+                "恢复提升中",
+                "累计平均恢复率已到 50%-70%，继续跟踪至达标",
+                "overview_recovery_improving",
+                lambda row: self._status_matches(row, "followup_improving", start_date, end_date),
             ),
             (
-                "断货未到货",
-                "FBA可售=0 且已有在途，优先确认到货上架",
-                "overview_not_arrived",
-                lambda row: self._status_matches(row, "not_arrived", start_date, end_date),
+                "恢复后回落",
+                "曾连续 3 天稳定恢复，但最近 3 天未保持",
+                "overview_recovery_fallback",
+                lambda row: bool(row.get("recovery_followup_flag"))
+                and self._is_active(row, end_date)
+                and bool(row.get("recovery_fallback_flag")),
             ),
             (
-                "高价值未达标",
-                "明星/潜力产品，且恢复率 < 50%",
+                "高价值持续低恢复",
+                "明星/潜力产品，累计平均恢复率仍低于 50%",
                 "overview_high_value_failed",
                 lambda row: (row.get("pre_stockout_sales_role") or "") in valuable_roles
-                and row.get("exit_date") is not None
-                and row.get("exit_date") <= end_date
-                and (number_value(row.get("sales_recovery_rate")) is not None)
-                and number_value(row.get("sales_recovery_rate")) < 0.5,
+                and self._status_matches(row, "followup_severe", start_date, end_date),
             ),
         ]
         return [
@@ -814,10 +878,20 @@ class ReturnGoodsDataService:
             exit_date = row.get("exit_date")
             rate = number_value(row.get("sales_recovery_rate"))
             return exit_date is not None and exit_date <= end_date and rate is not None and rate < 0.5
+        if status_key == "followup_improving":
+            rate = number_value(row.get("cumulative_avg_recovery_rate"))
+            return bool(row.get("recovery_followup_flag")) and self._is_active(row, end_date) and rate is not None and 0.5 <= rate < 0.7
+        if status_key == "followup_severe":
+            rate = number_value(row.get("cumulative_avg_recovery_rate"))
+            return bool(row.get("recovery_followup_flag")) and self._is_active(row, end_date) and rate is not None and rate < 0.5
+        if status_key == "followup_stable":
+            return bool(row.get("recovery_followup_flag")) and self._is_active(row, end_date) and bool(row.get("current_stable_recovery_flag"))
+        if status_key == "followup_data_insufficient":
+            return bool(row.get("recovery_followup_flag")) and self._is_active(row, end_date) and row.get("cumulative_avg_recovery_rate") is None
         return False
 
     def _matrix_status_matches(self, row: dict[str, Any], status_key: str, start_date: date, end_date: date) -> bool:
-        ordered_statuses = ("over21_low_recovery", "recovery_insufficient", "operating", "observe", "not_arrived")
+        ordered_statuses = ("followup_severe", "followup_improving", "followup_data_insufficient", "operating", "observe", "not_arrived")
         for candidate in ordered_statuses:
             if self._status_matches(row, candidate, start_date, end_date):
                 return candidate == status_key
@@ -889,6 +963,10 @@ class ReturnGoodsDataService:
                     exit_date, exit_reason,
                     return_days, stage, pre_7d_sales_avg, pre_7d_gross_margin_rate, pre_stockout_sales_role,
                     post_7d_sales_avg, recovery_window_days, pre_recovery_sales_qty, post_recovery_sales_qty, sales_recovery_rate,
+                    pre_21d_sales_qty, post_first_21d_sales_qty, d21_recovery_rate,
+                    recovery_followup_flag, post_cumulative_sales_qty, cumulative_avg_recovery_rate,
+                    recovery_followup_status, stable_recovery_start_date, current_stable_recovery_flag,
+                    recovery_fallback_flag, days_to_standard,
                     current_fba_sellable, current_fba_inbound, warning_type
                 from dashboard_return_goods_events
                 where {filters}
@@ -923,6 +1001,10 @@ class ReturnGoodsDataService:
                     exit_date, exit_reason, return_days, stage,
                     pre_stockout_sales_role, current_fba_sellable, current_fba_inbound,
                     recovery_window_days, pre_recovery_sales_qty, post_recovery_sales_qty, sales_recovery_rate, warning_type
+                    , pre_21d_sales_qty, post_first_21d_sales_qty, d21_recovery_rate
+                    , recovery_followup_flag, post_cumulative_sales_qty, cumulative_avg_recovery_rate
+                    , recovery_followup_status, stable_recovery_start_date, current_stable_recovery_flag
+                    , recovery_fallback_flag, days_to_standard
                 from dashboard_return_goods_events
                 where {filters}
                 order by return_start_date desc, seller_name_new, seller_sku_adj
@@ -1098,6 +1180,10 @@ class ReturnGoodsDataService:
                     datediff(return_start_date, stockout_date) as stockout_days,
                     exit_date, exit_reason, return_days, stage,
                     pre_7d_sales_avg, post_7d_sales_avg, recovery_window_days, pre_recovery_sales_qty, post_recovery_sales_qty, sales_recovery_rate,
+                    pre_21d_sales_qty, post_first_21d_sales_qty, d21_recovery_rate,
+                    recovery_followup_flag, post_cumulative_sales_qty, cumulative_avg_recovery_rate,
+                    recovery_followup_status, stable_recovery_start_date, current_stable_recovery_flag,
+                    recovery_fallback_flag, days_to_standard,
                     current_fba_sellable, current_fba_inbound, warning_type,
                     pre_stockout_sales_role
                 from dashboard_return_goods_events
@@ -1114,9 +1200,11 @@ class ReturnGoodsDataService:
         stockout_day = parse_day(event.get("stockout_date"))
         if stockout_day is None:
             return []
+        exit_day = parse_day(event.get("exit_date"))
+        source_end_date = min(snapshot_date, exit_day) if exit_day else snapshot_date
         params = {
             "source_start_date": stockout_day - timedelta(days=21),
-            "source_end_date": snapshot_date,
+            "source_end_date": source_end_date,
             "seller_name_new": event.get("seller_name_new"),
             "country_category": event.get("country_category"),
             "seller_sku_adj": event.get("seller_sku_adj"),
@@ -1156,7 +1244,9 @@ class ReturnGoodsDataService:
                 params,
             )
             rows = cursor.fetchall()
-        return [self._serialize_daily_detail(row, event) for row in rows]
+        serialized = [self._serialize_daily_detail(row, event) for row in rows]
+        self._attach_followup_trend(serialized, event)
+        return serialized
 
     def _empty_listing_preview(self) -> dict[str, Any]:
         return {
@@ -1849,13 +1939,26 @@ class ReturnGoodsDataService:
             "items": items,
         }
     def _serialize_item(self, row: dict[str, Any]) -> dict[str, Any]:
-        return {
+        item = {
             **{key: number_value(value) for key, value in row.items()},
             "stockout_date": format_day(row.get("stockout_date")),
             "return_start_date": format_day(row.get("return_start_date")),
             "exit_date": format_day(row.get("exit_date")),
+            "stable_recovery_start_date": format_day(row.get("stable_recovery_start_date")),
             "sales_recovery_rate_text": self._rate_text(row.get("sales_recovery_rate")),
+            "d21_recovery_rate_text": self._rate_text(row.get("d21_recovery_rate")),
+            "cumulative_avg_recovery_rate_text": self._rate_text(row.get("cumulative_avg_recovery_rate")),
         }
+        if row.get("recovery_followup_flag"):
+            item["recovery_statistics_days"] = number_value(row.get("days_to_standard")) or number_value(
+                row.get("return_days")
+            )
+        else:
+            item["recovery_statistics_days"] = number_value(row.get("recovery_window_days"))
+        for key in ("recovery_followup_flag", "current_stable_recovery_flag", "recovery_fallback_flag"):
+            if key in row:
+                item[key] = bool(row.get(key))
+        return item
 
     def _serialize_daily_detail(self, row: dict[str, Any], event: dict[str, Any]) -> dict[str, Any]:
         sales_amount = number_value(row.get("sales_amount")) or 0
@@ -1872,7 +1975,58 @@ class ReturnGoodsDataService:
             "fba_sellable": number_value(row.get("fba_sellable")) or 0,
             "fba_inbound": number_value(row.get("fba_inbound")) or 0,
             "day_tag": self._day_tag(day, event),
+            "source_missing": False,
         }
+
+    def _attach_followup_trend(self, rows: list[dict[str, Any]], event: dict[str, Any]) -> None:
+        return_start = parse_day(event.get("return_start_date"))
+        pre_sales = number_value(event.get("pre_21d_sales_qty"))
+        baseline_daily = float(pre_sales) / 21 if pre_sales else None
+        followup = bool(event.get("recovery_followup_flag"))
+        if followup and return_start:
+            dated_rows = {parse_day(row.get("dt_date")): row for row in rows if parse_day(row.get("dt_date"))}
+            last_day = max(dated_rows, default=None)
+            cursor_day = return_start + timedelta(days=21)
+            while last_day and cursor_day <= last_day:
+                if cursor_day not in dated_rows:
+                    rows.append(
+                        {
+                            "dt_date": cursor_day.isoformat(),
+                            "sales_qty": 0,
+                            "sales_amount": 0,
+                            "order_gross_profit": 0,
+                            "gross_margin_rate": None,
+                            "gross_margin_rate_text": "",
+                            "fba_sellable": 0,
+                            "fba_inbound": 0,
+                            "day_tag": "数据缺失（销量按0）",
+                            "source_missing": True,
+                        }
+                    )
+                cursor_day += timedelta(days=1)
+            rows.sort(key=lambda row: parse_day(row.get("dt_date")) or date.min)
+        cumulative_sales = 0.0
+        for row in rows:
+            row.setdefault("source_missing", False)
+            row["return_day"] = None
+            row["daily_recovery_rate"] = None
+            row["daily_recovery_rate_text"] = ""
+            row["cumulative_avg_recovery_rate"] = None
+            row["cumulative_avg_recovery_rate_text"] = ""
+            row_day = parse_day(row.get("dt_date"))
+            if return_start is None or row_day is None or row_day < return_start:
+                continue
+            return_day = (row_day - return_start).days + 1
+            row["return_day"] = return_day
+            cumulative_sales += float(number_value(row.get("sales_qty")) or 0)
+            if not followup or return_day <= 21 or baseline_daily is None:
+                continue
+            daily_rate = float(number_value(row.get("sales_qty")) or 0) / baseline_daily
+            cumulative_rate = (cumulative_sales / return_day) / baseline_daily
+            row["daily_recovery_rate"] = daily_rate
+            row["daily_recovery_rate_text"] = self._rate_text(daily_rate)
+            row["cumulative_avg_recovery_rate"] = cumulative_rate
+            row["cumulative_avg_recovery_rate_text"] = self._rate_text(cumulative_rate)
 
     def _day_tag(self, day: str | None, event: dict[str, Any]) -> str:
         if not day:

@@ -74,6 +74,47 @@ class ReturnGoodsServiceSqlTests(unittest.TestCase):
         self.assertEqual("2026-06-10", item["return_start_date"])
         self.assertIsNone(item["exit_date"])
 
+    def test_serialize_item_includes_continuous_recovery_fields(self):
+        service = ReturnGoodsDataService()
+
+        item = service._serialize_item(
+            {
+                "d21_recovery_rate": 0.42,
+                "recovery_followup_flag": 1,
+                "post_cumulative_sales_qty": 126,
+                "cumulative_avg_recovery_rate": 0.6,
+                "recovery_followup_status": "恢复提升中",
+                "stable_recovery_start_date": date(2026, 6, 25),
+                "current_stable_recovery_flag": 0,
+                "recovery_fallback_flag": 1,
+                "days_to_standard": None,
+                "return_days": 35,
+                "recovery_window_days": 21,
+            }
+        )
+
+        self.assertEqual("42.0%", item["d21_recovery_rate_text"])
+        self.assertEqual("60.0%", item["cumulative_avg_recovery_rate_text"])
+        self.assertEqual("2026-06-25", item["stable_recovery_start_date"])
+        self.assertTrue(item["recovery_followup_flag"])
+        self.assertFalse(item["current_stable_recovery_flag"])
+        self.assertTrue(item["recovery_fallback_flag"])
+        self.assertEqual(35, item["recovery_statistics_days"])
+
+    def test_serialize_item_uses_frozen_days_for_late_standard_exit(self):
+        service = ReturnGoodsDataService()
+
+        item = service._serialize_item(
+            {
+                "recovery_followup_flag": 1,
+                "days_to_standard": 28,
+                "return_days": 40,
+                "recovery_window_days": 21,
+            }
+        )
+
+        self.assertEqual(28, item["recovery_statistics_days"])
+
     def test_summary_serializer_includes_first_version_extra_metrics(self):
         service = ReturnGoodsDataService()
 
@@ -141,6 +182,18 @@ class ReturnGoodsServiceSqlTests(unittest.TestCase):
                 "receiving_msku_count": 9,
                 "not_arrived_msku_count": 10,
                 "avg_sales_recovery_rate": 0.701,
+                "current_severe_low_recovery_msku_count": 16,
+                "recovery_improving_msku_count": 17,
+                "followup_active_msku_count": 54,
+                "started_stable_recovery_msku_count": 18,
+                "recovery_fallback_msku_count": 19,
+                "late_standard_exit_msku_count": 20,
+                "followup_data_insufficient_msku_count": 21,
+                "followup_no_sales_since_return_msku_count": 22,
+                "severe_no_sales_msku_count": 2,
+                "severe_rate_0_10_msku_count": 3,
+                "severe_rate_10_30_msku_count": 4,
+                "severe_rate_30_50_msku_count": 7,
             }
         )
 
@@ -165,6 +218,31 @@ class ReturnGoodsServiceSqlTests(unittest.TestCase):
         self.assertEqual(14, overview["high_value_failed_msku_count"])
         self.assertEqual(15, overview["data_insufficient_msku_count"])
         self.assertEqual(9, overview["receiving_msku_count"])
+        self.assertEqual(16, overview["current_severe_low_recovery_msku_count"])
+        self.assertEqual(17, overview["recovery_improving_msku_count"])
+        self.assertEqual(54, overview["followup_active_msku_count"])
+        self.assertEqual(
+            overview["followup_active_msku_count"],
+            overview["current_severe_low_recovery_msku_count"]
+            + overview["recovery_improving_msku_count"]
+            + overview["followup_data_insufficient_msku_count"],
+        )
+        self.assertEqual(18, overview["started_stable_recovery_msku_count"])
+        self.assertEqual(19, overview["recovery_fallback_msku_count"])
+        self.assertEqual(20, overview["late_standard_exit_msku_count"])
+        self.assertEqual(21, overview["followup_data_insufficient_msku_count"])
+        self.assertEqual(22, overview["followup_no_sales_since_return_msku_count"])
+        self.assertEqual(2, overview["severe_no_sales_msku_count"])
+        self.assertEqual(3, overview["severe_rate_0_10_msku_count"])
+        self.assertEqual(4, overview["severe_rate_10_30_msku_count"])
+        self.assertEqual(7, overview["severe_rate_30_50_msku_count"])
+        self.assertEqual(
+            overview["current_severe_low_recovery_msku_count"],
+            overview["severe_no_sales_msku_count"]
+            + overview["severe_rate_0_10_msku_count"]
+            + overview["severe_rate_10_30_msku_count"]
+            + overview["severe_rate_30_50_msku_count"],
+        )
         self.assertEqual("70.1%", overview["avg_sales_recovery_rate_text"])
 
     def test_overview_quick_filters_use_latest_event_subquery(self):
@@ -196,13 +274,13 @@ class ReturnGoodsServiceSqlTests(unittest.TestCase):
         self.assertIn("order by return_start_date desc, return_round desc", where_sql)
         self.assertIn("latest_rank = 1", where_sql)
 
-    def test_status_matrix_uses_current_operating_columns(self):
+    def test_status_matrix_uses_continuous_recovery_columns(self):
         service = ReturnGoodsDataService()
 
         matrix = service._status_matrix([], date(2026, 6, 1), date(2026, 6, 30))
 
         self.assertEqual(
-            ["not_arrived", "observe", "operating", "recovery_insufficient", "over21_low_recovery"],
+            ["not_arrived", "observe", "operating", "followup_severe", "followup_improving", "followup_data_insufficient"],
             [item["key"] for item in matrix["statuses"]],
         )
 
@@ -214,17 +292,86 @@ class ReturnGoodsServiceSqlTests(unittest.TestCase):
             "current_fba_sellable": 0,
             "current_fba_inbound": 100,
             "return_start_date": date(2026, 6, 1),
-            "exit_date": date(2026, 6, 22),
-            "sales_recovery_rate": 0.4,
+            "exit_date": None,
+            "recovery_followup_flag": 1,
+            "cumulative_avg_recovery_rate": 0.4,
+            "stable_recovery_start_date": date(2026, 6, 24),
+            "current_stable_recovery_flag": 1,
+            "stage": "持续干预期",
+        }
+
+        exited_without_matrix_status = {
+            "item_key": "store|site|exited",
+            "pre_stockout_sales_role": "明星产品",
+            "current_fba_sellable": 20,
+            "current_fba_inbound": 0,
+            "return_start_date": date(2026, 5, 1),
+            "exit_date": date(2026, 6, 1),
             "stage": "已退出",
         }
 
-        matrix = service._status_matrix([row], date(2026, 6, 1), date(2026, 6, 30))
+        matrix = service._status_matrix([row, exited_without_matrix_status], date(2026, 6, 1), date(2026, 6, 30))
         cells = {(cell["role_key"], cell["status_key"]): cell["count"] for cell in matrix["cells"]}
 
-        self.assertEqual(1, cells[("potential", "over21_low_recovery")])
+        self.assertEqual(1, cells[("potential", "followup_severe")])
         self.assertEqual(0, cells[("potential", "not_arrived")])
         self.assertEqual(1, sum(cell["count"] for cell in matrix["cells"]))
+        self.assertEqual(1, matrix["total"])
+
+    def test_continuous_recovery_quick_filters_use_followup_fields(self):
+        service = ReturnGoodsDataService()
+        cases = {
+            "overview_current_severe_low_recovery": ["recovery_followup_flag = 1", "cumulative_avg_recovery_rate < 0.5", "exit_date is null"],
+            "overview_recovery_improving": ["cumulative_avg_recovery_rate >= 0.5", "cumulative_avg_recovery_rate < 0.7"],
+            "overview_started_stable_recovery": ["stable_recovery_start_date is not null", "exit_date is null"],
+            "overview_recovery_fallback": ["recovery_fallback_flag = 1", "exit_date is null"],
+            "overview_late_standard_exit": ["recovery_followup_flag = 1", "recovery_followup_status = '21天后恢复达标'"],
+            "overview_followup_data_insufficient": ["recovery_followup_flag = 1", "cumulative_avg_recovery_rate is null", "exit_date is null"],
+            "overview_followup_active": ["recovery_followup_flag = 1", "exit_date is null"],
+            "overview_followup_no_sales_since_return": [
+                "recovery_followup_flag = 1",
+                "coalesce(post_cumulative_sales_qty, 0) = 0",
+                "exit_date is null",
+            ],
+            "overview_severe_no_sales": [
+                "cumulative_avg_recovery_rate < 0.5",
+                "coalesce(post_cumulative_sales_qty, 0) = 0",
+            ],
+            "overview_severe_rate_0_10": [
+                "cumulative_avg_recovery_rate > 0",
+                "cumulative_avg_recovery_rate < 0.1",
+            ],
+            "overview_severe_rate_10_30": [
+                "cumulative_avg_recovery_rate >= 0.1",
+                "cumulative_avg_recovery_rate < 0.3",
+            ],
+            "overview_severe_rate_30_50": [
+                "cumulative_avg_recovery_rate >= 0.3",
+                "cumulative_avg_recovery_rate < 0.5",
+            ],
+            "overview_severe_never_stable": [
+                "cumulative_avg_recovery_rate < 0.5",
+                "coalesce(post_cumulative_sales_qty, 0) > 0",
+                "coalesce(recovery_fallback_flag, 0) = 0",
+                "coalesce(current_stable_recovery_flag, 0) = 0",
+            ],
+            "overview_severe_recovery_fallback": [
+                "cumulative_avg_recovery_rate < 0.5",
+                "coalesce(post_cumulative_sales_qty, 0) > 0",
+                "recovery_fallback_flag = 1",
+            ],
+            "overview_severe_current_stable": [
+                "cumulative_avg_recovery_rate < 0.5",
+                "coalesce(post_cumulative_sales_qty, 0) > 0",
+                "coalesce(recovery_fallback_flag, 0) = 0",
+                "current_stable_recovery_flag = 1",
+            ],
+        }
+
+        for quick_filter, fragments in cases.items():
+            where_sql, _ = service._build_where(snapshot_date=date(2026, 6, 30), quick_filter=quick_filter)
+            for fragment in fragments:
+                self.assertIn(fragment, where_sql, quick_filter)
 
     def test_overview_recovery_insufficient_filter_uses_50_to_70_percent_rate(self):
         service = ReturnGoodsDataService()
@@ -249,7 +396,8 @@ class ReturnGoodsServiceSqlTests(unittest.TestCase):
         where_sql, _ = service._build_where(snapshot_date=date(2026, 6, 30), quick_filter="overview_high_value_failed")
 
         self.assertIn("pre_stockout_sales_role in ('明星产品', '潜力产品')", where_sql)
-        self.assertIn("sales_recovery_rate < 0.5", where_sql)
+        self.assertIn("recovery_followup_flag = 1", where_sql)
+        self.assertIn("cumulative_avg_recovery_rate < 0.5", where_sql)
 
     def test_overview_data_insufficient_filter_uses_empty_recovery_rate(self):
         service = ReturnGoodsDataService()
@@ -483,6 +631,85 @@ class ReturnGoodsServiceSqlTests(unittest.TestCase):
         self.assertEqual("20.0%", item["gross_margin_rate_text"])
         row["dt_date"] = date(2026, 6, 23)
         self.assertEqual("断货中", service._serialize_daily_detail(row, event)["day_tag"])
+
+    def test_attach_followup_trend_calculates_d22_daily_and_cumulative_rates(self):
+        service = ReturnGoodsDataService()
+        event = {
+            "return_start_date": "2026-06-01",
+            "pre_21d_sales_qty": 210,
+            "recovery_followup_flag": True,
+        }
+        rows = [
+            {"dt_date": "2026-06-21", "sales_qty": 5},
+            {"dt_date": "2026-06-22", "sales_qty": 6},
+            {"dt_date": "2026-06-23", "sales_qty": 8},
+        ]
+
+        service._attach_followup_trend(rows, event)
+
+        self.assertIsNone(rows[0]["daily_recovery_rate"])
+        self.assertEqual(0.6, rows[1]["daily_recovery_rate"])
+        self.assertEqual("60.0%", rows[1]["daily_recovery_rate_text"])
+        self.assertEqual(0.8, rows[2]["daily_recovery_rate"])
+        self.assertEqual(19 / 230, rows[2]["cumulative_avg_recovery_rate"])
+
+    def test_attach_followup_trend_fills_missing_natural_days_with_zero_sales(self):
+        service = ReturnGoodsDataService()
+        event = {
+            "return_start_date": "2026-06-01",
+            "pre_21d_sales_qty": 210,
+            "recovery_followup_flag": True,
+        }
+        rows = [
+            {"dt_date": "2026-06-21", "sales_qty": 5},
+            {"dt_date": "2026-06-23", "sales_qty": 8},
+        ]
+
+        service._attach_followup_trend(rows, event)
+
+        self.assertEqual(["2026-06-21", "2026-06-22", "2026-06-23"], [row["dt_date"] for row in rows])
+        self.assertEqual(0, rows[1]["sales_qty"])
+        self.assertTrue(rows[1]["source_missing"])
+        self.assertEqual(0, rows[1]["daily_recovery_rate"])
+
+    def test_daily_detail_stops_at_exit_date(self):
+        service = ReturnGoodsDataService()
+
+        class Cursor:
+            def __init__(self):
+                self.params = None
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def execute(self, _sql, params):
+                self.params = params
+
+            def fetchall(self):
+                return []
+
+        class Connection:
+            def __init__(self):
+                self.cursor_instance = Cursor()
+
+            def cursor(self):
+                return self.cursor_instance
+
+        conn = Connection()
+        event = {
+            "stockout_date": "2026-05-01",
+            "exit_date": "2026-06-28",
+            "seller_name_new": "店铺A",
+            "country_category": "欧洲站",
+            "seller_sku_adj": "MSKU1",
+        }
+
+        service._daily_detail(conn, event, date(2026, 7, 14))
+
+        self.assertEqual(date(2026, 6, 28), conn.cursor_instance.params["source_end_date"])
 
 
 if __name__ == "__main__":

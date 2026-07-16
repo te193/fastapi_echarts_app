@@ -42,7 +42,7 @@
     [
       "labelHubMetricPeriod", "labelHubCountry", "labelHubStore", "labelHubParent",
       "labelHubPeriod", "labelHubPeriodField", "labelHubKeyword", "labelHubClear", "labelHubScope",
-      "labelHubCategories", "labelHubCategoryDetail", "labelHubDiagnosis", "labelHubBreakdowns",
+      "labelHubPopulationSummary", "labelHubCategories", "labelHubCategoryDetail", "labelHubDiagnosis", "labelHubBreakdowns",
       "labelHubMeasureTabs", "labelHubCompare", "labelHubMatrix", "labelHubConditionRow", "labelHubConditions",
       "labelHubTable", "labelHubTableSummary", "labelHubTableView", "labelHubPageSize", "labelHubPagination", "labelHubHint", "labelHubDrawer",
       "labelHubDrawerClose", "labelHubDrawerContent", "labelHubRuleDrawer", "labelHubRuleDrawerClose",
@@ -293,6 +293,7 @@
       lastPayload = payload;
       if ((payload.analysis_parent_ids || []).length) state.analysis_parent_ids = payload.analysis_parent_ids.join("|");
       renderScope(payload);
+      renderPopulationSummary(payload);
       renderCategories(payload);
       renderCategoryDetail(payload);
       renderIssueOverview(payload);
@@ -320,7 +321,22 @@
       var flags = [];
       if ((item.periods || []).length > 1) flags.push("多周期");
       if (item.mutual_exclusion) flags.push("互斥配置");
-      return '<article class="label-hub-category-card ' + app.escapeHtml(item.state || "") + active + '"><button type="button" class="label-hub-category-head" data-overview-parent="' + item.id + '" aria-pressed="' + (active ? "true" : "false") + '"><span><b>' + app.escapeHtml(item.label) + '</b><small>' + app.escapeHtml(stateLabel) + '</small></span><strong>' + formatNumber(item.msku_count) + '<small> MSKU</small></strong></button><div class="label-hub-coverage"><i style="width:' + Math.round(Number(item.coverage_rate || 0) * 100) + '%"></i></div><div class="label-hub-category-meta"><span>覆盖 ' + formatPercent(item.coverage_rate) + '</span><span>' + app.escapeHtml(flags.join(" · ") || "单一口径") + '</span></div><button type="button" class="label-hub-rule-link" data-view-rules="' + item.id + '">查看划分规则</button></article>';
+      var uniqueCount = Number(item.unique_msku_count || 0);
+      var businessCount = Number(item.business_unit_count || item.msku_count || 0);
+      var uniqueCoverage = Number(item.unique_msku_coverage_rate || 0);
+      return '<article class="label-hub-category-card ' + app.escapeHtml(item.state || "") + active + '"><button type="button" class="label-hub-category-head" data-overview-parent="' + item.id + '" aria-pressed="' + (active ? "true" : "false") + '"><span><b>' + app.escapeHtml(item.label) + '</b><small>' + app.escapeHtml(stateLabel) + '</small></span><strong>' + formatNumber(uniqueCount) + '<small> MSKU</small></strong></button><div class="label-hub-coverage"><i style="width:' + Math.round(uniqueCoverage * 100) + '%"></i></div><div class="label-hub-category-meta"><span>去重覆盖 ' + formatPercent(uniqueCoverage) + '</span><span>经营单元 ' + formatNumber(businessCount) + '</span></div><div class="label-hub-category-foot"><span>' + app.escapeHtml(flags.join(" · ") || "单一口径") + '</span><button type="button" class="label-hub-rule-link" data-view-rules="' + item.id + '">查看划分规则</button></div></article>';
+    }).join("");
+  }
+
+  function renderPopulationSummary(payload) {
+    var summary = payload.population_summary || {};
+    var cards = [
+      { label: "去重 MSKU", value: summary.unique_msku_count, note: "合并跨店铺与国家类别后的商品规模" },
+      { label: "经营单元", value: summary.business_unit_count, note: "国家类别 + 店铺 + MSKU" },
+      { label: "跨范围 MSKU", value: summary.cross_scope_msku_count, note: "存在于多个经营单元，标签可能不同" }
+    ];
+    elements.labelHubPopulationSummary.innerHTML = cards.map(function (item, index) {
+      return '<article class="label-hub-population-card tone-' + index + '"><span>' + app.escapeHtml(item.label) + '</span><strong>' + formatNumber(item.value || 0) + '</strong><small>' + app.escapeHtml(item.note) + '</small></article>';
     }).join("");
   }
 
@@ -342,7 +358,8 @@
     }).join("");
     var periods = (item.periods || []).join(" / ") || "无周期";
     var note = item.mutual_exclusion ? "同周期互斥" : "允许标签共现";
-    elements.labelHubCategoryDetail.innerHTML = '<header><div><span class="section-kicker">当前分析标签</span><h3>' + app.escapeHtml(item.label) + '</h3></div><p>' + app.escapeHtml(periods) + " · " + app.escapeHtml(note) + ' · 点击子标签加入联动条件</p></header><div class="label-hub-children">' + children + "</div>";
+    var aggregationRule = item.aggregation_rule || "跨经营单元按业务优先级只保留一个主标签。";
+    elements.labelHubCategoryDetail.innerHTML = '<header><div><span class="section-kicker">当前分析标签</span><h3>' + app.escapeHtml(item.label) + '</h3></div><p>' + app.escapeHtml(periods) + " · " + app.escapeHtml(note) + ' · ' + app.escapeHtml(aggregationRule) + '</p></header><div class="label-hub-children">' + children + "</div>";
   }
 
   function renderIssueOverview(payload) {
@@ -580,6 +597,7 @@
     var stateLabel = { available: "可分析", disabled: "未启用", developing: "开发中" }[category.state] || "暂无数据";
     var children = category.children || [];
     var allPeriods = unique(children.reduce(function (result, child) { return result.concat(child.periods || []); }, []));
+    var aggregationPriority = category.aggregation_priority_labels || [];
     var ruleCards = (category.children || []).map(function (child) {
       var periods = (child.periods || []).join(" / ") || "未配置";
       var definition = child.definition || "未配置";
@@ -593,7 +611,7 @@
       return '<details class="label-hub-rule-row"' + (index === 0 ? " open" : "") + '><summary class="label-hub-rule-row-main"><span class="label-hub-rule-name"><i>' + String(index + 1).padStart(2, "0") + '</i><b>' + app.escapeHtml(child.label || String(child.id)) + '</b></span><span class="label-hub-rule-core">' + app.escapeHtml(rule) + '</span><span class="label-hub-rule-period">' + app.escapeHtml(periods) + '</span><em>' + app.escapeHtml(status) + '</em><span class="label-hub-rule-toggle"><i class="closed">展开配置</i><i class="opened">收起配置</i></span></summary><div class="label-hub-rule-extra"><section><span>业务定义</span><p>' + app.escapeHtml(definition) + '</p></section><dl><div><dt>打标方式</dt><dd>' + app.escapeHtml(taggingMethod) + '</dd></div><div><dt>更新频率</dt><dd>' + app.escapeHtml(frequency) + '</dd></div><div><dt>负责人</dt><dd>' + app.escapeHtml(owner) + '</dd></div><div><dt>互斥配置</dt><dd>' + app.escapeHtml(mutualExclusion) + '</dd></div></dl></div></details>';
     }).join("");
     elements.labelHubRuleDrawerTitle.textContent = category.label;
-    elements.labelHubRuleDrawerContent.innerHTML = '<div class="label-hub-rule-summary"><span>' + app.escapeHtml(stateLabel) + '</span><span>' + formatNumber(children.length) + ' 个子标签</span><span>' + app.escapeHtml(allPeriods.join(" / ") || "无周期配置") + '</span><span>' + app.escapeHtml(category.mutual_exclusion ? "同周期互斥" : "允许共现") + '</span></div><div class="label-hub-rule-table-head"><span>子标签</span><span>核心划分规则</span><span>周期</span><span>状态</span><span>操作</span></div><div class="label-hub-rule-detail-list">' + (ruleCards || '<div class="empty-state compact">该分类暂未配置子标签规则。</div>') + '</div>';
+    elements.labelHubRuleDrawerContent.innerHTML = '<div class="label-hub-rule-summary"><span>' + app.escapeHtml(stateLabel) + '</span><span>' + formatNumber(children.length) + ' 个子标签</span><span>' + app.escapeHtml(allPeriods.join(" / ") || "无周期配置") + '</span><span>' + app.escapeHtml(category.mutual_exclusion ? "同周期互斥" : "允许共现") + '</span></div><div class="label-hub-rule-priority"><b>主标签优先级</b><span>' + app.escapeHtml(aggregationPriority.join(" ＞ ") || "按标签详情表顺序") + '</span><small>同一 MSKU 跨经营单元命中多个子标签时，只保留优先级最高的一项用于上方聚合分析；底部明细保留原始事实。</small></div><div class="label-hub-rule-table-head"><span>子标签</span><span>核心划分规则</span><span>周期</span><span>状态</span><span>操作</span></div><div class="label-hub-rule-detail-list">' + (ruleCards || '<div class="empty-state compact">该分类暂未配置子标签规则。</div>') + '</div>';
     elements.labelHubRuleDrawer.hidden = false;
     elements.labelHubRuleDrawerClose.focus();
   }
