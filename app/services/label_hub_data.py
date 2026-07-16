@@ -13,7 +13,7 @@ from .label_hub_local_metrics import METRIC_PERIODS, label_hub_local_metrics_ser
 LABEL_DETAIL_TABLE = "dws_datasync.dws_标签详情表"
 LABEL_FACT_TABLE = "dws_datasync.dws_标签表"
 REFUND_MSKU_PREFIX = "Amazon.Found."
-CACHE_SECONDS = 60
+CACHE_SECONDS = 300
 EXCLUDED_ANALYSIS_PARENT_IDS = {4, 7, 13}
 
 REMOTE_PARENT_CHILD_PRIORITY = {
@@ -109,6 +109,17 @@ def _parse_code_pipe(value: Any, allowed: set[str], field: str) -> set[str]:
     if not values.issubset(allowed):
         raise ValueError(f"{field} 包含无效选项")
     return values
+
+
+def _missing_metric_mskus(rows: list[dict[str, Any]]) -> set[str]:
+    all_mskus: set[str] = set()
+    matched_mskus: set[str] = set()
+    for row in rows:
+        msku = str(row["msku"])
+        all_mskus.add(msku)
+        if row["_metric_present"]:
+            matched_mskus.add(msku)
+    return all_mskus - matched_mskus
 
 
 class LabelHubDataService:
@@ -506,11 +517,7 @@ class LabelHubDataService:
 
         pre_problem_rows = [row for row in baseline_rows if row_matches(row, include_problem=False)]
         pre_problem_mskus = {row["msku"] for row in pre_problem_rows}
-        missing_metric_mskus = {
-            msku
-            for msku in pre_problem_mskus
-            if not any(row["_metric_present"] for row in pre_problem_rows if row["msku"] == msku)
-        }
+        missing_metric_mskus = _missing_metric_mskus(pre_problem_rows)
         preferred_roles = preferred_local_values(pre_problem_rows, "sales_role_code")
         preferred_daily_sales = preferred_local_values(pre_problem_rows, "daily_sales_band_code")
         profit_by_msku: dict[str, float] = defaultdict(float)
@@ -546,12 +553,7 @@ class LabelHubDataService:
                 bucket_mskus = {msku for msku, value in preferred_values.items() if value == bucket_key}
                 stats = self._bucket_stats(candidates, lambda row, mskus=bucket_mskus: row["msku"] in mskus, candidate_count)
                 buckets.append({"key": bucket_key, "label": bucket_label, **stats})
-            candidate_mskus = {row["msku"] for row in candidates}
-            missing_mskus = {
-                msku
-                for msku in candidate_mskus
-                if not any(row["_metric_present"] for row in candidates if row["msku"] == msku)
-            }
+            missing_mskus = _missing_metric_mskus(candidates)
             missing_stats = self._bucket_stats(candidates, lambda row: row["msku"] in missing_mskus, candidate_count)
             missing_label = (
                 "暂无经营数据"

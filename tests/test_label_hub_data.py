@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.services.label_hub_data import LabelHubDataService
+from app.services.label_hub_data import CACHE_SECONDS, LabelHubDataService, _missing_metric_mskus
 
 
 DETAILS = [
@@ -113,6 +113,18 @@ METRICS = {
 class LabelHubDataTests(unittest.TestCase):
     def setUp(self):
         self.service = LabelHubDataService.__new__(LabelHubDataService)
+
+    def test_label_fact_and_metric_cache_keeps_five_minutes(self):
+        self.assertEqual(300, CACHE_SECONDS)
+
+    def test_missing_metric_mskus_treats_any_matched_scope_as_available(self):
+        rows = [
+            {"msku": "A1", "_metric_present": False},
+            {"msku": "A1", "_metric_present": True},
+            {"msku": "A2", "_metric_present": False},
+        ]
+
+        self.assertEqual({"A2"}, _missing_metric_mskus(rows))
 
     def test_parse_conditions_uses_or_within_parent_and_and_across_parents(self):
         parsed = self.service.parse_conditions("1:101|102;2:201")
