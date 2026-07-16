@@ -15,6 +15,12 @@ DEFAULT_LOOKBACK_DAYS = 180
 RETURN_STOCK_THRESHOLD = Decimal("5")
 MONITOR_DAYS = 21
 
+
+def source_history_start_date(snapshot_date: date, lookback_days: int) -> date:
+    # Keep enough context to trace a stockout segment across the full
+    # identification window and still retain its preceding 21-day baseline.
+    return snapshot_date - timedelta(days=lookback_days * 2 + MONITOR_DAYS - 1)
+
 CREATE_RETURN_EVENTS_SQL = """
 create table if not exists etl_datasync.dashboard_return_goods_events (
     snapshot_date date not null,
@@ -44,6 +50,17 @@ create table if not exists etl_datasync.dashboard_return_goods_events (
     pre_recovery_sales_qty decimal(18,4) null,
     post_recovery_sales_qty decimal(18,4) null,
     sales_recovery_rate decimal(18,4) null,
+    pre_21d_sales_qty decimal(18,4) null,
+    post_first_21d_sales_qty decimal(18,4) null,
+    d21_recovery_rate decimal(18,6) null,
+    recovery_followup_flag tinyint not null default 0,
+    post_cumulative_sales_qty decimal(18,4) null,
+    cumulative_avg_recovery_rate decimal(18,6) null,
+    recovery_followup_status varchar(32) null,
+    stable_recovery_start_date date null,
+    current_stable_recovery_flag tinyint not null default 0,
+    recovery_fallback_flag tinyint not null default 0,
+    days_to_standard int null,
     current_fba_sellable decimal(18,4) null,
     current_fba_inbound decimal(18,4) null,
     warning_type varchar(32) null,
@@ -563,14 +580,22 @@ insert into etl_datasync.dashboard_return_goods_events (
     exit_date, exit_reason, return_days, stage, pre_7d_sales_qty, pre_7d_sales_avg, pre_7d_gross_margin_rate,
     pre_stockout_sales_role, observe_7d_sales_qty, observe_7d_sales_avg, post_7d_sales_qty, post_7d_sales_avg, post_21d_available_sales_qty,
     recovery_window_days, pre_recovery_sales_qty, post_recovery_sales_qty,
-    sales_recovery_rate, current_fba_sellable, current_fba_inbound, warning_type
+    sales_recovery_rate, pre_21d_sales_qty, post_first_21d_sales_qty, d21_recovery_rate,
+    recovery_followup_flag, post_cumulative_sales_qty, cumulative_avg_recovery_rate,
+    recovery_followup_status, stable_recovery_start_date, current_stable_recovery_flag,
+    recovery_fallback_flag, days_to_standard,
+    current_fba_sellable, current_fba_inbound, warning_type
 ) values (
     %(snapshot_date)s, %(return_event_id)s, %(item_key)s, %(seller_name_new)s, %(country_category)s,
     %(seller_sku_adj)s, %(local_sku)s, %(return_round)s, %(stockout_date)s, %(return_start_date)s,
     %(exit_date)s, %(exit_reason)s, %(return_days)s, %(stage)s, %(pre_7d_sales_qty)s, %(pre_7d_sales_avg)s, %(pre_7d_gross_margin_rate)s,
     %(pre_stockout_sales_role)s, %(observe_7d_sales_qty)s, %(observe_7d_sales_avg)s, %(post_7d_sales_qty)s, %(post_7d_sales_avg)s, %(post_21d_available_sales_qty)s,
     %(recovery_window_days)s, %(pre_recovery_sales_qty)s, %(post_recovery_sales_qty)s,
-    %(sales_recovery_rate)s, %(current_fba_sellable)s, %(current_fba_inbound)s, %(warning_type)s
+    %(sales_recovery_rate)s, %(pre_21d_sales_qty)s, %(post_first_21d_sales_qty)s, %(d21_recovery_rate)s,
+    %(recovery_followup_flag)s, %(post_cumulative_sales_qty)s, %(cumulative_avg_recovery_rate)s,
+    %(recovery_followup_status)s, %(stable_recovery_start_date)s, %(current_stable_recovery_flag)s,
+    %(recovery_fallback_flag)s, %(days_to_standard)s,
+    %(current_fba_sellable)s, %(current_fba_inbound)s, %(warning_type)s
 );
 """
 
@@ -613,6 +638,55 @@ def recovery_rate(pre_qty: Decimal | None, post_qty: Decimal | None) -> Decimal 
     return post_qty / pre_qty
 
 
+def cumulative_average_recovery_rate(
+    pre_21d_sales_qty: Decimal | None,
+    post_cumulative_sales_qty: Decimal | None,
+    elapsed_days: int,
+) -> Decimal | None:
+    if pre_21d_sales_qty is None or pre_21d_sales_qty == 0 or elapsed_days <= 0:
+        return None
+    baseline_daily_sales = pre_21d_sales_qty / Decimal(MONITOR_DAYS)
+    return (to_decimal(post_cumulative_sales_qty) / Decimal(elapsed_days)) / baseline_daily_sales
+
+
+def sales_by_day(rows: list[dict[str, Any]], start_day: date, end_day: date) -> dict[date, Decimal]:
+    result: dict[date, Decimal] = {}
+    for row in rows:
+        row_day = row["dt_date"]
+        if start_day <= row_day <= end_day:
+            result[row_day] = result.get(row_day, Decimal("0")) + to_decimal(row.get("sales_qty"))
+    return result
+
+
+def stable_recovery_state(
+    rows: list[dict[str, Any]],
+    return_start_date: date,
+    effective_date: date,
+    pre_21d_sales_qty: Decimal | None,
+) -> tuple[date | None, bool, bool]:
+    followup_start = return_start_date + timedelta(days=MONITOR_DAYS)
+    if pre_21d_sales_qty is None or pre_21d_sales_qty == 0 or effective_date < followup_start + timedelta(days=2):
+        return None, False, False
+    threshold = (pre_21d_sales_qty / Decimal(MONITOR_DAYS)) * Decimal("0.5")
+    daily_sales = sales_by_day(rows, followup_start, effective_date)
+    stable_start = None
+    streak = 0
+    cursor_day = followup_start
+    while cursor_day <= effective_date:
+        if daily_sales.get(cursor_day, Decimal("0")) >= threshold:
+            streak += 1
+            if streak == 3 and stable_start is None:
+                stable_start = cursor_day - timedelta(days=2)
+        else:
+            streak = 0
+        cursor_day += timedelta(days=1)
+    current_stable = all(
+        daily_sales.get(effective_date - timedelta(days=offset), Decimal("0")) >= threshold
+        for offset in range(3)
+    )
+    return stable_start, current_stable, stable_start is not None and not current_stable
+
+
 def gross_margin_rate(rows: list[dict[str, Any]], start_day: date, end_day: date) -> Decimal | None:
     period_rows = [row for row in rows if start_day <= row["dt_date"] <= end_day]
     sales_amount = sum((to_decimal(row.get("sales_amount")) for row in period_rows), Decimal("0"))
@@ -649,18 +723,6 @@ def make_event_id(item_key: str, return_start_date: date, stockout_date: date, r
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:20]
 
 
-def exit_reason_for(return_days: int, rate: Decimal | None) -> str | None:
-    if return_days <= MONITOR_DAYS:
-        return None
-    if rate is None:
-        return "待人工判断"
-    if rate >= Decimal("0.7"):
-        return "达标退出"
-    if rate < Decimal("0.5"):
-        return "未达标退出"
-    return "待人工判断"
-
-
 def stage_for(return_days: int, exit_reason: str | None) -> str:
     if exit_reason:
         return "已退出"
@@ -668,14 +730,18 @@ def stage_for(return_days: int, exit_reason: str | None) -> str:
         return "观察期"
     if return_days <= MONITOR_DAYS:
         return "运营干预期"
-    return "超期未处理"
+    return "持续干预期"
 
 
 def warning_for(stage: str, exit_reason: str | None, rate: Decimal | None) -> str | None:
     if exit_reason == "二次断货":
         return "二次断货"
-    if stage == "超期未处理":
-        return "严重超期"
+    if stage == "持续干预期":
+        if rate is None:
+            return "持续干预数据不足"
+        if rate < Decimal("0.5"):
+            return "持续干预严重低恢复"
+        return "持续干预恢复不足"
     if stage != "运营干预期" or rate is None:
         return None
     if rate < Decimal("0.5"):
@@ -720,35 +786,75 @@ def build_events(
         start_day = event["return_start_date"]
         if start_day < min_return_start:
             continue
-        metric_end_day = snapshot_date
-        exit_reason = None
-        exit_day = None
-
-        effective_day = min(exit_day or snapshot_date, snapshot_date)
-        return_days = max(1, (effective_day - start_day).days + 1)
-        recovery_window_days = min(return_days, MONITOR_DAYS)
+        actual_return_days = max(1, (snapshot_date - start_day).days + 1)
+        recovery_window_days = min(actual_return_days, MONITOR_DAYS)
         pre_window_start = event["stockout_date"] - timedelta(days=7)
         pre_window_end = event["stockout_date"] - timedelta(days=1)
         pre_recovery_window_start = event["stockout_date"] - timedelta(days=recovery_window_days)
         pre_recovery_window_end = event["stockout_date"] - timedelta(days=1)
-        observe_window_end = min(start_day + timedelta(days=6), snapshot_date)
-        post_window_start = max(start_day, metric_end_day - timedelta(days=6))
         post_recovery_window_end = min(start_day + timedelta(days=recovery_window_days - 1), snapshot_date)
+        pre_21d_qty = sales_qty(
+            rows,
+            event["stockout_date"] - timedelta(days=MONITOR_DAYS),
+            event["stockout_date"] - timedelta(days=1),
+        )
+        post_first_21d_qty = sales_qty(
+            rows,
+            start_day,
+            min(start_day + timedelta(days=MONITOR_DAYS - 1), snapshot_date),
+        )
+        d21_rate = recovery_rate(pre_21d_qty, post_first_21d_qty) if actual_return_days >= MONITOR_DAYS else None
+        followup_flag = actual_return_days > MONITOR_DAYS and (d21_rate is None or d21_rate < Decimal("0.7"))
+        exit_day = None
+        if actual_return_days > MONITOR_DAYS and d21_rate is not None and d21_rate >= Decimal("0.7"):
+            exit_day = start_day + timedelta(days=MONITOR_DAYS)
+        elif followup_flag and pre_21d_qty > 0:
+            candidate_day = start_day + timedelta(days=MONITOR_DAYS)
+            while candidate_day <= snapshot_date:
+                elapsed_days = (candidate_day - start_day).days + 1
+                candidate_qty = sales_qty(rows, start_day, candidate_day)
+                candidate_rate = cumulative_average_recovery_rate(pre_21d_qty, candidate_qty, elapsed_days)
+                if candidate_rate is not None and candidate_rate >= Decimal("0.7"):
+                    exit_day = candidate_day
+                    break
+                candidate_day += timedelta(days=1)
+
+        exit_reason = "达标退出" if exit_day else None
+        effective_day = min(exit_day or snapshot_date, snapshot_date)
+        return_days = max(1, (effective_day - start_day).days + 1)
+        metric_end_day = effective_day
+        observe_window_end = min(start_day + timedelta(days=6), metric_end_day)
+        post_window_start = max(start_day, metric_end_day - timedelta(days=6))
         pre_avg = avg_sales(rows, pre_window_start, pre_window_end)
         pre_qty = sales_qty(rows, pre_window_start, pre_window_end)
         pre_margin = gross_margin_rate(rows, pre_window_start, pre_window_end)
-        pre_recovery_qty = sales_qty(rows, pre_recovery_window_start, pre_recovery_window_end)
+        pre_recovery_qty = pre_21d_qty if actual_return_days > MONITOR_DAYS else sales_qty(
+            rows, pre_recovery_window_start, pre_recovery_window_end
+        )
         observe_avg = avg_sales(rows, start_day, observe_window_end)
         observe_qty = sales_qty(rows, start_day, observe_window_end)
         post_avg = avg_sales(rows, post_window_start, metric_end_day)
         post_qty = sales_qty(rows, post_window_start, metric_end_day)
-        post_recovery_qty = sales_qty(rows, start_day, post_recovery_window_end)
+        post_cumulative_qty = sales_qty(rows, start_day, metric_end_day) if followup_flag else None
+        cumulative_rate = cumulative_average_recovery_rate(pre_21d_qty, post_cumulative_qty, return_days) if followup_flag else None
+        post_recovery_qty = post_cumulative_qty if followup_flag else sales_qty(rows, start_day, post_recovery_window_end)
         post_21d_sales_qty = salable_sales_qty(rows, start_day, min(start_day + timedelta(days=20), snapshot_date))
-        rate = recovery_rate(pre_recovery_qty, post_recovery_qty)
-        if not exit_reason:
-            exit_reason = exit_reason_for(return_days, rate)
-            if exit_reason:
-                exit_day = start_day + timedelta(days=MONITOR_DAYS)
+        rate = cumulative_rate if followup_flag else recovery_rate(pre_recovery_qty, post_recovery_qty)
+        stable_start, current_stable, recovery_fallback = (
+            stable_recovery_state(rows, start_day, metric_end_day, pre_21d_qty)
+            if followup_flag
+            else (None, False, False)
+        )
+        followup_status = None
+        if followup_flag:
+            if exit_day:
+                followup_status = "21天后恢复达标"
+            elif cumulative_rate is None:
+                followup_status = "数据不足持续关注"
+            elif cumulative_rate < Decimal("0.5"):
+                followup_status = "截至目前严重恢复不足"
+            else:
+                followup_status = "恢复提升中"
         stage = stage_for(return_days, exit_reason)
 
         result.append(
@@ -781,6 +887,17 @@ def build_events(
                 "pre_recovery_sales_qty": pre_recovery_qty,
                 "post_recovery_sales_qty": post_recovery_qty,
                 "sales_recovery_rate": rate,
+                "pre_21d_sales_qty": pre_21d_qty if actual_return_days >= MONITOR_DAYS else None,
+                "post_first_21d_sales_qty": post_first_21d_qty if actual_return_days >= MONITOR_DAYS else None,
+                "d21_recovery_rate": d21_rate,
+                "recovery_followup_flag": followup_flag,
+                "post_cumulative_sales_qty": post_cumulative_qty,
+                "cumulative_avg_recovery_rate": cumulative_rate,
+                "recovery_followup_status": followup_status,
+                "stable_recovery_start_date": stable_start,
+                "current_stable_recovery_flag": current_stable,
+                "recovery_fallback_flag": recovery_fallback,
+                "days_to_standard": return_days if exit_day else None,
                 "current_fba_sellable": to_decimal(latest_row.get("afn_fulfillable_quantity")),
                 "current_fba_inbound": to_decimal(latest_row.get("fba_inbound_quantity")),
                 "warning_type": warning_for(stage, exit_reason, rate),
@@ -805,7 +922,7 @@ def connect_stream_target():
 
 
 def iter_grouped_rows(conn, schemas, snapshot_date: date, lookback_days: int) -> Iterable[list[dict[str, Any]]]:
-    source_start_date = snapshot_date - timedelta(days=lookback_days + MONITOR_DAYS - 1)
+    source_start_date = source_history_start_date(snapshot_date, lookback_days)
     with conn.cursor() as cursor:
         cursor.execute(
             render_sql(SELECT_PRODUCT_DAILY_SQL, schemas),
@@ -848,6 +965,17 @@ def ensure_return_events_schema(cursor, schemas) -> None:
         ("recovery_window_days", "add column recovery_window_days int null after post_21d_available_sales_qty"),
         ("pre_recovery_sales_qty", "add column pre_recovery_sales_qty decimal(18,4) null after recovery_window_days"),
         ("post_recovery_sales_qty", "add column post_recovery_sales_qty decimal(18,4) null after pre_recovery_sales_qty"),
+        ("pre_21d_sales_qty", "add column pre_21d_sales_qty decimal(18,4) null after sales_recovery_rate"),
+        ("post_first_21d_sales_qty", "add column post_first_21d_sales_qty decimal(18,4) null after pre_21d_sales_qty"),
+        ("d21_recovery_rate", "add column d21_recovery_rate decimal(18,6) null after post_first_21d_sales_qty"),
+        ("recovery_followup_flag", "add column recovery_followup_flag tinyint not null default 0 after d21_recovery_rate"),
+        ("post_cumulative_sales_qty", "add column post_cumulative_sales_qty decimal(18,4) null after recovery_followup_flag"),
+        ("cumulative_avg_recovery_rate", "add column cumulative_avg_recovery_rate decimal(18,6) null after post_cumulative_sales_qty"),
+        ("recovery_followup_status", "add column recovery_followup_status varchar(32) null after cumulative_avg_recovery_rate"),
+        ("stable_recovery_start_date", "add column stable_recovery_start_date date null after recovery_followup_status"),
+        ("current_stable_recovery_flag", "add column current_stable_recovery_flag tinyint not null default 0 after stable_recovery_start_date"),
+        ("recovery_fallback_flag", "add column recovery_fallback_flag tinyint not null default 0 after current_stable_recovery_flag"),
+        ("days_to_standard", "add column days_to_standard int null after recovery_fallback_flag"),
     ]
     for column_name, alter_sql in migrations:
         cursor.execute(

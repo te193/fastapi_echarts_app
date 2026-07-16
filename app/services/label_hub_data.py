@@ -16,6 +16,26 @@ REFUND_MSKU_PREFIX = "Amazon.Found."
 CACHE_SECONDS = 60
 EXCLUDED_ANALYSIS_PARENT_IDS = {4, 7, 13}
 
+REMOTE_PARENT_CHILD_PRIORITY = {
+    1: [101, 102, 103, 104],
+    2: [204, 203, 202, 201, 205],
+    3: [301, 302, 303, 304, 305, 306],
+    5: [501, 502, 503],
+    6: [608, 607, 606, 605, 604, 603, 612, 602, 601, 611, 609, 610],
+    8: [802, 801, 803],
+    9: [904, 903, 902, 901],
+    10: [1001, 1002, 1003, 1004],
+    11: [1101, 1102, 1103, 1104],
+    12: [1202, 1201, 1203],
+}
+
+LOCAL_VALUE_PRIORITY = {
+    "sales_role_code": ["star", "potential", "incubation", "eliminate", "missing"],
+    "sales_trend_code": ["accelerating", "growing", "recent_start", "stable", "slowing", "declining", "stopped", "no_sales", "insufficient", "missing"],
+    "daily_sales_band_code": ["gt5", "1_5", "lt1", "zero", "missing"],
+    "margin_band_code": ["gt25", "15_25", "10_15", "5_10", "lt5", "missing"],
+}
+
 LOCAL_BREAKDOWN_DEFINITIONS = {
     "sales_trend": {
         "label": "动销趋势",
@@ -129,6 +149,11 @@ class LabelHubDataService:
         result = []
         for label_id, children in sorted(groups.items()):
             children.sort(key=lambda item: int(item["sub_label_id"]))
+            child_ids = [int(item["sub_label_id"]) for item in children]
+            configured_priority = REMOTE_PARENT_CHILD_PRIORITY.get(label_id, [])
+            priority_ids = [item for item in configured_priority if item in child_ids]
+            priority_ids.extend(item for item in child_ids if item not in priority_ids)
+            child_labels = {int(item["sub_label_id"]): item.get("sub_label_name") or str(item["sub_label_id"]) for item in children}
             stats = [fact_stats.get(int(item["sub_label_id"]), {}) for item in children]
             count = sum(int(item.get("fact_count") or 0) for item in stats)
             raw_states = {str(item.get("status") or "").strip().lower() for item in children}
@@ -141,6 +166,9 @@ class LabelHubDataService:
                     "fact_count": count,
                     "latest_date": max((str(item.get("latest_date") or "") for item in stats), default=""),
                     "mutual_exclusion": any("互斥" in str(item.get("mutual_exclusion") or "") for item in children),
+                    "aggregation_priority_ids": priority_ids,
+                    "aggregation_priority_labels": [child_labels[item] for item in priority_ids],
+                    "aggregation_rule": "同一 MSKU 跨经营单元命中多个子标签时，按业务优先级只保留一个主标签。",
                     "children": [
                         {
                             "id": int(item["sub_label_id"]),
@@ -169,14 +197,19 @@ class LabelHubDataService:
         ]
 
     @staticmethod
+    def _unique_msku_count(rows: list[dict[str, Any]], predicate: Callable[[dict[str, Any]], bool] | None = None) -> int:
+        return len({row["msku"] for row in rows if predicate is None or predicate(row)})
+
+    @staticmethod
     def _bucket_stats(rows: list[dict[str, Any]], predicate: Callable[[dict[str, Any]], bool], total_rows: int) -> dict[str, Any]:
         matched = [row for row in rows if predicate(row)]
+        matched_count = LabelHubDataService._unique_msku_count(matched)
         sales_amount = sum(row.get("sales_amount") or 0 for row in matched)
         gross_profit = sum(row.get("order_gross_profit") or 0 for row in matched)
         total_sales = sum(row.get("sales_amount") or 0 for row in rows)
         return {
-            "msku_count": len(matched),
-            "share": round(len(matched) / total_rows, 4) if total_rows else 0,
+            "msku_count": matched_count,
+            "share": round(matched_count / total_rows, 4) if total_rows else 0,
             "sales_amount": round(sales_amount, 2),
             "sales_share": round(sales_amount / total_sales, 4) if total_sales else 0,
             "order_gross_profit": round(gross_profit, 2),
@@ -219,7 +252,17 @@ class LabelHubDataService:
         categories = self._analysis_categories(details, {})
         category_by_id = {item["id"]: item for item in categories}
         if not categories:
-            return {"scope": metric_scope, "overview": [], "breakdowns": [], "rows": [], "total": 0, "page": 1, "page_size": page_size, "total_pages": 1}
+            return {
+                "scope": metric_scope,
+                "population_summary": {"business_unit_count": 0, "unique_msku_count": 0, "cross_scope_msku_count": 0},
+                "overview": [],
+                "breakdowns": [],
+                "rows": [],
+                "total": 0,
+                "page": 1,
+                "page_size": page_size,
+                "total_pages": 1,
+            }
         if parent_label_id not in category_by_id:
             parent_label_id = categories[0]["id"]
         if compare_parent_id not in category_by_id or compare_parent_id == parent_label_id:
@@ -350,14 +393,22 @@ class LabelHubDataService:
 
         overview = []
         base_count = len(baseline_rows)
+        base_mskus = {row["msku"] for row in baseline_rows}
+        base_unique_count = len(base_mskus)
+        msku_scopes: dict[str, set[tuple[str, str]]] = defaultdict(set)
         parent_counts: dict[int, int] = defaultdict(int)
         child_counts: dict[tuple[int, int], int] = defaultdict(int)
+        parent_mskus: dict[int, set[str]] = defaultdict(set)
+        child_mskus: dict[tuple[int, int], set[str]] = defaultdict(set)
         parent_periods: dict[int, set[str]] = defaultdict(set)
         for row in baseline_rows:
+            msku_scopes[row["msku"]].add((row["country_category"], row["store"]))
             for parent_id, child_ids in row["_by_parent"].items():
                 parent_counts[parent_id] += 1
+                parent_mskus[parent_id].add(row["msku"])
                 for child_id in child_ids:
                     child_counts[(parent_id, child_id)] += 1
+                    child_mskus[(parent_id, child_id)].add(row["msku"])
             for parent_id, periods in row["_by_parent_period"].items():
                 parent_periods[parent_id].update(period for period in periods if period)
         for category in categories:
@@ -367,15 +418,64 @@ class LabelHubDataService:
             child_rows = []
             for child in category["children"]:
                 count = child_counts[(category["id"], child["id"])]
-                child_rows.append({**child, "msku_count": count, "coverage_rate": round(count / base_count, 4) if base_count else 0})
+                unique_count = len(child_mskus[(category["id"], child["id"])])
+                child_rows.append({
+                    **child,
+                    "msku_count": count,
+                    "business_unit_count": count,
+                    "unique_msku_count": unique_count,
+                    "coverage_rate": round(count / base_count, 4) if base_count else 0,
+                    "unique_msku_coverage_rate": round(unique_count / base_unique_count, 4) if base_unique_count else 0,
+                })
             periods = sorted(parent_periods[category["id"]], key=_period_order)
-            overview.append({**category, "msku_count": parent_count, "coverage_rate": round(parent_count / base_count, 4) if base_count else 0, "periods": periods, "children": child_rows})
+            unique_count = len(parent_mskus[category["id"]])
+            overview.append({
+                **category,
+                "msku_count": parent_count,
+                "business_unit_count": parent_count,
+                "unique_msku_count": unique_count,
+                "coverage_rate": round(parent_count / base_count, 4) if base_count else 0,
+                "unique_msku_coverage_rate": round(unique_count / base_unique_count, 4) if base_unique_count else 0,
+                "periods": periods,
+                "children": child_rows,
+            })
+
+        population_summary = {
+            "business_unit_count": base_count,
+            "unique_msku_count": base_unique_count,
+            "cross_scope_msku_count": sum(1 for scopes in msku_scopes.values() if len(scopes) > 1),
+        }
 
         def in_current_parent_scope(row: dict[str, Any]) -> bool:
             return bool(scoped_parent_children(row["_by_parent"], row["_by_parent_period"], parent_label_id))
 
         def row_parent_children(row: dict[str, Any], parent: int) -> set[int]:
             return scoped_parent_children(row["_by_parent"], row["_by_parent_period"], parent)
+
+        def preferred_remote_children(source_rows: list[dict[str, Any]], parent: int) -> dict[str, int]:
+            children_by_msku: dict[str, set[int]] = defaultdict(set)
+            for row in source_rows:
+                children_by_msku[row["msku"]].update(row_parent_children(row, parent))
+            priority = category_by_id.get(parent, {}).get("aggregation_priority_ids", [])
+            rank = {child_id: index for index, child_id in enumerate(priority)}
+            return {
+                msku: min(children, key=lambda child_id: (rank.get(child_id, len(rank)), child_id))
+                for msku, children in children_by_msku.items()
+                if children
+            }
+
+        def preferred_local_values(source_rows: list[dict[str, Any]], field: str) -> dict[str, str]:
+            values_by_msku: dict[str, set[str]] = defaultdict(set)
+            for row in source_rows:
+                if row["_metric_present"]:
+                    values_by_msku[row["msku"]].add(str(row.get(field) or "missing"))
+            priority = LOCAL_VALUE_PRIORITY[field]
+            rank = {value: index for index, value in enumerate(priority)}
+            return {
+                msku: min(values, key=lambda value: (rank.get(value, len(rank)), value))
+                for msku, values in values_by_msku.items()
+                if values
+            }
 
         def row_matches(row: dict[str, Any], skip_local: str | None = None, skip_parent: int | None = None, include_problem: bool = True) -> bool:
             if not in_current_parent_scope(row):
@@ -405,24 +505,54 @@ class LabelHubDataService:
             }.get(problem, False)
 
         pre_problem_rows = [row for row in baseline_rows if row_matches(row, include_problem=False)]
-        rows = [row for row in baseline_rows if row_matches(row)]
+        pre_problem_mskus = {row["msku"] for row in pre_problem_rows}
+        missing_metric_mskus = {
+            msku
+            for msku in pre_problem_mskus
+            if not any(row["_metric_present"] for row in pre_problem_rows if row["msku"] == msku)
+        }
+        preferred_roles = preferred_local_values(pre_problem_rows, "sales_role_code")
+        preferred_daily_sales = preferred_local_values(pre_problem_rows, "daily_sales_band_code")
+        profit_by_msku: dict[str, float] = defaultdict(float)
+        for row in pre_problem_rows:
+            if row["_metric_present"]:
+                profit_by_msku[row["msku"]] += row.get("order_gross_profit") or 0
+        issue_mskus = {
+            "conflict": {row["msku"] for row in pre_problem_rows if row["conflict"]},
+            "missing_metrics": missing_metric_mskus if local_metrics_available else set(),
+            "zero_sales": {msku for msku, value in preferred_daily_sales.items() if value == "zero"},
+            "negative_profit": {msku for msku, value in profit_by_msku.items() if value < 0},
+            "problem_role": {msku for msku, value in preferred_roles.items() if value == "eliminate"},
+        }
+        selected_problem_mskus = issue_mskus.get(problem, set())
+        rows = [
+            row for row in pre_problem_rows
+            if problem in {"", "all"} or row["msku"] in selected_problem_mskus
+        ]
         issue_counts = {
-            "all": len(pre_problem_rows),
-            "conflict": sum(row["conflict"] for row in pre_problem_rows),
-            "missing_metrics": sum(local_metrics_available and not row["_metric_present"] for row in pre_problem_rows),
-            "zero_sales": sum(row.get("daily_sales_band_code") == "zero" for row in pre_problem_rows),
-            "negative_profit": sum((row.get("order_gross_profit") or 0) < 0 and row["_metric_present"] for row in pre_problem_rows),
-            "problem_role": sum(row.get("sales_role_code") == "eliminate" for row in pre_problem_rows),
+            "all": len(pre_problem_mskus),
+            **{key: len(value) for key, value in issue_mskus.items()},
         }
 
         breakdowns = []
         for breakdown_key, definition in LOCAL_BREAKDOWN_DEFINITIONS.items():
-            candidates = [row for row in baseline_rows if row_matches(row, skip_local=breakdown_key)]
+            candidates = [row for row in baseline_rows if row_matches(row, skip_local=breakdown_key, include_problem=False)]
+            if problem not in {"", "all"}:
+                candidates = [row for row in candidates if row["msku"] in selected_problem_mskus]
+            candidate_count = self._unique_msku_count(candidates)
+            preferred_values = preferred_local_values(candidates, definition["field"])
             buckets = []
             for bucket_key, bucket_label in definition["buckets"]:
-                stats = self._bucket_stats(candidates, lambda row, field=definition["field"], value=bucket_key: row.get(field) == value, len(candidates))
+                bucket_mskus = {msku for msku, value in preferred_values.items() if value == bucket_key}
+                stats = self._bucket_stats(candidates, lambda row, mskus=bucket_mskus: row["msku"] in mskus, candidate_count)
                 buckets.append({"key": bucket_key, "label": bucket_label, **stats})
-            missing_stats = self._bucket_stats(candidates, lambda row: not row["_metric_present"], len(candidates))
+            candidate_mskus = {row["msku"] for row in candidates}
+            missing_mskus = {
+                msku
+                for msku in candidate_mskus
+                if not any(row["_metric_present"] for row in candidates if row["msku"] == msku)
+            }
+            missing_stats = self._bucket_stats(candidates, lambda row: row["msku"] in missing_mskus, candidate_count)
             missing_label = (
                 "暂无经营数据"
                 if local_metrics_available
@@ -433,7 +563,7 @@ class LabelHubDataService:
                 "key": breakdown_key,
                 "label": definition["label"],
                 "source": "local",
-                "denominator": len(candidates),
+                "denominator": candidate_count,
                 "description": definition.get("description", ""),
                 "rules": definition.get("rules", []),
                 "buckets": buckets,
@@ -450,33 +580,50 @@ class LabelHubDataService:
                 break
         for remote_parent_id in remote_ids:
             category = category_by_id[remote_parent_id]
-            candidates = [row for row in baseline_rows if row_matches(row, skip_parent=remote_parent_id)]
+            candidates = [row for row in baseline_rows if row_matches(row, skip_parent=remote_parent_id, include_problem=False)]
+            if problem not in {"", "all"}:
+                candidates = [row for row in candidates if row["msku"] in selected_problem_mskus]
+            candidate_count = self._unique_msku_count(candidates)
+            preferred_children = preferred_remote_children(candidates, remote_parent_id)
             buckets = []
             for child in category["children"]:
-                stats = self._bucket_stats(candidates, lambda row, parent=remote_parent_id, child_id=child["id"]: child_id in row["_by_parent"].get(parent, set()), len(candidates))
+                bucket_mskus = {msku for msku, child_id in preferred_children.items() if child_id == child["id"]}
+                stats = self._bucket_stats(candidates, lambda row, mskus=bucket_mskus: row["msku"] in mskus, candidate_count)
                 buckets.append({"key": str(child["id"]), "id": child["id"], "label": child["label"], **stats})
-            breakdowns.append({"key": f"label:{remote_parent_id}", "parent_id": remote_parent_id, "label": category["label"], "source": "remote_label", "denominator": len(candidates), "buckets": buckets})
+            breakdowns.append({"key": f"label:{remote_parent_id}", "parent_id": remote_parent_id, "label": category["label"], "source": "remote_label", "denominator": candidate_count, "buckets": buckets})
 
         def current_distribution(source_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             result = []
+            source_count = self._unique_msku_count(source_rows)
+            preferred_children = preferred_remote_children(source_rows, parent_label_id)
             for child in category_by_id[parent_label_id]["children"]:
-                stats = self._bucket_stats(source_rows, lambda row, child_id=child["id"]: child_id in row_parent_children(row, parent_label_id), len(source_rows))
+                bucket_mskus = {msku for msku, child_id in preferred_children.items() if child_id == child["id"]}
+                stats = self._bucket_stats(source_rows, lambda row, mskus=bucket_mskus: row["msku"] in mskus, source_count)
                 result.append({"id": child["id"], "label": child["label"], "count": stats["msku_count"], **stats})
             return result
 
         parent_children = category_by_id[parent_label_id]["children"]
         compare_children = category_by_id.get(compare_parent_id, {}).get("children", [])
+        preferred_parent_children = preferred_remote_children(rows, parent_label_id)
+        preferred_compare_children = preferred_remote_children(rows, compare_parent_id)
         cells = []
         for row_child in parent_children:
             for col_child in compare_children:
-                matched = [row for row in rows if row_child["id"] in row_parent_children(row, parent_label_id) and col_child["id"] in row_parent_children(row, compare_parent_id)]
-                stats = self._bucket_stats(rows, lambda row, ids={id(item) for item in matched}: id(row) in ids, len(rows))
-                cells.append({"row_id": row_child["id"], "col_id": col_child["id"], "count": len(matched), "sales_amount": stats["sales_amount"], "order_gross_profit": stats["order_gross_profit"]})
+                matched_mskus = {
+                    msku
+                    for msku, child_id in preferred_parent_children.items()
+                    if child_id == row_child["id"] and preferred_compare_children.get(msku) == col_child["id"]
+                }
+                stats = self._bucket_stats(rows, lambda row, mskus=matched_mskus: row["msku"] in mskus, self._unique_msku_count(rows))
+                cells.append({"row_id": row_child["id"], "col_id": col_child["id"], "count": len(matched_mskus), "sales_amount": stats["sales_amount"], "order_gross_profit": stats["order_gross_profit"]})
 
-        category_date_counts = {category["id"]: sum(category["id"] in row["_by_parent"] for row in baseline_rows) for category in categories}
+        category_date_counts = {
+            category["id"]: self._unique_msku_count(baseline_rows, lambda row, category_id=category["id"]: category_id in row["_by_parent"])
+            for category in categories
+        }
         sales_amount = sum(row.get("sales_amount") or 0 for row in rows)
         gross_profit = sum(row.get("order_gross_profit") or 0 for row in rows)
-        metric_count = sum(row["_metric_present"] for row in rows)
+        metric_count = self._unique_msku_count(rows, lambda row: row["_metric_present"])
 
         diagnosis_baseline_rows = [row for row in baseline_rows if in_current_parent_scope(row)]
         diagnosis_current_metric_rows = [row for row in rows if row["_metric_present"]]
@@ -493,10 +640,12 @@ class LabelHubDataService:
         ) -> dict[str, Any]:
             current_source = diagnosis_current_metric_rows if metric_denominator else rows
             baseline_source = diagnosis_baseline_metric_rows if metric_denominator else diagnosis_baseline_rows
-            current_count = sum(predicate(row) for row in current_source) if available else 0
-            baseline_count = sum(predicate(row) for row in baseline_source) if available else 0
-            current_rate = current_count / len(current_source) if available and current_source else 0
-            baseline_rate = baseline_count / len(baseline_source) if available and baseline_source else 0
+            current_denominator = self._unique_msku_count(current_source)
+            baseline_denominator = self._unique_msku_count(baseline_source)
+            current_count = self._unique_msku_count(current_source, predicate) if available else 0
+            baseline_count = self._unique_msku_count(baseline_source, predicate) if available else 0
+            current_rate = current_count / current_denominator if available and current_denominator else 0
+            baseline_rate = baseline_count / baseline_denominator if available and baseline_denominator else 0
             return {
                 "key": key,
                 "label": label,
@@ -519,8 +668,8 @@ class LabelHubDataService:
         diagnosis = {
             "subject": {
                 "parent_label": category_by_id[parent_label_id]["label"],
-                "msku_count": len(rows),
-                "baseline_msku_count": len(diagnosis_baseline_rows),
+                "msku_count": self._unique_msku_count(rows),
+                "baseline_msku_count": self._unique_msku_count(diagnosis_baseline_rows),
                 "condition_count": (
                     sum(len(children) for children in conditions.values())
                     + len(sales_roles)
@@ -588,18 +737,19 @@ class LabelHubDataService:
             "local_metrics_status": metric_scope.get("status") or "unavailable",
             "metric_window": metric_scope.get("window") or {},
             "metric_msku_count": metric_count,
-            "metric_coverage_rate": round(metric_count / len(rows), 4) if rows else 0,
+            "metric_coverage_rate": round(metric_count / self._unique_msku_count(rows), 4) if rows else 0,
         }
         return {
             "data_date": data_date,
             "scope": scope,
+            "population_summary": population_summary,
             "overview": overview,
             "parent_label_id": parent_label_id,
             "compare_parent_id": compare_parent_id,
             "analysis_parent_ids": remote_ids,
             "category_date_counts": category_date_counts,
             "kpis": {
-                "sku_count": len(rows),
+                "sku_count": self._unique_msku_count(rows),
                 "metric_msku_count": metric_count,
                 "metric_coverage_rate": scope["metric_coverage_rate"],
                 "sales_qty": round(sum(row.get("sales_qty") or 0 for row in rows), 2),
@@ -853,7 +1003,12 @@ class LabelHubDataService:
         return {"country_categories": countries, "stores": stores}
 
     def _fetch_facts(self, data_date, country_category="all", store="all", keyword=""):
-        clauses = ["data_date = %(data_date)s", "msku not like %(refund_prefix)s"]
+        excluded_parent_ids = ", ".join(str(item) for item in sorted(EXCLUDED_ANALYSIS_PARENT_IDS))
+        clauses = [
+            "data_date = %(data_date)s",
+            "msku not like %(refund_prefix)s",
+            f"label_id in (select sub_label_id from {LABEL_DETAIL_TABLE} where label_id not in ({excluded_parent_ids}))",
+        ]
         params = {"data_date": data_date, "refund_prefix": f"{REFUND_MSKU_PREFIX}%"}
         if country_category != "all":
             clauses.append("country_category = %(country_category)s")

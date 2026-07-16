@@ -6,7 +6,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from etl.return_goods_update import SELECT_PRODUCT_DAILY_SQL, avg_sales, build_events, salable_sales_qty, sales_role
+from etl.return_goods_update import (
+    SELECT_PRODUCT_DAILY_SQL,
+    avg_sales,
+    build_events,
+    salable_sales_qty,
+    sales_role,
+    source_history_start_date,
+)
 
 
 def product_row(
@@ -35,6 +42,12 @@ def product_row(
 
 
 class ReturnGoodsEventTests(unittest.TestCase):
+    def test_source_history_covers_stockout_context_and_pre_21d_baseline(self):
+        self.assertEqual(
+            date(2025, 6, 29),
+            source_history_start_date(date(2026, 7, 14), lookback_days=180),
+        )
+
     def test_source_sql_groups_to_store_country_msku_grain(self):
         self.assertIn("concat_ws('|', seller_name_new, country_category, seller_sku_adj) as item_key", SELECT_PRODUCT_DAILY_SQL)
         self.assertIn("group by", SELECT_PRODUCT_DAILY_SQL.lower())
@@ -228,20 +241,22 @@ class ReturnGoodsEventTests(unittest.TestCase):
         self.assertEqual(2, events[1]["return_round"])
         self.assertEqual(date(2026, 2, 1), events[1]["return_start_date"])
 
-    def test_zero_pre_sales_keeps_recovery_rate_empty_and_exits_to_manual_judgment(self):
-        rows = [product_row(date(2026, 1, 1) + timedelta(days=i), 10, 0) for i in range(7)]
-        rows.append(product_row(date(2026, 1, 8), 0, 0))
+    def test_zero_pre_sales_stays_in_data_insufficient_followup(self):
+        rows = [product_row(date(2026, 1, 1) + timedelta(days=i), 10, 0) for i in range(21)]
+        rows.append(product_row(date(2026, 1, 22), 0, 0))
         for i in range(22):
-            rows.append(product_row(date(2026, 1, 9) + timedelta(days=i), 6, 1))
+            rows.append(product_row(date(2026, 1, 23) + timedelta(days=i), 6, 1))
 
-        events = build_events(rows, date(2026, 1, 30))
+        events = build_events(rows, date(2026, 2, 13))
 
         self.assertEqual(1, len(events))
         self.assertIsNone(events[0]["sales_recovery_rate"])
-        self.assertEqual("待人工判断", events[0]["exit_reason"])
-        self.assertEqual("已退出", events[0]["stage"])
+        self.assertIsNone(events[0]["exit_reason"])
+        self.assertEqual("持续干预期", events[0]["stage"])
+        self.assertTrue(events[0]["recovery_followup_flag"])
+        self.assertEqual("数据不足持续关注", events[0]["recovery_followup_status"])
 
-    def test_older_than_21_days_exits_by_recovery_thresholds(self):
+    def test_d21_standard_product_exits_without_followup(self):
         rows = [product_row(date(2026, 1, 1) + timedelta(days=i), 10, 10) for i in range(21)]
         rows.append(product_row(date(2026, 1, 22), 0, 0))
         for i in range(22):
@@ -249,17 +264,85 @@ class ReturnGoodsEventTests(unittest.TestCase):
 
         high = build_events(rows, date(2026, 2, 13))[0]
         self.assertEqual("达标退出", high["exit_reason"])
+        self.assertEqual(date(2026, 2, 13), high["exit_date"])
+        self.assertEqual(Decimal("0.8"), high["d21_recovery_rate"])
+        self.assertFalse(high["recovery_followup_flag"])
+        self.assertIsNone(high["recovery_followup_status"])
         self.assertEqual(21, high["recovery_window_days"])
         self.assertEqual(Decimal("210"), high["pre_recovery_sales_qty"])
         self.assertEqual(Decimal("168"), high["post_recovery_sales_qty"])
 
-        low_rows = [dict(row) for row in rows]
-        for row in low_rows:
-            if row["dt_date"] >= date(2026, 1, 23):
-                row["sales_qty"] = Decimal("4")
-        low = build_events(low_rows, date(2026, 2, 13))[0]
-        self.assertEqual("未达标退出", low["exit_reason"])
-        self.assertEqual(Decimal("84") / Decimal("210"), low["sales_recovery_rate"])
+    def test_d21_low_recovery_enters_continuous_followup_instead_of_exiting(self):
+        rows = [product_row(date(2026, 1, 1) + timedelta(days=i), 10, 10) for i in range(21)]
+        rows.append(product_row(date(2026, 1, 22), 0, 0))
+        for i in range(22):
+            rows.append(product_row(date(2026, 1, 23) + timedelta(days=i), 6, 4))
+
+        low = build_events(rows, date(2026, 2, 13))[0]
+
+        self.assertIsNone(low["exit_reason"])
+        self.assertIsNone(low["exit_date"])
+        self.assertEqual("持续干预期", low["stage"])
+        self.assertEqual(Decimal("0.4"), low["d21_recovery_rate"])
+        self.assertTrue(low["recovery_followup_flag"])
+        self.assertEqual(Decimal("0.4"), low["cumulative_avg_recovery_rate"])
+        self.assertEqual("截至目前严重恢复不足", low["recovery_followup_status"])
+
+    def test_followup_product_exits_on_first_late_cumulative_average_recovery_day(self):
+        low_rows = [product_row(date(2026, 1, 1) + timedelta(days=i), 10, 10) for i in range(21)]
+        low_rows.append(product_row(date(2026, 1, 22), 0, 0))
+        low_rows.extend(product_row(date(2026, 1, 23) + timedelta(days=i), 6, 4) for i in range(21))
+        low_rows.extend(product_row(date(2026, 2, 13) + timedelta(days=i), 6, 20) for i in range(9))
+
+        recovered = build_events(low_rows, date(2026, 2, 21))[0]
+
+        self.assertEqual("达标退出", recovered["exit_reason"])
+        self.assertEqual(date(2026, 2, 17), recovered["exit_date"])
+        self.assertEqual(26, recovered["days_to_standard"])
+        self.assertTrue(recovered["recovery_followup_flag"])
+        self.assertEqual("21天后恢复达标", recovered["recovery_followup_status"])
+        self.assertEqual(Decimal("184"), recovered["post_cumulative_sales_qty"])
+        self.assertEqual(Decimal("184") / Decimal("260"), recovered["cumulative_avg_recovery_rate"])
+        self.assertEqual(date(2026, 2, 13), recovered["stable_recovery_start_date"])
+        self.assertTrue(recovered["current_stable_recovery_flag"])
+        self.assertFalse(recovered["recovery_fallback_flag"])
+
+    def test_stable_recovery_requires_three_consecutive_days_and_marks_later_fallback(self):
+        rows = [product_row(date(2026, 1, 1) + timedelta(days=i), 10, 10) for i in range(21)]
+        rows.append(product_row(date(2026, 1, 22), 0, 0))
+        rows.extend(product_row(date(2026, 1, 23) + timedelta(days=i), 6, 4) for i in range(21))
+        followup_sales = [5, 4, 5, 5, 5, 0]
+        rows.extend(
+            product_row(date(2026, 2, 13) + timedelta(days=i), 6, sales)
+            for i, sales in enumerate(followup_sales)
+        )
+
+        stable = build_events(rows[:-1], date(2026, 2, 17))[0]
+        fallback = build_events(rows, date(2026, 2, 18))[0]
+
+        self.assertEqual(date(2026, 2, 15), stable["stable_recovery_start_date"])
+        self.assertTrue(stable["current_stable_recovery_flag"])
+        self.assertFalse(stable["recovery_fallback_flag"])
+        self.assertEqual(date(2026, 2, 15), fallback["stable_recovery_start_date"])
+        self.assertFalse(fallback["current_stable_recovery_flag"])
+        self.assertTrue(fallback["recovery_fallback_flag"])
+
+    def test_stable_recovery_treats_missing_natural_day_as_zero_sales(self):
+        rows = [product_row(date(2026, 1, 1) + timedelta(days=i), 10, 10) for i in range(21)]
+        rows.append(product_row(date(2026, 1, 22), 0, 0))
+        rows.extend(product_row(date(2026, 1, 23) + timedelta(days=i), 6, 4) for i in range(21))
+        rows.extend(
+            [
+                product_row(date(2026, 2, 13), 6, 5),
+                product_row(date(2026, 2, 15), 6, 5),
+                product_row(date(2026, 2, 16), 6, 5),
+            ]
+        )
+
+        event = build_events(rows, date(2026, 2, 16))[0]
+
+        self.assertIsNone(event["stable_recovery_start_date"])
+        self.assertFalse(event["current_stable_recovery_flag"])
 
     def test_ignores_return_start_outside_180_day_recognition_window(self):
         rows = [product_row(date(2026, 1, 1) + timedelta(days=i), 10, 2) for i in range(7)]
