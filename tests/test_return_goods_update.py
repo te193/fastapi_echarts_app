@@ -265,6 +265,7 @@ class ReturnGoodsEventTests(unittest.TestCase):
         high = build_events(rows, date(2026, 2, 13))[0]
         self.assertEqual("达标退出", high["exit_reason"])
         self.assertEqual(date(2026, 2, 13), high["exit_date"])
+        self.assertEqual(22, high["days_to_standard"])
         self.assertEqual(Decimal("0.8"), high["d21_recovery_rate"])
         self.assertFalse(high["recovery_followup_flag"])
         self.assertIsNone(high["recovery_followup_status"])

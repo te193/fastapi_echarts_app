@@ -1980,6 +1980,8 @@ class ReturnGoodsDataService:
 
     def _attach_followup_trend(self, rows: list[dict[str, Any]], event: dict[str, Any]) -> None:
         return_start = parse_day(event.get("return_start_date"))
+        exit_day = parse_day(event.get("exit_date"))
+        standard_exit = event.get("exit_reason") == "达标退出"
         pre_sales = number_value(event.get("pre_21d_sales_qty"))
         baseline_daily = float(pre_sales) / 21 if pre_sales else None
         followup = bool(event.get("recovery_followup_flag"))
@@ -2009,6 +2011,7 @@ class ReturnGoodsDataService:
         for row in rows:
             row.setdefault("source_missing", False)
             row["return_day"] = None
+            row["return_day_label"] = "-"
             row["daily_recovery_rate"] = None
             row["daily_recovery_rate_text"] = ""
             row["cumulative_avg_recovery_rate"] = None
@@ -2018,6 +2021,9 @@ class ReturnGoodsDataService:
                 continue
             return_day = (row_day - return_start).days + 1
             row["return_day"] = return_day
+            row["return_day_label"] = (
+                "达标退出" if standard_exit and row_day == exit_day else f"D{return_day}"
+            )
             cumulative_sales += float(number_value(row.get("sales_qty")) or 0)
             if not followup or return_day <= 21 or baseline_daily is None:
                 continue

@@ -50,3 +50,11 @@ def test_return_goods_overview_cards_use_weighted_uniform_layout():
     assert "height: 316px;" in stylesheet
     assert ".return-goods-command-card > .return-goods-followup-all" in stylesheet
     assert "@media (max-width: 1750px)" in stylesheet
+
+
+def test_daily_detail_always_shows_return_day_without_daily_recovery_rate():
+    script = (ROOT / "app" / "static" / "js" / "return_goods.js").read_text(encoding="utf-8")
+
+    assert "<th>返场日</th>" in script
+    assert "row.return_day_label" in script
+    assert "<th>单日恢复率</th>" not in script
