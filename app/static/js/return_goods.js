@@ -990,20 +990,20 @@
     var showFollowup = rows.some(function (row) { return Number(row.return_day || 0) > 21; });
     return [
       '<div class="return-goods-detail-table-wrap"><table class="data-table return-goods-detail-table">',
-      '<thead><tr><th>日期</th><th>节点</th>' + (showFollowup ? '<th>返场日</th>' : '') + '<th>FBA可售</th><th>FBA在途</th><th>销量</th><th>销售额</th><th>毛利率</th>' + (showFollowup ? '<th>单日恢复率</th><th>累计平均恢复率</th>' : '') + '</tr></thead>',
+      '<thead><tr><th>日期</th><th>节点</th><th>返场日</th><th>FBA可售</th><th>FBA在途</th><th>销量</th><th>销售额</th><th>毛利率</th>' + (showFollowup ? '<th>累计平均恢复率</th>' : '') + '</tr></thead>',
       '<tbody>',
       rows.map(function (row) {
         return [
           '<tr>',
           '<td>' + escapeHtml(row.dt_date || "-") + '</td>',
           '<td>' + escapeHtml(row.day_tag || "-") + '</td>',
-          (showFollowup ? '<td>' + (row.return_day ? 'D' + escapeHtml(row.return_day) : '-') + '</td>' : ''),
+          '<td>' + escapeHtml(row.return_day_label || (row.return_day ? 'D' + row.return_day : '-')) + '</td>',
           '<td>' + escapeHtml(formatNumber(row.fba_sellable)) + '</td>',
           '<td>' + escapeHtml(formatNumber(row.fba_inbound)) + '</td>',
           '<td>' + escapeHtml(formatDecimal(row.sales_qty)) + '</td>',
           '<td>' + escapeHtml(formatDecimal(row.sales_amount)) + '</td>',
           '<td>' + escapeHtml(row.gross_margin_rate_text || "-") + '</td>',
-          (showFollowup ? '<td>' + escapeHtml(row.daily_recovery_rate_text || "-") + '</td><td>' + escapeHtml(row.cumulative_avg_recovery_rate_text || "-") + '</td>' : ''),
+          (showFollowup ? '<td>' + escapeHtml(row.cumulative_avg_recovery_rate_text || "-") + '</td>' : ''),
           '</tr>'
         ].join("");
       }).join(""),

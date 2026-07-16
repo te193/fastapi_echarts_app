@@ -672,6 +672,29 @@ class ReturnGoodsServiceSqlTests(unittest.TestCase):
         self.assertTrue(rows[1]["source_missing"])
         self.assertEqual(0, rows[1]["daily_recovery_rate"])
 
+    def test_attach_followup_trend_labels_all_return_days_and_standard_exit(self):
+        service = ReturnGoodsDataService()
+        event = {
+            "return_start_date": "2026-06-01",
+            "exit_date": "2026-06-22",
+            "exit_reason": "达标退出",
+            "recovery_followup_flag": False,
+        }
+        rows = [
+            {"dt_date": "2026-05-31", "sales_qty": 1},
+            {"dt_date": "2026-06-01", "sales_qty": 2},
+            {"dt_date": "2026-06-20", "sales_qty": 3},
+            {"dt_date": "2026-06-21", "sales_qty": 4},
+            {"dt_date": "2026-06-22", "sales_qty": 5},
+        ]
+
+        service._attach_followup_trend(rows, event)
+
+        self.assertEqual(
+            ["-", "D1", "D20", "D21", "达标退出"],
+            [row["return_day_label"] for row in rows],
+        )
+
     def test_daily_detail_stops_at_exit_date(self):
         service = ReturnGoodsDataService()
 
