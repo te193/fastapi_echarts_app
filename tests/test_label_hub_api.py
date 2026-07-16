@@ -45,6 +45,7 @@ class LabelHubApiTests(unittest.TestCase):
                 label_period="current",
                 metric_period="30d",
                 analysis_parent_ids="2|8|9",
+                analysis_periods="7d|current|30d",
                 sales_roles="eliminate|incubation",
                 daily_sales_bands="zero|lt1",
                 margin_bands="lt5",
@@ -59,6 +60,7 @@ class LabelHubApiTests(unittest.TestCase):
         self.assertEqual("payload", service.calls[0][0])
         self.assertEqual("3:301|304;2:201", service.calls[0][1]["conditions"])
         self.assertEqual("2|8|9", service.calls[0][1]["analysis_parent_ids"])
+        self.assertEqual("7d|current|30d", service.calls[0][1]["analysis_periods"])
         self.assertEqual("negative_profit", service.calls[0][1]["problem"])
         self.assertEqual(50, service.calls[0][1]["page_size"])
 

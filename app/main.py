@@ -296,7 +296,7 @@ def api_label_hub_meta() -> dict:
 def api_label_hub(
     data_date: str = "", country_category: str = "all", store: str = "all", keyword: str = "",
     parent_label_id: int = 0, compare_parent_id: int = 0, conditions: str = "", label_period: str = "all",
-    metric_period: str = "30d", analysis_parent_ids: str = "",
+    metric_period: str = "30d", analysis_parent_ids: str = "", analysis_periods: str = "",
     sales_roles: str = "", sales_trends: str = "", daily_sales_bands: str = "", margin_bands: str = "", problem: str = "all",
     page: int = 1, page_size: int = 20, sort_field: str = "sales_amount", sort_dir: str = "desc",
 ) -> dict:
@@ -305,7 +305,8 @@ def api_label_hub(
             data_date=data_date, country_category=country_category, store=store, keyword=keyword,
             parent_label_id=parent_label_id, compare_parent_id=compare_parent_id,
             conditions=conditions, label_period=label_period, metric_period=metric_period,
-            analysis_parent_ids=analysis_parent_ids, sales_roles=sales_roles, sales_trends=sales_trends,
+            analysis_parent_ids=analysis_parent_ids, analysis_periods=analysis_periods,
+            sales_roles=sales_roles, sales_trends=sales_trends,
             daily_sales_bands=daily_sales_bands, margin_bands=margin_bands, problem=problem,
             page=page, page_size=page_size, sort_field=sort_field, sort_dir=sort_dir,
         )

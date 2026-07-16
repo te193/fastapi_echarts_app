@@ -12,6 +12,7 @@
     parent_label_id: Number(query.get("parent_label_id") || 0),
     compare_parent_id: Number(query.get("compare_parent_id") || 0),
     analysis_parent_ids: query.get("analysis_parent_ids") || "",
+    analysis_periods: query.get("analysis_periods") || "",
     conditions: query.get("conditions") || "",
     label_period: query.get("label_period") || "all",
     sales_trends: query.get("sales_trends") || "",
@@ -29,6 +30,7 @@
   var lastPayload = null;
   var elements = {};
   var requestToken = 0;
+  var linkedSelectInstances = [];
   var REMOTE_BUCKET_COLORS = [
     "#4e79a7", "#f28e2b", "#59a14f", "#7a5af8",
     "#e15759", "#00a6a6", "#8a9b3f", "#d65a9e",
@@ -56,6 +58,7 @@
       state.parent_label_id = state.parent_label_id || firstAvailableCategory();
       state.compare_parent_id = state.compare_parent_id || defaultCompareCategory();
       state.analysis_parent_ids = state.analysis_parent_ids || (meta.default_analysis_parent_ids || []).join("|");
+      normalizeAnalysisPeriods();
       populateControls();
       render();
     }).catch(showError);
@@ -119,12 +122,23 @@
       if (label) toggleCondition(label.dataset.labelParent, label.dataset.labelChild);
     });
     elements.labelHubBreakdowns.addEventListener("change", function (event) {
-      var select = event.target.closest("[data-analysis-slot]");
-      if (!select) return;
-      var ids = analysisIds();
-      ids[Number(select.dataset.analysisSlot)] = Number(select.value);
-      state.analysis_parent_ids = unique(ids).join("|");
-      resetPageAndRender();
+      var dimensionSelect = event.target.closest("[data-analysis-slot]");
+      var periodSelect = event.target.closest("[data-analysis-period-slot]");
+      if (!dimensionSelect && !periodSelect) return;
+      if (dimensionSelect) {
+        var ids = analysisIds();
+        var dimensionSlot = Number(dimensionSelect.dataset.analysisSlot);
+        ids[dimensionSlot] = Number(dimensionSelect.value);
+        state.analysis_parent_ids = unique(ids).join("|");
+        var dimensionPeriods = analysisPeriods();
+        dimensionPeriods[dimensionSlot] = "all";
+        saveAnalysisPeriods(dimensionPeriods);
+      } else {
+        var periods = analysisPeriods();
+        periods[Number(periodSelect.dataset.analysisPeriodSlot)] = periodSelect.value || "all";
+        saveAnalysisPeriods(periods);
+      }
+      window.setTimeout(resetPageAndRender, 0);
     });
     elements.labelHubConditions.addEventListener("click", function (event) {
       var label = event.target.closest("[data-remove-label]");
@@ -158,6 +172,27 @@
   function categoryById(id) { return (meta.categories || []).find(function (item) { return item.id === Number(id); }); }
   function unique(items) { return items.filter(function (item, index) { return item && items.indexOf(item) === index; }); }
   function analysisIds() { return unique(String(state.analysis_parent_ids || "").split("|").map(Number).filter(Boolean)); }
+  function analysisPeriods() {
+    var periods = String(state.analysis_periods || "").split("|").map(function (item) { return item || "all"; });
+    while (periods.length < 3) periods.push("all");
+    return periods.slice(0, 3);
+  }
+  function saveAnalysisPeriods(periods) {
+    state.analysis_periods = (periods || []).slice(0, 3).map(function (item) { return item || "all"; }).join("|");
+  }
+  function categoryPeriods(parentId) {
+    var category = categoryById(parentId) || { children: [] };
+    return unique([].concat.apply([], (category.children || []).map(function (child) { return child.periods || []; })));
+  }
+  function normalizeAnalysisPeriods() {
+    var ids = analysisIds();
+    var periods = analysisPeriods();
+    ids.forEach(function (parentId, index) {
+      var available = categoryPeriods(parentId);
+      if (periods[index] !== "all" && available.indexOf(periods[index]) < 0) periods[index] = "all";
+    });
+    saveAnalysisPeriods(periods);
+  }
 
   function optionList(items, selected, allLabel) {
     var prefix = allLabel ? '<option value="all">' + app.escapeHtml(allLabel) + "</option>" : "";
@@ -204,6 +239,7 @@
       parent_label_id: state.parent_label_id,
       compare_parent_id: state.compare_parent_id,
       analysis_parent_ids: state.analysis_parent_ids,
+      analysis_periods: state.analysis_periods,
       conditions: serializeConditions(state.conditions),
       label_period: state.label_period,
       sales_trends: serializeCodes(state.sales_trends),
@@ -404,10 +440,12 @@
     };
     var selectedRemote = analysisIds();
     var panels = payload.breakdowns || [];
+    destroyLinkedSelects();
     elements.labelHubBreakdowns.innerHTML = [
       renderBreakdownGroup("经营表现", "本地周期快照", panels.filter(function (panel) { return panel.source === "local"; })),
       renderBreakdownGroup("远端标签结构", "标签事实 · 可切换维度", panels.filter(function (panel) { return panel.source === "remote_label"; }))
     ].join("");
+    initLinkedSelects();
 
     function renderBreakdownGroup(title, description, groupPanels) {
       if (!groupPanels.length) return "";
@@ -425,10 +463,14 @@
         : "分析口径 " + formatNumber(panel.denominator) + " MSKU";
       var header = '<div><span class="label-hub-source ' + panel.source + '">' + (panel.source === "local" ? "本地经营" : "远端标签") + '</span><h3>' + app.escapeHtml(panel.label) + '</h3><small>' + scopeCopy + "</small></div>";
       if (panel.source === "remote_label") {
-        var slot = Math.max(0, selectedRemote.indexOf(Number(panel.parent_id)));
+        var slot = Number.isFinite(Number(panel.analysis_slot)) ? Number(panel.analysis_slot) : Math.max(0, selectedRemote.indexOf(Number(panel.parent_id)));
         var used = selectedRemote.filter(function (_, index) { return index !== slot; });
         var options = (meta.categories || []).filter(function (item) { return item.id !== state.parent_label_id && used.indexOf(item.id) < 0; });
-        header += '<label class="label-hub-dimension-select"><span>切换维度</span><select aria-label="切换' + app.escapeHtml(panel.label) + '维度" data-analysis-slot="' + slot + '">' + optionList(options, panel.parent_id, "") + "</select></label>";
+        var activePeriod = panel.label_period || "all";
+        header += '<div class="label-hub-card-selectors">' +
+          '<label class="label-hub-dimension-select"><span>联动维度</span><select aria-label="切换' + app.escapeHtml(panel.label) + '维度" data-analysis-slot="' + slot + '">' + optionList(options, panel.parent_id, "") + "</select></label>" +
+          '<label class="label-hub-period-select"><span>标签周期</span><select aria-label="切换' + app.escapeHtml(panel.label) + '标签周期" data-analysis-period-slot="' + slot + '">' + optionList(panel.periods || [], activePeriod, "全部周期") + "</select></label>" +
+          "</div>";
       }
       var dominant = dominantBreakdown(buckets);
       var dominantTone = dominant ? breakdownTone(panel, dominant) : "neutral";
@@ -455,6 +497,26 @@
         : "";
       return '<article class="label-hub-breakdown-card"><header>' + header + "</header>" + finding + composition + '<div class="label-hub-bars">' + bars + "</div>" + ruleDetails + "</article>";
     }
+  }
+
+  function destroyLinkedSelects() {
+    linkedSelectInstances.forEach(function (instance) { instance.destroy(); });
+    linkedSelectInstances = [];
+  }
+
+  function initLinkedSelects() {
+    if (!window.SlimSelect) return;
+    Array.from(elements.labelHubBreakdowns.querySelectorAll("[data-analysis-slot], [data-analysis-period-slot]")).forEach(function (select) {
+      linkedSelectInstances.push(new window.SlimSelect({
+        select: select,
+        settings: {
+          showSearch: false,
+          modal: "off",
+          contentPosition: "absolute",
+          openPosition: "auto"
+        }
+      }));
+    });
   }
 
   function dominantBreakdown(buckets) {

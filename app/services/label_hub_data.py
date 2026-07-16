@@ -104,6 +104,10 @@ def _parse_int_pipe(value: Any) -> list[int]:
     return result
 
 
+def _parse_period_pipe(value: Any) -> list[str]:
+    return [str(item or "all") for item in str(value or "").split("|")] if value else []
+
+
 def _parse_code_pipe(value: Any, allowed: set[str], field: str) -> set[str]:
     values = {item for item in str(value or "").split("|") if item and item != "all"}
     if not values.issubset(allowed):
@@ -246,6 +250,7 @@ class LabelHubDataService:
         sort_field,
         sort_dir,
         analysis_parent_ids=None,
+        analysis_periods=None,
         sales_roles=None,
         sales_trends=None,
         daily_sales_bands=None,
@@ -284,6 +289,31 @@ class LabelHubDataService:
             if parent not in category_by_id or any(child_parent.get(child) != parent for child in children):
                 raise ValueError("conditions 包含不存在或归属错误的标签")
 
+        requested_ids = [int(item) for item in (analysis_parent_ids or []) if int(item) in category_by_id]
+        requested_periods = [str(item or "all") for item in (analysis_periods or [])]
+        remote_slots: list[int | None] = [None, None, None]
+        for index, candidate in enumerate(requested_ids[:3]):
+            if candidate != parent_label_id and candidate not in remote_slots:
+                remote_slots[index] = candidate
+        fallback_ids = requested_ids + [2, 8, 9, 11, 7, 3] + [item["id"] for item in categories]
+        for candidate in fallback_ids:
+            if candidate == parent_label_id or candidate in remote_slots or candidate not in category_by_id:
+                continue
+            empty_slot = next((index for index, value in enumerate(remote_slots) if value is None), None)
+            if empty_slot is None:
+                break
+            remote_slots[empty_slot] = candidate
+        remote_ids = [parent_id for parent_id in remote_slots if parent_id is not None]
+        analysis_period_by_parent = {
+            parent_id: (
+                requested_periods[index]
+                if index < len(requested_ids) and requested_ids[index] == parent_id and index < len(requested_periods)
+                else "all"
+            )
+            for index, parent_id in enumerate(remote_slots)
+            if parent_id is not None
+        }
+
         grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
         keyword_text = str(keyword or "").lower().strip()
         for fact in facts:
@@ -311,6 +341,9 @@ class LabelHubDataService:
         ) -> set[int]:
             if parent == parent_label_id and label_period != "all":
                 return by_parent_period.get(parent, {}).get(label_period, set())
+            analysis_period = analysis_period_by_parent.get(parent, "all")
+            if analysis_period != "all":
+                return by_parent_period.get(parent, {}).get(analysis_period, set())
             return by_parent.get(parent, set())
 
         baseline_rows: list[dict[str, Any]] = []
@@ -457,6 +490,10 @@ class LabelHubDataService:
             "cross_scope_msku_count": sum(1 for scopes in msku_scopes.values() if len(scopes) > 1),
         }
 
+        for analysis_parent_id, analysis_period in list(analysis_period_by_parent.items()):
+            if analysis_period != "all" and analysis_period not in parent_periods.get(analysis_parent_id, set()):
+                analysis_period_by_parent[analysis_parent_id] = "all"
+
         def in_current_parent_scope(row: dict[str, Any]) -> bool:
             return bool(scoped_parent_children(row["_by_parent"], row["_by_parent_period"], parent_label_id))
 
@@ -571,16 +608,9 @@ class LabelHubDataService:
                 "buckets": buckets,
             })
 
-        requested_ids = [int(item) for item in (analysis_parent_ids or []) if int(item) in category_by_id]
-        preferred_ids = requested_ids + [2, 8, 9, 11, 7, 3] + [item["id"] for item in categories]
-        remote_ids: list[int] = []
-        for candidate in preferred_ids:
-            if candidate == parent_label_id or candidate in remote_ids or candidate not in category_by_id:
+        for analysis_slot, remote_parent_id in enumerate(remote_slots):
+            if remote_parent_id is None:
                 continue
-            remote_ids.append(candidate)
-            if len(remote_ids) == 3:
-                break
-        for remote_parent_id in remote_ids:
             category = category_by_id[remote_parent_id]
             candidates = [row for row in baseline_rows if row_matches(row, skip_parent=remote_parent_id, include_problem=False)]
             if problem not in {"", "all"}:
@@ -592,7 +622,17 @@ class LabelHubDataService:
                 bucket_mskus = {msku for msku, child_id in preferred_children.items() if child_id == child["id"]}
                 stats = self._bucket_stats(candidates, lambda row, mskus=bucket_mskus: row["msku"] in mskus, candidate_count)
                 buckets.append({"key": str(child["id"]), "id": child["id"], "label": child["label"], **stats})
-            breakdowns.append({"key": f"label:{remote_parent_id}", "parent_id": remote_parent_id, "label": category["label"], "source": "remote_label", "denominator": candidate_count, "buckets": buckets})
+            breakdowns.append({
+                "key": f"label:{remote_parent_id}",
+                "parent_id": remote_parent_id,
+                "analysis_slot": analysis_slot,
+                "label": category["label"],
+                "source": "remote_label",
+                "denominator": candidate_count,
+                "label_period": analysis_period_by_parent.get(remote_parent_id, "all"),
+                "periods": sorted(parent_periods.get(remote_parent_id, set()), key=_period_order),
+                "buckets": buckets,
+            })
 
         def current_distribution(source_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             result = []
@@ -861,6 +901,7 @@ class LabelHubDataService:
             parent_label_id=int(filters.get("parent_label_id") or 0),
             compare_parent_id=int(filters.get("compare_parent_id") or 0),
             analysis_parent_ids=_parse_int_pipe(filters.get("analysis_parent_ids", "")),
+            analysis_periods=_parse_period_pipe(filters.get("analysis_periods", "")),
             conditions=self.parse_conditions(filters.get("conditions", "")),
             label_period=str(filters.get("label_period") or "all"),
             sales_roles=_parse_code_pipe(filters.get("sales_roles", ""), {"star", "potential", "incubation", "eliminate", "missing"}, "sales_roles"),
