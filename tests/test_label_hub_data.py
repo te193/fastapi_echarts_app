@@ -325,6 +325,33 @@ class LabelHubDataTests(unittest.TestCase):
         self.assertEqual(0, trend_counts["declining"])
         self.assertEqual(0, payload["issue_counts"]["problem_role"])
 
+    def test_remote_breakdown_and_condition_use_the_selected_analysis_period(self):
+        facts = [
+            {**FACTS[1], "msku": "A1"},
+            {**FACTS[1], "msku": "A2"},
+            {**FACTS[0], "msku": "A1", "label_id": 101, "label_period": "7d"},
+            {**FACTS[0], "msku": "A1", "label_id": 102, "label_period": "30d"},
+            {**FACTS[0], "msku": "A2", "label_id": 102, "label_period": "7d"},
+            {**FACTS[0], "msku": "A2", "label_id": 101, "label_period": "30d"},
+        ]
+
+        payload = self.service.build_payload(
+            details=DETAILS, facts=facts, metrics=METRICS, data_date="2026-07-13",
+            parent_label_id=2, compare_parent_id=1, conditions={1: {101}}, label_period="all",
+            country_category="all", store="all", keyword="", page=1, page_size=20,
+            sort_field="msku", sort_dir="asc", analysis_parent_ids=[1, 8],
+            analysis_periods=["7d", "all"],
+            metric_scope={"status": "available", "window": {"period_code": "30d"}},
+        )
+
+        sales_role = next(item for item in payload["breakdowns"] if item.get("parent_id") == 1)
+        counts = {item["id"]: item["msku_count"] for item in sales_role["buckets"]}
+        self.assertEqual({101: 1, 102: 1}, counts)
+        self.assertEqual(0, sales_role["analysis_slot"])
+        self.assertEqual("7d", sales_role["label_period"])
+        self.assertEqual(["7d", "30d"], sales_role["periods"])
+        self.assertEqual(["A1"], [row["msku"] for row in payload["rows"]])
+
     def test_sales_trend_breakdown_ignores_its_own_filter_but_final_rows_apply_it(self):
         payload = self.service.build_payload(
             details=DETAILS, facts=FACTS, metrics=METRICS, data_date="2026-07-13",

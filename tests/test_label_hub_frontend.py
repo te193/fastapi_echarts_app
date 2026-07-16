@@ -82,6 +82,31 @@ def test_label_hub_frontend_renders_six_linked_panels_and_structured_profile():
     assert "rowHeight: 52" in script
 
 
+def test_remote_breakdown_cards_keep_independent_label_periods_in_url_state():
+    template = (ROOT / "app" / "templates" / "label_hub.html").read_text(encoding="utf-8")
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+
+    assert 'analysis_periods: query.get("analysis_periods") || ""' in script
+    assert "function analysisPeriods()" in script
+    assert "analysis_periods: state.analysis_periods" in script
+    assert "panel.analysis_slot" in script
+    assert 'data-analysis-period-slot="' in script
+    assert 'class="label-hub-period-select"' in script
+    assert 'class="label-hub-card-selectors"' in script
+    assert "function destroyLinkedSelects()" in script
+    assert "function initLinkedSelects()" in script
+    assert "new window.SlimSelect" in script
+    assert "window.setTimeout(resetPageAndRender, 0)" in script
+    assert "vendor/slim-select/slimselect.css" in template
+    assert "vendor/slim-select/slimselect.js" in template
+    assert "cdn.jsdelivr.net/npm/slim-select" not in template
+    assert ".label-hub-card-selectors" in styles
+    assert ".label-hub-card-selectors .ss-main" in styles
+    assert 'body[data-page="label_hub"],\n.label-hub-page { --ss-primary-color' in styles
+    assert "--ss-primary-color" in styles
+
+
 def test_label_hub_breakdowns_show_grouped_composition_and_semantic_status():
     script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
     styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
@@ -331,7 +356,7 @@ def test_current_category_detail_uses_period_scoped_distribution():
     assert "distributionById" in script
     assert 'cache: "no-store"' in common
     assert "js/common.js') }}?v=20260715cache2" in base
-    assert "js/label_hub.js') }}?v=20260716c" in template
+    assert "js/label_hub.js') }}?v=20260716f" in template
 
 
 def test_sales_role_has_label_hub_return_link():

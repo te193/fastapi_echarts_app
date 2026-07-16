@@ -11684,9 +11684,27 @@ body[data-page="label_hub"] .label-hub-topbar .sales-role-period { color: rgba(2
 .label-hub-source { display: inline-flex; padding: 3px 7px; border-radius: 5px; font-size: 11px; font-weight: 700; }
 .label-hub-source.local { background: #edf5ff; color: #1769e0; }
 .label-hub-source.remote_label { background: #f1f5ef; color: #58723e; }
-.label-hub-dimension-select { display: grid; gap: 3px; min-width: 110px; }
-.label-hub-dimension-select span { color: var(--muted); font-size: 11px; font-weight: 600; }
-.label-hub-dimension-select select { width: 100%; min-height: 30px; padding: 4px 24px 4px 7px; border: 1px solid #d8e3ef; border-radius: 6px; background: #fff; color: #425d78; font-size: 11px; }
+body[data-page="label_hub"],
+.label-hub-page { --ss-primary-color: #1769e0; --ss-bg-color: #fff; --ss-font-color: #36536f; --ss-placeholder-color: #8293a6; --ss-border-color: #d8e3ef; --ss-focus-color: rgba(23, 105, 224, .2); --ss-main-height: 32px; --ss-option-height: 34px; --ss-border-radius: 9px; --ss-spacing-l: 9px; --ss-spacing-m: 6px; --ss-spacing-s: 4px; }
+.label-hub-card-selectors { display: flex; align-items: flex-end; justify-content: flex-end; gap: 8px; min-width: 270px; }
+.label-hub-dimension-select,
+.label-hub-period-select { display: grid; gap: 4px; min-width: 0; }
+.label-hub-dimension-select { flex: 1 1 132px; }
+.label-hub-period-select { flex: 0 0 98px; }
+.label-hub-dimension-select span,
+.label-hub-period-select span { padding-left: 2px; color: #8293a6; font-size: 10px; font-weight: 700; line-height: 1; }
+.label-hub-card-selectors .ss-main { min-height: 32px; border-color: #d8e3ef; background: linear-gradient(180deg, #fff, #fbfdff); color: #36536f; font-size: 11px; font-weight: 750; box-shadow: 0 1px 2px rgba(31, 64, 104, .05); transition: border-color .16s ease, box-shadow .16s ease, background-color .16s ease; }
+.label-hub-card-selectors .ss-main:hover { border-color: #a9c7ea; }
+.label-hub-card-selectors .ss-main:focus,
+.label-hub-card-selectors .ss-main.ss-open { border-color: #6ea5e6; box-shadow: 0 0 0 3px rgba(23, 105, 224, .12); }
+.label-hub-card-selectors .ss-main .ss-arrow { width: 10px; margin-right: 5px; }
+.label-hub-card-selectors .ss-main .ss-arrow path { stroke: #5f7894; stroke-width: 16; }
+.label-hub-page ~ .ss-content,
+body[data-page="label_hub"] > .ss-content { overflow: hidden; border-color: #cbdced; border-radius: 9px; color: #36536f; font-size: 12px; box-shadow: 0 10px 28px rgba(30, 66, 109, .16); }
+body[data-page="label_hub"] > .ss-content .ss-list .ss-option { min-height: 34px; padding: 0 12px; }
+body[data-page="label_hub"] > .ss-content .ss-list .ss-option:hover:not(.ss-disabled),
+body[data-page="label_hub"] > .ss-content .ss-list .ss-option.ss-highlighted,
+body[data-page="label_hub"] > .ss-content .ss-list .ss-option:not(.ss-disabled).ss-selected { border-left: 0; background: #edf5ff; color: #1769e0; }
 .label-hub-bars { display: grid; gap: 7px; }
 .label-hub-bar { display: grid; grid-template-columns: minmax(86px, 1fr) minmax(80px, 1.35fr) auto; grid-template-areas: "label track value" "label track profit"; align-items: center; gap: 2px 8px; width: 100%; padding: 7px 8px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: #35516e; text-align: left; cursor: pointer; }
 .label-hub-bar:hover { background: #f7faff; }
@@ -12914,6 +12932,15 @@ body[data-page="label_hub"] {
 
   .label-hub-breakdown-card {
     min-height: 0;
+  }
+
+  .label-hub-breakdown-card > header {
+    flex-direction: column;
+  }
+
+  .label-hub-card-selectors {
+    width: 100%;
+    min-width: 0;
   }
 
   .label-hub-analysis-head {
