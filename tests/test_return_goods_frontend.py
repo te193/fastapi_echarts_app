@@ -44,10 +44,12 @@ def test_severe_recovery_card_explains_recent_trend_rules():
 
 def test_return_goods_overview_cards_use_weighted_uniform_layout():
     stylesheet = (ROOT / "app" / "static" / "css" / "return_goods.css").read_text(encoding="utf-8")
+    template = (ROOT / "app" / "templates" / "return_goods.html").read_text(encoding="utf-8")
 
     assert "minmax(250px, 1.08fr)" in stylesheet
     assert "minmax(270px, 1.12fr)" in stylesheet
-    assert "height: 316px;" in stylesheet
+    assert "height: 344px;" in stylesheet
+    assert "return_goods.css') }}?v=20260716followupsummary6" in template
     assert ".return-goods-command-card > .return-goods-followup-all" in stylesheet
     assert "@media (max-width: 1750px)" in stylesheet
 
