@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', path='vendor/slim-select/slimselect.css') }}?v=4.0.5">
+{% endblock %}
+
+{% block content %}
+<div class="sales-role-page label-hub-page country-label-hub-page">
+  <header class="sales-role-topbar label-hub-topbar">
+    <div>
+      <p class="section-kicker">国家口径标签分析</p>
+      <h1>国家标签看板</h1>
+      <div id="countryLabelScope" class="label-hub-scope" aria-live="polite"></div>
+      <p id="countryLabelHint" class="sales-role-period">正在读取最新标签数据…</p>
+    </div>
+    <div class="label-hub-top-actions">
+      <nav class="label-view-switch" aria-label="标签看板视图">
+        <a id="globalLabelHubLink" href="/label-hub">标签看板</a>
+        <a class="active" href="/country-label-hub" aria-current="page">国家标签看板</a>
+      </nav>
+      <button id="countryLabelClear" class="sales-role-action" type="button">重置筛选</button>
+    </div>
+  </header>
+
+  <section class="sales-role-filter-panel label-hub-filters" aria-label="公共筛选">
+    <div class="sales-role-filter-main country-label-filter-grid">
+      <label class="sales-role-field"><span>经营周期</span><select id="countryMetricPeriod"></select></label>
+      <label class="sales-role-field"><span>标签周期</span><select id="countryLabelPeriod"></select></label>
+      <label class="sales-role-field"><span>国家类别</span><select id="countryCategory"></select></label>
+      <label class="sales-role-field"><span>店铺</span><select id="countryStore"></select></label>
+      <label class="sales-role-field keyword-field"><span>MSKU</span><input id="countryKeyword" type="search" placeholder="搜索 MSKU / 店铺"></label>
+    </div>
+    <div id="countryConditionRow" class="label-hub-condition-row" hidden>
+      <span class="toolbar-label">已选条件</span>
+      <div id="countryConditions" class="sales-role-chip-list"></div>
+    </div>
+  </section>
+
+  <section class="sales-role-panel label-hub-section-panel label-hub-overview-section country-coverage-section">
+    <div class="sales-role-section-head">
+      <div><p class="section-kicker">国家标签覆盖全景</p><h2>每个国家标签覆盖多少链接</h2></div>
+      <p class="summary-hint">统一按国家 + MSKU + 国家类别 + 店铺的最细粒度统计，不再做 MSKU 去重。</p>
+    </div>
+    <div id="countryOverview" class="country-label-overview-grid label-hub-categories"></div>
+    <div id="countryOverviewDetail" class="label-hub-category-detail" aria-live="polite"></div>
+  </section>
+
+  <section class="sales-role-panel country-summary-panel label-hub-section-panel">
+    <div class="sales-role-section-head">
+      <div><p class="section-kicker">国家经营全景</p><h2>当前群体的经营结果</h2></div>
+    </div>
+    <div id="countryKpis" class="country-kpi-grid"></div>
+  </section>
+
+  <section class="sales-role-panel label-hub-section-panel label-hub-cohort label-hub-diagnosis-panel country-issue-section">
+    <div class="sales-role-section-head">
+      <div><p class="section-kicker">国家问题队列</p><h2>优先定位需要处理的链接</h2></div>
+      <p class="summary-hint">问题入口会同步筛选下方分布、矩阵与明细。</p>
+    </div>
+    <div id="countryIssues" class="country-issue-grid"></div>
+  </section>
+
+  <section class="sales-role-panel label-hub-section-panel label-hub-breakdown-section country-breakdown-section">
+    <div class="sales-role-section-head label-hub-analysis-head">
+      <div><p class="section-kicker">多维联动</p><h2>这批链接在其他分类中的表现</h2><p class="summary-hint">先看本地经营结构，再查看国家标签之间的分布。</p></div>
+      <div class="label-hub-measure-tabs" role="group" aria-label="展示指标">
+        <button type="button" class="active" data-country-measure="msku_count">链接</button>
+        <button type="button" data-country-measure="sales_amount">销售额</button>
+        <button type="button" data-country-measure="order_gross_profit">毛利润</button>
+      </div>
+    </div>
+    <div class="label-hub-breakdowns">
+      <section class="label-hub-breakdown-group">
+        <div class="label-hub-breakdown-group-head"><b>经营表现</b><span>本地周期快照</span><i></i></div>
+        <div id="countryMetricBreakdowns" class="country-breakdown-grid country-metric-grid label-hub-breakdown-grid"></div>
+      </section>
+      <section class="label-hub-breakdown-group">
+        <div class="label-hub-breakdown-group-head"><b>国家标签结构</b><span>点击标签筛选 · 同类 OR / 跨类 AND</span><i></i></div>
+        <div id="countryLabelBreakdowns" class="country-breakdown-grid label-hub-breakdown-grid"></div>
+      </section>
+    </div>
+  </section>
+
+  <section class="sales-role-panel label-hub-section-panel label-hub-secondary-panel label-hub-matrix-panel country-matrix-section">
+    <div class="sales-role-section-head">
+      <div><p class="section-kicker">标签关系</p><h2>国家标签交叉表现</h2></div>
+      <p class="summary-hint">选择对比大类查看关系，点击单元格可同时加入行列标签。</p>
+    </div>
+    <div id="countryMatrices" class="country-matrix-grid"></div>
+  </section>
+
+  <section class="sales-role-panel detail-panel label-hub-section-panel label-hub-secondary-panel label-hub-detail-panel country-detail-section">
+    <div class="sales-role-section-head label-hub-table-head">
+      <div><p class="section-kicker">国家经营明细</p><h2>链接与标签画像</h2></div>
+      <div class="label-hub-table-tools">
+        <strong id="countryTableSummary"></strong>
+        <label class="page-size-control label-hub-table-view-control" for="countryTableView"><span>字段</span><select id="countryTableView" aria-label="国家明细字段视图"><option value="overview">综合视图</option><option value="labels">标签视图</option><option value="metrics">经营视图</option></select></label>
+        <label class="page-size-control"><span>每页</span><select id="countryPageSize"><option value="20">20 条</option><option value="50">50 条</option><option value="100">100 条</option></select></label>
+      </div>
+    </div>
+    <div id="countryDetailTable" class="detail-table-wrap"></div>
+    <div id="countryPagination" class="pagination sales-role-pagination"></div>
+  </section>
+</div>
+{% endblock %}
+
+{% block overlay %}
+<div id="countryProfileDrawer" class="label-hub-drawer" hidden>
+  <div class="label-hub-drawer-card" role="dialog" aria-modal="true" aria-labelledby="countryProfileTitle">
+    <button id="countryProfileClose" class="text-button" type="button">关闭</button>
+    <div id="countryProfileContent"></div>
+  </div>
+</div>
+<div id="countryRuleDrawer" class="label-hub-drawer label-hub-rule-drawer" hidden>
+  <div class="label-hub-drawer-card label-hub-rule-drawer-card" role="dialog" aria-modal="true" aria-labelledby="countryRuleTitle">
+    <header class="label-hub-rule-drawer-toolbar"><div><span>标签详情表规则</span><strong id="countryRuleTitle">规则明细</strong></div><button id="countryRuleClose" class="text-button" type="button">关闭</button></header>
+    <div id="countryRuleContent"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', path='vendor/slim-select/slimselect.js') }}?v=4.0.5"></script>
+<script src="{{ url_for('static', path='js/country_label_hub.js') }}?v=20260717profile3"></script>
+{% endblock %}

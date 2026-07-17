@@ -205,7 +205,7 @@ def test_remote_breakdown_nodes_have_enough_distinct_colors_for_long_status_list
     assert len(colors) >= 12
     assert len(set(colors)) == len(colors)
     assert "remoteBucketColor(panel, bucket)" in script
-    assert "?v=20260716" in template
+    assert "?v=20260717" in template
 
 
 def test_label_hub_issue_overview_shows_selected_group_problem_counts():
@@ -356,7 +356,23 @@ def test_current_category_detail_uses_period_scoped_distribution():
     assert "distributionById" in script
     assert 'cache: "no-store"' in common
     assert "js/common.js') }}?v=20260715cache2" in base
-    assert "js/label_hub.js') }}?v=20260716f" in template
+    assert "js/label_hub.js') }}?v=20260717labelloading1" in template
+
+
+def test_country_detail_overview_matches_label_hub_information_structure():
+    script = (ROOT / "app" / "static" / "js" / "country_label_hub.js").read_text(encoding="utf-8")
+
+    for header in ("当前标签", "标签画像", "问题提示", "动销趋势"):
+        assert f'headerName: "{header}"' in script
+    for header in ("日均销量", "订单毛利润", "订单毛利率"):
+        assert f'("{header}",' in script
+    assert "renderCountryLabelSummaryCell" in script
+    assert "renderCountryIssueCell" in script
+    assert "renderCountryTrendCell" in script
+    assert "profileLabelGroups" in script
+    assert "renderCrossCountryComparison" in script
+    assert "country-profile-compare-table" in script
+    assert "一行一个国家，直接横向比较标签差异与经营结果" in script
 
 
 def test_sales_role_has_label_hub_return_link():

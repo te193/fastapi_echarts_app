@@ -13,7 +13,13 @@
       <div id="labelHubScope" class="label-hub-scope" aria-live="polite"></div>
       <p id="labelHubHint" class="sales-role-period"></p>
     </div>
-    <button id="labelHubClear" class="sales-role-action" type="button">重置筛选</button>
+    <div class="label-hub-top-actions">
+      <nav class="label-view-switch" aria-label="标签看板视图">
+        <a class="active" href="/label-hub" aria-current="page">标签看板</a>
+        <a id="countryLabelHubLink" href="/country-label-hub">国家标签看板</a>
+      </nav>
+      <button id="labelHubClear" class="sales-role-action" type="button">重置筛选</button>
+    </div>
   </header>
 
   <section class="sales-role-filter-panel label-hub-filters" aria-label="公共筛选">
@@ -120,5 +126,5 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', path='vendor/slim-select/slimselect.js') }}?v=4.0.5"></script>
-<script src="{{ url_for('static', path='js/label_hub.js') }}?v=20260716f"></script>
+<script src="{{ url_for('static', path='js/label_hub.js') }}?v=20260717labelloading1"></script>
 {% endblock %}

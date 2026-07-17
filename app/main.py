@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from etl.dashboard_daily_update import COLUMN_COMMENTS
 
 from .services.dashboard_db import dashboard_service
+from .services.country_label_hub_data import country_label_hub_service
 from .services.label_hub_data import label_hub_service
 from .services.price_review_data import price_review_service
 from .services.replenishment_data import replenishment_service
@@ -375,6 +376,15 @@ def label_hub_page(request: Request) -> HTMLResponse:
     )
 
 
+@app.get("/country-label-hub", response_class=HTMLResponse)
+def country_label_hub_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "country_label_hub.html",
+        {"page": "country_label_hub", "title": "国家标签看板"},
+    )
+
+
 @app.get("/api/label-hub/meta")
 def api_label_hub_meta() -> dict:
     return label_hub_service.get_meta()
@@ -410,6 +420,51 @@ def api_label_hub_msku(data_date: str, country_category: str, store: str, msku: 
         return label_hub_service.get_msku_profile(data_date=data_date, country_category=country_category, store=store, msku=msku, metric_period=metric_period)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/country-label-hub/meta")
+def api_country_label_hub_meta() -> dict:
+    try:
+        return country_label_hub_service.get_meta()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="国家标签元数据暂不可用，请稍后重试") from exc
+
+
+@app.get("/api/country-label-hub")
+def api_country_label_hub(
+    data_date: str = "", metric_period: str = "30d", country_category: str = "all",
+    store: str = "all", keyword: str = "", conditions: str = "", label_periods: str = "",
+    sales_trends: str = "", daily_sales_bands: str = "", margin_bands: str = "",
+    problem: str = "all", page: int = 1, page_size: int = 20,
+    sort_field: str = "problem_priority", sort_dir: str = "desc",
+) -> dict:
+    try:
+        return country_label_hub_service.get_payload(
+            data_date=data_date, metric_period=metric_period, country_category=country_category,
+            store=store, keyword=keyword, conditions=conditions, label_periods=label_periods,
+            sales_trends=sales_trends, daily_sales_bands=daily_sales_bands,
+            margin_bands=margin_bands, problem=problem, page=page, page_size=page_size,
+            sort_field=sort_field, sort_dir=sort_dir,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="国家标签数据暂不可用，请稍后重试") from exc
+
+
+@app.get("/api/country-label-hub/msku")
+def api_country_label_hub_msku(
+    data_date: str, country: str, country_category: str, store: str, msku: str, metric_period: str = "30d",
+) -> dict:
+    try:
+        return country_label_hub_service.get_msku_profile(
+            data_date=data_date, country=country, country_category=country_category, store=store,
+            msku=msku, metric_period=metric_period,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="国家标签画像暂不可用，请稍后重试") from exc
 
 
 @app.get("/api/meta")

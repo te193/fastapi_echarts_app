@@ -14,7 +14,7 @@ LABEL_DETAIL_TABLE = "dws_datasync.dws_标签详情表"
 LABEL_FACT_TABLE = "dws_datasync.dws_标签表"
 REFUND_MSKU_PREFIX = "Amazon.Found."
 CACHE_SECONDS = 300
-EXCLUDED_ANALYSIS_PARENT_IDS = {4, 7, 13}
+EXCLUDED_ANALYSIS_PARENT_IDS = {4, 7, 13, 14}
 
 REMOTE_PARENT_CHILD_PRIORITY = {
     1: [101, 102, 103, 104],
@@ -857,7 +857,7 @@ class LabelHubDataService:
         cached = self._facts_cache.get(data_date)
         if cached and (datetime.now() - cached[0]).total_seconds() < CACHE_SECONDS:
             return cached[1]
-        facts = self._fetch_facts(data_date)
+        facts = self._fetch_facts(data_date, excluded_parent_ids=EXCLUDED_ANALYSIS_PARENT_IDS)
         self._facts_cache[data_date] = (datetime.now(), facts)
         return facts
 
@@ -879,9 +879,7 @@ class LabelHubDataService:
 
     def get_payload(self, **filters: Any) -> dict[str, Any]:
         meta = self.get_meta()
-        data_date = str(filters.get("data_date") or meta["default_data_date"])
-        if data_date not in meta["data_dates"]:
-            raise ValueError("data_date 不存在")
+        data_date = str(meta["default_data_date"])
         metric_period = str(filters.get("metric_period") or "30d").lower()
         if metric_period not in METRIC_PERIODS:
             raise ValueError("metric_period 不存在")
@@ -919,7 +917,7 @@ class LabelHubDataService:
         )
 
     def get_msku_profile(self, **filters: Any) -> dict[str, Any]:
-        data_date = str(filters.get("data_date") or self.get_meta()["default_data_date"])
+        data_date = str(self.get_meta()["default_data_date"])
         country = str(filters.get("country_category") or "")
         store = str(filters.get("store") or "")
         msku = str(filters.get("msku") or "")
@@ -1001,24 +999,33 @@ class LabelHubDataService:
         with self._source_connection() as conn, conn.cursor() as cursor:
             cursor.execute(f"select label_id, label_name, sub_label_id, sub_label_name, tag_rule, business_definition, business_owner, label_category, update_frequency, mutual_exclusion, status, tagging_method from {LABEL_DETAIL_TABLE} where sub_label_id is not null order by label_id, sub_label_id")
             details = cursor.fetchall()
-            cursor.execute(f"select label_id, count(*) as fact_count, max(data_date) as latest_date, group_concat(distinct label_period order by label_period) as label_periods from {LABEL_FACT_TABLE} where msku not like %(refund_prefix)s group by label_id", {"refund_prefix": f"{REFUND_MSKU_PREFIX}%"})
-            stats = {
-                int(row["label_id"]): {
-                    "fact_count": row["fact_count"],
-                    "latest_date": _date_text(row["latest_date"]),
-                    "periods": [item for item in str(row.get("label_periods") or "").split(",") if item],
+            cursor.execute(f"select max(data_date) as data_date from {LABEL_FACT_TABLE} where msku not like %(refund_prefix)s", {"refund_prefix": f"{REFUND_MSKU_PREFIX}%"})
+            latest_row = cursor.fetchone() or {}
+            latest_date = _date_text(latest_row.get("data_date"))
+            dates = [latest_date] if latest_date else []
+            stats = {}
+            if latest_date:
+                params = {"data_date": latest_date, "refund_prefix": f"{REFUND_MSKU_PREFIX}%"}
+                cursor.execute(f"select label_id, count(*) as fact_count, group_concat(distinct label_period order by label_period) as label_periods from {LABEL_FACT_TABLE} where data_date = %(data_date)s and msku not like %(refund_prefix)s group by label_id", params)
+                stats = {
+                    int(row["label_id"]): {
+                        "fact_count": row["fact_count"],
+                        "latest_date": latest_date,
+                        "periods": [item for item in str(row.get("label_periods") or "").split(",") if item],
+                    }
+                    for row in cursor.fetchall()
                 }
-                for row in cursor.fetchall()
-            }
-            cursor.execute(f"select distinct data_date from {LABEL_FACT_TABLE} where msku not like %(refund_prefix)s order by data_date desc", {"refund_prefix": f"{REFUND_MSKU_PREFIX}%"})
-            dates = [_date_text(row["data_date"]) for row in cursor.fetchall()]
-            source_filters = {"country_categories": [], "stores": []}
+            source_filters = {"country_categories": [], "stores": [], "stores_by_country": {}}
             if dates:
                 params = {"data_date": dates[0], "refund_prefix": f"{REFUND_MSKU_PREFIX}%"}
-                cursor.execute(f"select distinct country_category from {LABEL_FACT_TABLE} where data_date = %(data_date)s and msku not like %(refund_prefix)s and country_category is not null and country_category != '' order by country_category", params)
-                source_filters["country_categories"] = [row["country_category"] for row in cursor.fetchall()]
-                cursor.execute(f"select distinct store from {LABEL_FACT_TABLE} where data_date = %(data_date)s and msku not like %(refund_prefix)s and store is not null and store != '' order by store", params)
-                source_filters["stores"] = [row["store"] for row in cursor.fetchall()]
+                cursor.execute(f"select distinct country_category, store from {LABEL_FACT_TABLE} where data_date = %(data_date)s and msku not like %(refund_prefix)s and country_category is not null and country_category != '' and store is not null and store != '' order by country_category, store", params)
+                pairs = cursor.fetchall()
+                source_filters["country_categories"] = sorted({row["country_category"] for row in pairs})
+                source_filters["stores"] = sorted({row["store"] for row in pairs})
+                stores_by_country: dict[str, set[str]] = defaultdict(set)
+                for row in pairs:
+                    stores_by_country[row["country_category"]].add(row["store"])
+                source_filters["stores_by_country"] = {country: sorted(stores) for country, stores in stores_by_country.items()}
         return details, stats, dates, source_filters
 
     def _fetch_details(self):
@@ -1028,13 +1035,15 @@ class LabelHubDataService:
 
     def _fetch_fact_stats(self):
         with self._source_connection() as conn, conn.cursor() as cursor:
-            cursor.execute(f"select label_id, count(*) as fact_count, max(data_date) as latest_date, group_concat(distinct label_period order by label_period) as label_periods from {LABEL_FACT_TABLE} where msku not like %(refund_prefix)s group by label_id", {"refund_prefix": f"{REFUND_MSKU_PREFIX}%"})
+            cursor.execute(f"select label_id, count(*) as fact_count, max(data_date) as latest_date, group_concat(distinct label_period order by label_period) as label_periods from {LABEL_FACT_TABLE} where data_date = (select max(data_date) from {LABEL_FACT_TABLE} where msku not like %(refund_prefix)s) and msku not like %(refund_prefix)s group by label_id", {"refund_prefix": f"{REFUND_MSKU_PREFIX}%"})
             return {int(row["label_id"]): {"fact_count": row["fact_count"], "latest_date": _date_text(row["latest_date"]), "periods": [item for item in str(row.get("label_periods") or "").split(",") if item]} for row in cursor.fetchall()}
 
     def _fetch_dates(self):
         with self._source_connection() as conn, conn.cursor() as cursor:
-            cursor.execute(f"select distinct data_date from {LABEL_FACT_TABLE} where msku not like %(refund_prefix)s order by data_date desc", {"refund_prefix": f"{REFUND_MSKU_PREFIX}%"})
-            return [_date_text(row["data_date"]) for row in cursor.fetchall()]
+            cursor.execute(f"select max(data_date) as data_date from {LABEL_FACT_TABLE} where msku not like %(refund_prefix)s", {"refund_prefix": f"{REFUND_MSKU_PREFIX}%"})
+            row = cursor.fetchone() or {}
+            latest_date = _date_text(row.get("data_date"))
+            return [latest_date] if latest_date else []
 
     def _fetch_filters(self, data_date):
         with self._source_connection() as conn, conn.cursor() as cursor:
@@ -1045,12 +1054,22 @@ class LabelHubDataService:
             stores = [row["store"] for row in cursor.fetchall()]
         return {"country_categories": countries, "stores": stores}
 
-    def _fetch_facts(self, data_date, country_category="all", store="all", keyword=""):
-        excluded_parent_ids = ", ".join(str(item) for item in sorted(EXCLUDED_ANALYSIS_PARENT_IDS))
+    def _fetch_facts(self, data_date, country_category="all", store="all", keyword="", parent_ids=None, excluded_parent_ids=None):
+        parent_ids = tuple(sorted({int(item) for item in (parent_ids or [])}))
+        excluded_parent_ids = tuple(sorted({int(item) for item in (excluded_parent_ids or [])}))
+        detail_scope = (
+            f" where label_id in ({','.join(str(item) for item in parent_ids)})"
+            if parent_ids
+            else (
+                f" where label_id not in ({','.join(str(item) for item in excluded_parent_ids)})"
+                if excluded_parent_ids
+                else ""
+            )
+        )
         clauses = [
             "data_date = %(data_date)s",
             "msku not like %(refund_prefix)s",
-            f"label_id in (select sub_label_id from {LABEL_DETAIL_TABLE} where label_id not in ({excluded_parent_ids}))",
+            f"label_id in (select sub_label_id from {LABEL_DETAIL_TABLE}{detail_scope})",
         ]
         params = {"data_date": data_date, "refund_prefix": f"{REFUND_MSKU_PREFIX}%"}
         if country_category != "all":
@@ -1065,11 +1084,11 @@ class LabelHubDataService:
         with self._source_connection() as conn, conn.cursor() as cursor:
             cursor.execute(
                 f"""
-                select data_date, country_category, store, msku,
+                select data_date, country, country_category, store, msku,
                        group_concat(distinct concat(label_id, '@', coalesce(label_period, '')) order by label_id separator '|') as fact_tokens
                 from {LABEL_FACT_TABLE}
                 where {' and '.join(clauses)}
-                group by data_date, country_category, store, msku
+                group by data_date, country, country_category, store, msku
                 """,
                 params,
             )
@@ -1080,7 +1099,7 @@ class LabelHubDataService:
                 label_text, separator, period = token.partition("@")
                 if not separator or not label_text.isdigit():
                     continue
-                facts.append({"data_date": row.get("data_date"), "country_category": row.get("country_category"), "store": row.get("store"), "msku": row.get("msku"), "label_id": int(label_text), "label_period": period})
+                facts.append({"data_date": row.get("data_date"), "country": row.get("country"), "country_category": row.get("country_category"), "store": row.get("store"), "msku": row.get("msku"), "label_id": int(label_text), "label_period": period})
         return facts
 
 

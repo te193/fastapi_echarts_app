@@ -29,7 +29,24 @@ class LabelHubApiTests(unittest.TestCase):
         response = TestClient(main.app).get("/label-hub")
 
         self.assertEqual(200, response.status_code)
+        self.assertIn('main class="main-content page-loading"', response.text)
+        self.assertIn('aria-busy="true"', response.text)
         self.assertIn("标签看板", response.text)
+
+    def test_country_label_hub_page_route_exists(self):
+        response = TestClient(main.app).get("/country-label-hub")
+
+        self.assertEqual(200, response.status_code)
+        self.assertIn("国家标签看板", response.text)
+        self.assertIn('main class="main-content page-loading"', response.text)
+        self.assertIn('aria-busy="true"', response.text)
+        self.assertIn('id="countryTableView"', response.text)
+        self.assertIn("综合视图", response.text)
+        self.assertIn("标签视图", response.text)
+        self.assertIn("经营视图", response.text)
+        self.assertIn('id="countryLabelPeriod"', response.text)
+        self.assertIn("标签周期", response.text)
+        self.assertIn("slimselect.js", response.text)
 
     def test_payload_forwards_supported_filter_contract(self):
         service = FakeLabelHubService()

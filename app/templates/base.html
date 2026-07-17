@@ -7,7 +7,7 @@
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community/styles/ag-grid.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community/styles/ag-theme-quartz.css">
-  <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}?v=20260715fbaattribution1">
+  <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}?v=20260717countrymatrix2">
   {% block extra_head %}{% endblock %}
 </head>
 <body data-page="{{ page }}">
@@ -117,7 +117,7 @@
       </div>
     </aside>
 
-    <main class="main-content">
+    <main class="main-content{% if page in ['label_hub', 'country_label_hub'] %} page-loading{% endif %}"{% if page in ['label_hub', 'country_label_hub'] %} aria-busy="true"{% endif %}>
       <div class="page-shell">
         {% block content %}{% endblock %}
       </div>
