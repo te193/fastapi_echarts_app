@@ -1362,8 +1362,14 @@ def price_adjustments_page(request: Request) -> HTMLResponse:
 @app.get("/api/price-adjustments/daily-counts")
 def api_price_adjustments_daily_counts(
     days: int = Query(default=30, ge=7, le=90),
+    include_all: bool = Query(default=False),
 ) -> dict:
-    return {"items": price_review_service.get_daily_adjustment_counts(days=days)}
+    return {
+        "items": price_review_service.get_daily_adjustment_counts(
+            days=days,
+            include_all=include_all,
+        )
+    }
 
 
 @app.put("/api/price-adjustments/daily-notes/{adjust_date}")

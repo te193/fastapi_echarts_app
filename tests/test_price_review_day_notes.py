@@ -110,6 +110,21 @@ class PriceReviewDayNotesTests(unittest.TestCase):
         self.assertEqual(by_date["2026-06-03"]["note"], "促销前统一下调")
         self.assertEqual(by_date["2026-06-02"]["note"], "")
 
+    def test_daily_adjustment_counts_can_load_all_history(self):
+        self.connection.counts[date(2026, 4, 23)] = 7
+
+        with patch.object(price_review_data, "date", FakeDate):
+            items = self.service.get_daily_adjustment_counts(days=30, include_all=True)
+
+        by_date = {item["date"]: item for item in items}
+        self.assertEqual(by_date["2026-04-23"]["count"], 7)
+        count_statements = [
+            sql for sql, _ in self.connection.statements
+            if "from price_review_adjustment_source" in sql and "group by adjust_date" in sql
+        ]
+        self.assertEqual(len(count_statements), 1)
+        self.assertNotIn("where adjust_date between", count_statements[0])
+
     def test_save_day_note_trims_and_clears_empty_note(self):
         self.service.save_adjustment_day_note(date(2026, 6, 3), "  备货压力释放  ")
         self.assertTrue(self.connection.ensure_called)

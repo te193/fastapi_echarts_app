@@ -1477,30 +1477,49 @@ class PriceReviewService:
         rows = self._filter_sku_columns(rows, column_filters)
         return rows
 
-    def get_daily_adjustment_counts(self, days: int = 30) -> list[dict[str, Any]]:
+    def get_daily_adjustment_counts(
+        self,
+        days: int = 30,
+        include_all: bool = False,
+    ) -> list[dict[str, Any]]:
         today = date.today()
         start_date = today - timedelta(days=days - 1)
         counts: dict[date, int] = {}
-        notes = self._get_adjustment_day_notes(start_date, today)
         latest_data_date = self._latest_product_data_date()
         try:
             with self.connect() as conn:
                 with conn.cursor() as cursor:
-                    cursor.execute(
-                        """
-                        select adjust_date, count(*) as total
-                        from price_review_adjustment_source
-                        where adjust_date between %(start_date)s and %(today)s
-                        group by adjust_date
-                        """,
-                        {"start_date": start_date, "today": today},
-                    )
+                    if include_all:
+                        cursor.execute(
+                            """
+                            select adjust_date, count(*) as total
+                            from price_review_adjustment_source
+                            where adjust_date <= %(today)s
+                            group by adjust_date
+                            """,
+                            {"today": today},
+                        )
+                    else:
+                        cursor.execute(
+                            """
+                            select adjust_date, count(*) as total
+                            from price_review_adjustment_source
+                            where adjust_date between %(start_date)s and %(today)s
+                            group by adjust_date
+                            """,
+                            {"start_date": start_date, "today": today},
+                        )
                     counts = {row["adjust_date"]: int(row["total"] or 0) for row in cursor.fetchall()}
         except pymysql.MySQLError:
             counts = {}
 
+        if include_all and counts:
+            start_date = min(counts)
+        notes = self._get_adjustment_day_notes(start_date, today)
+
         result = []
-        for i in range(days - 1, -1, -1):
+        result_days = (today - start_date).days + 1
+        for i in range(result_days - 1, -1, -1):
             d = today - timedelta(days=i)
             count = counts.get(d, 0)
             clickable = bool(count and latest_data_date and latest_data_date >= d + timedelta(days=7))

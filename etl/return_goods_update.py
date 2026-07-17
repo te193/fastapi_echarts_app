@@ -49,6 +49,7 @@ create table if not exists etl_datasync.dashboard_return_goods_events (
     recovery_window_days int null,
     pre_recovery_sales_qty decimal(18,4) null,
     post_recovery_sales_qty decimal(18,4) null,
+    post_return_sales_qty decimal(18,4) null,
     sales_recovery_rate decimal(18,4) null,
     pre_21d_sales_qty decimal(18,4) null,
     post_first_21d_sales_qty decimal(18,4) null,
@@ -579,7 +580,7 @@ insert into etl_datasync.dashboard_return_goods_events (
     seller_sku_adj, local_sku, return_round, stockout_date, return_start_date,
     exit_date, exit_reason, return_days, stage, pre_7d_sales_qty, pre_7d_sales_avg, pre_7d_gross_margin_rate,
     pre_stockout_sales_role, observe_7d_sales_qty, observe_7d_sales_avg, post_7d_sales_qty, post_7d_sales_avg, post_21d_available_sales_qty,
-    recovery_window_days, pre_recovery_sales_qty, post_recovery_sales_qty,
+    recovery_window_days, pre_recovery_sales_qty, post_recovery_sales_qty, post_return_sales_qty,
     sales_recovery_rate, pre_21d_sales_qty, post_first_21d_sales_qty, d21_recovery_rate,
     recovery_followup_flag, post_cumulative_sales_qty, cumulative_avg_recovery_rate,
     recovery_followup_status, stable_recovery_start_date, current_stable_recovery_flag,
@@ -590,7 +591,7 @@ insert into etl_datasync.dashboard_return_goods_events (
     %(seller_sku_adj)s, %(local_sku)s, %(return_round)s, %(stockout_date)s, %(return_start_date)s,
     %(exit_date)s, %(exit_reason)s, %(return_days)s, %(stage)s, %(pre_7d_sales_qty)s, %(pre_7d_sales_avg)s, %(pre_7d_gross_margin_rate)s,
     %(pre_stockout_sales_role)s, %(observe_7d_sales_qty)s, %(observe_7d_sales_avg)s, %(post_7d_sales_qty)s, %(post_7d_sales_avg)s, %(post_21d_available_sales_qty)s,
-    %(recovery_window_days)s, %(pre_recovery_sales_qty)s, %(post_recovery_sales_qty)s,
+    %(recovery_window_days)s, %(pre_recovery_sales_qty)s, %(post_recovery_sales_qty)s, %(post_return_sales_qty)s,
     %(sales_recovery_rate)s, %(pre_21d_sales_qty)s, %(post_first_21d_sales_qty)s, %(d21_recovery_rate)s,
     %(recovery_followup_flag)s, %(post_cumulative_sales_qty)s, %(cumulative_avg_recovery_rate)s,
     %(recovery_followup_status)s, %(stable_recovery_start_date)s, %(current_stable_recovery_flag)s,
@@ -837,7 +838,8 @@ def build_events(
         post_qty = sales_qty(rows, post_window_start, metric_end_day)
         post_cumulative_qty = sales_qty(rows, start_day, metric_end_day) if followup_flag else None
         cumulative_rate = cumulative_average_recovery_rate(pre_21d_qty, post_cumulative_qty, return_days) if followup_flag else None
-        post_recovery_qty = post_cumulative_qty if followup_flag else sales_qty(rows, start_day, post_recovery_window_end)
+        post_recovery_qty = sales_qty(rows, start_day, post_recovery_window_end)
+        post_return_sales_qty = sales_qty(rows, start_day, snapshot_date)
         post_21d_sales_qty = salable_sales_qty(rows, start_day, min(start_day + timedelta(days=20), snapshot_date))
         rate = cumulative_rate if followup_flag else recovery_rate(pre_recovery_qty, post_recovery_qty)
         stable_start, current_stable, recovery_fallback = (
@@ -886,6 +888,7 @@ def build_events(
                 "recovery_window_days": recovery_window_days,
                 "pre_recovery_sales_qty": pre_recovery_qty,
                 "post_recovery_sales_qty": post_recovery_qty,
+                "post_return_sales_qty": post_return_sales_qty,
                 "sales_recovery_rate": rate,
                 "pre_21d_sales_qty": pre_21d_qty if actual_return_days >= MONITOR_DAYS else None,
                 "post_first_21d_sales_qty": post_first_21d_qty if actual_return_days >= MONITOR_DAYS else None,
@@ -965,6 +968,7 @@ def ensure_return_events_schema(cursor, schemas) -> None:
         ("recovery_window_days", "add column recovery_window_days int null after post_21d_available_sales_qty"),
         ("pre_recovery_sales_qty", "add column pre_recovery_sales_qty decimal(18,4) null after recovery_window_days"),
         ("post_recovery_sales_qty", "add column post_recovery_sales_qty decimal(18,4) null after pre_recovery_sales_qty"),
+        ("post_return_sales_qty", "add column post_return_sales_qty decimal(18,4) null after post_recovery_sales_qty"),
         ("pre_21d_sales_qty", "add column pre_21d_sales_qty decimal(18,4) null after sales_recovery_rate"),
         ("post_first_21d_sales_qty", "add column post_first_21d_sales_qty decimal(18,4) null after pre_21d_sales_qty"),
         ("d21_recovery_rate", "add column d21_recovery_rate decimal(18,6) null after post_first_21d_sales_qty"),

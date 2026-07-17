@@ -17,6 +17,7 @@ STATUS_COLUMNS = [
     ("followup_improving", "恢复提升中"),
     ("followup_data_insufficient", "数据不足"),
 ]
+NO_RECOVERY_SALES_CONDITION = "coalesce(post_return_sales_qty, 0) = 0"
 
 
 def parse_day(value: str | None) -> date | None:
@@ -435,7 +436,7 @@ class ReturnGoodsDataService:
             "overview_d21_standard_exit": latest_event_filter + " and " + in_stockout_pool_filter + " and coalesce(recovery_followup_flag, 0) = 0 and exit_date is not null and exit_date <= %(end_date)s and exit_reason = '达标退出'",
             "overview_failed_exit": latest_event_filter + " and " + in_stockout_pool_filter + " and exit_date is not null and exit_date <= %(end_date)s and exit_reason = '未达标退出'",
             "overview_recovery_insufficient": latest_event_filter + " and " + in_stockout_pool_filter + " and exit_date is not null and exit_date <= %(end_date)s and sales_recovery_rate >= 0.5 and sales_recovery_rate < 0.7",
-            "overview_no_recovery_21d": latest_event_filter + " and " + in_stockout_pool_filter + " and exit_date is not null and exit_date <= %(end_date)s and coalesce(post_recovery_sales_qty, 0) = 0",
+            "overview_no_recovery_21d": latest_event_filter + " and " + in_stockout_pool_filter + " and exit_date is not null and exit_date <= %(end_date)s and " + NO_RECOVERY_SALES_CONDITION,
             "overview_low_recovery": latest_event_filter + " and " + in_stockout_pool_filter + " and exit_date is not null and exit_date <= %(end_date)s and sales_recovery_rate > 0 and sales_recovery_rate < 0.3",
             "overview_weak_recovery": latest_event_filter + " and " + in_stockout_pool_filter + " and exit_date is not null and exit_date <= %(end_date)s and sales_recovery_rate >= 0.3 and sales_recovery_rate < 0.5",
             "overview_high_value_failed": latest_event_filter + " and " + in_stockout_pool_filter + " and pre_stockout_sales_role in ('明星产品', '潜力产品') and " + status_conditions["followup_severe"],
@@ -519,7 +520,7 @@ class ReturnGoodsDataService:
                     count(distinct case when exit_date is not null and exit_date <= %(end_date)s and exit_reason = '达标退出' then item_key end) as success_exit_msku_count,
                     count(distinct case when exit_date is not null and exit_date <= %(end_date)s and exit_reason = '未达标退出' then item_key end) as failed_exit_msku_count,
                     count(distinct case when exit_date is not null and exit_date <= %(end_date)s and sales_recovery_rate >= 0.5 and sales_recovery_rate < 0.7 then item_key end) as recovery_insufficient_msku_count,
-                    count(distinct case when exit_date is not null and exit_date <= %(end_date)s and coalesce(post_recovery_sales_qty, 0) = 0 then item_key end) as no_recovery_21d_msku_count,
+                    count(distinct case when exit_date is not null and exit_date <= %(end_date)s and {NO_RECOVERY_SALES_CONDITION} then item_key end) as no_recovery_21d_msku_count,
                     count(distinct case when exit_date is not null and exit_date <= %(end_date)s and sales_recovery_rate > 0 and sales_recovery_rate < 0.3 then item_key end) as low_recovery_msku_count,
                     count(distinct case when exit_date is not null and exit_date <= %(end_date)s and sales_recovery_rate >= 0.3 and sales_recovery_rate < 0.5 then item_key end) as weak_recovery_msku_count,
                     count(distinct case when exit_date is not null and exit_date <= %(end_date)s and pre_stockout_sales_role in ('明星产品', '潜力产品') and sales_recovery_rate < 0.5 then item_key end) as high_value_failed_msku_count,
@@ -1312,28 +1313,26 @@ class ReturnGoodsDataService:
             row = cursor.fetchone() or {}
         return row.get("snapshot_date")
 
-    def _latest_price_snapshot(self, conn, snapshot_date: date) -> date | None:
+    def _latest_price_snapshot(self, conn) -> date | None:
         with conn.cursor() as cursor:
             cursor.execute(
                 """
                 select max(snapshot_date) as snapshot_date
                 from dashboard_limit_price_daily_snapshot
-                where snapshot_date <= %(snapshot_date)s
-                """,
-                {"snapshot_date": snapshot_date},
+                where snapshot_date <= current_date
+                """
             )
             row = cursor.fetchone() or {}
         return row.get("snapshot_date")
 
-    def _latest_listing_price_snapshot(self, conn, snapshot_date: date) -> date | None:
+    def _latest_listing_price_snapshot(self, conn) -> date | None:
         with conn.cursor() as cursor:
             cursor.execute(
                 """
                 select max(snapshot_date) as snapshot_date
                 from dashboard_listing_price_daily_snapshot
-                where snapshot_date <= %(snapshot_date)s
-                """,
-                {"snapshot_date": snapshot_date},
+                where snapshot_date <= current_date
+                """
             )
             row = cursor.fetchone() or {}
         return row.get("snapshot_date")
@@ -1348,8 +1347,8 @@ class ReturnGoodsDataService:
         if not unique_keys:
             return []
         metrics_snapshot = self._latest_listing_snapshot(conn, snapshot_date)
-        price_snapshot = self._latest_price_snapshot(conn, snapshot_date)
-        listing_price_snapshot = self._latest_listing_price_snapshot(conn, snapshot_date)
+        price_snapshot = self._latest_price_snapshot(conn)
+        listing_price_snapshot = self._latest_listing_price_snapshot(conn)
         params: dict[str, Any] = {
             "metrics_snapshot": metrics_snapshot,
             "price_snapshot": price_snapshot,
@@ -1574,8 +1573,8 @@ class ReturnGoodsDataService:
         ]
         if not valid_events:
             return []
-        price_snapshot = self._latest_price_snapshot(conn, snapshot_date)
-        listing_price_snapshot = self._latest_listing_price_snapshot(conn, snapshot_date)
+        price_snapshot = self._latest_price_snapshot(conn)
+        listing_price_snapshot = self._latest_listing_price_snapshot(conn)
         params: dict[str, Any] = {
             "snapshot_date": snapshot_date,
             "price_snapshot": price_snapshot,

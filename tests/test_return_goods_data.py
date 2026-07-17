@@ -52,6 +52,44 @@ class ReturnGoodsServiceSqlTests(unittest.TestCase):
         self.assertEqual(date(2026, 6, 30), start_day)
         self.assertEqual(date(2026, 6, 30), end_day)
 
+    def test_price_snapshots_use_database_current_date(self):
+        class Cursor:
+            def __init__(self):
+                self.statements = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def execute(self, sql, params=None):
+                self.statements.append((" ".join(sql.lower().split()), params))
+
+            def fetchone(self):
+                return {"snapshot_date": date(2026, 7, 14)}
+
+        class Connection:
+            def __init__(self):
+                self.cursors = []
+
+            def cursor(self):
+                cursor = Cursor()
+                self.cursors.append(cursor)
+                return cursor
+
+        service = ReturnGoodsDataService()
+        conn = Connection()
+
+        self.assertEqual(date(2026, 7, 14), service._latest_price_snapshot(conn))
+        self.assertEqual(date(2026, 7, 14), service._latest_listing_price_snapshot(conn))
+
+        statements = [statement for cursor in conn.cursors for statement in cursor.statements]
+        self.assertEqual(2, len(statements))
+        for sql, params in statements:
+            self.assertIn("snapshot_date <= current_date", sql)
+            self.assertIsNone(params)
+
     def test_build_where_supports_pre_stockout_sales_role_filter(self):
         service = ReturnGoodsDataService()
 
@@ -382,13 +420,14 @@ class ReturnGoodsServiceSqlTests(unittest.TestCase):
         self.assertIn("sales_recovery_rate >= 0.5", where_sql)
         self.assertIn("sales_recovery_rate < 0.7", where_sql)
 
-    def test_overview_no_recovery_21d_filter_uses_21_day_total_sales_qty(self):
+    def test_overview_no_recovery_21d_filter_uses_sales_through_snapshot_date(self):
         service = ReturnGoodsDataService()
 
         where_sql, _ = service._build_where(snapshot_date=date(2026, 6, 30), quick_filter="overview_no_recovery_21d")
 
         self.assertIn("dashboard_return_goods_stockout_pool", where_sql)
-        self.assertIn("coalesce(post_recovery_sales_qty, 0) = 0", where_sql)
+        self.assertIn("coalesce(post_return_sales_qty, 0) = 0", where_sql)
+        self.assertNotIn("coalesce(post_recovery_sales_qty, 0) = 0", where_sql)
 
     def test_overview_high_value_failed_filter_uses_role_and_under_50_percent_rate(self):
         service = ReturnGoodsDataService()

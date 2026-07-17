@@ -888,7 +888,10 @@ class ReplenishmentDataService:
         prefix = f"{alias}." if alias else ""
         return (
             f"coalesce({prefix}history_recovery_flag, 0) = 1 "
-            f"and coalesce({prefix}support_replenish_level_sort, 99) not in (1, 2, 3)"
+            f"and coalesce({prefix}support_replenish_level_sort, 99) not in (1, 2, 3) "
+            f"and not ({self._followed_block_display_condition(alias)}) "
+            f"and not (coalesce({prefix}asin_merge_flag, 0) = 1 "
+            f"and coalesce({prefix}replenish_qty, 0) = 0)"
         )
 
     def _asin_merge_zero_qty_display_condition(self, alias: str = "") -> str:
@@ -901,7 +904,7 @@ class ReplenishmentDataService:
 
     def _followed_block_display_condition(self, alias: str = "") -> str:
         prefix = f"{alias}." if alias else ""
-        return f"{prefix}replenish_block_reason = %(level_followed_block)s"
+        return f"coalesce({prefix}replenish_block_reason, '') = %(level_followed_block)s"
 
     def _display_level_expr(self, alias: str = "") -> str:
         prefix = f"{alias}." if alias else ""

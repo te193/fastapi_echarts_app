@@ -302,7 +302,10 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
         level_expr = service._display_level_expr()
         sort_expr = service._display_level_sort_expr()
 
-        self.assertIn("replenish_block_reason = %(level_followed_block)s", condition)
+        self.assertIn(
+            "coalesce(replenish_block_reason, '') = %(level_followed_block)s",
+            condition,
+        )
         self.assertNotIn("then %(level_followed_block)s", level_expr)
         self.assertNotIn("then 7", sort_expr)
 
@@ -315,7 +318,10 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
 
         self.assertIn("asin_merge_flag", condition)
         self.assertIn("replenish_qty", condition)
-        self.assertIn("not (replenish_block_reason = %(level_followed_block)s)", condition)
+        self.assertIn(
+            "not (coalesce(replenish_block_reason, '') = %(level_followed_block)s)",
+            condition,
+        )
         self.assertIn("then %(level_sufficient)s", level_expr)
         self.assertIn("then 4", sort_expr)
         self.assertEqual(
@@ -394,10 +400,17 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
     def test_history_recovery_display_replenish_qty_restores_one_box(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)
 
+        condition = service._history_recovery_display_condition()
         qty_expr = service._display_replenish_qty_expr()
         box_expr = service._display_replenish_box_qty_expr()
         cost_expr = service._display_replenish_cost_expr()
 
+        self.assertIn(
+            "not (coalesce(replenish_block_reason, '') = %(level_followed_block)s)",
+            condition,
+        )
+        self.assertIn("not (coalesce(asin_merge_flag, 0) = 1", condition)
+        self.assertIn("coalesce(replenish_qty, 0) = 0", condition)
         self.assertIn("max_cg_box_pcs", qty_expr)
         self.assertIn("else 50", qty_expr)
         self.assertIn("then 1 else 0", box_expr)

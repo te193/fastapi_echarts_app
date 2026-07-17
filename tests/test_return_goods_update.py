@@ -345,6 +345,17 @@ class ReturnGoodsEventTests(unittest.TestCase):
         self.assertIsNone(event["stable_recovery_start_date"])
         self.assertFalse(event["current_stable_recovery_flag"])
 
+    def test_tracks_sales_after_21_day_monitor_separately_from_recovery_sales(self):
+        rows = [product_row(date(2026, 1, 1) + timedelta(days=i), 10, 2) for i in range(7)]
+        rows.append(product_row(date(2026, 1, 8), 0, 0))
+        rows.extend(product_row(date(2026, 1, 9) + timedelta(days=i), 6, 0) for i in range(21))
+        rows.append(product_row(date(2026, 1, 30), 6, 2))
+
+        event = build_events(rows, date(2026, 1, 30))[0]
+
+        self.assertEqual(Decimal("0"), event["post_recovery_sales_qty"])
+        self.assertEqual(Decimal("2"), event["post_return_sales_qty"])
+
     def test_ignores_return_start_outside_180_day_recognition_window(self):
         rows = [product_row(date(2026, 1, 1) + timedelta(days=i), 10, 2) for i in range(7)]
         rows.append(product_row(date(2026, 1, 8), 0, 0))

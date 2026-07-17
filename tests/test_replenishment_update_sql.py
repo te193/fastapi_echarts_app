@@ -402,12 +402,33 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("tmp_asin_merge_assignments", sql)
         self.assertIn("group by country_category, max_asin", sql)
         self.assertIn("having link_count > 1", sql)
-        self.assertIn("has_follow_link > 0 or has_followed_origin > 0", sql)
+        self.assertIn("and has_follow_link > 0", sql)
+        self.assertNotIn("has_follow_link > 0 or has_followed_origin > 0", sql)
         self.assertIn("max(coalesce(daily_avg_sales, 0)) as group_daily_avg_sales", sql)
-        self.assertIn("sum(coalesce(support_inventory_qty, 0)) as group_support_inventory_qty", sql)
+        group_inventory_expr = "sum(coalesce(support_inventory_qty, 0))"
+        normalized_sql = " ".join(sql.split())
+        self.assertIn(
+            f"{group_inventory_expr} as group_support_inventory_qty",
+            normalized_sql,
+        )
+        self.assertIn(
+            f"else {group_inventory_expr} / max(coalesce(daily_avg_sales, 0))",
+            normalized_sql,
+        )
+        self.assertIn(
+            f"- {group_inventory_expr} as group_replenish_need_qty",
+            normalized_sql,
+        )
         self.assertIn("group_replenish_need_qty", sql)
         self.assertIn("row_number() over (partition by calc.country_category, calc.max_asin", sql)
         self.assertIn("eligible_target_link_count", sql)
+        self.assertIn(
+            "sum(case when coalesce(fllow_flag, 1) = 0 then 1 else 0 end) "
+            "as eligible_target_link_count",
+            normalized_sql,
+        )
+        self.assertIn("where coalesce(calc.fllow_flag, 1) = 0", normalized_sql)
+        self.assertNotIn("where coalesce(calc.followed_flag, 0) = 0", normalized_sql)
         self.assertIn("case when calc.sales_status <> '停售中' then 0 else 1 end", sql)
         self.assertNotIn("calc.sales_status <> '停售中'\n      and grp.", sql)
         self.assertNotIn("eligible_live_link_count", sql)

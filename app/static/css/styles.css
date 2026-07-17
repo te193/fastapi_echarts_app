@@ -5141,6 +5141,11 @@ body[data-page="matrix"] .matrix-cell-meta {
   margin-top: 0;
 }
 
+body[data-page="price_review"] .price-review-filter-panel {
+  position: relative;
+  z-index: 2;
+}
+
 .filters-grid.price-review-filters .filter-actions {
   grid-column: auto / span 2;
   display: flex;
@@ -10174,6 +10179,41 @@ body[data-page="return_goods"] .return-goods-ag-grid .ag-cell {
 .snapshot-calendar-day.disabled:hover {
   border-color: transparent;
   background: #f8fafc;
+}
+
+body[data-page="price_review"] .snapshot-calendar-spacer,
+body[data-page="price_review"] .snapshot-calendar-day {
+  height: 43px;
+}
+
+body[data-page="price_review"] .snapshot-calendar-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 3px 1px;
+  line-height: 1;
+}
+
+body[data-page="price_review"] .snapshot-calendar-day-number {
+  display: block;
+}
+
+body[data-page="price_review"] .snapshot-calendar-day-count {
+  display: block;
+  color: #2687a8;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+body[data-page="price_review"] .snapshot-calendar-day.active .snapshot-calendar-day-count {
+  color: #ffffff;
+}
+
+body[data-page="price_review"] .snapshot-calendar-day.disabled .snapshot-calendar-day-count {
+  color: #d2dbe7;
 }
 
 .snapshot-calendar-foot,

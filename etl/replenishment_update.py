@@ -1928,19 +1928,24 @@ select
     max(coalesce(daily_avg_sales, 0)) as group_daily_avg_sales,
     max(coalesce(pre_replenish_comp_months, 4)) as group_replenish_comp_months,
     sum(coalesce(support_inventory_qty, 0)) as group_support_inventory_qty,
-    sum(case when coalesce(followed_flag, 0) = 0 then 1 else 0 end) as eligible_target_link_count,
+    sum(case when coalesce(fllow_flag, 1) = 0 then 1 else 0 end) as eligible_target_link_count,
     case
         when max(coalesce(daily_avg_sales, 0)) <= 0 then null
-        else sum(coalesce(support_inventory_qty, 0)) / max(coalesce(daily_avg_sales, 0))
+        else sum(coalesce(support_inventory_qty, 0))
+            / max(coalesce(daily_avg_sales, 0))
     end as group_inventory_support_days,
     max(coalesce(pre_replenish_comp_months, 4)) * 30 * max(coalesce(daily_avg_sales, 0))
         - sum(coalesce(support_inventory_qty, 0)) as group_replenish_need_qty,
     case
         when max(coalesce(daily_avg_sales, 0)) <= 0 then 5
-        when sum(coalesce(support_inventory_qty, 0)) / max(coalesce(daily_avg_sales, 0)) <= 35 then 1
-        when sum(coalesce(support_inventory_qty, 0)) / max(coalesce(daily_avg_sales, 0)) <= 65 then 2
-        when sum(coalesce(support_inventory_qty, 0)) / max(coalesce(daily_avg_sales, 0)) <= 90 then 3
-        when sum(coalesce(support_inventory_qty, 0)) / max(coalesce(daily_avg_sales, 0)) > 90 then 4
+        when sum(coalesce(support_inventory_qty, 0))
+            / max(coalesce(daily_avg_sales, 0)) <= 35 then 1
+        when sum(coalesce(support_inventory_qty, 0))
+            / max(coalesce(daily_avg_sales, 0)) <= 65 then 2
+        when sum(coalesce(support_inventory_qty, 0))
+            / max(coalesce(daily_avg_sales, 0)) <= 90 then 3
+        when sum(coalesce(support_inventory_qty, 0))
+            / max(coalesce(daily_avg_sales, 0)) > 90 then 4
         else 2
     end as group_support_replenish_level_sort
 from (
@@ -1961,7 +1966,7 @@ from (
 ) group_base
 group by country_category, max_asin
 having link_count > 1
-   and (has_follow_link > 0 or has_followed_origin > 0);
+   and has_follow_link > 0;
 
 drop temporary table if exists tmp_asin_merge_targets;
 create temporary table tmp_asin_merge_targets as
@@ -1995,7 +2000,7 @@ from (
     inner join tmp_asin_merge_groups grp
             on calc.country_category = grp.country_category
            and calc.max_asin = grp.max_asin
-    where coalesce(calc.followed_flag, 0) = 0
+    where coalesce(calc.fllow_flag, 1) = 0
       and grp.eligible_target_link_count > 0
 ) ranked
 where ranked.rn = 1;
