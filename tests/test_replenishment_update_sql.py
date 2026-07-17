@@ -70,6 +70,46 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("str_to_date(receiving_time, '%%Y-%%m-%%d %%H:%%i:%%s')", sql)
         self.assertNotIn("ops_rpt_fba_shipment_basic_data", sql)
 
+    def test_order_profit_source_sync_loads_recent_90_day_orders(self):
+        step = replenishment_update.STEPS["order_profit_source_sync"]
+        sql = step.source_select_statement
+
+        self.assertIn("order_profit_source_sync", replenishment_update.DEFAULT_STEP_ORDER)
+        self.assertIn("dashboard_replenishment_order_profit_source", step.target_table)
+        self.assertIn("dwd_datasync.lx_sales_mws_orders_detail", sql)
+        self.assertIn("create_time >= date_sub(%(biz_date)s, interval 90 day)", sql)
+        self.assertIn("create_time < date_add(%(biz_date)s, interval 1 day)", sql)
+        self.assertIn("seller_name_new", step.target_columns)
+        self.assertIn("seller_sku_adj", step.target_columns)
+        self.assertIn("country_category", step.target_columns)
+        self.assertIn("best_country", step.target_columns)
+        self.assertIn("order_cnt_20", step.target_columns)
+        self.assertIn("final_profit_rate", step.target_columns)
+
+    def test_final_profit_rate_uses_best_country_recent_orders(self):
+        source_sql = " ".join(replenishment_update.SELECT_ORDER_PROFIT_SOURCE_SYNC_SQL.split())
+        result_sql = " ".join(replenishment_update.REPLENISHMENT_RESULT_SQL.split())
+
+        self.assertIn(
+            "partition by seller_name_new, seller_sku_adj, country_category, country "
+            "order by create_time desc, amazon_order_id desc",
+            source_sql,
+        )
+        self.assertIn("where rn_5 <= 5", source_sql)
+        self.assertIn("having count(*) = 5 and sum(sales_price_amount) <> 0", source_sql)
+        self.assertIn(
+            "order by profit_rate_5 desc, sales_price_amount_5 desc, profit_5 desc, country",
+            source_sql,
+        )
+        self.assertIn("where rn_20 <= 20", source_sql)
+        self.assertIn(
+            "round(sum(profit) / sum(sales_price_amount), 2) as final_profit_rate",
+            source_sql,
+        )
+        self.assertIn("gp.final_profit_rate", result_sql)
+        self.assertIn("dashboard_replenishment_order_profit_source gp", result_sql)
+        self.assertNotIn("pprofit_ratio_30 as final_profit_rate", result_sql)
+
     def test_listing_basic_sync_prefers_real_eu_store_from_inventory(self):
         sql = replenishment_update.SELECT_LISTING_BASIC_SYNC_SQL
 

@@ -97,6 +97,7 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
                 {"column_name": "gprofit_ratio_3d", "column_comment": ""},
                 {"column_name": "pre_1m_predict_abcd_category", "column_comment": ""},
                 {"column_name": "pre_1q_predict_abcd_category", "column_comment": ""},
+                {"column_name": "final_profit_rate", "column_comment": "最终利润率"},
                 {"column_name": "replenish_qty", "column_comment": ""},
             ]
         )
@@ -114,6 +115,7 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
                 "asin_merge_flag",
                 "asin_merge_target",
                 "asin_merge_reason",
+                "final_profit_rate",
                 "replenish_qty",
             ],
             names,
@@ -121,6 +123,7 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
         labels = {column["name"]: column["label"] for column in columns}
         self.assertEqual("是否跟卖", labels["fllow_flag"])
         self.assertEqual("是否被跟卖", labels["followed_flag"])
+        self.assertEqual("订单原始毛利率", labels["final_profit_rate"])
 
     def test_serialize_item_exposes_follow_status(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)

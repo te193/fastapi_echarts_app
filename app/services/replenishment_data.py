@@ -167,7 +167,7 @@ REPLENISHMENT_COLUMN_LABELS = {
     "replenish_trigger_qty": "补货触发量",
     "sales_change_rate_adj": "销量变化率调整",
     "sales_adj_factor": "销量调整系数",
-    "final_profit_rate": "最终利润率",
+    "final_profit_rate": "订单原始毛利率",
     "replenish_qty": "补货数量",
     "replenish_box_qty": "补货箱数",
     "replenish_cost": "补货货值",
@@ -183,6 +183,10 @@ REPLENISHMENT_COLUMN_LABELS = {
     "asin_merge_reason": "ASIN合并原因",
     "created_at": "创建时间",
     "updated_at": "更新时间",
+}
+
+REPLENISHMENT_EXPORT_LABEL_OVERRIDES = {
+    "final_profit_rate": "订单原始毛利率",
 }
 
 REPLENISHMENT_EXPORT_EXCLUDED_COLUMNS = {
@@ -1615,7 +1619,9 @@ class ReplenishmentDataService:
         return [
             {
                 "name": row.get("column_name"),
-                "label": row.get("column_comment") or REPLENISHMENT_COLUMN_LABELS.get(row.get("column_name"), row.get("column_name")),
+                "label": REPLENISHMENT_EXPORT_LABEL_OVERRIDES.get(row.get("column_name"))
+                or row.get("column_comment")
+                or REPLENISHMENT_COLUMN_LABELS.get(row.get("column_name"), row.get("column_name")),
             }
             for row in rows
             if row.get("column_name") and row.get("column_name") not in REPLENISHMENT_EXPORT_EXCLUDED_COLUMNS
