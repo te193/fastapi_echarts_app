@@ -117,6 +117,71 @@ class LabelHubDataTests(unittest.TestCase):
     def test_label_fact_and_metric_cache_keeps_five_minutes(self):
         self.assertEqual(300, CACHE_SECONDS)
 
+    def test_payload_always_uses_latest_meta_date_even_when_url_contains_older_date(self):
+        service = LabelHubDataService()
+        requested_dates = []
+        service.get_meta = lambda: {
+            "default_data_date": "2026-07-16",
+            "data_dates": ["2026-07-16"],
+        }
+        service._cached_details = lambda: DETAILS
+        service._cached_facts = lambda data_date: requested_dates.append(data_date) or [
+            {**FACTS[0], "data_date": data_date}
+        ]
+        service._cached_metrics = lambda data_date, period: {
+            "status": "available", "window": {}, "metrics": {}
+        }
+
+        service.get_payload(data_date="2026-07-15", metric_period="30d", page_size=20)
+
+        self.assertEqual(["2026-07-16"], requested_dates)
+
+    def test_meta_bundle_limits_stats_filters_and_dates_to_latest_fact_date(self):
+        class Cursor:
+            def __init__(self):
+                self.sql = ""
+                self.params = None
+                self.executions = []
+
+            def execute(self, sql, params=None):
+                self.sql, self.params = sql, params
+                self.executions.append((sql, params))
+
+            def fetchone(self):
+                return {"data_date": "2026-07-16"}
+
+            def fetchall(self):
+                lowered = self.sql.lower()
+                if "sub_label_id" in lowered and "order by label_id" in lowered:
+                    return DETAILS
+                if "count(*) as fact_count" in lowered:
+                    return [{"label_id": 101, "fact_count": 2, "label_periods": "30d"}]
+                if "distinct country_category, store" in lowered:
+                    return [{"country_category": "欧洲站", "store": "StoreA"}]
+                return []
+
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+
+        class Connection:
+            def __init__(self): self.cursor_instance = Cursor()
+            def cursor(self): return self.cursor_instance
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+
+        connection = Connection()
+        service = LabelHubDataService.__new__(LabelHubDataService)
+        service._source_connection = lambda: connection
+
+        _, stats, dates, filters = service._fetch_meta_bundle()
+
+        self.assertEqual(["2026-07-16"], dates)
+        self.assertEqual(2, stats[101]["fact_count"])
+        self.assertEqual(["欧洲站"], filters["country_categories"])
+        scoped_queries = [item for item in connection.cursor_instance.executions if "count(*) as fact_count" in item[0].lower()]
+        self.assertEqual("2026-07-16", scoped_queries[0][1]["data_date"])
+        self.assertIn("data_date = %(data_date)s", scoped_queries[0][0])
+
     def test_missing_metric_mskus_treats_any_matched_scope_as_available(self):
         rows = [
             {"msku": "A1", "_metric_present": False},
@@ -568,6 +633,7 @@ class LabelHubDataTests(unittest.TestCase):
 
     def test_msku_profile_splits_analysis_and_site_scope_labels(self):
         service = LabelHubDataService.__new__(LabelHubDataService)
+        service.get_meta = lambda: {"default_data_date": "2026-07-13"}
         service._cached_details = lambda: DETAILS
         service._cached_facts = lambda data_date: [
             FACTS[0],
@@ -627,6 +693,9 @@ class LabelHubDataTests(unittest.TestCase):
         self.assertIn("dws_标签详情表", connection.cursor_instance.sql)
         self.assertIn("select sub_label_id", connection.cursor_instance.sql.lower())
         self.assertNotIn("not in (4, 7, 13", connection.cursor_instance.sql.lower())
+
+        self.service._fetch_facts("2026-07-13", excluded_parent_ids={4, 7, 13, 14})
+        self.assertIn("label_id not in (4,7,13,14)", connection.cursor_instance.sql.lower())
 
 
 if __name__ == "__main__":

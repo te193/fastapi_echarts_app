@@ -71,41 +71,50 @@ class CountryLabelHubDataService:
 
     def __init__(self, shared: LabelHubDataService = label_hub_service) -> None:
         self._shared = shared
+        self._meta_cache: tuple[datetime, dict[str, Any]] | None = None
+        self._facts_cache: dict[str, tuple[datetime, list[dict[str, Any]]]] = {}
         self._base_rows_cache: OrderedDict[tuple[Any, ...], tuple[datetime, list[dict[str, Any]]]] = OrderedDict()
         self._base_rows_lock = RLock()
 
     def get_meta(self) -> dict[str, Any]:
+        if self._meta_cache and (datetime.now() - self._meta_cache[0]).total_seconds() < CACHE_SECONDS:
+            return dict(self._meta_cache[1])
         shared_meta = self._shared.get_meta()
         categories = [item for item in shared_meta.get("excluded_categories", []) if item["id"] in COUNTRY_PARENT_SET]
         category_ids = {item["id"] for item in categories}
         missing = [parent for parent in COUNTRY_PARENT_IDS if parent not in category_ids]
-        stores_by_country: dict[str, set[str]] = defaultdict(set)
+        stores_by_country = {
+            str(country): sorted({str(store) for store in stores if str(store)})
+            for country, stores in (shared_meta.get("stores_by_country") or {}).items()
+        }
         default_date = shared_meta.get("default_data_date", "")
-        if default_date:
+        if default_date and not stores_by_country:
+            fallback: dict[str, set[str]] = defaultdict(set)
             for fact in self._shared._cached_facts(default_date):
                 country = str(fact.get("country_category") or "")
                 store = str(fact.get("store") or "")
                 if country and store:
-                    stores_by_country[country].add(store)
-        return {
+                    fallback[country].add(store)
+            stores_by_country = {country: sorted(stores) for country, stores in fallback.items()}
+        payload = {
             "default_data_date": default_date,
             "data_dates": shared_meta.get("data_dates", []),
             "metric_periods": shared_meta.get("metric_periods", []),
             "default_metric_period": "30d",
             "country_categories": shared_meta.get("country_categories", []),
             "stores": shared_meta.get("stores", []),
-            "stores_by_country": {country: sorted(stores) for country, stores in stores_by_country.items()},
+            "stores_by_country": stores_by_country,
             "categories": categories,
             "missing_parent_ids": missing,
             "local_breakdowns": [item for item in shared_meta.get("local_breakdowns", []) if item.get("key") in {"sales_trend", "daily_sales_band", "margin_band"}],
             "source_status": {"remote_labels": "available", "local_metrics": "checked_per_request"},
         }
+        self._meta_cache = (datetime.now(), payload)
+        return dict(payload)
 
     def get_payload(self, **filters: Any) -> dict[str, Any]:
         meta = self.get_meta()
-        data_date = str(filters.get("data_date") or meta.get("default_data_date") or "")
-        if data_date not in set(meta.get("data_dates") or []):
-            raise ValueError("data_date 不存在")
+        data_date = str(meta.get("default_data_date") or "")
         metric_period = str(filters.get("metric_period") or "30d").lower()
         if metric_period not in METRIC_PERIODS:
             raise ValueError("metric_period 仅支持 7d、14d、30d、90d")
@@ -135,7 +144,7 @@ class CountryLabelHubDataService:
         store = str(filters.get("store") or "all")
         keyword = str(filters.get("keyword") or "").strip().lower()
         details = self._shared._cached_details()
-        facts = self._shared._cached_facts(data_date)
+        facts = self._cached_country_facts(data_date)
         try:
             metric_scope = self._shared._cached_metrics(data_date, metric_period)
         except Exception as exc:
@@ -222,6 +231,19 @@ class CountryLabelHubDataService:
             "page_size": page_size,
             "total_pages": total_pages,
         }
+
+    def _cached_country_facts(self, data_date: str) -> list[dict[str, Any]]:
+        cached = self._facts_cache.get(data_date)
+        if cached and (datetime.now() - cached[0]).total_seconds() < CACHE_SECONDS:
+            return cached[1]
+        fetcher = getattr(self._shared, "_fetch_facts", None)
+        facts = (
+            fetcher(data_date, parent_ids=COUNTRY_PARENT_IDS)
+            if callable(fetcher)
+            else self._shared._cached_facts(data_date)
+        )
+        self._facts_cache[data_date] = (datetime.now(), facts)
+        return facts
 
     def _cached_base_rows(self, data_date, metric_period, periods, facts, categories, child_detail, metric_scope):
         cache_key = (data_date, metric_period, tuple(sorted(periods.items())))
@@ -456,15 +478,28 @@ class CountryLabelHubDataService:
         public = {key: value for key, value in row.items() if not key.startswith("_")}
         public["label_periods"] = {str(parent): sorted(periods, key=_period_order) for parent, periods in row["_by_parent_period"].items()}
         public["issue_codes"] = [issue for issue in ISSUES if issue not in {"all"} and self._matches_problem(row, issue)]
+        labels = {}
+        for fact in row["_label_facts"]:
+            detail = fact.get("detail") or {}
+            parent_id = int(detail.get("label_id") or 0)
+            child_id = int(fact.get("label_id") or 0)
+            labels[(parent_id, child_id)] = {
+                "parent_id": parent_id,
+                "parent_label": detail.get("label_name") or str(parent_id),
+                "id": child_id,
+                "label": detail.get("sub_label_name") or str(child_id),
+            }
+        public["labels"] = list(labels.values())
+        public["label_summary"] = " / ".join(f"{item['parent_label']}：{item['label']}" for item in labels.values())
         return public
 
     def get_msku_profile(self, **filters: Any) -> dict[str, Any]:
-        data_date = str(filters.get("data_date") or self.get_meta()["default_data_date"])
+        data_date = str(self.get_meta()["default_data_date"])
         country, country_category, store, msku = (str(filters.get(key) or "") for key in ("country", "country_category", "store", "msku"))
         metric_period = str(filters.get("metric_period") or "30d")
         details = self._shared._cached_details()
         detail_by_id = {int(item["sub_label_id"]): item for item in details if int(item["label_id"]) in COUNTRY_PARENT_SET}
-        facts = [fact for fact in self._shared._cached_facts(data_date) if str(fact.get("msku") or "") == msku and int(fact.get("label_id") or 0) in detail_by_id]
+        facts = [fact for fact in self._cached_country_facts(data_date) if str(fact.get("msku") or "") == msku and int(fact.get("label_id") or 0) in detail_by_id]
         selected = [fact for fact in facts if str(fact.get("country") or "未配置国家") == country and str(fact.get("country_category") or "") == country_category and str(fact.get("store") or "") == store]
         if not selected:
             raise ValueError("未找到该国家经营单元的标签画像")

@@ -20,6 +20,7 @@
     problem: params.get("problem") || "all",
     page: Math.max(1, Number(params.get("page") || 1)),
     page_size: [20, 50, 100].indexOf(Number(params.get("page_size"))) >= 0 ? Number(params.get("page_size")) : 20,
+    table_view: normalizeTableView(params.get("table_view")),
     sort_field: params.get("sort_field") || "problem_priority",
     sort_dir: params.get("sort_dir") || "desc"
   };
@@ -41,7 +42,8 @@
   document.addEventListener("DOMContentLoaded", init);
 
   function init() {
-    ["countryLabelScope", "countryLabelHint", "countryLabelClear", "countryMetricPeriod", "countryLabelPeriod", "countryCategory", "countryStore", "countryKeyword", "countryConditionRow", "countryConditions", "countryKpis", "countryOverview", "countryOverviewDetail", "countryIssues", "countryLabelBreakdowns", "countryMetricBreakdowns", "countryMatrices", "countryTableSummary", "countryPageSize", "countryDetailTable", "countryPagination", "countryProfileDrawer", "countryProfileContent", "countryProfileClose", "countryRuleDrawer", "countryRuleContent", "countryRuleTitle", "countryRuleClose", "globalLabelHubLink"].forEach(function (id) { elements[id] = document.getElementById(id); });
+    ["countryLabelScope", "countryLabelHint", "countryLabelClear", "countryMetricPeriod", "countryLabelPeriod", "countryCategory", "countryStore", "countryKeyword", "countryConditionRow", "countryConditions", "countryKpis", "countryOverview", "countryOverviewDetail", "countryIssues", "countryLabelBreakdowns", "countryMetricBreakdowns", "countryMatrices", "countryTableSummary", "countryTableView", "countryPageSize", "countryDetailTable", "countryPagination", "countryProfileDrawer", "countryProfileContent", "countryProfileClose", "countryRuleDrawer", "countryRuleContent", "countryRuleTitle", "countryRuleClose", "globalLabelHubLink"].forEach(function (id) { elements[id] = document.getElementById(id); });
+    setLoading(true);
     bindStaticEvents();
     app.apiGet("/api/country-label-hub/meta").then(function (data) {
       meta = data || meta;
@@ -52,7 +54,7 @@
       if (!state.label_periods) applyGlobalLabelPeriod("all");
       renderFilters();
       loadData();
-    }).catch(showError);
+    }).catch(function (error) { setLoading(false); showError(error); });
   }
 
   function bindStaticEvents() {
@@ -72,6 +74,11 @@
     elements.countryStore.addEventListener("change", function () { state.store = this.value; refresh(); });
     elements.countryKeyword.addEventListener("input", function () { state.keyword = this.value; clearTimeout(keywordTimer); keywordTimer = setTimeout(refresh, 350); });
     elements.countryPageSize.addEventListener("change", function () { state.page_size = Number(this.value); refresh(); });
+    elements.countryTableView.addEventListener("change", function () {
+      state.table_view = normalizeTableView(this.value);
+      syncUrl();
+      renderTable();
+    });
     elements.countryProfileClose.addEventListener("click", closeProfile);
     elements.countryRuleClose.addEventListener("click", closeRule);
     elements.countryProfileDrawer.addEventListener("click", function (event) { if (event.target === this) closeProfile(); });
@@ -90,6 +97,10 @@
     if ((meta.data_dates || []).indexOf(state.data_date) < 0) state.data_date = meta.default_data_date || "";
     if (["7d", "14d", "30d", "90d"].indexOf(state.metric_period) < 0) state.metric_period = "30d";
     if (state.country_category !== "all" && (meta.country_categories || []).indexOf(state.country_category) < 0) state.country_category = "all";
+  }
+
+  function normalizeTableView(value) {
+    return ["overview", "labels", "metrics"].indexOf(value) >= 0 ? value : "overview";
   }
 
   function normalizeAnalysisParents() {
@@ -124,6 +135,7 @@
     fillSelect(elements.countryCategory, [{ key: "all", label: "全部国家类别" }].concat((meta.country_categories || []).map(function (value) { return { key: value, label: value }; })), state.country_category, "key", "label");
     renderStoreOptions();
     elements.countryKeyword.value = state.keyword;
+    elements.countryTableView.value = normalizeTableView(state.table_view);
     elements.countryPageSize.value = String(state.page_size);
     updateSwitchLink();
   }
@@ -197,6 +209,11 @@
   }
 
   function setLoading(active) {
+    var main = document.querySelector(".main-content");
+    if (main) {
+      main.classList.toggle("page-loading", active);
+      main.setAttribute("aria-busy", active ? "true" : "false");
+    }
     document.body.classList.toggle("is-data-loading", active);
     if (active) elements.countryLabelHint.textContent = "正在汇总国家标签与本地经营指标…";
   }
@@ -270,6 +287,7 @@
         syncUrl();
         renderOverview();
         renderMatrices();
+        renderTable();
       });
     });
     bindDynamicControls(elements.countryOverview);
@@ -396,28 +414,94 @@
 
   function renderTable() {
     elements.countryTableSummary.textContent = "第 " + payload.page + " / " + payload.total_pages + " 页，共 " + formatNumber(payload.total) + " 条";
-    window.kanbanGrid.makeGrid("countryDetailTable", { rowData: payload.rows || [], domLayout: "normal", rowHeight: 52, headerHeight: 50, overlayNoRowsTemplate: '<span class="ag-empty-copy">当前联动条件下暂无国家链接</span>', columnDefs: tableColumns(), onRowClicked: function (event) { if (event.data) openProfile(event.data); } });
+    window.kanbanGrid.makeGrid("countryDetailTable", { rowData: payload.rows || [], domLayout: "normal", rowHeight: 52, headerHeight: 50, overlayNoRowsTemplate: '<span class="ag-empty-copy">当前联动条件下暂无国家链接</span>', columnDefs: tableColumns(state.table_view), onRowClicked: function (event) { if (event.data) openProfile(event.data); } });
     elements.countryPagination.innerHTML = '<button type="button" data-page="' + (payload.page - 1) + '"' + (payload.page <= 1 ? " disabled" : "") + '>上一页</button><span>第 ' + payload.page + " / " + payload.total_pages + ' 页</span><button type="button" data-page="' + (payload.page + 1) + '"' + (payload.page >= payload.total_pages ? " disabled" : "") + ">下一页</button>";
     Array.from(elements.countryPagination.querySelectorAll("[data-page]")).forEach(function (button) { button.addEventListener("click", function () { if (!this.disabled) { state.page = Number(this.dataset.page); loadData(); } }); });
   }
 
-  function tableColumns() {
+  function tableColumns(view) {
     function amount(name, field, width) { return { headerName: name, field: field, width: width, cellClass: function (p) { return "ag-grid-number-cell " + negativeClass(p.value); }, valueFormatter: function (p) { return p.value == null ? "暂无" : window.kanbanGrid.compactAmount(p.value); } }; }
     function number(name, field, width, digits) { return { headerName: name, field: field, width: width, cellClass: "ag-grid-number-cell", valueFormatter: function (p) { return p.value == null ? "暂无" : window.kanbanGrid.number(p.value, digits || 0); } }; }
-    return [
-      { headerName: "国家", field: "country", pinned: "left", width: 105 },
-      { headerName: "国家类别", field: "country_category", pinned: "left", width: 105 },
-      { headerName: "店铺", field: "store", pinned: "left", width: 120 },
-      { headerName: "MSKU", field: "msku", pinned: "left", width: 135, cellRenderer: function (p) { return window.kanbanGrid.textCell(p.value, true); } },
-      { headerName: "定价标签", field: "price_label", width: 120 }, { headerName: "站点状态", field: "site_status_label", width: 120 },
-      { headerName: "国家销售角色", field: "country_sales_role_label", width: 130 }, { headerName: "站点生命周期", field: "site_lifecycle_label", width: 130 },
-      { headerName: "销售趋势", field: "sales_trend", width: 120 }, { headerName: "日销段", field: "daily_sales_band", width: 100 }, { headerName: "毛利段", field: "margin_band", width: 95 },
-      number("销量", "sales_qty", 95), number("日销量", "daily_sales", 95, 2), amount("销售额", "sales_amount", 110), amount("订单毛利润", "order_gross_profit", 120),
-      { headerName: "订单毛利率", field: "order_gross_margin", width: 110, cellClass: "ag-grid-number-cell", valueFormatter: function (p) { return p.value == null ? "暂无" : window.kanbanGrid.percent(p.value, 1); } },
-      number("期末库存", "ending_inventory_qty", 105), { headerName: "数据状态", field: "data_status", width: 135 },
-      { headerName: "画像", width: 90, sortable: false, filter: false, cellRenderer: function () { return '<button type="button" class="text-button">查看</button>'; } }
+    function marginRate(name, field, width) { return { headerName: name, field: field, width: width, cellClass: function (p) { var current = Number(p.value || 0); return "ag-grid-number-cell " + (current < 0.05 ? "label-hub-risk-value" : (current >= 0.15 ? "label-hub-healthy-value" : "")); }, valueFormatter: function (p) { return p.value == null ? "暂无" : window.kanbanGrid.percent(p.value, 1); } }; }
+    function rate(name, field, width) { return { headerName: name, field: field, width: width, cellClass: "ag-grid-number-cell", valueFormatter: function (p) { return p.value == null ? "暂无" : window.kanbanGrid.percent(p.value, 1); } }; }
+    function text(name, field, width) { return { headerName: name, field: field, width: width, tooltipField: field, cellClass: "label-text-cell" }; }
+    var identity = [
+      { headerName: "国家", field: "country", pinned: "left", width: 90 },
+      { headerName: "国家类别", field: "country_category", pinned: "left", width: 100 },
+      { headerName: "店铺", field: "store", pinned: "left", width: 110 },
+      { headerName: "MSKU", field: "msku", pinned: "left", width: 125, cellRenderer: function (p) { return window.kanbanGrid.textCell(p.value, true); } }
     ];
+    var currentLabel = { headerName: "当前标签", field: "current_label", width: 150, tooltipValueGetter: function (p) { return currentCountryLabel(p.data); }, valueGetter: function (p) { return currentCountryLabel(p.data); }, cellClass: "label-text-cell" };
+    var labelProfile = { headerName: "标签画像", field: "label_summary", width: 165, tooltipField: "label_summary", cellClass: "label-summary-cell", cellRenderer: renderCountryLabelSummaryCell };
+    if (view === "labels") return identity.concat([currentLabel, labelProfile,
+      text("定价标签", "price_label", 115), text("站点状态", "site_status_label", 115),
+      text("国家销售角色", "country_sales_role_label", 140), text("站点生命周期", "site_lifecycle_label", 130),
+      { headerName: "标签冲突", field: "conflict", width: 105, cellRenderer: renderCountryConflictCell },
+      { headerName: "指标状态", field: "data_status", width: 125, cellRenderer: renderCountryMetricStatusCell }
+    ]);
+    if (view === "metrics") return identity.concat([
+      { headerName: "动销趋势", field: "sales_trend", width: 135, cellRenderer: renderCountryTrendCell },
+      number("日均销量", "daily_sales", 105, 2), number(metricPeriodLabel() + "销量", "sales_qty", 105),
+      amount(metricPeriodLabel() + "销售额", "sales_amount", 120), amount("订单毛利润", "order_gross_profit", 125),
+      marginRate("订单毛利率", "order_gross_margin", 115), number("期末库存", "ending_inventory_qty", 105),
+      amount("广告花费", "ad_spend", 110), rate("ACOS", "acos", 90), rate("TACOS", "tacos", 90),
+      number("退货数量", "return_count", 105), amount("净销售额", "net_amount", 115)
+    ]);
+    return identity.concat([currentLabel, labelProfile,
+      { headerName: "问题提示", field: "issue_codes", width: 190, sortable: false, filter: false, tooltipValueGetter: function (p) { return countryIssueCodes(p.data).map(issueLabel).join(" / ") || "当前未命中问题条件"; }, cellRenderer: renderCountryIssueCell },
+      { headerName: "动销趋势", field: "sales_trend", width: 135, cellRenderer: renderCountryTrendCell },
+      number("日均销量", "daily_sales", 105, 2), number(metricPeriodLabel() + "销量", "sales_qty", 105),
+      amount(metricPeriodLabel() + "销售额", "sales_amount", 120), amount("订单毛利润", "order_gross_profit", 125),
+      marginRate("订单毛利率", "order_gross_margin", 115)
+    ]);
   }
+
+  function currentCountryLabel(row) {
+    var field = { "4": "price_label", "7": "site_status_label", "13": "country_sales_role_label", "14": "site_lifecycle_label" }[String(activeOverviewParentId || state.matrix_parent_id || "13")];
+    return (row && field && row[field]) || "未命中";
+  }
+
+  function renderCountryLabelSummaryCell(params) {
+    var labels = (params.data && params.data.labels) || [];
+    var parents = {}, children = {};
+    labels.forEach(function (item) { parents[String(item.parent_id)] = true; children[String(item.id)] = true; });
+    return '<span class="label-summary-compact"><b>' + Object.keys(parents).length + ' 个分类</b><small>' + Object.keys(children).length + ' 个标签 · 点击查看</small></span>';
+  }
+
+  function countryIssueCodes(row) {
+    var selected = (row && row.issue_codes) || [];
+    return ["negative_profit", "problem_product", "zero_sales", "low_margin", "missing_metrics", "conflict", "site_status_abnormal", "pricing_risk", "cross_country_inconsistent"].filter(function (code) { return selected.indexOf(code) >= 0; });
+  }
+
+  function issueLabel(code) { return ISSUE_LABELS[code] || code; }
+
+  function renderCountryIssueCell(params) {
+    var codes = countryIssueCodes(params.data);
+    if (!codes.length) return '<span class="label-hub-issue-pill is-clear">暂无问题</span>';
+    var visible = codes.slice(0, 2).map(function (code) { return '<span class="label-hub-issue-pill issue-' + escape(code) + '">' + escape(issueLabel(code)) + '</span>'; }).join("");
+    if (codes.length > 2) visible += '<span class="label-hub-issue-more">+' + (codes.length - 2) + '</span>';
+    return '<span class="label-hub-issue-cell">' + visible + '</span>';
+  }
+
+  function renderCountryTrendCell(params) {
+    var code = String((params.data && params.data.sales_trend_code) || "insufficient");
+    var ratio = params.data && params.data.sales_trend_ratio;
+    var ratioText = ratio === null || ratio === undefined ? "" : '<small>' + (Number(ratio) > 0 ? "+" : "") + formatPercent(ratio) + '</small>';
+    return '<span class="label-hub-trend-pill trend-' + escape(code) + '"><b>' + escape(params.value || "暂无趋势数据") + '</b>' + ratioText + '</span>';
+  }
+
+  function renderCountryMetricStatusCell(params) {
+    var current = String(params.value || "");
+    var tone = current === "本地指标可用" ? "available" : (current === "暂无本地经营数据" ? "missing" : "unavailable");
+    var label = current === "本地指标可用" ? "指标可用" : (current === "暂无本地经营数据" ? "指标缺失" : current || "状态未知");
+    return '<span class="label-hub-metric-status is-' + tone + '">' + escape(label) + '</span>';
+  }
+
+  function renderCountryConflictCell(params) {
+    return params.value ? '<span class="label-hub-metric-status is-risk">存在冲突</span>' : '<span class="label-hub-metric-status is-available">无冲突</span>';
+  }
+
+  function metricPeriodLabel() { return String(state.metric_period || "30d").replace("d", "天"); }
 
   function bindDynamicControls(host) {
     Array.from(host.querySelectorAll("[data-label-parent]")).forEach(function (button) { button.addEventListener("click", function () { toggleCondition(this.dataset.labelParent, this.dataset.labelChild); refresh(); }); });
@@ -454,13 +538,68 @@
     app.apiGet("/api/country-label-hub/msku", { data_date: state.data_date, metric_period: state.metric_period, country: row.country, country_category: row.country_category, store: row.store, msku: row.msku }).then(function (profile) {
       var identity = profile.identity || {}, status = profile.data_status || {}, metric = profile.metric_profile || {};
       var tags = (profile.tag_profile || {}).labels || [];
-      var tagHtml = tags.map(function (item) { return '<article class="label-hub-profile-tag"><div><span>' + escape(item.parent_label) + '</span><strong>' + escape(item.label) + '</strong></div><small>' + escape(item.period || "无周期") + '</small><p>' + escape(item.rule || item.definition || "暂无规则说明") + '</p><em>负责人：' + escape(item.owner || "未配置") + "</em></article>"; }).join("") || empty("暂无国家口径标签");
+      var tagGroups = profileLabelGroups(tags);
+      var tagHtml = tagGroups.map(renderProfileTagGroup).join("") || empty("暂无国家口径标签");
       var fields = [["销量", metric.sales_qty], ["日销量", metric.daily_sales], ["销售额", metric.sales_amount, "money"], ["订单毛利润", metric.order_gross_profit, "money"], ["订单毛利率", metric.order_gross_margin, "rate"], ["结算毛利润", metric.settlement_gross_profit, "money"], ["广告花费", metric.ad_spend, "money"], ["广告销售额", metric.ad_sales, "money"], ["ACOS", metric.acos, "rate"], ["TACOS", metric.tacos, "rate"], ["退货数量", metric.return_count], ["退货金额", metric.return_amount, "money"], ["净销售额", metric.net_amount, "money"], ["期末库存", metric.ending_inventory_qty]];
-      var metrics = fields.map(function (item) { return '<div><span>' + item[0] + '</span><strong>' + value(item[1], item[2]) + "</strong></div>"; }).join("");
-      var others = (profile.cross_country_profile || []).map(function (item) { var labels = (item.labels || []).map(function (tag) { return tag.parent_label + "：" + tag.label; }).join(" / "); return '<tr><th>' + escape(item.country) + '</th><td>' + escape(item.country_category) + '</td><td>' + escape(item.store) + '</td><td title="' + escape(labels) + '">' + escape(labels || "暂无标签") + '</td><td>' + currency(item.sales_amount) + '</td><td class="' + negativeClass(item.order_gross_profit) + '">' + currency(item.order_gross_profit) + '</td><td>' + formatPercent(item.order_gross_margin) + "</td></tr>"; }).join("");
+      var metrics = fields.map(function (item, index) { return '<div class="' + (index < 5 ? "is-primary" : "") + '"><span>' + item[0] + '</span><strong>' + value(item[1], item[2]) + "</strong></div>"; }).join("");
+      var currentSignatures = profileLabelSignatures(tagGroups);
+      var otherCountries = profile.cross_country_profile || [];
+      var others = renderCrossCountryComparison(otherCountries, currentSignatures);
       var windowData = status.metric_window || {};
-      elements.countryProfileContent.innerHTML = '<div class="label-hub-drawer-head"><p class="section-kicker">国家标签画像</p><h2 id="countryProfileTitle">' + escape(identity.msku) + '</h2><p>' + escape(identity.country) + " · " + escape(identity.country_category) + " · " + escape(identity.store) + '</p><div class="country-profile-scope"><span>标签 ' + escape(identity.data_date) + '</span><span>经营 ' + escape(windowData.period_start || "-") + " 至 " + escape(windowData.period_end || "-") + '</span><span>' + (status.has_local_metric ? "本地指标已匹配" : "暂无本地经营数据") + '</span></div></div><section><h3>国家口径标签</h3><div class="label-hub-profile-tags">' + tagHtml + '</div></section><section><h3>本地经营画像</h3><div class="label-hub-profile-metrics">' + metrics + '</div></section><section><h3>同一 MSKU 的其他国家表现</h3><div class="country-profile-table-wrap">' + (others ? '<table class="country-profile-table"><thead><tr><th>国家</th><th>国家类别</th><th>店铺</th><th>标签差异</th><th>销售额</th><th>毛利润</th><th>毛利率</th></tr></thead><tbody>' + others + "</tbody></table>" : empty("该 MSKU 暂无其他国家链接")) + "</div></section>";
+      elements.countryProfileContent.innerHTML = '<div class="label-hub-drawer-head"><p class="section-kicker">国家标签画像</p><h2 id="countryProfileTitle">' + escape(identity.msku) + '</h2><p class="country-profile-identity">' + escape(identity.country) + "<span>·</span>" + escape(identity.country_category) + "<span>·</span>" + escape(identity.store) + '</p><div class="country-profile-scope"><span>标签 ' + escape(identity.data_date) + '</span><span>经营 ' + escape(windowData.period_start || "-") + " 至 " + escape(windowData.period_end || "-") + '</span><span class="' + (status.has_local_metric ? "is-ok" : "is-warning") + '">' + (status.has_local_metric ? "本地指标已匹配" : "暂无本地经营数据") + '</span></div></div><section class="country-profile-section"><div class="country-profile-section-head"><div><h3>国家口径标签</h3><p>远端原始标签事实，按标签大类集中展示。</p></div><strong>' + formatNumber(tags.length) + ' 项</strong></div><div class="country-profile-tag-groups">' + tagHtml + '</div></section><section class="country-profile-section"><div class="country-profile-section-head"><div><h3>本地经营画像</h3><p>' + escape(state.metric_period.replace("d", " 天")) + '经营周期，本地快照指标。</p></div></div><div class="label-hub-profile-metrics">' + metrics + '</div></section><section class="country-profile-section"><div class="country-profile-section-head"><div><h3>同一 MSKU 的其他国家表现</h3><p>一行一个国家，直接横向比较标签差异与经营结果。</p></div><strong>' + formatNumber(otherCountries.length) + ' 个国家</strong></div>' + (others || empty("该 MSKU 暂无其他国家链接")) + "</section>";
     }).catch(function (error) { elements.countryProfileContent.innerHTML = empty("画像加载失败：" + ((error && error.message) || "请稍后重试")); });
+  }
+
+  function profileLabelGroups(labels) {
+    var groups = {};
+    (labels || []).forEach(function (item) {
+      var key = String(item.parent_id || item.parent_label || "unknown");
+      if (!groups[key]) groups[key] = { id: Number(item.parent_id || 0), label: item.parent_label || "未分类标签", items: [] };
+      groups[key].items.push(item);
+    });
+    return Object.keys(groups).map(function (key) { return groups[key]; }).sort(function (a, b) { return a.id - b.id; });
+  }
+
+  function renderProfileTagGroup(group) {
+    var rows = group.items.map(function (item) {
+      return '<div class="country-profile-tag-row"><div class="country-profile-tag-main"><strong>' + escape(item.label || "未命名标签") + '</strong><span>' + escape(item.period || "无周期") + '</span></div><p>' + escape(item.rule || item.definition || "暂无规则说明") + '</p><div class="country-profile-tag-owner"><span>负责人</span><b>' + escape(item.owner || "未配置") + "</b></div></div>";
+    }).join("");
+    return '<article class="country-profile-tag-group"><header><div><span>远端标签</span><h4>' + escape(group.label) + '</h4></div><strong>' + formatNumber(group.items.length) + ' 项</strong></header><div>' + rows + "</div></article>";
+  }
+
+  function profileLabelSignatures(groups) {
+    var signatures = {};
+    (groups || []).forEach(function (group) {
+      signatures[String(group.id || group.label)] = group.items.map(function (item) { return String(item.label || "") + "@" + String(item.period || ""); }).sort().join("|");
+    });
+    return signatures;
+  }
+
+  function renderCrossCountryComparison(items, currentSignatures) {
+    if (!items.length) return "";
+    var parentMap = {};
+    var prepared = items.map(function (item) {
+      var groups = profileLabelGroups(item.labels || []);
+      groups.forEach(function (group) { parentMap[String(group.id || group.label)] = { id: group.id, label: group.label }; });
+      return { item: item, groups: groups, signatures: profileLabelSignatures(groups) };
+    });
+    var parents = Object.keys(parentMap).map(function (key) { return parentMap[key]; }).sort(function (a, b) { return a.id - b.id; });
+    var head = '<tr><th>国家 / 店铺</th>' + parents.map(function (parent) { return '<th>' + escape(parent.label) + '</th>'; }).join("") + '<th>销售额</th><th>毛利润</th><th>毛利率</th></tr>';
+    var rows = prepared.map(function (entry) {
+      var groupsById = {};
+      entry.groups.forEach(function (group) { groupsById[String(group.id || group.label)] = group; });
+      var labelCells = parents.map(function (parent) {
+        var key = String(parent.id || parent.label);
+        var group = groupsById[key];
+        if (!group) return '<td><div class="country-profile-table-label is-empty"><strong>未命中</strong><small>—</small><em>不同</em></div></td>';
+        var labels = unique(group.items.map(function (tag) { return tag.label || "未命中"; }));
+        var periods = unique(group.items.map(function (tag) { return tag.period; }).filter(Boolean));
+        var different = currentSignatures[key] !== entry.signatures[key];
+        return '<td><div class="country-profile-table-label ' + (different ? "is-different" : "is-same") + '"><strong title="' + escape(labels.join(" / ")) + '">' + escape(labels.join(" / ") || "未命中") + '</strong><small>' + escape(periods.join(" / ") || "无周期") + '</small><em>' + (different ? "不同" : "一致") + "</em></div></td>";
+      }).join("");
+      return '<tr><th><strong>' + escape(entry.item.country) + '</strong><small>' + escape(entry.item.country_category) + " · " + escape(entry.item.store) + '</small></th>' + labelCells + '<td class="is-number">' + currency(entry.item.sales_amount) + '</td><td class="is-number ' + negativeClass(entry.item.order_gross_profit) + '">' + currency(entry.item.order_gross_profit) + '</td><td class="is-number">' + formatPercent(entry.item.order_gross_margin) + "</td></tr>";
+    }).join("");
+    return '<div class="country-profile-compare-table-wrap"><table class="country-profile-compare-table"><thead>' + head + '</thead><tbody>' + rows + "</tbody></table></div>";
   }
 
   function closeProfile() { elements.countryProfileDrawer.hidden = true; }

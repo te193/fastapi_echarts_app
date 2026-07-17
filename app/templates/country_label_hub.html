@@ -94,6 +94,7 @@
       <div><p class="section-kicker">国家经营明细</p><h2>链接与标签画像</h2></div>
       <div class="label-hub-table-tools">
         <strong id="countryTableSummary"></strong>
+        <label class="page-size-control label-hub-table-view-control" for="countryTableView"><span>字段</span><select id="countryTableView" aria-label="国家明细字段视图"><option value="overview">综合视图</option><option value="labels">标签视图</option><option value="metrics">经营视图</option></select></label>
         <label class="page-size-control"><span>每页</span><select id="countryPageSize"><option value="20">20 条</option><option value="50">50 条</option><option value="100">100 条</option></select></label>
       </div>
     </div>
@@ -120,5 +121,5 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', path='vendor/slim-select/slimselect.js') }}?v=4.0.5"></script>
-<script src="{{ url_for('static', path='js/country_label_hub.js') }}?v=20260717countrymatrix2"></script>
+<script src="{{ url_for('static', path='js/country_label_hub.js') }}?v=20260717profile3"></script>
 {% endblock %}

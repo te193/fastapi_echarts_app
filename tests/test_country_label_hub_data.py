@@ -61,6 +61,46 @@ class CountryLabelHubDataTests(unittest.TestCase):
     def test_country_page_only_exposes_four_country_scope_parents(self):
         self.assertEqual({4, 7, 13, 14}, {item["id"] for item in self.service.get_meta()["categories"]})
 
+    def test_country_payload_ignores_stale_url_date_and_uses_latest_date(self):
+        payload = self.service.get_payload(data_date="2026-07-14", metric_period="30d", page_size=20)
+
+        self.assertEqual("2026-07-15", payload["data_date"])
+
+    def test_meta_reuses_preaggregated_store_mapping_without_scanning_all_facts(self):
+        shared = FakeShared()
+        original_get_meta = shared.get_meta
+        shared.get_meta = lambda: {**original_get_meta(), "stores_by_country": {"北美站": ["StoreA"]}}
+        shared._cached_facts = lambda data_date: self.fail("meta should not scan the full fact cache")
+
+        meta = CountryLabelHubDataService(shared).get_meta()
+
+        self.assertEqual({"北美站": ["StoreA"]}, meta["stores_by_country"])
+
+    def test_country_payload_only_fetches_country_parent_facts(self):
+        shared = FakeShared()
+        with patch.object(shared, "_fetch_facts", return_value=FACTS, create=True) as fetch_facts:
+            CountryLabelHubDataService(shared).get_payload(metric_period="30d", page_size=20)
+
+        fetch_facts.assert_called_once_with("2026-07-15", parent_ids=(4, 7, 13, 14))
+
+    def test_country_profile_reuses_country_fact_cache_instead_of_global_fact_subset(self):
+        shared = FakeShared()
+        shared._cached_facts = lambda data_date: []
+        with patch.object(shared, "_fetch_facts", return_value=FACTS, create=True):
+            service = CountryLabelHubDataService(shared)
+            row = service.get_payload(metric_period="30d", page_size=20)["rows"][0]
+            profile = service.get_msku_profile(
+                data_date="2026-07-15",
+                metric_period="30d",
+                country=row["country"],
+                country_category=row["country_category"],
+                store=row["store"],
+                msku=row["msku"],
+            )
+
+        self.assertEqual(row["msku"], profile["identity"]["msku"])
+        self.assertTrue(profile["tag_profile"]["labels"])
+
     def test_country_label_units_use_the_full_four_field_key(self):
         payload = self.service.get_payload(metric_period="30d", page_size=20)
 
@@ -68,6 +108,8 @@ class CountryLabelHubDataTests(unittest.TestCase):
         self.assertEqual(2, payload["kpis"]["business_unit_count"])
         self.assertEqual(2, payload["kpis"]["country_count"])
         self.assertEqual(2, payload["total"])
+        self.assertEqual(4, len(payload["rows"][0]["labels"]))
+        self.assertIn("国家销售角色", payload["rows"][0]["label_summary"])
 
     def test_country_is_part_of_the_unit_key_without_duplicating_local_metrics(self):
         extra = {**FACTS[0], "country": "加拿大"}

@@ -117,7 +117,7 @@
       </div>
     </aside>
 
-    <main class="main-content">
+    <main class="main-content{% if page in ['label_hub', 'country_label_hub'] %} page-loading{% endif %}"{% if page in ['label_hub', 'country_label_hub'] %} aria-busy="true"{% endif %}>
       <div class="page-shell">
         {% block content %}{% endblock %}
       </div>

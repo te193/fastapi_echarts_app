@@ -50,6 +50,7 @@
       "labelHubDrawerClose", "labelHubDrawerContent", "labelHubRuleDrawer", "labelHubRuleDrawerClose",
       "labelHubRuleDrawerTitle", "labelHubRuleDrawerContent"
     ].forEach(function (id) { elements[id] = document.getElementById(id); });
+    setLoading(true);
     bindEvents();
     app.apiGet("/api/label-hub/meta").then(function (payload) {
       meta = payload;
@@ -61,7 +62,7 @@
       normalizeAnalysisPeriods();
       populateControls();
       render();
-    }).catch(showError);
+    }).catch(function (error) { setLoading(false); showError(error); });
   }
 
   function normalizeStateFromMeta() {
@@ -321,8 +322,7 @@
 
   function render() {
     var token = ++requestToken;
-    var main = document.querySelector(".main-content");
-    if (main) main.classList.add("page-loading");
+    setLoading(true);
     app.writeQueryState(state);
     if (window.updateCountryLabelHubLink) window.updateCountryLabelHubLink();
     app.apiGet("/api/label-hub", buildParams()).then(function (payload) {
@@ -339,7 +339,14 @@
       renderMatrix(payload);
       renderTable(payload);
       elements.labelHubHint.textContent = "当前大类：" + ((payload.rules || {}).label || "-");
-    }).catch(showError).then(function () { if (main) main.classList.remove("page-loading"); });
+    }).catch(showError).then(function () { if (token === requestToken) setLoading(false); });
+  }
+
+  function setLoading(active) {
+    var main = document.querySelector(".main-content");
+    if (!main) return;
+    main.classList.toggle("page-loading", active);
+    main.setAttribute("aria-busy", active ? "true" : "false");
   }
 
   function renderScope(payload) {
