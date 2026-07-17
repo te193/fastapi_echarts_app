@@ -356,7 +356,7 @@ def test_current_category_detail_uses_period_scoped_distribution():
     assert "distributionById" in script
     assert 'cache: "no-store"' in common
     assert "js/common.js') }}?v=20260715cache2" in base
-    assert "js/label_hub.js') }}?v=20260716f" in template
+    assert "js/label_hub.js') }}?v=20260716countrylabels1" in template
 
 
 def test_sales_role_has_label_hub_return_link():

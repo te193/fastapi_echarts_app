@@ -593,7 +593,7 @@ class LabelHubDataTests(unittest.TestCase):
 
             def fetchall(self):
                 return [{
-                    "data_date": "2026-07-13", "country_category": "欧洲站", "store": "StoreA", "msku": "A1",
+                    "data_date": "2026-07-13", "country": "德国", "country_category": "欧洲站", "store": "StoreA", "msku": "A1",
                     "fact_tokens": "101@30d|201@current",
                 }]
 
@@ -623,9 +623,10 @@ class LabelHubDataTests(unittest.TestCase):
 
         self.assertEqual([101, 201], [item["label_id"] for item in facts])
         self.assertIn("group_concat", connection.cursor_instance.sql.lower())
-        self.assertIn("group by data_date, country_category, store, msku", connection.cursor_instance.sql.lower())
+        self.assertIn("group by data_date, country, country_category, store, msku", connection.cursor_instance.sql.lower())
         self.assertIn("dws_标签详情表", connection.cursor_instance.sql)
-        self.assertIn("not in (4, 7, 13)", connection.cursor_instance.sql.lower())
+        self.assertIn("select sub_label_id", connection.cursor_instance.sql.lower())
+        self.assertNotIn("not in (4, 7, 13", connection.cursor_instance.sql.lower())
 
 
 if __name__ == "__main__":

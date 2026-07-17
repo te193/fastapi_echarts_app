@@ -14,7 +14,7 @@ LABEL_DETAIL_TABLE = "dws_datasync.dws_标签详情表"
 LABEL_FACT_TABLE = "dws_datasync.dws_标签表"
 REFUND_MSKU_PREFIX = "Amazon.Found."
 CACHE_SECONDS = 300
-EXCLUDED_ANALYSIS_PARENT_IDS = {4, 7, 13}
+EXCLUDED_ANALYSIS_PARENT_IDS = {4, 7, 13, 14}
 
 REMOTE_PARENT_CHILD_PRIORITY = {
     1: [101, 102, 103, 104],
@@ -1046,11 +1046,10 @@ class LabelHubDataService:
         return {"country_categories": countries, "stores": stores}
 
     def _fetch_facts(self, data_date, country_category="all", store="all", keyword=""):
-        excluded_parent_ids = ", ".join(str(item) for item in sorted(EXCLUDED_ANALYSIS_PARENT_IDS))
         clauses = [
             "data_date = %(data_date)s",
             "msku not like %(refund_prefix)s",
-            f"label_id in (select sub_label_id from {LABEL_DETAIL_TABLE} where label_id not in ({excluded_parent_ids}))",
+            f"label_id in (select sub_label_id from {LABEL_DETAIL_TABLE})",
         ]
         params = {"data_date": data_date, "refund_prefix": f"{REFUND_MSKU_PREFIX}%"}
         if country_category != "all":
@@ -1065,11 +1064,11 @@ class LabelHubDataService:
         with self._source_connection() as conn, conn.cursor() as cursor:
             cursor.execute(
                 f"""
-                select data_date, country_category, store, msku,
+                select data_date, country, country_category, store, msku,
                        group_concat(distinct concat(label_id, '@', coalesce(label_period, '')) order by label_id separator '|') as fact_tokens
                 from {LABEL_FACT_TABLE}
                 where {' and '.join(clauses)}
-                group by data_date, country_category, store, msku
+                group by data_date, country, country_category, store, msku
                 """,
                 params,
             )
@@ -1080,7 +1079,7 @@ class LabelHubDataService:
                 label_text, separator, period = token.partition("@")
                 if not separator or not label_text.isdigit():
                     continue
-                facts.append({"data_date": row.get("data_date"), "country_category": row.get("country_category"), "store": row.get("store"), "msku": row.get("msku"), "label_id": int(label_text), "label_period": period})
+                facts.append({"data_date": row.get("data_date"), "country": row.get("country"), "country_category": row.get("country_category"), "store": row.get("store"), "msku": row.get("msku"), "label_id": int(label_text), "label_period": period})
         return facts
 
 

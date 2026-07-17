@@ -324,6 +324,7 @@
     var main = document.querySelector(".main-content");
     if (main) main.classList.add("page-loading");
     app.writeQueryState(state);
+    if (window.updateCountryLabelHubLink) window.updateCountryLabelHubLink();
     app.apiGet("/api/label-hub", buildParams()).then(function (payload) {
       if (token !== requestToken) return;
       lastPayload = payload;
@@ -864,4 +865,30 @@
     elements.labelHubHint.textContent = "标签数据暂不可用：" + ((error && error.message) || "请稍后重试");
     if (elements.labelHubBreakdowns) elements.labelHubBreakdowns.innerHTML = '<div class="empty-state">加载失败，请检查远端标签连接后重试。</div>';
   }
+}());
+
+(function () {
+  "use strict";
+  var link = document.getElementById("countryLabelHubLink");
+  if (!link) return;
+  function updateCountryLink() {
+    var query = new URLSearchParams();
+    var values = [
+      ["metric_period", document.getElementById("labelHubMetricPeriod")],
+      ["country_category", document.getElementById("labelHubCountry")],
+      ["store", document.getElementById("labelHubStore")],
+      ["keyword", document.getElementById("labelHubKeyword")]
+    ];
+    values.forEach(function (item) {
+      var value = item[1] && item[1].value;
+      if (value && value !== "all") query.set(item[0], value);
+    });
+    link.href = "/country-label-hub" + (query.toString() ? "?" + query.toString() : "");
+  }
+  window.updateCountryLabelHubLink = updateCountryLink;
+  ["labelHubMetricPeriod", "labelHubCountry", "labelHubStore", "labelHubKeyword"].forEach(function (id) {
+    var control = document.getElementById(id);
+    if (control) { control.addEventListener("change", updateCountryLink); control.addEventListener("input", updateCountryLink); }
+  });
+  setTimeout(updateCountryLink, 0);
 }());
