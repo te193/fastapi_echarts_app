@@ -10,6 +10,9 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from openpyxl import Workbook
+from openpyxl.comments import Comment
+from openpyxl.styles import PatternFill
 from pydantic import BaseModel
 
 from etl.dashboard_daily_update import COLUMN_COMMENTS
@@ -32,6 +35,35 @@ TWO_DECIMAL_EXPORT_COLUMNS = {
     "margin_price_10",
 }
 CSV_FORMULA_PREFIXES = ("=", "+", "-", "@")
+REPLENISHMENT_EXPORT_HEADER_COMMENTS = {
+    "fba_local_quantity": "FBA本地 = FBA总库存+本地库存",
+    "total": "FBA总库存 = FBA可售+FBA预留+待调仓+标发在途+入库中",
+    "available_total": "FBA可用库存 = FBA可售+待调仓+FBA预留+入库中（此字段可在业务配置中自定义）",
+    "afn_fulfillable_quantity": "FBA可售库存 = afn fulfillable",
+    "stock_up_num": "FBA在途 = 实际在途发货单发货数量-签收数量",
+    "afn_unsellable_quantity": "FBA不可售 = Unfulfillable",
+    "sc_quantity_local_valid": (
+        "本地可用 = 配对SKU的可用量+可用锁定量+期望可用量，"
+        "仅组合产品包含期望可用量；点击设置-业务配置-补货建议中自定义"
+    ),
+    "sc_quantity_purchase_shipping": "采购在途 = 目的仓为本地仓的调拨单待收货量",
+    "sc_quantity_purchase_plan": (
+        "采购计划 = 配对SKU相关采购计划单待采购量统计数据："
+        "采购计划（待审批）+采购计划（待采购）"
+    ),
+    "sc_quantity_local_qc": (
+        "本地质检 = 配对SKU的待检待上架量（汇总SKU无绑定FNSKU数量与SKU+FNSKU数量）"
+    ),
+    "local_quantity": "本地库存 = 本地可用+采购在途+采购计划+本地质检",
+    "final_sales_3d": (
+        "黄色提醒规则：仅针对紧急补货、建议补货和计划补货的有效行；"
+        "当7天销量不少于10，且3天销量达到7天销量的70%时，整行标黄。"
+    ),
+}
+REPLENISHMENT_SALES_CONCENTRATION_FILL = PatternFill(
+    fill_type="solid",
+    fgColor="FFF2CC",
+)
 CSV_HEADER_LABELS = {
     "snapshot_date": "快照日期",
     "period_start": "周期开始",
@@ -156,6 +188,62 @@ def csv_cell_value(value, column: str | None = None):
 
 def csv_header_value(column: str) -> str:
     return COLUMN_COMMENTS.get(column) or CSV_HEADER_LABELS.get(column, column)
+
+
+def xlsx_cell_value(value, column: str | None = None):
+    if isinstance(value, Decimal):
+        return value
+    return csv_cell_value(value, column)
+
+
+def is_replenishment_sales_concentrated(row: dict) -> bool:
+    try:
+        level_sort = int(row.get("support_replenish_level_sort") or 0)
+        sales_3d = Decimal(str(row.get("final_sales_3d") or 0))
+        sales_7d = Decimal(str(row.get("final_sales_7d") or 0))
+        replenish_qty = Decimal(str(row.get("replenish_qty") or 0))
+    except (ArithmeticError, TypeError, ValueError):
+        return False
+
+    asin_merge_flag = str(row.get("asin_merge_flag") or 0).strip().lower()
+    is_asin_merged = asin_merge_flag in {"1", "1.0", "true", "yes", "是"}
+    if level_sort not in (1, 2, 3):
+        return False
+    if is_asin_merged and replenish_qty == 0:
+        return False
+    if sales_7d < 10:
+        return False
+    return sales_3d * 10 >= sales_7d * 7
+
+
+def build_replenishment_xlsx(payload: dict) -> bytes:
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "补货计划"
+    columns = payload["columns"]
+
+    for column_index, column in enumerate(columns, start=1):
+        cell = worksheet.cell(row=1, column=column_index, value=column["label"])
+        comment_text = REPLENISHMENT_EXPORT_HEADER_COMMENTS.get(column["name"])
+        if comment_text:
+            cell.comment = Comment(comment_text, "看板系统")
+
+    for row_index, row in enumerate(payload["rows"], start=2):
+        highlight_row = is_replenishment_sales_concentrated(row)
+        for column_index, column in enumerate(columns, start=1):
+            cell = worksheet.cell(
+                row=row_index,
+                column=column_index,
+                value=xlsx_cell_value(row.get(column["name"]), column["name"]),
+            )
+            if column["name"] in TWO_DECIMAL_EXPORT_COLUMNS and cell.value != "":
+                cell.number_format = "0.00"
+            if highlight_row:
+                cell.fill = REPLENISHMENT_SALES_CONCENTRATION_FILL
+
+    output = io.BytesIO()
+    workbook.save(output)
+    return output.getvalue()
 
 
 def build_filters(
@@ -953,16 +1041,14 @@ def api_replenishment_export(
         sort_field=sort_field,
         sort_dir=sort_dir,
     )
-    output = io.StringIO(newline="")
-    output.write("\ufeff")
-    writer = csv.writer(output)
-    columns = payload["columns"]
-    writer.writerow([column["label"] for column in columns])
-    for row in payload["rows"]:
-        writer.writerow([csv_cell_value(row.get(column["name"]), column["name"]) for column in columns])
-    filename = f"replenishment_{payload.get('snapshot_date') or snapshot_date or date.today().isoformat()}.csv"
+    content = build_replenishment_xlsx(payload)
+    filename = f"replenishment_{payload.get('snapshot_date') or snapshot_date or date.today().isoformat()}.xlsx"
     headers = {"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"}
-    return StreamingResponse(iter([output.getvalue()]), media_type="text/csv; charset=utf-8", headers=headers)
+    return StreamingResponse(
+        iter([content]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers,
+    )
 
 
 @app.get("/api/replenishment/country-metrics")
