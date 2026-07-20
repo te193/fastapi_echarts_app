@@ -668,7 +668,46 @@ qc_doc as (
      end collate utf8mb4_unicode_ci
     group by m.country_category, m.seller_name_new, m.seller_sku_adj
 ),
-current_fba_plan_match as (
+purchase_plan_group_match as (
+    select
+        g.country_category,
+        g.seller_name_new,
+        g.seller_sku_adj,
+        g.tracking_sku,
+        count(distinct g.plan_sn) as purchase_plan_count,
+        sum(coalesce(g.quantity_plan, 0)) as purchase_plan_qty,
+        max(g.plan_create_time) as latest_purchase_plan_time,
+        max(g.window_end_exclusive) as window_end_exclusive
+    from (
+        select
+            p0.country_category,
+            p0.seller_name_new,
+            p0.seller_sku_adj,
+            p0.tracking_sku,
+            pp0.plan_sn,
+            pp0.quantity_plan,
+            pp0.plan_create_time,
+            max(date_add(date_add(p0.cur_date, interval 30 day), interval 1 day)) as window_end_exclusive
+        from base p0
+        join dashboard_tracking_purchase_plan_sync pp0
+          on pp0.plan_create_time >= p0.cur_date
+         and pp0.plan_create_time < date_add(date_add(p0.cur_date, interval 30 day), interval 1 day)
+         and pp0.country_category = p0.country_category collate utf8mb4_unicode_ci
+         and pp0.seller_name_norm = p0.seller_name_new collate utf8mb4_unicode_ci
+         and pp0.msku = p0.seller_sku_adj collate utf8mb4_unicode_ci
+        group by
+            p0.country_category,
+            p0.seller_name_new,
+            p0.seller_sku_adj,
+            p0.tracking_sku,
+            pp0.plan_sn,
+            pp0.quantity_plan,
+            pp0.plan_create_time
+    ) g
+    group by g.country_category, g.seller_name_new, g.seller_sku_adj, g.tracking_sku
+    having count(distinct g.plan_sn) > 1
+),
+direct_fba_plan_match as (
     select distinct
         p0.country_category,
         p0.seller_name_new,
@@ -731,6 +770,52 @@ current_fba_plan_match as (
         else replace(coalesce(fp.sku, ''), '-zu', '')
      end = p0.tracking_sku collate utf8mb4_unicode_ci
      and abs(coalesce(fp.shipment_plan_quantity, 0) - coalesce(pp0.quantity_plan, 0)) <= greatest(coalesce(pp0.quantity_plan, 0) * 0.2, 5)
+),
+combined_fba_plan_candidate as (
+    select distinct
+        pg.country_category,
+        pg.seller_name_new,
+        pg.seller_sku_adj,
+        fp.order_sn,
+        fp.sku,
+        fp.plan_create_time,
+        fp.shipment_plan_quantity
+    from purchase_plan_group_match pg
+    join dashboard_tracking_fba_shipment_plan_sync fp
+      on fp.plan_create_time >= pg.latest_purchase_plan_time
+     and fp.plan_create_time < pg.window_end_exclusive
+     and fp.country_category = pg.country_category collate utf8mb4_unicode_ci
+     and fp.seller_name_norm = pg.seller_name_new collate utf8mb4_unicode_ci
+     and fp.msku = pg.seller_sku_adj collate utf8mb4_unicode_ci
+     and case
+        when replace(coalesce(fp.sku, ''), '-zu', '') regexp '[0-9][a-z]$'
+            then left(replace(coalesce(fp.sku, ''), '-zu', ''), char_length(replace(coalesce(fp.sku, ''), '-zu', '')) - 1)
+        else replace(coalesce(fp.sku, ''), '-zu', '')
+     end = pg.tracking_sku collate utf8mb4_unicode_ci
+     and abs(coalesce(fp.shipment_plan_quantity, 0) - coalesce(pg.purchase_plan_qty, 0)) <= greatest(coalesce(pg.purchase_plan_qty, 0) * 0.2, 5)
+    left join direct_fba_plan_match direct_match
+      on direct_match.country_category = pg.country_category collate utf8mb4_unicode_ci
+     and direct_match.seller_name_new = pg.seller_name_new collate utf8mb4_unicode_ci
+     and direct_match.seller_sku_adj = pg.seller_sku_adj collate utf8mb4_unicode_ci
+    where direct_match.order_sn is null
+),
+combined_fba_plan_match as (
+    select candidate.*
+    from combined_fba_plan_candidate candidate
+    join (
+        select country_category, seller_name_new, seller_sku_adj
+        from combined_fba_plan_candidate
+        group by country_category, seller_name_new, seller_sku_adj
+        having count(distinct order_sn) = 1
+    ) unique_match
+      on unique_match.country_category = candidate.country_category collate utf8mb4_unicode_ci
+     and unique_match.seller_name_new = candidate.seller_name_new collate utf8mb4_unicode_ci
+     and unique_match.seller_sku_adj = candidate.seller_sku_adj collate utf8mb4_unicode_ci
+),
+current_fba_plan_match as (
+    select * from direct_fba_plan_match
+    union
+    select * from combined_fba_plan_match
 ),
 current_fba_plan_doc as (
     select

@@ -69,6 +69,20 @@ def test_summary_etl_splits_current_and_historical_fba_plans():
     assert "cfpm.order_sn is null" in sql
 
 
+def test_summary_etl_matches_one_fba_plan_to_multiple_purchase_plans_by_total_qty():
+    sql = replenishment_tracking_summary_update.INSERT_SUMMARY_SQL
+
+    assert "purchase_plan_group_match as" in sql
+    assert "combined_fba_plan_candidate as" in sql
+    assert "combined_fba_plan_match as" in sql
+    assert "having count(distinct g.plan_sn) > 1" in sql
+    assert "abs(coalesce(fp.shipment_plan_quantity, 0) - coalesce(pg.purchase_plan_qty, 0))" in sql
+    assert "having count(distinct order_sn) = 1" in sql
+    assert "left join direct_fba_plan_match direct_match" in sql
+    assert "direct_match.order_sn = fp.order_sn" not in sql[sql.index("combined_fba_plan_candidate as"):sql.index("combined_fba_plan_match as")]
+    assert "direct_match.order_sn is null" in sql
+
+
 def test_summary_etl_uses_real_fba_shipment_id_for_fba_outbound_node():
     sql = replenishment_tracking_summary_update.INSERT_SUMMARY_SQL
 
@@ -121,6 +135,71 @@ def test_summary_detail_fba_match_uses_sku_and_quantity_tolerance():
     assert "replace(coalesce(s.sku, ''), '-zu', '') regexp '[0-9][a-z]$'" in sql
     assert "abs(coalesce(fp.shipment_plan_quantity, 0) - coalesce(pp.quantity_plan, 0))" in sql
     assert "fp.plan_create_time >= pp.plan_create_time" in sql
+
+
+def test_summary_detail_groups_combined_purchase_plans_with_unique_fba_match():
+    rows = [
+        {
+            "source_type": "purchase_plan",
+            "purchase_plan_sn": "PP260624016",
+            "purchase_plan_time": "2026-06-24 09:08:06",
+            "purchase_plan_qty": 20,
+        },
+        {
+            "source_type": "purchase_plan",
+            "purchase_plan_sn": "PP260625029",
+            "purchase_plan_time": "2026-06-25 10:53:05",
+            "purchase_plan_qty": 50,
+        },
+        {
+            "source_type": "fba_plan",
+            "order_sn": "R260703024",
+            "plan_create_time": "2026-07-03 09:28:50",
+            "shipment_plan_quantity": 70,
+            "link_attribution": "历史/待确认",
+        },
+        {
+            "source_type": "fba_shipment",
+            "order_sn": "R260703024",
+            "shipment_plan_quantity": 70,
+            "link_attribution": "历史/待确认",
+        },
+    ]
+
+    mapped = ReplenishmentTrackingSummaryService._apply_combined_purchase_plan_match(rows)
+
+    assert {row["detail_batch_key"] for row in mapped} == {"PP260624016 + PP260625029"}
+    assert {row["combined_purchase_qty_text"] for row in mapped} == {"20 + 50 = 70"}
+    assert all(row["combined_purchase_match"] for row in mapped)
+    assert {row["link_attribution"] for row in mapped if row["source_type"].startswith("fba_")} == {"合并采购匹配"}
+
+
+def test_summary_detail_does_not_guess_when_multiple_fba_plans_match_combined_qty():
+    rows = [
+        {"source_type": "purchase_plan", "purchase_plan_sn": "PP1", "purchase_plan_time": "2026-06-24", "purchase_plan_qty": 20},
+        {"source_type": "purchase_plan", "purchase_plan_sn": "PP2", "purchase_plan_time": "2026-06-25", "purchase_plan_qty": 50},
+        {"source_type": "fba_plan", "order_sn": "R1", "plan_create_time": "2026-07-01", "shipment_plan_quantity": 70, "link_attribution": "历史/待确认"},
+        {"source_type": "fba_plan", "order_sn": "R2", "plan_create_time": "2026-07-02", "shipment_plan_quantity": 70, "link_attribution": "历史/待确认"},
+    ]
+
+    mapped = ReplenishmentTrackingSummaryService._apply_combined_purchase_plan_match(rows)
+
+    assert all("combined_purchase_match" not in row for row in mapped)
+    assert {row["link_attribution"] for row in mapped if row["source_type"] == "fba_plan"} == {"历史/待确认"}
+
+
+def test_summary_detail_does_not_combine_when_a_direct_fba_match_exists():
+    rows = [
+        {"source_type": "purchase_plan", "purchase_plan_sn": "PP1", "purchase_plan_time": "2026-06-24", "purchase_plan_qty": 20},
+        {"source_type": "purchase_plan", "purchase_plan_sn": "PP2", "purchase_plan_time": "2026-06-25", "purchase_plan_qty": 50},
+        {"source_type": "fba_plan", "order_sn": "R-DIRECT", "plan_create_time": "2026-06-26", "shipment_plan_quantity": 20, "link_attribution": "本次链路"},
+        {"source_type": "fba_plan", "order_sn": "R-COMBINED", "plan_create_time": "2026-07-01", "shipment_plan_quantity": 70, "link_attribution": "历史/待确认"},
+    ]
+
+    mapped = ReplenishmentTrackingSummaryService._apply_combined_purchase_plan_match(rows)
+
+    assert all("combined_purchase_match" not in row for row in mapped)
+    assert mapped[-1]["link_attribution"] == "历史/待确认"
 
 
 def test_summary_detail_includes_real_fba_shipment_rows():
@@ -408,26 +487,166 @@ def test_summary_keyword_filters_keep_object_and_order_keywords_separate():
     assert params["order_keyword"] == "%PP260625013%"
 
 
-def test_level_purchase_plan_stage_filters_use_prestored_level_history():
+def test_top_stage_filters_keep_current_summary_status_when_history_level_is_selected():
     service = ReplenishmentTrackingSummaryService()
 
     filters, _ = service._where("2026-06-29", 30, "all", "all", "all", "purchase_plan_done", "紧急补货", "all", "all", "all", "", "product_category_30d")
-    assert "h.purchase_plan_flag = 1" in filters
+    assert "s.purchase_plan_flag = 1" in filters
+    assert "h.historical_replenishment_level = %(history_level)s" in filters
     assert "dashboard_tracking_purchase_plan_sync" not in filters
 
     filters, _ = service._where("2026-06-29", 30, "all", "all", "all", "no_purchase_plan", "紧急补货", "all", "all", "all", "", "product_category_30d")
-    assert "h.purchase_plan_flag = 0" in filters
+    assert "s.purchase_plan_flag = 0" in filters
 
 
-def test_level_supplier_shipping_stage_filters_use_prestored_level_history():
+def test_top_supplier_stage_filters_keep_current_summary_status_when_history_level_is_selected():
     service = ReplenishmentTrackingSummaryService()
 
     filters, _ = service._where("2026-06-29", 30, "all", "all", "all", "supplier_shipped_done", "紧急补货", "all", "all", "all", "", "product_category_30d")
-    assert "h.supplier_shipped_flag = 1" in filters
+    assert "s.supplier_shipped_flag = 1" in filters
 
     filters, _ = service._where("2026-06-29", 30, "all", "all", "all", "supplier_not_shipped", "紧急补货", "all", "all", "all", "", "product_category_30d")
-    assert "h.purchase_plan_flag = 1" in filters
-    assert "h.supplier_shipped_flag = 0" in filters
+    assert "s.purchase_plan_flag = 1 and s.supplier_shipped_flag = 0" in filters
+
+
+def test_history_level_filters_detail_without_recalculating_overview(monkeypatch):
+    service = ReplenishmentTrackingSummaryService()
+    calls = {}
+    summary_calls = []
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+    monkeypatch.setattr(service, "connect", lambda: Connection())
+    def capture_summary(conn, filters, params):
+        summary_calls.append(filters)
+        return {"scope": len(summary_calls)}
+
+    monkeypatch.setattr(service, "_summary", capture_summary)
+    monkeypatch.setattr(service, "_level_flow", lambda conn, filters, params, column: calls.setdefault("level_flow", filters) and [])
+    monkeypatch.setattr(service, "_total", lambda conn, filters, params: calls.setdefault("total", filters) and 0)
+    monkeypatch.setattr(service, "_items", lambda conn, filters, params, page, page_size, column: calls.setdefault("items", filters) and [])
+    monkeypatch.setattr(service, "_meta", lambda conn: {})
+
+    payload = service.get_payload(
+        cutoff_date="2026-07-20",
+        summary_stage="supplier_not_shipped",
+        history_level="紧急补货",
+    )
+
+    assert "s.purchase_plan_flag = 1 and s.supplier_shipped_flag = 0" in summary_calls[0]
+    assert "historical_replenishment_level" not in summary_calls[0]
+    assert "s.purchase_plan_flag = 1 and s.supplier_shipped_flag = 0" in summary_calls[1]
+    assert "h.historical_replenishment_level = %(history_level)s" in summary_calls[1]
+    assert payload["summary"] == {"scope": 1}
+    assert payload["scoped_summary"] == {"scope": 2}
+    assert "s.purchase_plan_flag = 1 and s.supplier_shipped_flag = 0" not in calls["level_flow"]
+    assert "h.historical_replenishment_level = %(history_level)s" in calls["total"]
+    assert calls["items"] == calls["total"]
+
+
+def test_detail_stage_filters_table_without_overwriting_summary_stage(monkeypatch):
+    service = ReplenishmentTrackingSummaryService()
+    calls = {}
+    summary_calls = []
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+    monkeypatch.setattr(service, "connect", lambda: Connection())
+    def capture_summary(conn, filters, params):
+        summary_calls.append(filters)
+        return {"scope": len(summary_calls)}
+
+    monkeypatch.setattr(service, "_summary", capture_summary)
+    monkeypatch.setattr(service, "_level_flow", lambda conn, filters, params, column: calls.setdefault("level_flow", filters) and [])
+    monkeypatch.setattr(service, "_total", lambda conn, filters, params: calls.setdefault("total", filters) and 0)
+    monkeypatch.setattr(service, "_items", lambda conn, filters, params, page, page_size, column: calls.setdefault("items", filters) and [])
+    monkeypatch.setattr(service, "_meta", lambda conn: {})
+
+    payload = service.get_payload(
+        cutoff_date="2026-07-20",
+        summary_stage="supplier_not_shipped",
+        detail_stage="no_purchase_plan",
+        history_level="建议补货",
+    )
+
+    assert "s.purchase_plan_flag = 1 and s.supplier_shipped_flag = 0" in summary_calls[0]
+    assert "h.historical_replenishment_level = %(history_level)s" in summary_calls[1]
+    assert "s.purchase_plan_flag = 1 and s.supplier_shipped_flag = 0" in calls["total"]
+    assert "s.purchase_plan_flag = 0" in calls["total"]
+    assert "h.historical_replenishment_level = %(history_level)s" in calls["total"]
+    assert calls["items"] == calls["total"]
+    assert payload["scoped_summary"] == {"scope": 2}
+
+
+def test_level_flow_ignores_completed_and_unfinished_detail_filters(monkeypatch):
+    service = ReplenishmentTrackingSummaryService()
+    calls = {}
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+    monkeypatch.setattr(service, "connect", lambda: Connection())
+    monkeypatch.setattr(service, "_summary", lambda conn, filters, params: {})
+    monkeypatch.setattr(service, "_level_flow", lambda conn, filters, params, column: calls.setdefault("level_flow", filters) and [])
+    monkeypatch.setattr(service, "_total", lambda conn, filters, params: 0)
+    monkeypatch.setattr(service, "_items", lambda conn, filters, params, page, page_size, column: [])
+    monkeypatch.setattr(service, "_meta", lambda conn: {})
+
+    service.get_payload(
+        cutoff_date="2026-07-20",
+        summary_stage="purchase_plan_done",
+        detail_stage="no_purchase_plan",
+        history_level="建议补货",
+    )
+
+    assert "s.purchase_plan_flag = 1" not in calls["level_flow"]
+    assert "s.purchase_plan_flag = 0" not in calls["level_flow"]
+
+
+def test_level_flow_accepts_top_status_card_filter(monkeypatch):
+    service = ReplenishmentTrackingSummaryService()
+    calls = {}
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+    monkeypatch.setattr(service, "connect", lambda: Connection())
+    monkeypatch.setattr(service, "_latest_date", lambda conn: "2026-07-20")
+    monkeypatch.setattr(service, "_summary", lambda conn, filters, params: {})
+    monkeypatch.setattr(service, "_level_flow", lambda conn, filters, params, column: calls.setdefault("level_flow", filters) and [])
+    monkeypatch.setattr(service, "_total", lambda conn, filters, params: 0)
+    monkeypatch.setattr(service, "_items", lambda conn, filters, params, page, page_size, column: [])
+    monkeypatch.setattr(service, "_meta", lambda conn: {})
+
+    service.get_payload(
+        cutoff_date="2026-07-20",
+        summary_stage="all",
+        level_flow_stage="supplier_not_shipped",
+        history_level="建议补货",
+        detail_stage="purchase_plan_completed",
+    )
+
+    assert "s.purchase_plan_flag = 1 and s.supplier_shipped_flag = 0" in calls["level_flow"]
+    assert "h.historical_replenishment_level = %(history_level)s" not in calls["level_flow"]
+    assert calls["level_flow"].count("s.purchase_plan_flag = 1") == 1
 
 
 def test_summary_detail_query_includes_purchase_orders():
@@ -435,6 +654,18 @@ def test_summary_detail_query_includes_purchase_orders():
 
     assert "purchase_order" in service._detail_sql()
     assert "dashboard_tracking_purchase_order_sync" in service._detail_sql()
+
+
+def test_sidebar_node_counts_use_the_selected_history_level_scope():
+    js = Path("app/static/js/replenishment_tracking_summary.js").read_text(encoding="utf-8")
+    start = js.index("function renderCards(")
+    end = js.index("function summaryHelp", start)
+    block = js[start:end]
+
+    assert "renderCards(payload.summary || {}, payload.scoped_summary || payload.summary || {})" in js
+    assert "function renderCards(summary, scopedSummary)" in block
+    assert "scopedSummary.supplier_not_shipped_count" in block
+    assert "scopedSummary.no_purchase_plan_count" in block
 
 
 def test_summary_detail_uses_visible_cutoff_date():
@@ -600,3 +831,95 @@ def test_summary_detail_includes_current_and_historical_fba_plans():
     assert "'本次链路' as link_attribution" in sql
     assert "'历史/待确认' as link_attribution" in sql
     assert "fp.plan_create_time >= pp.plan_create_time" in sql
+
+
+def test_conversion_drawer_can_filter_unfinished_mskus_without_resetting_context():
+    js = Path("app/static/js/replenishment_tracking_summary.js").read_text(encoding="utf-8")
+    start = js.index("function renderConversionNodeRow")
+    end = js.index("function renderFbaSplitBar", start)
+    block = js[start:end]
+
+    assert 'class="conversion-missing-link"' in block
+    assert "data-summary-stage-missing-link" in block
+    assert "查看未完成 " in block
+    assert '<article class="summary-conversion-row ' in block
+    assert "data-summary-stage-filter" in block
+    assert 'var missingButton = event.target.closest("[data-summary-stage-missing-link]");' in js
+    assert "selectHistoryLevelStage(" in js
+
+
+def test_stage_card_separates_completed_filter_from_detail_and_unfinished_actions():
+    js = Path("app/static/js/replenishment_tracking_summary.js").read_text(encoding="utf-8")
+
+    assert "data-summary-stage-complete" in js
+    assert 'event.target.closest("[data-summary-stage-complete]")' in js
+    assert "function selectHistoryLevelCompletedStage(level, stage)" in js
+    assert 'purchase_plan_done: "purchase_plan_completed"' in js
+    assert "render(true);" in js
+
+
+def test_lower_layer_detail_actions_keep_the_selected_top_distribution():
+    js = Path("app/static/js/replenishment_tracking_summary.js").read_text(encoding="utf-8")
+
+    for function_name in (
+        "selectHistoryLevel(level, productCategory)",
+        "selectHistoryLevelStage(level, stage, focusTable)",
+        "selectHistoryLevelCompletedStage(level, stage)",
+    ):
+        start = js.index(f"function {function_name}")
+        end = js.index("\n  function ", start + 1)
+        assert "state.level_flow_stage = \"all\";" not in js[start:end]
+
+
+def test_completed_card_filters_use_the_matching_history_node_condition():
+    service = ReplenishmentTrackingSummaryService()
+
+    filters, _ = service._where(
+        date(2026, 7, 20),
+        30,
+        "all",
+        "all",
+        "all",
+        "all",
+        "紧急补货",
+        "all",
+        "all",
+        "all",
+        "",
+        "product_category",
+        "",
+        "purchase_plan_completed",
+    )
+
+    assert "s.purchase_plan_flag = 1" in filters
+    assert "detail_h.purchase_plan_flag = 1" not in filters
+
+
+def test_level_flow_uses_cutoff_day_status_for_every_chain_node():
+    service = ReplenishmentTrackingSummaryService()
+    queries = []
+
+    class Cursor:
+        def execute(self, sql, params):
+            queries.append(sql)
+
+        def fetchall(self):
+            return []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+    class Connection:
+        def cursor(self):
+            return Cursor()
+
+    service._level_flow(Connection(), "1 = 1", {}, "product_category_30d")
+    sql = queries[0]
+
+    assert "sum(case when s.purchase_plan_flag = 1 then 1 else 0 end) as purchased_count" in sql
+    assert "sum(case when s.purchase_plan_flag = 1 then 1 else 0 end) as purchase_plan_node_count" in sql
+    assert "sum(case when s.supplier_shipped_flag = 1 then 1 else 0 end) as supplier_shipped_count" in sql
+    assert "sum(case when h.purchase_plan_flag = 1 then 1 else 0 end) as purchase_plan_node_count" not in sql

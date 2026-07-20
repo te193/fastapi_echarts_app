@@ -21,7 +21,7 @@ def test_margin_price_assets_use_cache_busting_versions():
 
     assert "styles.css') }}?v=20260717countrymatrix2" in base_template
     assert "replenishment.js') }}?v=20260710fbaattribution1" in replenishment_template
-    assert "replenishment_tracking_summary.js') }}?v=20260715fbashipment1" in replenishment_template
+    assert "replenishment_tracking_summary.js') }}?v=20260720linkedfilters5" in replenishment_template
 
 
 def test_replenishment_tracking_summary_entry_is_visible():
@@ -42,6 +42,44 @@ def test_replenishment_tracking_summary_allows_selecting_page_size():
     assert '"trackingSummaryPageSizeSelect"' in script
     assert 'state.page_size = Number(el.trackingSummaryPageSizeSelect.value) || 20;' in script
     assert 'state.page = 1;' in script
+
+
+def test_tracking_summary_level_click_preserves_active_stage_filter():
+    script = (ROOT / "app" / "static" / "js" / "replenishment_tracking_summary.js").read_text(encoding="utf-8")
+    level_click_start = script.index('var categoryNode = event.target.closest("[data-summary-category]");')
+    level_click_end = script.index('el.trackingSummaryCards.addEventListener', level_click_start)
+    level_click_block = script[level_click_start:level_click_end]
+    helper_start = script.index("function selectHistoryLevel")
+    helper_end = script.index("function selectHistoryLevelStage", helper_start)
+    helper_block = script[helper_start:helper_end]
+
+    assert "state.summary_stage" not in level_click_block
+    assert "state.summary_stage" not in helper_block
+    assert 'var active = state.summary_stage === card[4] ? " active" : "";' in script
+    assert 'var rowActive = state.history_level === level ? " active" : "";' in script
+
+
+def test_tracking_summary_missing_count_has_direct_filter_action():
+    script = (ROOT / "app" / "static" / "js" / "replenishment_tracking_summary.js").read_text(encoding="utf-8")
+
+    assert 'data-summary-stage-missing' in script
+    assert 'purchase_plan_done: "no_purchase_plan"' in script
+    assert '查看未完成 ' in script
+    assert 'function selectHistoryLevelStage(level, stage, focusTable)' in script
+    assert 'state.detail_stage = stage || "";' in script
+    assert 'detail_stage: state.detail_stage || ""' in script
+    assert 'summary-detail-filter-hint' in script
+
+
+def test_tracking_summary_explains_top_status_scope_and_final_detail_count():
+    script = (ROOT / "app" / "static" / "js" / "replenishment_tracking_summary.js").read_text(encoding="utf-8")
+
+    assert "function renderLevelFlowScopeHint(summary)" in script
+    assert "当前状态筛选：" in script
+    assert "下方按历史补货层级展示" in script
+    assert "function renderDetailFilterHint(total, summary)" in script
+    assert "当前状态：" in script
+    assert "命中" in script
 
 
 def test_replenishment_grid_shows_followed_origin_columns():

@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>补货链路追踪：业务流程与页面说明</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid #1a1a1a;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+  <style>
+    :root { color-scheme: light; --ink:#13233a; --line:#d9e4f0; --blue:#1769e0; }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+  body { max-width:none; margin:0; padding:0; background:#eef3f8; color:var(--ink); font-family:"Microsoft YaHei","PingFang SC","Noto Sans CJK SC",Arial,sans-serif; font-size:16px; line-height:1.75; }
+    main { width:min(1120px, calc(100% - 32px)); margin:32px auto; padding:44px 56px 64px; background:#fff; border:1px solid var(--line); box-shadow:0 12px 36px rgba(31,55,86,.08); }
+    h1,h2,h3 { color:#10233e; line-height:1.35; letter-spacing:0; }
+    h1 { margin:0 0 28px; padding-bottom:18px; border-bottom:2px solid #dbe8f6; font-size:32px; }
+    h2 { margin:42px 0 18px; padding-left:12px; border-left:4px solid var(--blue); font-size:24px; }
+    h3 { margin:30px 0 14px; font-size:19px; }
+    p { margin:10px 0; }
+    blockquote { margin:18px 0; padding:12px 18px; border-left:4px solid #76aaf0; background:#f3f8ff; color:#405774; }
+    blockquote p { margin:4px 0; }
+    table { width:100%; margin:18px 0 24px; border-collapse:collapse; font-size:14px; }
+    th,td { padding:11px 13px; border:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { background:#edf5ff; color:#18375d; font-weight:700; }
+    tbody tr:nth-child(even) { background:#fafcff; }
+    code { padding:2px 6px; border-radius:4px; background:#edf2f7; font-family:Consolas,"Cascadia Mono",monospace; font-size:.92em; }
+    pre { overflow:auto; margin:18px 0 24px; padding:18px 20px; border:1px solid var(--line); border-radius:6px; background:#f7f9fc; color:#1b3555; line-height:1.6; }
+    pre code { padding:0; background:transparent; }
+    pre.mermaid { display:flex; justify-content:center; min-height:120px; background:#fbfdff; }
+    hr { margin:34px 0; border:0; border-top:1px solid var(--line); }
+    strong { color:#102c51; }
+    li { margin:5px 0; }
+    @media (max-width:760px) { body{font-size:15px;} main{width:100%;margin:0;padding:28px 18px;border:0;} h1{font-size:26px;} h2{font-size:21px;} table{display:block;overflow-x:auto;white-space:nowrap;} }
+    @media print { body{background:#fff;} main{width:100%;margin:0;padding:0;border:0;box-shadow:none;} h2,h3{break-after:avoid;} table,pre,blockquote{break-inside:avoid;} }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      document.querySelectorAll("pre.mermaid").forEach(function (block) {
+        var code = block.querySelector("code");
+        if (code) block.textContent = code.textContent;
+      });
+      if (window.mermaid) {
+        window.mermaid.initialize({ startOnLoad: false, securityLevel: "loose", theme: "default" });
+        window.mermaid.run({ querySelector: "pre.mermaid" }).catch(function () {});
+      }
+    });
+  </script>
+</head>
+<body>
+<main>
+<h1
+id="补货链路追踪业务流程与页面说明">补货链路追踪：业务流程与页面说明</h1>
+<blockquote>
+<p>适用范围：每日补货看板中的采购/发货追踪，以及“补货链路追踪汇总”页面。
+这份说明只解释业务口径、页面数字和操作方式，不涉及数据库或技术字段。</p>
+</blockquote>
+<h2 id="1-这套追踪在看什么">1. 这套追踪在看什么</h2>
+<p>补货建议出现后，页面持续追踪同一产品后续有没有被处理、货走到了哪里、卡在什么环节。</p>
+<p>追踪对象是：<strong>站点 + 店铺 + MSKU</strong>。 SKU
+用于在采购、仓库、质检和 FBA 单据之间核对是不是同一件商品。</p>
+<p>完整主链路如下：</p>
+<pre class="mermaid"><code>flowchart LR
+    A[进入补货范围] --&gt; B[建立采购计划]
+    B --&gt; C[采购在途]
+    C --&gt; D[到本地仓]
+    D --&gt; E[质检通过]
+    E --&gt; F[创建 FBA 货件]
+    F --&gt; G[FBA 出库]
+    G --&gt; H[FBA 接收中]
+    H --&gt; I[完成]
+
+    B -. 可提前安排 .-&gt; F
+
+    classDef main fill:#e8f7f1,stroke:#19a98d,color:#12304a;
+    classDef fba fill:#fff5df,stroke:#e6a323,color:#12304a;
+    class A,B,C,D,E main;
+    class F,G,H,I fba;</code></pre>
+<p>也可以按下面这条“直线”理解：</p>
+<pre class="text"><code>进入补货范围
+    ↓
+建立采购计划
+    ↓
+采购在途（采购单已有物流）
+    ↓
+到本地仓（有实际收货）
+    ↓
+质检通过（有良品且无不良）
+    ↓
+创建 FBA 货件
+    ↓
+FBA 出库
+    ↓
+FBA 接收中
+    ↓
+全部接收完成</code></pre>
+<p>其中“提前创建
+FBA”是主流程的一个业务分支：采购、到仓或质检尚未走完时，业务已经先建立了
+FBA
+发货计划。它会单独标记，但只要能明确对应本次采购，仍属于本次补货链路。</p>
+<p>页面并不重新计算“今天建议补多少”，而是回答：</p>
+<ol type="1">
+<li>这批需要补货的产品，后续有没有建采购？</li>
+<li>建采购后，是否真正开始运输、到本地仓、通过质检？</li>
+<li>是否创建了 FBA 货件、是否发出、是否被 FBA 接收？</li>
+<li>当前最需要跟进的卡点在哪里？</li>
+</ol>
+<h2 id="2-两个页面分别怎么用">2. 两个页面分别怎么用</h2>
+<table>
+<thead>
+<tr>
+<th>页面</th>
+<th>用途</th>
+<th>时间怎么理解</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>每日补货看板</td>
+<td>回看某一个补货日期的建议，后续是否有采购、发货等动作</td>
+<td>选择补货日期后，观察其后的 7、14、30 天追踪窗口</td>
+</tr>
+<tr>
+<td>补货链路追踪汇总</td>
+<td>从供应链视角汇总历史补货池的整体履约进度</td>
+<td>“截止日期”表示数据看到哪一天；切换日期会回看当时的链路状态</td>
+</tr>
+</tbody>
+</table>
+<h3 id="汇总页中的历史和当日">汇总页中的“历史”和“当日”</h3>
+<ul>
+<li><strong>历史</strong>：截至截止日期，曾经进入过这个补货层级的去重
+MSKU 数。</li>
+<li><strong>当日</strong>：截止日期当天仍处于这个补货层级的 MSKU
+数。</li>
+<li>两者都是产品数量，不是补货数量，也不是采购数量。</li>
+</ul>
+<p>例如“紧急补货：历史 175 个、当日 50 个”表示：截至该日，共有 175 个
+MSKU 曾进入紧急补货；其中 50 个在当天仍是紧急补货。</p>
+<h2 id="3-主链路的每一站怎么判断">3. 主链路的每一站怎么判断</h2>
+<h3 id="31-需要补货--建立采购计划">3.1 需要补货 → 建立采购计划</h3>
+<p><strong>代表什么</strong>：运营的补货需求已经被采购端响应。</p>
+<p><strong>算已进入下一步的条件</strong>：</p>
+<ul>
+<li>产品进入紧急补货、建议补货或计划补货后；</li>
+<li>在后续追踪期内，出现同站点、同店铺、同产品的采购计划。</li>
+</ul>
+<p><strong>页面如何显示</strong>：</p>
+<ul>
+<li>已建采购：表示找到了补货之后创建的采购计划。</li>
+<li>未建采购计划：表示追踪期内还没有找到对应采购计划。</li>
+</ul>
+<p><strong>注意</strong>：采购计划只是“准备采购”，并不表示供应商已经发货。</p>
+<h3 id="从补货到采购判断图">从补货到采购：判断图</h3>
+<pre class="mermaid"><code>flowchart TD
+    A[产品进入补货范围] --&gt; B{后续追踪期内\n是否建立采购计划}
+    B -- 否 --&gt; C[卡点：未建采购计划]
+    B -- 是 --&gt; D{采购单是否已有\n物流商或物流单号}
+    D -- 否 --&gt; E[卡点：采购未在途]
+    D -- 是 --&gt; F[进入采购在途]
+
+    classDef ok fill:#e8f7f1,stroke:#19a98d,color:#12304a;
+    classDef warn fill:#fff5df,stroke:#e6a323,color:#12304a;
+    class A,F ok;
+    class C,E warn;</code></pre>
+<hr />
+<h3 id="32-建立采购计划--采购在途">3.2 建立采购计划 → 采购在途</h3>
+<p><strong>代表什么</strong>：采购不只是计划，供应商已经安排了运输。</p>
+<p><strong>算采购在途的条件</strong>：</p>
+<ul>
+<li>采购计划下已经有采购单；</li>
+<li>采购单上有物流商或物流单号。</li>
+</ul>
+<p><strong>页面如何显示</strong>：</p>
+<ul>
+<li>采购在途：已找到有物流信息的采购单。</li>
+<li>采购未在途：已经建采购计划，但还没找到有物流信息的采购单。</li>
+</ul>
+<p><strong>注意</strong>：这里的“采购在途”是供应商发往本地仓的运输，不是发往
+FBA 的在途。</p>
+<hr />
+<h3 id="33-采购在途--到本地仓">3.3 采购在途 → 到本地仓</h3>
+<p><strong>代表什么</strong>：货已经被本地仓实际收货。</p>
+<p><strong>算到本地仓的条件</strong>：</p>
+<ul>
+<li>采购在途后，产生了对应的本地收货记录；</li>
+<li>实际到仓数量大于 0。</li>
+</ul>
+<p><strong>页面如何显示</strong>：</p>
+<ul>
+<li>到本地仓：有实际收货数量。</li>
+<li>采购在途未到仓：已有物流，但还没有实际到仓记录。</li>
+</ul>
+<hr />
+<h3 id="34-到本地仓--质检通过">3.4 到本地仓 → 质检通过</h3>
+<p><strong>代表什么</strong>：到仓货物已完成质检，且可用库存可以继续进入
+FBA 环节。</p>
+<p><strong>算质检通过的条件</strong>：</p>
+<ul>
+<li>已有对应质检记录；</li>
+<li>良品数量大于 0；</li>
+<li>不良品数量为 0。</li>
+</ul>
+<p><strong>页面如何显示</strong>：</p>
+<ul>
+<li>质检通过：本批货可以继续安排 FBA。</li>
+<li>待质检 / 质检异常：还没有质检结果，或质检存在不良品。</li>
+</ul>
+<h3 id="从采购在途到可发-fba判断图">从采购在途到可发 FBA：判断图</h3>
+<pre class="mermaid"><code>flowchart TD
+    A[采购在途] --&gt; B{是否有本地仓\n实际收货数量}
+    B -- 否 --&gt; C[卡点：采购在途未到仓]
+    B -- 是 --&gt; D[到本地仓]
+    D --&gt; E{是否质检通过}
+    E -- 否 --&gt; F[卡点：待质检或质检异常]
+    E -- 是 --&gt; G[可安排 FBA]
+
+    classDef ok fill:#e8f7f1,stroke:#19a98d,color:#12304a;
+    classDef warn fill:#fff5df,stroke:#e6a323,color:#12304a;
+    class A,D,G ok;
+    class C,F warn;</code></pre>
+<hr />
+<h3 id="35-质检通过--创建-fba-货件">3.5 质检通过 → 创建 FBA 货件</h3>
+<p><strong>代表什么</strong>：已经安排将本地仓货物发往 FBA。</p>
+<p>业务上存在两种合理情况：</p>
+<table>
+<thead>
+<tr>
+<th>类型</th>
+<th>说明</th>
+<th>页面含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>正常链路创建</td>
+<td>采购到仓、质检通过后才创建 FBA 发货计划</td>
+<td>表示按常规顺序推进</td>
+</tr>
+<tr>
+<td>提前创建</td>
+<td>采购计划刚创建，甚至货还未到本地仓时，就预先创建 FBA 发货计划</td>
+<td>仍属于本次补货，只是提前安排货件</td>
+</tr>
+</tbody>
+</table>
+<p><strong>两种情况共同要求</strong>：发货计划需要能与本次采购计划对应到同一产品、店铺和站点，且数量处于合理范围内。</p>
+<p><strong>页面如何显示</strong>：</p>
+<ul>
+<li>创建 FBA：包含正常链路创建和提前创建。</li>
+<li>悬浮或抽屉中会拆分“正常链路”和“提前创建”的数量。</li>
+<li>质检通过未建 FBA：采购链路已经走到可发 FBA，但尚未找到本次对应的 FBA
+发货计划。</li>
+</ul>
+<p><strong>重要说明</strong>：提前创建不等于货已到本地仓，也不等于质检已通过。它只是提前安排了后续
+FBA 货件。</p>
+<hr />
+<h3 id="36-创建-fba-货件--fba-出库">3.6 创建 FBA 货件 → FBA 出库</h3>
+<p><strong>代表什么</strong>：FBA 发货计划已经真正形成货件，并开始向 FBA
+发运。</p>
+<p><strong>算 FBA 出库的条件</strong>：</p>
+<ul>
+<li>已有 FBA 发货计划；</li>
+<li>找到对应的真实 FBA 货件；</li>
+<li>货件已有发货数量。</li>
+</ul>
+<p><strong>页面如何显示</strong>：</p>
+<ul>
+<li>FBA 出库：货件已经发出。</li>
+<li>FBA 未出库：已创建发货计划，但还没有真实发货动作。</li>
+</ul>
+<hr />
+<h3 id="37-fba-出库--fba-接收--完成">3.7 FBA 出库 → FBA 接收 → 完成</h3>
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>代表什么</th>
+<th>页面如何理解</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FBA 未接收</td>
+<td>货件已发出，FBA 尚未开始接收</td>
+<td>仍在运输或等待入库</td>
+</tr>
+<tr>
+<td>FBA 接收中</td>
+<td>FBA 已接收部分数量，但未全部完成</td>
+<td>货件仍会影响库存与预计到货</td>
+</tr>
+<tr>
+<td>完成</td>
+<td>FBA 已完成接收并关闭货件</td>
+<td>这条货件不再作为在途处理</td>
+</tr>
+</tbody>
+</table>
+<p><strong>关键规则</strong>：部分接收不算完成。只要还有未接收的发货数量，仍应保留在
+FBA 在途和预计到货中。</p>
+<h3 id="fba-后半段判断图">FBA 后半段：判断图</h3>
+<pre class="mermaid"><code>flowchart TD
+    A[已创建 FBA 货件] --&gt; B{是否实际出库}
+    B -- 否 --&gt; C[卡点：FBA 未出库]
+    B -- 是 --&gt; D[FBA 在途]
+    D --&gt; E{是否开始接收}
+    E -- 否 --&gt; F[卡点：FBA 未接收]
+    E -- 是 --&gt; G{是否全部接收并关闭}
+    G -- 否 --&gt; H[FBA 接收中\n仍显示预计到货]
+    G -- 是 --&gt; I[完成\n退出在途与预计到货]
+
+    classDef ok fill:#e8f7f1,stroke:#19a98d,color:#12304a;
+    classDef warn fill:#fff5df,stroke:#e6a323,color:#12304a;
+    classDef done fill:#e9f3ff,stroke:#5a96dd,color:#12304a;
+    class A,D,H ok;
+    class C,F warn;
+    class I done;</code></pre>
+<h2 id="4-当前节点和链路进度怎么读">4. “当前节点”和“链路进度”怎么读</h2>
+<h3 id="当前节点">当前节点</h3>
+<p>“当前节点”表示：<strong>当前尚未完成、下一步需要确认的环节</strong>，不是货物现实中的物理位置。</p>
+<p>例子：</p>
+<ul>
+<li>已经有采购物流，但没有到仓记录：当前节点显示“到本地仓”。</li>
+<li>已经到仓，但还没有质检通过：当前节点显示“质检通过”。</li>
+<li>已创建 FBA 货件，但还未发出：当前节点显示“FBA 出库”。</li>
+</ul>
+<h3 id="链路进度图标">链路进度图标</h3>
+<p>图标从左到右依次表示：</p>
+<pre class="text"><code>采购计划 → 采购在途 → 到本地仓 → 质检通过 → 创建 FBA → FBA 出库 → FBA 接收</code></pre>
+<ul>
+<li>绿色：该环节已确认完成。</li>
+<li>灰色：该环节尚未确认完成。</li>
+<li>当前节点标签：提示当前需要跟进的地方。</li>
+</ul>
+<h2 id="5-本次链路提前创建与历史-fba-的区别">5. 本次链路、提前创建与历史
+FBA 的区别</h2>
+<p>这是页面最容易误读的部分。</p>
+<h3 id="本次链路">本次链路</h3>
+<p>指能够从本次补货需求开始，顺着采购、收货、质检和 FBA
+动作串起来的记录。</p>
+<pre class="text"><code>补货建议 → 采购计划 → 采购单 → 到本地仓 → 质检 → FBA 发货计划 → FBA 货件</code></pre>
+<p>本次链路用于计算主页面上的节点转化和当前卡点。</p>
+<h3 id="提前创建-fba">提前创建 FBA</h3>
+<p>提前创建的 FBA
+货件如果能对应到本次采购计划，仍属于本次链路；只是创建时间早于采购到仓或质检完成时间。</p>
+<p>页面会单独提示，防止误解为“货已经到仓并完成质检”。</p>
+<h3 id="历史--待确认-fba">历史 / 待确认 FBA</h3>
+<p>以下情况会放在“历史 / 待确认 FBA”中单独展示：</p>
+<ul>
+<li>在本次补货需求出现前就已存在的 FBA 发货计划或货件；</li>
+<li>同一产品有 FBA 动作，但无法明确归到本次采购计划；</li>
+<li>数量、产品、店铺或时间关系无法合理对应到本次采购链路。</li>
+</ul>
+<p>历史 FBA
+的作用是提示：它可能仍在运输、仍会影响库存；但它<strong>不算作本次补货链路已经推进</strong>，也不会提高本次主链路的完成率。</p>
+<h2 id="6-数量怎么理解">6. 数量怎么理解</h2>
+<p>不同环节的数量表示不同事实，不能直接互相替代。</p>
+<table>
+<thead>
+<tr>
+<th>页面数量</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>补货建议数</td>
+<td>看板建议补多少</td>
+</tr>
+<tr>
+<td>采购计划数</td>
+<td>采购计划准备采购多少</td>
+</tr>
+<tr>
+<td>采购数量</td>
+<td>采购单实际采购多少</td>
+</tr>
+<tr>
+<td>到仓数量</td>
+<td>本地仓实际收到多少</td>
+</tr>
+<tr>
+<td>良品数量</td>
+<td>质检后可继续使用多少</td>
+</tr>
+<tr>
+<td>FBA 计划数</td>
+<td>计划发往 FBA 多少</td>
+</tr>
+<tr>
+<td>发货数量</td>
+<td>实际从本地仓发出多少</td>
+</tr>
+<tr>
+<td>FBA 接收数量</td>
+<td>FBA 已接收多少</td>
+</tr>
+</tbody>
+</table>
+<p>采购计划、采购单和 FBA
+货件可以拆单、合单或分批处理，因此出现一个产品对应多张单据是正常业务情况。页面保留这些记录，是为了方便核对真实流转。</p>
+<h2 id="7-预计到货怎么理解">7. 预计到货怎么理解</h2>
+<p>“最近预计到货”只看当前仍未全部接收的 FBA 在途货件。</p>
+<h3 id="会参与预计到货的货件">会参与预计到货的货件</h3>
+<ul>
+<li>已经发出；</li>
+<li>尚未全部被 FBA 接收；</li>
+<li>没有关闭。</li>
+</ul>
+<h3 id="不参与预计到货的货件">不参与预计到货的货件</h3>
+<ul>
+<li>已经全部接收；</li>
+<li>已关闭；</li>
+<li>没有实际发出。</li>
+</ul>
+<h3 id="同一产品有多个在途货件时">同一产品有多个在途货件时</h3>
+<p>页面优先显示最快到货的一张有效货件：</p>
+<ol type="1">
+<li>有未来预计到货日期时，取最近的未来日期；</li>
+<li>如果都已逾期，取最近一次逾期日期；</li>
+<li>没有有效在途货件时，显示 <code>-</code>。</li>
+</ol>
+<p>“还有多少天到货”是相对于页面选择的<strong>截止日期</strong>计算，因此回看历史日期时，结果会随截止日期变化。</p>
+<h2 id="8-汇总页面怎么读">8. 汇总页面怎么读</h2>
+<h3 id="页面联动图">页面联动图</h3>
+<pre class="mermaid"><code>flowchart TD
+    A[选择截止日期、层级、店铺与筛选条件] --&gt; B[顶部卡片\n定位最大卡点]
+    A --&gt; C[履约分层\n查看紧急、建议、计划补货]
+    B --&gt; D[下方 MSKU 列表自动筛选]
+    C --&gt; D
+    E[右侧其他分类\n未采购、采购未在途等] --&gt; D
+    D --&gt; F[查看明细]
+    F --&gt; G[明细抽屉\n按采购批次核对单据、数量、时间]
+
+    classDef filter fill:#e9f3ff,stroke:#5a96dd,color:#12304a;
+    classDef view fill:#e8f7f1,stroke:#19a98d,color:#12304a;
+    classDef detail fill:#fff5df,stroke:#e6a323,color:#12304a;
+    class A,E filter;
+    class B,C,D view;
+    class F,G detail;</code></pre>
+<h3 id="顶部卡片">顶部卡片</h3>
+<p>顶部卡片按当前卡点统计产品数：</p>
+<table>
+<thead>
+<tr>
+<th>卡片</th>
+<th>它表示的问题</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>未建采购计划</td>
+<td>需要补货，但还没有采购计划</td>
+</tr>
+<tr>
+<td>采购未在途</td>
+<td>已建采购计划，但还没有采购物流</td>
+</tr>
+<tr>
+<td>采购在途未到仓</td>
+<td>采购在路上，但本地仓还没有实际收货</td>
+</tr>
+<tr>
+<td>质检通过未建 FBA</td>
+<td>货已可用，但还没有安排 FBA</td>
+</tr>
+<tr>
+<td>FBA 未出库</td>
+<td>已安排 FBA，但货件还没有发出</td>
+</tr>
+<tr>
+<td>FBA 未接收</td>
+<td>已发出，FBA 还没有开始接收</td>
+</tr>
+<tr>
+<td>FBA 已完成</td>
+<td>FBA 已全部接收完成</td>
+</tr>
+<tr>
+<td>历史 FBA 货件</td>
+<td>仍会影响库存、但不属于本次主链路的历史货件</td>
+</tr>
+</tbody>
+</table>
+<p>点击卡片会筛选下方产品列表。</p>
+<h3 id="履约分层">履约分层</h3>
+<p>紧急补货、建议补货、计划补货分别展示：</p>
+<ul>
+<li>历史出现产品数和当日产品数；</li>
+<li>明星、潜力、瘦狗、问题产品的数量和占比；</li>
+<li>建采购、采购在途、创建 FBA、FBA 出库等关键节点的转化情况。</li>
+</ul>
+<p>节点卡片中的“已到达 / 前置池”表示：</p>
+<pre class="text"><code>到达当前节点的 MSKU 数 / 可以进入该节点判断的 MSKU 数</code></pre>
+<p>点击节点卡片的“明细”，会打开对应节点的产品清单；点击右侧分类卡片，也会联动筛选下方列表。</p>
+<h3 id="产品列表">产品列表</h3>
+<p>一行表示一个产品在所选截止日期下的综合追踪结果，可查看：</p>
+<ul>
+<li>该产品曾命中的补货层级与当天层级；</li>
+<li>首次进入补货、最近补货、出现天数；</li>
+<li>销售角色；</li>
+<li>建议数、当前节点、断点原因；</li>
+<li>采购、到仓、质检、FBA 在途和预计到货情况；</li>
+<li>单据摘要和“查看明细”。</li>
+</ul>
+<h2 id="9-明细抽屉怎么读">9. 明细抽屉怎么读</h2>
+<p>点击“查看明细”后，抽屉用于核对单据与时间顺序。</p>
+<h3 id="链路总览">链路总览</h3>
+<p>顶部按节点汇总：采购计划、采购单、到仓、质检、建 FBA、FBA 出库、FBA
+接收。</p>
+<p>数字既能看有多少张业务单据，也能看对应数量；用于快速判断是“没有动作”还是“有动作但数量不匹配”。</p>
+<h3 id="批次链路">批次链路</h3>
+<p>主区域以采购计划为一个批次组织记录，并按业务顺序展示：</p>
+<pre class="text"><code>采购计划 → 采购单 → 到本地仓 / 质检 → FBA</code></pre>
+<p>每张卡片会展示：</p>
+<ul>
+<li>单号；</li>
+<li>数量；</li>
+<li>当前状态；</li>
+<li>创建、采购、到仓、质检、发货等关键时间；</li>
+<li>物流、仓库或货件信息（有数据时）。</li>
+</ul>
+<h3 id="历史--待确认-fba-1">历史 / 待确认 FBA</h3>
+<p>无法明确归到主采购批次的 FBA
+记录，会放在独立区域。它不会干扰主链路判断，但能帮助供应链确认是否有历史在途或旧货件仍在影响库存。</p>
+<h2 id="10-页面刷新后为什么会变化">10. 页面刷新后为什么会变化</h2>
+<p>补货建议和后续动作每天都可能变化：</p>
+<pre class="text"><code>今天未建采购
+→ 明天建立采购计划
+→ 采购单补充物流后变为采购在途
+→ 到本地仓并完成质检
+→ 创建或提前创建 FBA
+→ FBA 出库、接收、完成</code></pre>
+<p>因此同一个产品在不同截止日期下看到的状态可能不同，这是正常的历史回看结果。</p>
+<p>页面依赖采购、仓库、质检和 FBA
+单据的同步更新。刚创建的单据如果尚未同步到页面，可能暂时没有显示；待数据同步后会自动进入对应节点。</p>
+<h2 id="11-快速判断几个常见问题">11. 快速判断几个常见问题</h2>
+<table>
+<thead>
+<tr>
+<th>页面现象</th>
+<th>业务解释</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>有采购计划但仍显示未采购</td>
+<td>有计划不代表采购单已产生或已配置物流信息</td>
+</tr>
+<tr>
+<td>有历史 FBA，但本次链路仍未建 FBA</td>
+<td>历史 FBA 不应替代本次补货的 FBA 动作</td>
+</tr>
+<tr>
+<td>已建 FBA，但采购/质检未走完</td>
+<td>可能是业务提前创建 FBA；需看是否标记为“提前创建”</td>
+</tr>
+<tr>
+<td>有 FBA 货件但没有预计到货</td>
+<td>货件可能已全部接收、已关闭，或尚未实际发出</td>
+</tr>
+<tr>
+<td>采购数量大于计划数量</td>
+<td>可能发生拆单、合单、补单或一个采购单覆盖多个需求；需在抽屉按批次核对</td>
+</tr>
+<tr>
+<td>一条产品有多张采购单、收货单或货件</td>
+<td>真实业务可分批采购、分批到仓、分批发货；页面会保留多张单据供核对</td>
+</tr>
+</tbody>
+</table>
+<h2 id="12-使用原则">12. 使用原则</h2>
+<ol type="1">
+<li>先看顶部卡片，定位当前最大的卡点。</li>
+<li>再按补货层级查看问题集中在哪一类需求。</li>
+<li>点击节点或分类卡片，筛出对应产品。</li>
+<li>对重点 MSKU 打开明细抽屉，按批次核对单号、数量和时间。</li>
+<li>历史 / 待确认 FBA
+只用于判断库存影响，不把它当成本次补货已经完成。</li>
+</ol>
+</main>
+</body>
+</html>
