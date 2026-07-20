@@ -19,6 +19,8 @@
     daily_sales_bands: query.get("daily_sales_bands") || "",
     margin_bands: query.get("margin_bands") || "",
     problem: query.get("problem") || "all",
+    transition_period: query.get("transition_period") || query.get("metric_period") || "30d",
+    change_type: query.get("change_type") || "all",
     page: Number(query.get("page") || 1),
     page_size: normalizePageSize(query.get("page_size")),
     table_view: normalizeTableView(query.get("table_view")),
@@ -30,6 +32,10 @@
   var lastPayload = null;
   var elements = {};
   var requestToken = 0;
+  var changeRequestToken = 0;
+  var changePage = 1;
+  var lastChanges = null;
+  var activeLayerChangeContext = null;
   var linkedSelectInstances = [];
   var REMOTE_BUCKET_COLORS = [
     "#4e79a7", "#f28e2b", "#59a14f", "#7a5af8",
@@ -49,6 +55,8 @@
       "labelHubTable", "labelHubTableSummary", "labelHubTableView", "labelHubPageSize", "labelHubPagination", "labelHubHint", "labelHubDrawer",
       "labelHubDrawerClose", "labelHubDrawerContent", "labelHubRuleDrawer", "labelHubRuleDrawerClose",
       "labelHubRuleDrawerTitle", "labelHubRuleDrawerContent"
+      , "labelHubChangesPanel", "labelHubChangeScope", "labelHubTransitionPeriod", "labelHubChangeType", "labelHubChangeContent",
+      "labelHubChangeBrief"
     ].forEach(function (id) { elements[id] = document.getElementById(id); });
     setLoading(true);
     bindEvents();
@@ -73,7 +81,7 @@
   }
 
   function bindEvents() {
-    elements.labelHubMetricPeriod.addEventListener("change", function () { state.metric_period = this.value; resetPageAndRender(); });
+    elements.labelHubMetricPeriod.addEventListener("change", function () { state.metric_period = this.value; state.transition_period = this.value; resetPageAndRender(); });
     elements.labelHubCountry.addEventListener("change", function () { state.country_category = this.value; resetPageAndRender(); });
     elements.labelHubStore.addEventListener("change", function () { state.store = this.value; resetPageAndRender(); });
     elements.labelHubParent.addEventListener("change", function () { selectParent(Number(this.value)); });
@@ -117,8 +125,13 @@
     elements.labelHubCategories.addEventListener("click", handleOverviewClick);
     elements.labelHubCategoryDetail.addEventListener("click", handleOverviewClick);
     elements.labelHubBreakdowns.addEventListener("click", function (event) {
+      var layerChangeDetail = event.target.closest("[data-layer-change-detail]");
       var local = event.target.closest("[data-local-dimension]");
       var label = event.target.closest("[data-label-parent]");
+      if (layerChangeDetail) {
+        openLayerChangeDetails(layerChangeDetail.dataset);
+        return;
+      }
       if (local) toggleLocalCondition(local.dataset.localDimension, local.dataset.localValue);
       if (label) toggleCondition(label.dataset.labelParent, label.dataset.labelChild);
     });
@@ -164,6 +177,55 @@
     elements.labelHubDrawer.addEventListener("click", function (event) { if (event.target === elements.labelHubDrawer) closeDrawer(); });
     elements.labelHubRuleDrawerClose.addEventListener("click", closeRuleDrawer);
     elements.labelHubRuleDrawer.addEventListener("click", function (event) { if (event.target === elements.labelHubRuleDrawer) closeRuleDrawer(); });
+    elements.labelHubTransitionPeriod.addEventListener("change", function () { state.transition_period = this.value; changePage = 1; app.writeQueryState(state); loadChanges(); });
+    elements.labelHubChangeType.addEventListener("change", function () { state.change_type = this.value; changePage = 1; app.writeQueryState(state); loadChanges(); });
+    elements.labelHubChangeContent.addEventListener("click", function (event) {
+      var pageButton = event.target.closest("[data-change-page]");
+      var traceButton = event.target.closest("[data-change-msku]");
+      if (pageButton && !pageButton.disabled) { changePage = Number(pageButton.dataset.changePage); loadChanges(); }
+      if (traceButton) openChangeDrawer(traceButton.dataset.changeMsku);
+    });
+    elements.labelHubDrawerContent.addEventListener("click", function (event) {
+      var pageButton = event.target.closest("[data-change-page]");
+      var traceButton = event.target.closest("[data-change-msku]");
+      var layerTypeButton = event.target.closest("[data-layer-change-type]");
+      var transitionButton = event.target.closest("[data-layer-transition-type]");
+      if (pageButton && !pageButton.disabled) {
+        changePage = Number(pageButton.dataset.changePage);
+        if (activeLayerChangeContext) loadLayerChangeDetails(activeLayerChangeContext);
+        else loadChanges();
+      }
+      if (transitionButton && activeLayerChangeContext) {
+        activeLayerChangeContext.change_type = transitionButton.dataset.layerTransitionType || "all";
+        activeLayerChangeContext.transition_from = transitionButton.dataset.layerTransitionFrom || "";
+        activeLayerChangeContext.transition_to = transitionButton.dataset.layerTransitionTo || "";
+        changePage = 1;
+        loadLayerChangeDetails(activeLayerChangeContext);
+        return;
+      }
+      if (layerTypeButton && activeLayerChangeContext) {
+        activeLayerChangeContext.change_type = layerTypeButton.dataset.layerChangeType || "all";
+        activeLayerChangeContext.transition_from = "";
+        activeLayerChangeContext.transition_to = "";
+        changePage = 1;
+        loadLayerChangeDetails(activeLayerChangeContext);
+      }
+      if (traceButton) openChangeDrawer(traceButton.dataset.changeMsku);
+    });
+    elements.labelHubDrawerContent.addEventListener("change", function (event) {
+      if (event.target.matches("[data-drawer-transition-period]")) {
+        state.transition_period = event.target.value;
+        changePage = 1;
+        app.writeQueryState(state);
+        loadChanges();
+      }
+      if (event.target.matches("[data-drawer-change-type]")) {
+        state.change_type = event.target.value;
+        changePage = 1;
+        app.writeQueryState(state);
+        loadChanges();
+      }
+    });
     document.addEventListener("keydown", function (event) { if (event.key === "Escape") { closeDrawer(); closeRuleDrawer(); } });
   }
 
@@ -214,6 +276,8 @@
     elements.labelHubKeyword.value = state.keyword;
     elements.labelHubPageSize.value = String(normalizePageSize(state.page_size));
     elements.labelHubTableView.value = normalizeTableView(state.table_view);
+    elements.labelHubTransitionPeriod.innerHTML = optionList(meta.metric_periods || [], state.transition_period, "");
+    elements.labelHubChangeType.value = state.change_type;
     var category = categoryById(state.parent_label_id) || { children: [] };
     var periods = unique([].concat.apply([], (category.children || []).map(function (child) { return child.periods || []; })));
     elements.labelHubPeriodField.hidden = periods.length < 2;
@@ -269,6 +333,11 @@
       return parent + ":" + unique(value[parent]).sort(function (a, b) { return Number(a) - Number(b); }).join("|");
     }).join(";");
   }
+  function serializeConditionMap(value) {
+    return Object.keys(value).sort(function (a, b) { return Number(a) - Number(b); }).map(function (parent) {
+      return parent + ":" + unique(value[parent]).sort(function (a, b) { return Number(a) - Number(b); }).join("|");
+    }).join(";");
+  }
   function toggleCondition(parentId, childId) {
     var values = parsedConditions();
     var parent = String(parentId);
@@ -315,6 +384,9 @@
     state.problem = "all";
     state.label_period = "all";
     state.metric_period = meta.default_metric_period || "30d";
+    state.transition_period = state.metric_period;
+    state.change_type = "all";
+    changePage = 1;
     state.page = 1;
     populateControls();
     render();
@@ -339,7 +411,440 @@
       renderMatrix(payload);
       renderTable(payload);
       elements.labelHubHint.textContent = "当前大类：" + ((payload.rules || {}).label || "-");
+      loadChanges();
     }).catch(showError).then(function () { if (token === requestToken) setLoading(false); });
+  }
+
+  function buildChangeParams() {
+    var params = buildParams();
+    params.transition_period = state.transition_period || state.metric_period || "30d";
+    params.change_type = state.change_type || "all";
+    params.page = changePage;
+    params.page_size = 20;
+    params.sort_field = "change_type";
+    params.sort_dir = "asc";
+    return params;
+  }
+
+  function loadChanges() {
+    if (!meta || !elements.labelHubChangeContent) return;
+    var comparison = meta.comparison || {};
+    if (!comparison.available) {
+      elements.labelHubChangeScope.textContent = "当前远端仅有一个标签日期，暂无可比较的上次数据。";
+      elements.labelHubChangeContent.innerHTML = '<div class="empty-state compact">保留当前看板展示；远端出现第二个标签日期后将自动启用变化追踪。</div>';
+      elements.labelHubChangeBrief.innerHTML = '<span>较上期变化</span><strong>暂无可比较数据</strong>';
+      return;
+    }
+    var token = ++changeRequestToken;
+    elements.labelHubChangeContent.classList.add("is-loading");
+    elements.labelHubChangeContent.innerHTML = '<div class="empty-state compact">正在核对两日标签与联动条件…</div>';
+    elements.labelHubChangeBrief.innerHTML = '<span>较上期变化</span><strong>正在核对各层级变化…</strong>';
+    app.apiGet("/api/label-hub/changes", buildChangeParams()).then(function (payload) {
+      if (token !== changeRequestToken) return;
+      lastChanges = payload;
+      renderChanges(payload);
+      applyChildChangeBadges(payload);
+      if (lastPayload) renderBreakdowns(lastPayload);
+      refreshChangeDetailsDrawer();
+    }).catch(function (error) {
+      if (token !== changeRequestToken) return;
+      elements.labelHubChangeScope.textContent = "当前看板不受影响";
+      elements.labelHubChangeContent.innerHTML = '<div class="empty-state compact">变化数据加载失败：' + app.escapeHtml((error && error.message) || "请稍后重试") + "</div>";
+      elements.labelHubChangeBrief.innerHTML = '<span>较上期变化</span><strong>变化数据暂不可用</strong>';
+    }).then(function () {
+      if (token === changeRequestToken) elements.labelHubChangeContent.classList.remove("is-loading");
+    });
+  }
+
+  function deltaText(value) {
+    var number = Number(value || 0);
+    return (number > 0 ? "+" : "") + formatNumber(number);
+  }
+
+  function deltaBadge(value, label) {
+    var number = Number(value || 0);
+    var tone = number > 0 ? "up" : (number < 0 ? "down" : "flat");
+    return '<span class="label-hub-delta is-' + tone + '" title="' + app.escapeHtml(label || "较上次") + '">' + app.escapeHtml(label || "较上次") + " " + deltaText(number) + "</span>";
+  }
+
+  function applyChildChangeBadges(payload) {
+    Array.from(document.querySelectorAll(".label-hub-child-delta[data-change-injected]")).forEach(function (node) { node.remove(); });
+    (payload.overview_deltas || []).forEach(function (parent) {
+      (parent.children || []).forEach(function (child) {
+        var childButton = document.querySelector('[data-overview-child="' + child.id + '"][data-parent-id="' + parent.id + '"]');
+        var share = childButton && childButton.querySelector(":scope > span > small");
+        if (!share) return;
+        var badge = document.createElement("i");
+        var value = Number(child.delta || 0);
+        badge.className = "label-hub-child-delta is-" + (value > 0 ? "up" : (value < 0 ? "down" : "flat"));
+        badge.dataset.changeInjected = "1";
+        badge.textContent = "较上期 " + deltaText(value);
+        share.appendChild(badge);
+      });
+    });
+  }
+
+  function breakdownDeltaIndex(payload) {
+    var index = {};
+    ((payload || {}).breakdown_deltas || []).forEach(function (panel) {
+      (panel.buckets || []).forEach(function (bucket) {
+        index[[panel.source || "", panel.key || "", Number(panel.parent_id || 0), String(bucket.key || "")].join("|")] = bucket;
+      });
+    });
+    return index;
+  }
+
+  function renderLayerDelta(panel, bucket) {
+    if (!lastChanges || !lastChanges.available) return "";
+    var index = breakdownDeltaIndex(lastChanges);
+    var key = [panel.source || "", panel.key || "", Number(panel.parent_id || 0), String(bucket.id || bucket.key || "")].join("|");
+    var item = index[key];
+    if (!item) return "";
+    var value = Number(item.delta || 0);
+    var tone = value > 0 ? "up" : (value < 0 ? "down" : "flat");
+    var title = panel.label + " · " + bucket.label;
+    var period = panel.source === "remote_label" ? (panel.label_period || "all") : "";
+    return '<button type="button" class="label-hub-layer-delta is-' + tone + '"' +
+      ' data-layer-change-detail data-layer-change-source="' + app.escapeHtml(panel.source || "") + '"' +
+      ' data-layer-change-key="' + app.escapeHtml(panel.key || "") + '"' +
+      ' data-layer-change-parent="' + Number(panel.parent_id || 0) + '"' +
+      ' data-layer-change-bucket="' + app.escapeHtml(String(bucket.id || bucket.key || "")) + '"' +
+      ' data-layer-change-period="' + app.escapeHtml(period) + '"' +
+      ' data-layer-change-title="' + app.escapeHtml(title) + '"' +
+      ' title="查看 ' + app.escapeHtml(title) + ' 的上期变化明细">较上期 ' + deltaText(value) + '<span>明细</span></button>';
+  }
+
+  function renderChangeBrief(payload) {
+    var scope = payload.scope || {};
+    var summary = payload.summary || {};
+    var changed = Number(summary.changed || 0);
+    var reason = (payload.sales_role_reasons || []).find(function (item) { return Number(item.count || 0) > 0; });
+    var headline = changed
+      ? formatNumber(changed) + " 个 MSKU 标签发生流转"
+      : "当前群体标签结构保持稳定";
+    var detail = "新增 " + formatNumber(summary.added) + " · 减少 " + formatNumber(summary.removed);
+    if (reason) detail += " · 主要原因：" + reason.label;
+    elements.labelHubChangeBrief.innerHTML = '<span>' + app.escapeHtml(scope.comparison_label || "较上期") + '</span><strong>' + app.escapeHtml(headline) + '</strong><small>' + app.escapeHtml(detail) + '</small>';
+  }
+
+  function renderRankList(title, items, emptyText) {
+    var maximum = Math.max.apply(null, [1].concat((items || []).map(function (item) { return Number(item.count || 0); })));
+    var rows = (items || []).slice(0, 6).map(function (item) {
+      return '<li><div><span>' + app.escapeHtml(item.label) + '</span><strong>' + formatNumber(item.count) + '</strong></div><i style="width:' + Math.round(Number(item.count || 0) / maximum * 100) + '%"></i></li>';
+    }).join("");
+    return '<article class="label-hub-change-rank"><h3>' + app.escapeHtml(title) + '</h3>' + (rows ? '<ol>' + rows + '</ol>' : '<div class="empty-state compact">' + app.escapeHtml(emptyText) + '</div>') + '</article>';
+  }
+
+  function renderTransitionMatrix(matrix) {
+    var rows = matrix.rows || [];
+    var columns = matrix.columns || [];
+    var cellMap = {};
+    (matrix.cells || []).forEach(function (cell) { cellMap[cell.row + "\u0000" + cell.column] = Number(cell.count || 0); });
+    var maximum = Math.max.apply(null, [1].concat((matrix.cells || []).map(function (cell) { return Number(cell.count || 0); })));
+    if (!rows.length || !columns.length) return '<div class="empty-state compact">当前周期暂无标签流转。</div>';
+    return '<div class="label-hub-change-matrix-wrap"><table><thead><tr><th>上次 ＼ 今日</th>' + columns.map(function (item) { return '<th>' + app.escapeHtml(item.label) + '</th>'; }).join("") + '</tr></thead><tbody>' + rows.map(function (row) {
+      return '<tr><th>' + app.escapeHtml(row.label) + '</th>' + columns.map(function (column) { var count = cellMap[row.key + "\u0000" + column.key] || 0; var alpha = count ? (0.08 + count / maximum * 0.42) : 0.03; return '<td style="--cell-alpha:' + alpha.toFixed(2) + '"><strong>' + formatNumber(count) + '</strong></td>'; }).join("") + '</tr>';
+    }).join("") + '</tbody></table></div>';
+  }
+
+  function renderChangeSankeyShell(payload) {
+    var matrix = payload.transition_matrix || {};
+    var hasFlow = (matrix.cells || []).some(function (cell) { return Number(cell.count || 0) > 0; });
+    return '<section class="label-hub-change-sankey-card"><header><div><span>标签流向</span><h3>上次标签 → 今日标签</h3></div><small>线条越宽，流转的 MSKU 越多；悬停可查看具体数量</small></header>' +
+      (hasFlow ? '<div class="label-hub-change-sankey" data-change-sankey role="img" aria-label="上次标签到今日标签的 MSKU 流向图"></div>' : '<div class="empty-state compact">当前筛选下暂无可展示的标签流向。</div>') +
+      '</section>';
+  }
+
+  function renderChangeSankeys(payload, root) {
+    var scope = root || document;
+    var hosts = scope.querySelectorAll ? scope.querySelectorAll("[data-change-sankey]") : [];
+    if (!hosts.length || !window.echarts) return;
+    var matrix = payload.transition_matrix || {};
+    var rows = matrix.rows || [];
+    var columns = matrix.columns || [];
+    var cells = (matrix.cells || []).filter(function (cell) { return Number(cell.count || 0) > 0; });
+    var labelOrder = [];
+    rows.concat(columns).forEach(function (item) {
+      if (labelOrder.indexOf(item.label) < 0) labelOrder.push(item.label);
+    });
+    var colorFor = function (label) {
+      var index = Math.max(0, labelOrder.indexOf(label));
+      return REMOTE_BUCKET_COLORS[index % REMOTE_BUCKET_COLORS.length];
+    };
+    var outgoing = {};
+    var incoming = {};
+    cells.forEach(function (cell) {
+      outgoing[cell.row] = (outgoing[cell.row] || 0) + Number(cell.count || 0);
+      incoming[cell.column] = (incoming[cell.column] || 0) + Number(cell.count || 0);
+    });
+    var nodes = [];
+    rows.forEach(function (item) {
+      if (!outgoing[item.key]) return;
+      nodes.push({
+        name: "previous::" + item.key,
+        displayLabel: item.label,
+        value: outgoing[item.key],
+        itemStyle: { color: colorFor(item.label), borderColor: "#ffffff", borderWidth: 1 }
+      });
+    });
+    columns.forEach(function (item) {
+      if (!incoming[item.key]) return;
+      nodes.push({
+        name: "current::" + item.key,
+        displayLabel: item.label,
+        value: incoming[item.key],
+        itemStyle: { color: colorFor(item.label), borderColor: "#ffffff", borderWidth: 1 }
+      });
+    });
+    var links = cells.map(function (cell) {
+      return {
+        source: "previous::" + cell.row,
+        target: "current::" + cell.column,
+        value: Number(cell.count || 0),
+        previousLabel: cell.row,
+        currentLabel: cell.column
+      };
+    });
+    hosts.forEach(function (host) {
+      if (!host.clientWidth) return;
+      if (host.__labelHubSankey) host.__labelHubSankey.dispose();
+      var chart = window.echarts.init(host, null, { renderer: "canvas" });
+      host.__labelHubSankey = chart;
+      chart.setOption({
+        animationDuration: 350,
+        aria: { enabled: true, decal: { show: false } },
+        tooltip: {
+          trigger: "item",
+          confine: true,
+          borderColor: "#cbd9e8",
+          backgroundColor: "rgba(255,255,255,.97)",
+          textStyle: { color: "#173653", fontSize: 12 },
+          formatter: function (params) {
+            if (params.dataType === "edge") {
+              return app.escapeHtml(params.data.previousLabel) + " → " + app.escapeHtml(params.data.currentLabel) + "<br><b>" + formatNumber(params.value) + " MSKU</b>";
+            }
+            return app.escapeHtml(params.data.displayLabel || "") + "<br><b>" + formatNumber(params.value) + " MSKU</b>";
+          }
+        },
+        series: [{
+          type: "sankey",
+          left: 108,
+          right: 108,
+          top: 24,
+          bottom: 24,
+          nodeWidth: 12,
+          nodeGap: 16,
+          nodeAlign: "justify",
+          layoutIterations: 32,
+          draggable: false,
+          emphasis: { focus: "adjacency" },
+          data: nodes,
+          links: links,
+          label: {
+            color: "#173653",
+            fontSize: 12,
+            lineHeight: 17,
+            formatter: function (params) {
+              return (params.data.displayLabel || "") + "\n" + formatNumber(params.value);
+            }
+          },
+          lineStyle: { color: "gradient", curveness: 0.48, opacity: 0.3 },
+          itemStyle: { borderRadius: 2 }
+        }]
+      });
+    });
+  }
+
+  function scheduleChangeSankeyRender(payload, root) {
+    window.requestAnimationFrame(function () { renderChangeSankeys(payload, root); });
+  }
+
+  function disposeChangeSankeys(root) {
+    if (!root || !root.querySelectorAll) return;
+    root.querySelectorAll("[data-change-sankey]").forEach(function (host) {
+      if (host.__labelHubSankey) {
+        host.__labelHubSankey.dispose();
+        host.__labelHubSankey = null;
+      }
+    });
+  }
+
+  function renderReasonList(items) {
+    var total = (items || []).reduce(function (sum, item) { return sum + Number(item.count || 0); }, 0);
+    return '<div class="label-hub-change-reasons">' + (items || []).map(function (item) {
+      var share = total ? Number(item.count || 0) / total : 0;
+      return '<div><span>' + app.escapeHtml(item.label) + '</span><strong>' + formatNumber(item.count) + '</strong><i style="width:' + Math.round(share * 100) + '%"></i></div>';
+    }).join("") + '</div>';
+  }
+
+  function flowLabel(value) {
+    return String(value || "未命中") === "未命中" ? "未命中该层" : String(value || "未命中");
+  }
+
+  function renderFlowBridge(payload) {
+    var matrix = payload.transition_matrix || {};
+    var cells = (matrix.cells || []).map(function (cell) {
+      return { previous: cell.row, current: cell.column, count: Number(cell.count || 0) };
+    });
+    var stable = cells.filter(function (item) { return item.previous === item.current; }).reduce(function (sum, item) { return sum + item.count; }, 0);
+    var flows = cells.filter(function (item) { return item.previous !== item.current && item.count > 0; }).sort(function (a, b) { return b.count - a.count; }).slice(0, 6);
+    var flowRows = flows.map(function (item) {
+      var intoLayer = item.previous === "未命中";
+      var outOfLayer = item.current === "未命中";
+      var tone = intoLayer ? "in" : (outOfLayer ? "out" : "shift");
+      return '<li class="is-' + tone + '"><span class="label-hub-flow-label">' + app.escapeHtml(flowLabel(item.previous)) + '</span><i>→</i><span class="label-hub-flow-label">' + app.escapeHtml(flowLabel(item.current)) + '</span><strong>' + formatNumber(item.count) + '</strong></li>';
+    }).join("");
+    return '<section class="label-hub-flow-board"><header><div><span>标签流转</span><h3>主要流转路径</h3></div><small>优先展示实际切换；稳定标签单独汇总</small></header><div class="label-hub-flow-stats"><span><b>' + formatNumber(stable) + '</b> 保持原标签</span><span><b>' + formatNumber(flows.reduce(function (sum, item) { return sum + item.count; }, 0)) + '</b> 发生主要流转</span></div>' + (flowRows ? '<ol>' + flowRows + '</ol>' : '<div class="empty-state compact">本期没有标签切换，群体结构保持稳定。</div>') + '</section>';
+  }
+
+  function renderAuditSignals(payload, context) {
+    var summary = payload.summary || {};
+    var reasons = payload.sales_role_reasons || [];
+    var reasonCounts = {};
+    reasons.forEach(function (item) { reasonCounts[item.key] = Number(item.count || 0); });
+    var evidencePending = Number(reasonCounts.evidence_missing || 0) + Number(reasonCounts.evidence_mismatch || 0);
+    var parentIsSalesRole = Number((context || {}).parent || 0) === 1 || String((context || {}).title || "").indexOf("销售角色") >= 0;
+    var items = parentIsSalesRole
+      ? [
+        { label: "日销跨线", count: reasonCounts.daily_cross || 0, tone: "attention" },
+        { label: "毛利率跨线", count: reasonCounts.margin_cross || 0, tone: "attention" },
+        { label: "日销与毛利率同时跨线", count: reasonCounts.both_cross || 0, tone: "risk" },
+        { label: "规则证据待确认", count: evidencePending, tone: evidencePending ? "risk" : "healthy" }
+      ]
+      : [
+        { label: "转入当前层", count: summary.added || 0, tone: "healthy" },
+        { label: "转出当前层", count: summary.removed || 0, tone: "risk" },
+        { label: "标签发生切换", count: summary.changed || 0, tone: "attention" },
+        { label: "规则证据待确认", count: evidencePending, tone: evidencePending ? "attention" : "healthy" }
+      ];
+    return '<aside class="label-hub-change-audit"><header><div><span>' + (parentIsSalesRole ? "销售角色原因" : "变化信号") + '</span><h3>' + (parentIsSalesRole ? "为什么发生变化" : "优先关注什么") + '</h3></div><small>' + (parentIsSalesRole ? "仅在证据匹配时可确认规则原因" : "非销售角色仅展示事实流转与证据状态") + '</small></header><div>' + items.map(function (item) { return '<article class="is-' + item.tone + '"><span>' + app.escapeHtml(item.label) + '</span><strong>' + formatNumber(item.count) + '</strong></article>'; }).join("") + '</div></aside>';
+  }
+
+  function changeLayerLabel(context) {
+    var title = String((context || {}).title || "当前层");
+    var parts = title.split(" · ");
+    if (title !== "当前层") return parts[parts.length - 1] || title;
+    var parent = categoryById(state.parent_label_id);
+    return (parent && parent.label) || title;
+  }
+
+  function renderChangeConclusion(payload, context) {
+    var summary = payload.summary || {};
+    var net = Number(summary.net || 0);
+    var layerLabel = changeLayerLabel(context);
+    var tone = net < 0 ? "improved" : (net > 0 ? "worsened" : "flat");
+    var netText = net < 0 ? "净减少 " + formatNumber(Math.abs(net)) : (net > 0 ? "净增加 " + formatNumber(net) : "数量持平");
+    return '<section class="label-hub-change-conclusion"><div><span>' + app.escapeHtml(layerLabel) + '</span><strong>' + formatNumber(summary.previous) + '<i>→</i>' + formatNumber(summary.current) + '</strong></div><b class="is-' + tone + '">' + netText + '</b></section>';
+  }
+
+  function renderLayerChangeLedger(payload, context) {
+    var summary = payload.summary || {};
+    var net = Number(summary.net || 0);
+    var netText = net > 0 ? "净增加 " + formatNumber(net) : (net < 0 ? "净减少 " + formatNumber(Math.abs(net)) : "数量持平");
+    var labels = (context.combination_labels || [changeLayerLabel(context)]).map(function (label) {
+      return '<b>' + app.escapeHtml(label) + '</b>';
+    }).join('<i>+</i>');
+    return '<section class="label-hub-layer-ledger">' +
+      '<header><div><span>当前组合变化账</span><h3>本次组合命中变化</h3></div><p>上次命中组合 + 本期进入 − 本期离开 = 今日命中组合</p></header>' +
+      '<div class="label-hub-change-combination"><span>当前组合</span><div>' + labels + '</div></div>' +
+      '<div class="label-hub-layer-ledger-row">' +
+        '<div><span>上次命中组合</span><strong>' + formatNumber(summary.previous) + '</strong></div><i>+</i>' +
+        '<div><span>本期进入</span><strong>' + formatNumber(summary.added) + '</strong></div><i>−</i>' +
+        '<div><span>本期离开</span><strong>' + formatNumber(summary.removed) + '</strong></div><i>=</i>' +
+        '<div class="is-current"><span>今日命中组合</span><strong>' + formatNumber(summary.current) + '</strong></div>' +
+        '<b class="is-' + (net > 0 ? "up" : (net < 0 ? "down" : "flat")) + '">' + netText + '</b>' +
+      '</div></section>';
+  }
+
+  function renderLayerTransitionSummary(payload) {
+    var transitions = payload.layer_transitions || {};
+    function renderSide(items, direction, title) {
+      var allRows = items || [];
+      var rows = allRows;
+      if (!rows.length) return '<section class="label-hub-layer-transition-side"><header><span>' + title + '</span><small>本期无记录</small></header><p>没有 MSKU 在本期发生这类变化。</p></section>';
+      var total = allRows.reduce(function (sum, item) { return sum + Number(item.count || 0); }, 0);
+      return '<section class="label-hub-layer-transition-side"><header><span>' + title + '</span><small>共 ' + formatNumber(total) + ' MSKU</small></header><div>' + rows.map(function (item) {
+        return '<button type="button" data-layer-transition-type="' + direction + '" data-layer-transition-from="' + app.escapeHtml(item.previous_label || "无标签事实") + '" data-layer-transition-to="' + app.escapeHtml(item.current_label || "无标签事实") + '"><span>' + app.escapeHtml(item.previous_label || "无标签事实") + '</span><i>→</i><strong>' + app.escapeHtml(item.current_label || "无标签事实") + '</strong><b>' + formatNumber(item.count) + '</b></button>';
+      }).join('') + '</div></section>';
+    }
+    return '<section class="label-hub-layer-transition-summary"><header><div><span>本层标签变化汇总</span><h3>从哪里进入，去了哪里</h3></div><small>仅统计当前组合中本期进入或离开的 MSKU；点击一行查看对应明细。</small></header><div class="label-hub-layer-transition-grid">' +
+      renderSide(transitions.entered, "added", "进入来源") + renderSide(transitions.left, "removed", "离开去向") +
+      '</div></section>';
+  }
+
+  function renderLayerChangeFilters(payload, selectedType) {
+    var summary = payload.summary || {};
+    var items = [
+      ["added", "查看进入", summary.added || 0],
+      ["removed", "查看离开", summary.removed || 0]
+    ];
+    return '<div class="label-hub-change-filter-tabs" role="group" aria-label="变化明细筛选">' + items.map(function (item) {
+      return '<button type="button" class="' + (selectedType === item[0] ? "active" : "") + '" data-layer-change-type="' + item[0] + '" aria-pressed="' + (selectedType === item[0]) + '">' + item[1] + ' <b>' + formatNumber(item[2]) + '</b></button>';
+    }).join("") + '</div>';
+  }
+
+  function renderChangeList(payload, context) {
+    var isLayerDetail = Boolean(context);
+    var layerLabel = isLayerDetail ? changeLayerLabel(context) : "";
+    var conditionStateHtml = function (conditions) {
+      if (!conditions || !conditions.length) return '<span class="label-hub-change-condition-empty">无额外条件</span>';
+      var inCombination = conditions.every(function (condition) { return Boolean(condition.matched); });
+      return '<div class="label-hub-change-condition-list"><span class="label-hub-change-combination-state ' + (inCombination ? "is-in" : "is-out") + '">' + (inCombination ? "已进入组合" : "未进入组合") + '</span>' + conditions.map(function (condition) {
+        var state = condition.matched ? "is-matched" : "is-unmatched";
+        return '<div class="label-hub-change-condition ' + state + '">' +
+          '<span>' + app.escapeHtml(condition.dimension || "条件") + '</span>' +
+          '<strong>' + app.escapeHtml(condition.value || "无标签事实") + '</strong>' +
+          '<em>' + (condition.matched ? "满足" : "未满足") + '</em>' +
+        '</div>';
+      }).join("") + '</div>';
+    };
+    var rows = (payload.rows || []).map(function (row) {
+      var typeLabel = { added: "转入", removed: "转出", changed: "标签切换", unchanged: "保持" }[row.change_type] || row.change_type_label;
+      var previousValue = row.previous_label || "未命中";
+      var currentValue = row.current_label || "未命中";
+      if (isLayerDetail) {
+        var metric = row.metric_profile || {};
+        var profitClass = Number(metric.order_gross_profit || 0) < 0 ? ' is-negative' : '';
+        var metricProfile = '<div class="label-hub-change-metric-stack"><span>' + app.escapeHtml(metric.sales_trend || "暂无数据") + ' · ' + app.escapeHtml(metric.daily_sales_band || "暂无数据") + '</span><span>' + app.escapeHtml(metric.margin_band || "暂无数据") + '</span></div>';
+        var performance = '<div class="label-hub-change-metric-stack"><strong>' + app.formatCompactCurrency(metric.sales_amount || 0) + '</strong><span class="' + profitClass + '">毛利 ' + app.formatCompactCurrency(metric.order_gross_profit || 0) + ' · ' + formatPercent(metric.order_gross_margin || 0) + '</span></div>';
+        var scope = '<div class="label-hub-change-scope"><span title="' + app.escapeHtml(row.previous_unit_scope || "无标签事实") + '">上 ' + app.escapeHtml(row.previous_unit_scope || "无标签事实") + '</span><span title="' + app.escapeHtml(row.current_unit_scope || "无标签事实") + '">今 ' + app.escapeHtml(row.current_unit_scope || "无标签事实") + '</span></div>';
+        return '<tr><td><button type="button" class="text-button label-hub-change-msku" data-change-msku="' + app.escapeHtml(row.msku) + '">' + app.escapeHtml(row.msku) + '</button></td><td>' + conditionStateHtml(row.previous_combination_conditions) + '</td><td>' + conditionStateHtml(row.current_combination_conditions) + '</td><td>' + app.escapeHtml(row.previous_layer_label || "未命中") + '</td><td>' + app.escapeHtml(row.current_layer_label || "未命中") + '</td><td>' + scope + '</td><td>' + metricProfile + '</td><td>' + performance + '</td><td><span class="label-hub-change-status">' + app.escapeHtml(metric.data_status || "暂无经营数据") + '</span></td><td>' + app.escapeHtml(row.fact_status || "标签事实可比") + '</td><td>' + formatNumber(row.business_unit_count) + '</td></tr>';
+      }
+      return '<tr><td><button type="button" class="text-button label-hub-change-msku" data-change-msku="' + app.escapeHtml(row.msku) + '">' + app.escapeHtml(row.msku) + '</button></td><td>' + app.escapeHtml(previousValue) + '</td><td>' + app.escapeHtml(currentValue) + '</td><td><span class="label-hub-change-type is-' + app.escapeHtml(row.change_type) + '">' + app.escapeHtml(typeLabel) + '</span></td><td>' + formatNumber(row.business_unit_count) + '</td></tr>';
+    }).join("");
+    var pagination = '<div class="label-hub-change-pagination"><span>第 ' + payload.page + " / " + payload.total_pages + ' 页，共 ' + formatNumber(payload.total) + ' 个 MSKU</span><div><button type="button" data-change-page="' + (payload.page - 1) + '"' + (payload.page <= 1 ? " disabled" : "") + '>上一页</button><button type="button" data-change-page="' + (payload.page + 1) + '"' + (payload.page >= payload.total_pages ? " disabled" : "") + '>下一页</button></div></div>';
+    if (isLayerDetail) {
+      return '<div class="label-hub-change-table-wrap"><table><thead><tr><th>MSKU</th><th>上次组合条件</th><th>今日组合条件</th><th>上次同维度标签</th><th>今日同维度标签</th><th>经营范围（上 / 今）</th><th>今日经营分层</th><th>今日经营表现</th><th>本地指标</th><th>标签事实状态</th><th>经营单元</th></tr></thead><tbody>' + (rows || '<tr><td colspan="11"><div class="empty-state compact">当前组合下没有变化 MSKU。</div></td></tr>') + '</tbody></table></div>' + pagination;
+    }
+    return '<div class="label-hub-change-table-wrap"><table><thead><tr><th>MSKU</th><th>上次标签</th><th>今日标签</th><th>变化方向</th><th>经营单元</th></tr></thead><tbody>' + (rows || '<tr><td colspan="5"><div class="empty-state compact">当前筛选下没有变化 MSKU。</div></td></tr>') + '</tbody></table></div>' + pagination;
+  }
+
+  function renderChangeRows(payload) {
+    var rows = (payload.rows || []).map(function (row) {
+      var reason = row.sales_role_reason || "仅记录标签事实流转";
+      return '<tr><td><button type="button" class="text-button label-hub-change-msku" data-change-msku="' + app.escapeHtml(row.msku) + '">' + app.escapeHtml(row.msku) + '</button></td><td>' + app.escapeHtml(row.previous_label || "未命中") + '</td><td>' + app.escapeHtml(row.current_label || "未命中") + '</td><td><span class="label-hub-change-type is-' + app.escapeHtml(row.change_type) + '">' + app.escapeHtml(row.change_type_label) + '</span></td><td>' + app.escapeHtml((row.trigger_dimensions || []).join(" / ") || "无标签维度变化") + '</td><td>' + (row.previous_matched ? "是" : "否") + '</td><td>' + (row.current_matched ? "是" : "否") + '</td><td>' + formatNumber(row.business_unit_count) + '</td><td title="' + app.escapeHtml(reason) + '">' + app.escapeHtml(reason) + '</td></tr>';
+    }).join("");
+    var pagination = '<div class="label-hub-change-pagination"><span>第 ' + payload.page + " / " + payload.total_pages + ' 页，共 ' + formatNumber(payload.total) + ' 个 MSKU</span><div><button type="button" data-change-page="' + (payload.page - 1) + '"' + (payload.page <= 1 ? " disabled" : "") + '>上一页</button><button type="button" data-change-page="' + (payload.page + 1) + '"' + (payload.page >= payload.total_pages ? " disabled" : "") + '>下一页</button></div></div>';
+    return '<div class="label-hub-change-table-wrap"><table><thead><tr><th>MSKU</th><th>上次主标签</th><th>今日主标签</th><th>变化类型</th><th>触发维度</th><th>上次满足</th><th>今日满足</th><th>经营单元</th><th>销售角色原因摘要</th></tr></thead><tbody>' + (rows || '<tr><td colspan="9"><div class="empty-state compact">当前变化类型下没有 MSKU。</div></td></tr>') + '</tbody></table></div>' + pagination;
+  }
+
+  function changeContentHtml(payload, context) {
+    if (!payload.available) return '<div class="empty-state compact">暂无可比较的上次标签数据。</div>';
+    return (context ? renderLayerChangeLedger(payload, context) + renderLayerTransitionSummary(payload) : renderChangeConclusion(payload, context)) +
+      '<article class="label-hub-change-detail"><header><div><span>变化 MSKU 明细</span><h3>' + (context ? '仅查看进入或离开当前组合的 MSKU' : '仅查看发生标签变化的 MSKU') + '</h3></div><small>点击 MSKU 查看两日标签画像</small></header>' +
+      (context ? renderLayerChangeFilters(payload, context.change_type || "all") : "") + renderChangeList(payload, context) + '</article>';
+  }
+
+  function renderChanges(payload) {
+    if (!payload.available) {
+      elements.labelHubChangeContent.innerHTML = changeContentHtml(payload);
+      return;
+    }
+    var scope = payload.scope || {};
+    var gapText = Number(scope.gap_days || 0) === 1 ? "相邻两次数据" : "间隔 " + formatNumber(scope.gap_days) + " 天";
+    elements.labelHubChangeScope.textContent = (scope.comparison_label || "较上次数据") + "：" + scope.previous_date + " → " + scope.current_date + " · " + gapText + " · " + String(scope.transition_period || "30d").replace("d", "天") + "同周期比较";
+    renderChangeBrief(payload);
+    elements.labelHubChangeContent.innerHTML = changeContentHtml(payload);
   }
 
   function setLoading(active) {
@@ -498,7 +1003,7 @@
           : 'data-label-parent="' + panel.parent_id + '" data-label-child="' + (bucket.id || bucket.key) + '"';
         var label = String(bucket.key) === "missing" ? "未匹配经营快照" : bucket.label;
         var detail = String(bucket.key) === "missing" ? "当前归属键无快照" : breakdownDetail(bucket);
-        return '<button type="button" class="label-hub-bar tone-' + tone + (selected ? " selected" : "") + '" ' + attributes + bucketColorStyle + ' data-negative="' + (Number(bucket.order_gross_profit || 0) < 0) + '" aria-pressed="' + selected + '"><span class="label-hub-bar-label"><b>' + app.escapeHtml(label) + (String(bucket.key) === "missing" ? '<i class="label-hub-info" title="标签归属键在当前经营周期内没有对应快照">i</i>' : "") + '</b><small>' + app.escapeHtml(detail) + '</small></span><strong>' + formatMeasure(bucket) + '</strong><small class="label-hub-bar-profit">' + auxiliaryMeasure(bucket) + "</small></button>";
+        return '<div class="label-hub-bar tone-' + tone + (selected ? " selected" : "") + '"' + bucketColorStyle + ' data-negative="' + (Number(bucket.order_gross_profit || 0) < 0) + '><button type="button" class="label-hub-bar-filter" ' + attributes + ' aria-pressed="' + selected + '"><span class="label-hub-bar-label"><b>' + app.escapeHtml(label) + (String(bucket.key) === "missing" ? '<i class="label-hub-info" title="标签归属键在当前经营周期内没有对应快照">i</i>' : "") + '</b><small>' + app.escapeHtml(detail) + '</small></span></button><div class="label-hub-bar-value"><strong>' + formatMeasure(bucket) + '</strong>' + renderLayerDelta(panel, bucket) + '</div><small class="label-hub-bar-profit">' + auxiliaryMeasure(bucket) + "</small></div>";
       }).join("");
       var ruleDetails = (panel.rules || []).length
         ? '<details class="label-hub-breakdown-rules"><summary>查看趋势划分规则</summary><p>' + app.escapeHtml(panel.description || "") + '</p><dl>' + panel.rules.map(function (rule) { return '<div><dt>' + app.escapeHtml(rule.label) + '</dt><dd>' + app.escapeHtml(rule.rule) + "</dd></div>"; }).join("") + "</dl></details>"
@@ -836,6 +1341,7 @@
   }
 
   function openDrawer(row) {
+    setDrawerMode("profile");
     elements.labelHubDrawer.hidden = false;
     elements.labelHubDrawerContent.innerHTML = '<div class="empty-state compact">正在加载 MSKU 画像…</div>';
     app.apiGet("/api/label-hub/msku", { data_date: state.data_date, metric_period: state.metric_period, country_category: row.country_category, store: row.store, msku: row.msku }).then(function (profile) {
@@ -855,7 +1361,180 @@
     }).catch(function (error) { elements.labelHubDrawerContent.innerHTML = '<div class="empty-state compact">画像加载失败：' + app.escapeHtml((error && error.message) || "请稍后重试") + "</div>"; });
   }
 
-  function closeDrawer() { elements.labelHubDrawer.hidden = true; }
+  function renderChangeDay(day, title) {
+    var units = day.units || [];
+    return '<article class="label-hub-trace-day"><header><span>' + app.escapeHtml(title) + '</span><strong>' + app.escapeHtml(day.data_date || "--") + '</strong><small>' + formatNumber(units.length) + ' 个经营单元</small></header><div>' + (units.map(function (unit) {
+      var labels = (unit.labels || []).map(function (item) { return '<span><b>' + app.escapeHtml(item.parent_label) + '</b>' + app.escapeHtml(item.label) + '<i>' + app.escapeHtml(item.period || "无周期") + '</i></span>'; }).join("");
+      return '<section><p>' + app.escapeHtml(unit.country_category) + ' · ' + app.escapeHtml(unit.store) + '</p><div>' + labels + '</div></section>';
+    }).join("") || '<div class="empty-state compact">该日无标签事实</div>') + '</div></article>';
+  }
+
+  function renderEvidenceRows(rows) {
+    if (!rows.length) return '<div class="label-hub-evidence-state is-missing"><strong>规则证据待同步</strong><span>当前只展示远端标签事实流转，不推断销售角色变化原因。</span></div>';
+    return '<div class="label-hub-evidence-list">' + rows.map(function (row) {
+      var status = String(row.evidence_status || "missing");
+      var statusLabel = { matched: "证据一致", mismatch: "重算不一致", missing: "证据缺失" }[status] || status;
+      var margin = row.tag_gross_margin === null || row.tag_gross_margin === undefined ? "暂无" : formatPercent(row.tag_gross_margin);
+      return '<article class="is-' + app.escapeHtml(status) + '"><header><span>' + app.escapeHtml(String(row.label_date || "")) + ' · ' + app.escapeHtml(row.label_period || "") + '</span><strong>' + app.escapeHtml(statusLabel) + '</strong></header><p>' + app.escapeHtml(row.country_category || "") + ' · ' + app.escapeHtml(row.store || "") + '</p><div><span>日销 <b>' + (row.daily_sales === null || row.daily_sales === undefined ? "暂无" : formatNumber(row.daily_sales)) + '</b></span><span>打标毛利率 <b>' + margin + '</b></span><span>本地重算 <b>' + app.escapeHtml(String(row.computed_sub_label_id || "暂无")) + '</b></span><span>远端事实 <b>' + app.escapeHtml(String(row.remote_sub_label_id || "暂无")) + '</b></span></div></article>';
+    }).join("") + '</div>';
+  }
+
+  function renderDrawerChange(profile) {
+    var scope = profile.scope || {};
+    return '<div class="label-hub-trace-scope"><span>' + app.escapeHtml(scope.previous_date || "--") + '</span><i>→</i><span>' + app.escapeHtml(scope.current_date || "--") + '</span><em>' + app.escapeHtml(String(scope.transition_period || "30d").replace("d", "天")) + '</em></div><div class="label-hub-trace-days">' + renderChangeDay(profile.previous || {}, "上次") + renderChangeDay(profile.current || {}, "今日") + '</div><div class="label-hub-trace-evidence"><h4>销售角色规则证据</h4>' + renderEvidenceRows(profile.sales_role_evidence || []) + '</div>';
+  }
+
+  function loadDrawerChange(msku) {
+    var target = document.getElementById("labelHubDrawerChange");
+    if (!target) return;
+    app.apiGet("/api/label-hub/msku-change", { msku: msku, transition_period: state.transition_period || state.metric_period || "30d" }).then(function (profile) {
+      if (!document.getElementById("labelHubDrawerChange")) return;
+      target.innerHTML = '<h3>上次 → 今日</h3>' + renderDrawerChange(profile);
+    }).catch(function (error) {
+      target.innerHTML = '<h3>上次 → 今日</h3><div class="empty-state compact">变化追溯暂不可用：' + app.escapeHtml((error && error.message) || "请稍后重试") + '</div>';
+    });
+  }
+
+  function openChangeDrawer(msku) {
+    setDrawerMode("trace");
+    elements.labelHubDrawer.hidden = false;
+    elements.labelHubDrawerContent.innerHTML = '<div class="label-hub-drawer-head"><p class="section-kicker">标签变化追溯</p><h2 id="labelHubDrawerTitle">' + app.escapeHtml(msku) + '</h2><p>按去重 MSKU 汇总，经营单元保留完整追溯</p></div><section id="labelHubDrawerChange" class="label-hub-drawer-change"><div class="empty-state compact">正在加载两日标签与规则证据…</div></section>';
+    loadDrawerChange(msku);
+  }
+
+  function drawerOptionList(select, selectedValue) {
+    return Array.from((select && select.options) || []).map(function (option) {
+      return '<option value="' + app.escapeHtml(option.value) + '"' + (String(option.value) === String(selectedValue) ? " selected" : "") + '>' + app.escapeHtml(option.textContent) + '</option>';
+    }).join("");
+  }
+
+  function setDrawerMode(mode) {
+    elements.labelHubDrawer.dataset.drawerMode = mode;
+    var card = elements.labelHubDrawer.querySelector(".label-hub-drawer-card");
+    if (card) card.classList.toggle("label-hub-change-detail-drawer", mode === "changes" || mode === "layer-changes");
+  }
+
+  function changeDetailsHtml(payload, context) {
+    var scope = (payload || lastChanges || {}).scope || {};
+    var title = context ? context.title + " · 变化明细" : "标签变化明细";
+    var scopeText = (scope.previous_date || "--") + " → " + (scope.current_date || "--") + " · " + (scope.comparison_label || "较上期数据");
+    var contextHint = context
+      ? '<div class="label-hub-layer-change-hint"><b>按当前完整组合比较</b><span>已固定当前点击层，其余标签、经营及问题筛选条件保持不变。</span></div>'
+      : "";
+    return '<div class="label-hub-drawer-head label-hub-change-drawer-head"><p class="section-kicker">每日变化</p><h2 id="labelHubDrawerTitle">' + app.escapeHtml(title) + '</h2><p>' + app.escapeHtml(scopeText) + '</p></div>' +
+      (context ? contextHint : '<div class="label-hub-change-drawer-controls"><label><span>变化周期</span><select data-drawer-transition-period>' + drawerOptionList(elements.labelHubTransitionPeriod, state.transition_period) + '</select></label><label><span>变化类型</span><select data-drawer-change-type>' + drawerOptionList(elements.labelHubChangeType, state.change_type) + '</select></label></div>') +
+      '<section class="label-hub-change-drawer-body">' + changeContentHtml(payload || lastChanges || {}, context) + '</section>';
+  }
+
+  function openChangeDetailsDrawer() {
+    if (!lastChanges || !lastChanges.available) return;
+    activeLayerChangeContext = null;
+    setDrawerMode("changes");
+    elements.labelHubDrawer.hidden = false;
+    elements.labelHubDrawerContent.innerHTML = changeDetailsHtml(lastChanges);
+  }
+
+  function refreshChangeDetailsDrawer() {
+    if (elements.labelHubDrawer.hidden || elements.labelHubDrawer.dataset.drawerMode !== "changes") return;
+    elements.labelHubDrawerContent.innerHTML = changeDetailsHtml(lastChanges);
+  }
+
+  function buildLayerChangeParams(context) {
+    var params = buildChangeParams();
+    params.page = changePage;
+    params.change_type = context.change_type || "all";
+    if (context.transition_from) params.layer_transition_from = context.transition_from;
+    if (context.transition_to) params.layer_transition_to = context.transition_to;
+    if (context.source === "remote_label") {
+      var parentId = Number(context.parent || 0);
+      var conditions = parsedConditions();
+      conditions[String(parentId)] = [String(context.bucket || "")];
+      params.conditions = serializeConditionMap(conditions);
+      params.layer_change_parent = parentId;
+      params.layer_change_bucket = String(context.bucket || "");
+      params.layer_change_period = context.period || "all";
+      var currentIds = analysisIds();
+      var currentPeriods = analysisPeriods();
+      var periodByParent = {};
+      currentIds.forEach(function (id, index) { periodByParent[id] = currentPeriods[index] || "all"; });
+      periodByParent[state.parent_label_id] = state.label_period || "all";
+      periodByParent[parentId] = context.period || "all";
+      var ids = unique([parentId].concat(currentIds, [state.parent_label_id]));
+      params.analysis_parent_ids = ids.join("|");
+      params.analysis_periods = ids.map(function (id) { return periodByParent[id] || "all"; }).join("|");
+      return params;
+    }
+    var localField = {
+      sales_trend: "sales_trends",
+      daily_sales_band: "daily_sales_bands",
+      margin_band: "margin_bands"
+    }[context.key];
+    if (context.bucket === "missing") {
+      params.problem = "missing_metrics";
+    } else if (localField) {
+      params[localField] = String(context.bucket || "");
+    }
+    return params;
+  }
+
+  function openLayerChangeDetails(dataset) {
+    var context = {
+      source: dataset.layerChangeSource || "",
+      key: dataset.layerChangeKey || "",
+      parent: Number(dataset.layerChangeParent || 0),
+      bucket: dataset.layerChangeBucket || "",
+      period: dataset.layerChangePeriod || "all",
+      change_type: "added",
+      transition_from: "",
+      transition_to: "",
+      title: dataset.layerChangeTitle || "当前层"
+    };
+    context.combination_labels = layerChangeCombinationLabels(context);
+    activeLayerChangeContext = context;
+    setDrawerMode("layer-changes");
+    elements.labelHubDrawer.hidden = false;
+    loadLayerChangeDetails(context);
+  }
+
+  function loadLayerChangeDetails(context) {
+    if (!context || activeLayerChangeContext !== context) return;
+    elements.labelHubDrawerContent.innerHTML = '<div class="empty-state compact">正在核对当前组合的两期变化…</div>';
+    var token = ++changeRequestToken;
+    app.apiGet("/api/label-hub/changes", buildLayerChangeParams(context)).then(function (payload) {
+      if (token !== changeRequestToken || activeLayerChangeContext !== context) return;
+      elements.labelHubDrawerContent.innerHTML = changeDetailsHtml(payload, context);
+    }).catch(function (error) {
+      if (token !== changeRequestToken || activeLayerChangeContext !== context) return;
+      elements.labelHubDrawerContent.innerHTML = '<div class="empty-state compact">该层变化明细加载失败：' + app.escapeHtml((error && error.message) || "请稍后重试") + '</div>';
+    });
+  }
+
+  function closeDrawer() {
+    elements.labelHubDrawer.hidden = true;
+    activeLayerChangeContext = null;
+    delete elements.labelHubDrawer.dataset.drawerMode;
+    var card = elements.labelHubDrawer.querySelector(".label-hub-drawer-card");
+    if (card) card.classList.remove("label-hub-change-detail-drawer");
+  }
+  function layerChangeCombinationLabels(context) {
+    var labels = [];
+    var seen = {};
+    var add = function (value) {
+      var label = String(value || "").replace(/×\s*$/, "").trim();
+      var key = label.replace(/\s*[·•]\s*/g, "：").replace(/\s+/g, "");
+      if (!key || seen[key]) return;
+      seen[key] = true;
+      labels.push(label.replace(/\s*[·•]\s*/g, "："));
+    };
+    add((context || {}).title || "当前层");
+    Array.from(elements.labelHubConditions ? elements.labelHubConditions.querySelectorAll(".sales-role-chip") : []).forEach(function (node) {
+      add(node.textContent || "");
+    });
+    if (state.country_category && state.country_category !== "all") add("国家类别：" + state.country_category);
+    if (state.store && state.store !== "all") add("店铺：" + state.store);
+    if (state.keyword) add("搜索：" + state.keyword);
+    return labels;
+  }
   function normalizePageSize(value) {
     var pageSize = Number(value || 20);
     if (pageSize <= 20) return 20;

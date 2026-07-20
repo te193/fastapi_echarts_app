@@ -55,13 +55,29 @@
     <div id="labelHubDiagnosis" class="label-hub-diagnosis" aria-live="polite"></div>
   </section>
 
+  <section id="labelHubChangesPanel" class="sales-role-panel label-hub-changes-panel label-hub-section-panel" aria-labelledby="labelHubChangesTitle" hidden>
+    <div class="sales-role-section-head label-hub-change-head">
+      <div><p class="section-kicker">每日变化</p><h2 id="labelHubChangesTitle">今日标签变化</h2><p id="labelHubChangeScope" class="summary-hint">主看板已就绪，正在异步核对最近两次标签数据。</p></div>
+      <div class="label-hub-change-controls">
+        <label class="sales-role-field compact"><span>变化周期</span><select id="labelHubTransitionPeriod"></select></label>
+        <label class="sales-role-field compact"><span>变化类型</span><select id="labelHubChangeType"><option value="all">全部变化</option><option value="added">新增</option><option value="removed">减少</option><option value="changed">标签变化</option><option value="unchanged">保持</option></select></label>
+      </div>
+    </div>
+    <div id="labelHubChangeContent" class="label-hub-change-content" aria-live="polite"><div class="empty-state compact">正在加载变化数据…</div></div>
+  </section>
+
   <section class="sales-role-panel label-hub-section-panel label-hub-breakdown-section">
     <div class="sales-role-section-head label-hub-analysis-head">
       <div><p class="section-kicker">多维联动</p><h2>这批 MSKU 在其他分类中的表现</h2><p class="summary-hint">先看群体结构，再点击分类联动筛选下方矩阵与明细。</p></div>
-      <div id="labelHubMeasureTabs" class="label-hub-measure-tabs" role="group" aria-label="图表指标">
-        <button type="button" data-measure="msku_count" class="active">MSKU 数</button>
-        <button type="button" data-measure="sales_amount">销售额</button>
-        <button type="button" data-measure="order_gross_profit">毛利润</button>
+      <div class="label-hub-analysis-actions">
+        <div id="labelHubChangeBrief" class="label-hub-change-brief" aria-live="polite">
+          <span>较上期变化</span><strong>正在核对最近两次标签数据…</strong>
+        </div>
+        <div id="labelHubMeasureTabs" class="label-hub-measure-tabs" role="group" aria-label="图表指标">
+          <button type="button" data-measure="msku_count" class="active">MSKU 数</button>
+          <button type="button" data-measure="sales_amount">销售额</button>
+          <button type="button" data-measure="order_gross_profit">毛利润</button>
+        </div>
       </div>
     </div>
     <div id="labelHubBreakdowns" class="label-hub-breakdowns"></div>
@@ -126,5 +142,5 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', path='vendor/slim-select/slimselect.js') }}?v=4.0.5"></script>
-<script src="{{ url_for('static', path='js/label_hub.js') }}?v=20260717labelloading1"></script>
+<script src="{{ url_for('static', path='js/label_hub.js') }}?v=20260717labelloading1changes5layeronly"></script>
 {% endblock %}

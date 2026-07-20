@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import threading
 from collections import defaultdict
 from datetime import date, datetime
 from typing import Any, Callable
@@ -137,6 +138,9 @@ class LabelHubDataService:
         self._details_cache: tuple[datetime, list[dict[str, Any]]] | None = None
         self._facts_cache: dict[str, tuple[datetime, list[dict[str, Any]]]] = {}
         self._metrics_cache: dict[tuple[str, str], tuple[datetime, dict[str, Any]]] = {}
+        self._comparison_dates: list[str] = []
+        self._comparison_warm_lock = threading.Lock()
+        self._comparison_warm_events: dict[tuple[str, str], threading.Event] = {}
 
     def parse_conditions(self, value: str) -> dict[int, set[int]]:
         value = str(value or "").strip()
@@ -257,6 +261,7 @@ class LabelHubDataService:
         margin_bands=None,
         problem="all",
         metric_scope=None,
+        include_internal=False,
     ) -> dict[str, Any]:
         sales_roles = set(sales_roles or set())
         sales_trends = set(sales_trends or set())
@@ -781,7 +786,7 @@ class LabelHubDataService:
             "metric_msku_count": metric_count,
             "metric_coverage_rate": round(metric_count / self._unique_msku_count(rows), 4) if rows else 0,
         }
-        return {
+        payload = {
             "data_date": data_date,
             "scope": scope,
             "population_summary": population_summary,
@@ -812,6 +817,10 @@ class LabelHubDataService:
             "page_size": safe_page_size,
             "total_pages": total_pages,
         }
+        if include_internal:
+            payload["_comparison_rows"] = rows
+            payload["_baseline_rows"] = baseline_rows
+        return payload
 
     def get_meta(self) -> dict[str, Any]:
         if self._meta_cache and self._meta_cache_at and (datetime.now() - self._meta_cache_at).total_seconds() < 300:
@@ -837,6 +846,7 @@ class LabelHubDataService:
             "metric_periods": [{"key": value, "label": value.replace("d", "天")} for value in ("7d", "14d", "30d", "90d")],
             "default_metric_period": "30d",
             "default_analysis_parent_ids": defaults[:3],
+            "comparison": self._comparison_scope(),
             "local_breakdowns": [{
                 "key": key,
                 "label": item["label"],
@@ -852,6 +862,23 @@ class LabelHubDataService:
         }
         self._meta_cache, self._meta_cache_at = payload, datetime.now()
         return payload
+
+    def _comparison_scope(self) -> dict[str, Any]:
+        dates = list(self._comparison_dates[:2])
+        current_date = dates[0] if dates else ""
+        previous_date = dates[1] if len(dates) > 1 else ""
+        gap_days = 0
+        if current_date and previous_date:
+            try:
+                gap_days = (date.fromisoformat(current_date) - date.fromisoformat(previous_date)).days
+            except ValueError:
+                gap_days = 0
+        return {
+            "current_date": current_date,
+            "previous_date": previous_date,
+            "gap_days": max(0, gap_days),
+            "available": bool(current_date and previous_date),
+        }
 
     def _cached_facts(self, data_date: str) -> list[dict[str, Any]]:
         cached = self._facts_cache.get(data_date)
@@ -877,6 +904,48 @@ class LabelHubDataService:
         self._metrics_cache[cache_key] = (datetime.now(), payload)
         return payload
 
+    def _start_comparison_warmup(self, metric_period: str) -> None:
+        comparison = self._comparison_scope()
+        previous_date = str(comparison.get("previous_date") or "")
+        if not previous_date:
+            return
+        cache_key = (previous_date, metric_period)
+        facts_cached = self._facts_cache.get(previous_date)
+        metrics_cached = self._metrics_cache.get(cache_key)
+        now = datetime.now()
+        if (
+            facts_cached
+            and metrics_cached
+            and (now - facts_cached[0]).total_seconds() < CACHE_SECONDS
+            and (now - metrics_cached[0]).total_seconds() < CACHE_SECONDS
+        ):
+            return
+        with self._comparison_warm_lock:
+            if cache_key in self._comparison_warm_events:
+                return
+            event = threading.Event()
+            self._comparison_warm_events[cache_key] = event
+
+        def warm() -> None:
+            try:
+                self._cached_facts(previous_date)
+                self._cached_metrics(previous_date, metric_period)
+            except Exception:
+                # 变化接口会按自己的错误语义重试；预热失败不能影响今日看板。
+                pass
+            finally:
+                event.set()
+                with self._comparison_warm_lock:
+                    self._comparison_warm_events.pop(cache_key, None)
+
+        threading.Thread(target=warm, name="label-hub-comparison-warmup", daemon=True).start()
+
+    def wait_for_comparison_warmup(self, data_date: str, metric_period: str, timeout: float = 5.0) -> None:
+        with self._comparison_warm_lock:
+            event = self._comparison_warm_events.get((data_date, metric_period))
+        if event:
+            event.wait(timeout=max(0.0, timeout))
+
     def get_payload(self, **filters: Any) -> dict[str, Any]:
         meta = self.get_meta()
         data_date = str(meta["default_data_date"])
@@ -890,7 +959,7 @@ class LabelHubDataService:
             metric_scope = self._cached_metrics(data_date, metric_period)
         except Exception as exc:
             metric_scope = {"status": "unavailable", "window": {}, "metrics": {}, "error": str(exc)}
-        return self.build_payload(
+        payload = self.build_payload(
             details=self._cached_details(),
             facts=self._cached_facts(data_date),
             metrics=metric_scope.get("metrics") or {},
@@ -915,6 +984,8 @@ class LabelHubDataService:
             sort_field=str(filters.get("sort_field") or "problem_priority"),
             sort_dir=str(filters.get("sort_dir") or "desc"),
         )
+        self._start_comparison_warmup(metric_period)
+        return payload
 
     def get_msku_profile(self, **filters: Any) -> dict[str, Any]:
         data_date = str(self.get_meta()["default_data_date"])
@@ -999,9 +1070,16 @@ class LabelHubDataService:
         with self._source_connection() as conn, conn.cursor() as cursor:
             cursor.execute(f"select label_id, label_name, sub_label_id, sub_label_name, tag_rule, business_definition, business_owner, label_category, update_frequency, mutual_exclusion, status, tagging_method from {LABEL_DETAIL_TABLE} where sub_label_id is not null order by label_id, sub_label_id")
             details = cursor.fetchall()
-            cursor.execute(f"select max(data_date) as data_date from {LABEL_FACT_TABLE} where msku not like %(refund_prefix)s", {"refund_prefix": f"{REFUND_MSKU_PREFIX}%"})
-            latest_row = cursor.fetchone() or {}
-            latest_date = _date_text(latest_row.get("data_date"))
+            cursor.execute(f"select distinct data_date from {LABEL_FACT_TABLE} where msku not like %(refund_prefix)s order by data_date desc limit 2", {"refund_prefix": f"{REFUND_MSKU_PREFIX}%"})
+            comparison_dates = [_date_text(row.get("data_date")) for row in cursor.fetchall()]
+            comparison_dates = [item for item in comparison_dates if item]
+            if not comparison_dates:
+                cursor.execute(f"select max(data_date) as data_date from {LABEL_FACT_TABLE} where msku not like %(refund_prefix)s", {"refund_prefix": f"{REFUND_MSKU_PREFIX}%"})
+                latest_row = cursor.fetchone() or {}
+                latest_fallback = _date_text(latest_row.get("data_date"))
+                comparison_dates = [latest_fallback] if latest_fallback else []
+            self._comparison_dates = comparison_dates
+            latest_date = comparison_dates[0] if comparison_dates else ""
             dates = [latest_date] if latest_date else []
             stats = {}
             if latest_date:
@@ -1040,10 +1118,8 @@ class LabelHubDataService:
 
     def _fetch_dates(self):
         with self._source_connection() as conn, conn.cursor() as cursor:
-            cursor.execute(f"select max(data_date) as data_date from {LABEL_FACT_TABLE} where msku not like %(refund_prefix)s", {"refund_prefix": f"{REFUND_MSKU_PREFIX}%"})
-            row = cursor.fetchone() or {}
-            latest_date = _date_text(row.get("data_date"))
-            return [latest_date] if latest_date else []
+            cursor.execute(f"select distinct data_date from {LABEL_FACT_TABLE} where msku not like %(refund_prefix)s order by data_date desc limit 2", {"refund_prefix": f"{REFUND_MSKU_PREFIX}%"})
+            return [item for item in (_date_text(row.get("data_date")) for row in cursor.fetchall()) if item]
 
     def _fetch_filters(self, data_date):
         with self._source_connection() as conn, conn.cursor() as cursor:
