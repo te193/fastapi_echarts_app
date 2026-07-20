@@ -24,6 +24,15 @@ class FakeLabelHubService:
         return {"msku": "MSKU1"}
 
 
+class FakeLabelHubChangeService:
+    def __init__(self):
+        self.calls = []
+
+    def get_changes(self, **kwargs):
+        self.calls.append(kwargs)
+        return {"summary": {"current": 425}}
+
+
 class LabelHubApiTests(unittest.TestCase):
     def test_label_hub_page_route_exists(self):
         response = TestClient(main.app).get("/label-hub")
@@ -90,6 +99,26 @@ class LabelHubApiTests(unittest.TestCase):
             main.api_label_hub()
 
         self.assertEqual(503, ctx.exception.status_code)
+
+    def test_changes_forwards_clicked_layer_contract(self):
+        service = FakeLabelHubChangeService()
+        with patch("app.main.label_hub_change_service", service):
+            payload = main.api_label_hub_changes(
+                parent_label_id=3,
+                conditions="1:103",
+                layer_change_parent=1,
+                layer_change_bucket="103",
+                layer_change_period="all",
+                layer_transition_from="瘦狗产品",
+                layer_transition_to="问题产品",
+            )
+
+        self.assertEqual({"summary": {"current": 425}}, payload)
+        self.assertEqual(1, service.calls[0]["layer_change_parent"])
+        self.assertEqual("103", service.calls[0]["layer_change_bucket"])
+        self.assertEqual("all", service.calls[0]["layer_change_period"])
+        self.assertEqual("瘦狗产品", service.calls[0]["layer_transition_from"])
+        self.assertEqual("问题产品", service.calls[0]["layer_transition_to"])
 
 
 if __name__ == "__main__":

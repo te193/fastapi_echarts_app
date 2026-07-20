@@ -82,6 +82,29 @@ def test_label_hub_frontend_renders_six_linked_panels_and_structured_profile():
     assert "rowHeight: 52" in script
 
 
+def test_layer_change_drawer_uses_reconciled_ledger_and_same_dimension_labels():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+
+    assert "function renderLayerChangeLedger(payload, context)" in script
+    assert "上次命中组合 + 本期进入 − 本期离开 = 今日命中组合" in script
+    assert '["added", "查看进入"' in script
+    assert '["removed", "查看离开"' in script
+    assert 'row.previous_layer_label' in script
+    assert 'row.current_layer_label' in script
+    assert 'row.fact_status' in script
+    assert "layerChangeCombinationLabels" in script
+    assert "当前组合变化账" in script
+    assert 'row.current_unit_scope' in script
+    assert 'metric_profile' in script
+    assert '今日经营分层' in script
+    assert '上次组合条件' in script
+    assert 'previous_combination_conditions' in script
+    assert '今日经营表现' in script
+    assert "renderLayerRoutePanel" not in script
+    assert ".label-hub-layer-ledger" in styles
+
+
 def test_remote_breakdown_cards_keep_independent_label_periods_in_url_state():
     template = (ROOT / "app" / "templates" / "label_hub.html").read_text(encoding="utf-8")
     script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")

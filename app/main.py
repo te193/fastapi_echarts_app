@@ -20,6 +20,7 @@ from etl.dashboard_daily_update import COLUMN_COMMENTS
 from .services.dashboard_db import dashboard_service
 from .services.country_label_hub_data import country_label_hub_service
 from .services.label_hub_data import label_hub_service
+from .services.label_hub_change_data import label_hub_change_service
 from .services.price_review_data import price_review_service
 from .services.replenishment_data import replenishment_service
 from .services.replenishment_tracking_data import replenishment_tracking_service
@@ -418,6 +419,45 @@ def api_label_hub(
 def api_label_hub_msku(data_date: str, country_category: str, store: str, msku: str, metric_period: str = "30d") -> dict:
     try:
         return label_hub_service.get_msku_profile(data_date=data_date, country_category=country_category, store=store, msku=msku, metric_period=metric_period)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/label-hub/changes")
+def api_label_hub_changes(
+    data_date: str = "", country_category: str = "all", store: str = "all", keyword: str = "",
+    parent_label_id: int = 0, compare_parent_id: int = 0, conditions: str = "", label_period: str = "all",
+    metric_period: str = "30d", analysis_parent_ids: str = "", analysis_periods: str = "",
+    sales_trends: str = "", daily_sales_bands: str = "", margin_bands: str = "", problem: str = "all",
+    transition_period: str = "", change_type: str = "all", page: int = 1, page_size: int = 20,
+    sort_field: str = "change_type", sort_dir: str = "asc",
+    layer_change_parent: int = 0, layer_change_bucket: str = "", layer_change_period: str = "all",
+    layer_transition_from: str = "", layer_transition_to: str = "",
+) -> dict:
+    try:
+        return label_hub_change_service.get_changes(
+            data_date=data_date, country_category=country_category, store=store, keyword=keyword,
+            parent_label_id=parent_label_id, compare_parent_id=compare_parent_id,
+            conditions=conditions, label_period=label_period, metric_period=metric_period,
+            analysis_parent_ids=analysis_parent_ids, analysis_periods=analysis_periods,
+            sales_trends=sales_trends, daily_sales_bands=daily_sales_bands,
+            margin_bands=margin_bands, problem=problem, transition_period=transition_period,
+            change_type=change_type, page=page, page_size=page_size,
+            sort_field=sort_field, sort_dir=sort_dir,
+            layer_change_parent=layer_change_parent, layer_change_bucket=layer_change_bucket,
+            layer_change_period=layer_change_period,
+            layer_transition_from=layer_transition_from, layer_transition_to=layer_transition_to,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="标签变化数据暂不可用，请稍后重试") from exc
+
+
+@app.get("/api/label-hub/msku-change")
+def api_label_hub_msku_change(msku: str, transition_period: str = "30d") -> dict:
+    try:
+        return label_hub_change_service.get_msku_change(msku=msku, transition_period=transition_period)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
