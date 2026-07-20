@@ -15,6 +15,8 @@ $StdoutLog = Join-Path $LogDir "etl_daily_run_$RunStamp.log"
 $StderrLog = Join-Path $LogDir "etl_daily_run_$RunStamp.err.log"
 $SalesRoleStdoutLog = Join-Path $LogDir "etl_sales_role_run_$RunStamp.log"
 $SalesRoleStderrLog = Join-Path $LogDir "etl_sales_role_run_$RunStamp.err.log"
+$LabelEvidenceStdoutLog = Join-Path $LogDir "etl_label_rule_evidence_run_$RunStamp.log"
+$LabelEvidenceStderrLog = Join-Path $LogDir "etl_label_rule_evidence_run_$RunStamp.err.log"
 $ReplenishmentStdoutLog = Join-Path $LogDir "etl_replenishment_run_$RunStamp.log"
 $ReplenishmentStderrLog = Join-Path $LogDir "etl_replenishment_run_$RunStamp.err.log"
 $ReplenishmentTrackingStdoutLog = Join-Path $LogDir "etl_replenishment_tracking_summary_run_$RunStamp.log"
@@ -133,6 +135,23 @@ if ($SalesRoleExitCode -ne 0) {
 }
 
 Write-Host "Sales role ETL finished at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+Write-Host "Label change evidence ETL started at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+Write-Host "Label evidence stdout log : $LabelEvidenceStdoutLog"
+Write-Host "Label evidence stderr log : $LabelEvidenceStderrLog"
+
+$PreviousErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+& $PythonExe -m etl.label_rule_evidence_snapshot_update @args > $LabelEvidenceStdoutLog 2> $LabelEvidenceStderrLog
+$LabelEvidenceExitCode = $LASTEXITCODE
+$ErrorActionPreference = $PreviousErrorActionPreference
+
+if ($LabelEvidenceExitCode -ne 0) {
+    Send-DashboardDingTalkNotification -Status "failed" -Stage "label_evidence" -ExitCode $LabelEvidenceExitCode -ErrorMessage "Label change evidence update failed with exit code $LabelEvidenceExitCode; current label dashboard remains available."
+    Write-Warning "Label change evidence update failed with exit code $LabelEvidenceExitCode. Current dashboard data remains available. See $LabelEvidenceStdoutLog and $LabelEvidenceStderrLog."
+} else {
+    Write-Host "Label change evidence ETL finished at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+}
+
 Write-Host "Replenishment ETL started at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 Write-Host "Replenishment stdout log : $ReplenishmentStdoutLog"
 Write-Host "Replenishment stderr log : $ReplenishmentStderrLog"
@@ -184,5 +203,5 @@ if ($ReturnGoodsExitCode -ne 0) {
 }
 
 Write-Host "Return goods ETL finished at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-Write-Host "Data update strategy includes rolling product refresh, current snapshots, preset period summaries, sales role snapshots, matrix summaries, replenishment results, replenishment tracking summary, and return goods."
+Write-Host "Data update strategy includes rolling product refresh, current snapshots, preset period summaries, sales role snapshots, label change evidence, matrix summaries, replenishment results, replenishment tracking summary, and return goods."
 Send-DashboardDingTalkNotification -Status "success" -Stage "all" -ExitCode 0

@@ -1,6 +1,6 @@
 (function () {
   var app = window.kanbanApp;
-  var state = { active: false, page: 1, page_size: 20, level_filter: "all", history_level: "all", summary_stage: "all", product_category: "all" };
+  var state = { active: false, page: 1, page_size: 20, level_filter: "all", history_level: "all", summary_stage: "all", level_flow_stage: "all", detail_stage: "", product_category: "all" };
   var el = {};
   var gridRenderSeq = 0;
   var summaryRowMap = {};
@@ -117,6 +117,16 @@
       render();
     });
     el.trackingSummaryLevelFlow.addEventListener("click", function (event) {
+      var missingNode = event.target.closest("[data-summary-stage-missing]");
+      if (missingNode) {
+        event.stopPropagation();
+        selectHistoryLevelStage(
+          missingNode.dataset.summaryLevel || "all",
+          missingNode.dataset.summaryStageMissing || "all",
+          true
+        );
+        return;
+      }
       var detailNode = event.target.closest("[data-summary-stage-detail]");
       if (detailNode) {
         event.stopPropagation();
@@ -125,28 +135,24 @@
       }
       var categoryNode = event.target.closest("[data-summary-category]");
       if (categoryNode) {
-        state.level_filter = "all";
-        state.history_level = categoryNode.dataset.summaryLevel || "all";
-        state.summary_stage = "all";
-        state.product_category = categoryNode.dataset.summaryCategory || "all";
-        state.page = 1;
-        render();
+        selectHistoryLevel(categoryNode.dataset.summaryLevel || "all", categoryNode.dataset.summaryCategory || "all");
         return;
       }
-      var node = event.target.closest("[data-summary-level]");
+      var node = event.target.closest("[data-summary-stage-complete]");
       if (!node) return;
-      state.level_filter = "all";
-      state.history_level = node.dataset.summaryLevel || "all";
-      state.summary_stage = node.dataset.summaryStage || "all";
-      state.product_category = "all";
-      state.page = 1;
-      render();
+      selectHistoryLevelCompletedStage(
+        node.dataset.summaryLevel || "all",
+        node.dataset.summaryStage || "all"
+      );
     });
     el.trackingSummaryCards.addEventListener("click", function (event) {
       var node = event.target.closest("[data-summary-stage]");
       if (!node) return;
       state.level_filter = "all";
+      state.history_level = "all";
       state.summary_stage = node.dataset.summaryStage || "all";
+      state.level_flow_stage = node.dataset.summaryStage || "all";
+      state.detail_stage = "";
       state.product_category = "all";
       state.page = 1;
       render();
@@ -157,6 +163,8 @@
       state.level_filter = "all";
       state.history_level = "all";
       state.summary_stage = node.dataset.summaryStage || "all";
+      state.level_flow_stage = node.dataset.summaryStage || "all";
+      state.detail_stage = "";
       state.product_category = "all";
       state.page = 1;
       render();
@@ -164,20 +172,34 @@
     el.trackingSummaryLevelTabs.addEventListener("click", function (event) {
       var node = event.target.closest("[data-summary-tab-level]");
       if (!node) return;
-      state.level_filter = "all";
-      state.history_level = node.dataset.summaryTabLevel || "all";
-      state.summary_stage = "all";
-      state.product_category = "all";
-      state.page = 1;
-      render();
+      selectHistoryLevel(node.dataset.summaryTabLevel || "all", "all");
     });
     el.trackingSummaryTable.addEventListener("click", function (event) {
+      var clearDetailStage = event.target.closest("[data-clear-detail-stage]");
+      if (clearDetailStage) {
+        state.detail_stage = "";
+        state.page = 1;
+        render();
+        return;
+      }
       var button = event.target.closest("[data-summary-detail]");
       if (!button) return;
       var row = summaryRowMap[button.dataset.rowKey || ""];
       if (row) openDetail(row);
     });
     el.summaryTrackingDetailWrap.addEventListener("click", function (event) {
+      var missingButton = event.target.closest("[data-summary-stage-missing-link]");
+      if (missingButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        closeDetail();
+        selectHistoryLevelStage(
+          missingButton.dataset.summaryLevel || "all",
+          missingButton.dataset.summaryStageMissing || "",
+          true
+        );
+        return;
+      }
       var button = event.target.closest("[data-summary-stage-filter]");
       if (!button) return;
       state.level_filter = "all";
@@ -192,17 +214,20 @@
     if (el.summaryTrackingDetailMask) el.summaryTrackingDetailMask.addEventListener("click", closeDetail);
   }
 
-  function render() {
+  function render(focusTable) {
     if (!state.active) return;
     el.trackingSummaryTable.innerHTML = '<div class="empty-state">加载中...</div>';
     app.apiGet("/api/replenishment-tracking-summary", buildParams())
       .then(function (payload) {
         state.page = payload.page || 1;
-        renderCards(payload.summary || {});
+        renderCards(payload.summary || {}, payload.scoped_summary || payload.summary || {});
         renderLevelTabs(payload.level_flow || [], payload.summary || {});
-        renderLevelFlow(payload.level_flow || []);
-        renderTable(payload.items || []);
+        renderLevelFlow(payload.level_flow || [], payload.summary || {});
+        renderTable(payload.items || [], payload.total || 0, payload.summary || {});
         renderPagination(payload);
+        if (focusTable && el.trackingSummaryTable) {
+          el.trackingSummaryTable.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
       })
       .catch(function (error) {
         console.error(error);
@@ -218,6 +243,8 @@
       purchase_status: valueOf("summaryPurchaseStatusSelect", "all"),
       fba_status: valueOf("summaryFbaStatusSelect", "all"),
       summary_stage: state.summary_stage || "all",
+      level_flow_stage: state.level_flow_stage || "all",
+      detail_stage: state.detail_stage || "",
       category_period_days: valueOf("categoryPeriodSelect", "30"),
       history_level: state.history_level || "all",
       product_category: state.product_category || "all",
@@ -230,7 +257,8 @@
     };
   }
 
-  function renderCards(summary) {
+  function renderCards(summary, scopedSummary) {
+    scopedSummary = scopedSummary || summary || {};
     var topCards = [
       ["追踪MSKU", summary.msku_count || 0, "tone-0", "历史进入过补货范围", "all"],
       ["未建采购计划", summary.no_purchase_plan_count || 0, "tone-2", "未匹配到补货后的采购计划", "no_purchase_plan"],
@@ -243,19 +271,19 @@
       ["FBA已完成", summary.fba_closed_count || 0, "tone-1", "链路完成", "fba_closed"]
     ];
     el.trackingSummaryTopCards.innerHTML = topCards.map(function (card) {
-      var active = state.history_level === "all" && state.summary_stage === card[4] ? " active" : "";
+      var active = state.summary_stage === card[4] ? " active" : "";
       return '<button type="button" class="alert-stat-card tracking-stat-card summary-stat-card ' + card[2] + active + '" data-summary-stage="' + escapeHtml(card[4]) + '"><span>' + escapeHtml(card[0]) + summaryHelp(card[5]) + '</span><strong>' + formatNumber(card[1]) + '</strong><small>' + escapeHtml(card[3]) + '</small></button>';
     }).join("");
 
     var sideCards = [
-      ["采", "未建采购计划", summary.no_purchase_plan_count || 0, "采购端未响应", "no_purchase_plan"],
-      ["途", "采购未在途", summary.supplier_not_shipped_count || 0, "采购计划后未确认在途", "supplier_not_shipped"],
-      ["仓", "采购未到仓", summary.inbound_not_received_count || 0, "本地收货链路未确认", "inbound_not_received"],
-      ["计", "未建FBA", summary.no_fba_plan_count || 0, "可推进FBA计划", "no_fba_plan"],
-      ["出", "FBA未出库", summary.fba_not_shipped_count || 0, "已建计划未执行", "fba_not_shipped"],
-      ["收", "FBA未接收", summary.fba_not_receiving_count || 0, "在途未接收", "fba_not_receiving"],
-      ["历", "历史FBA在途", summary.historical_fba_in_transit_count || 0, "已实际发货、尚未全部接收", "historical_fba_in_transit", "未归入本次采购链路的在途货件；会影响库存和预计到货，但不影响本次链路完成率。"],
-      ["待", "待归因FBA计划", summary.unattributed_fba_plan_count || 0, "仅有计划，尚未实际发货", "unattributed_fba_plan", "无法归入本次采购链路，且尚未找到实际 FBA 货件的计划。它不影响库存，也不影响本次链路完成率。"]
+      ["采", "未建采购计划", scopedSummary.no_purchase_plan_count || 0, "采购端未响应", "no_purchase_plan"],
+      ["途", "采购未在途", scopedSummary.supplier_not_shipped_count || 0, "采购计划后未确认在途", "supplier_not_shipped"],
+      ["仓", "采购未到仓", scopedSummary.inbound_not_received_count || 0, "本地收货链路未确认", "inbound_not_received"],
+      ["计", "未建FBA", scopedSummary.no_fba_plan_count || 0, "可推进FBA计划", "no_fba_plan"],
+      ["出", "FBA未出库", scopedSummary.fba_not_shipped_count || 0, "已建计划未执行", "fba_not_shipped"],
+      ["收", "FBA未接收", scopedSummary.fba_not_receiving_count || 0, "在途未接收", "fba_not_receiving"],
+      ["历", "历史FBA在途", scopedSummary.historical_fba_in_transit_count || 0, "已实际发货、尚未全部接收", "historical_fba_in_transit", "未归入本次采购链路的在途货件；会影响库存和预计到货，但不影响本次链路完成率。"],
+      ["待", "待归因FBA计划", scopedSummary.unattributed_fba_plan_count || 0, "仅有计划，尚未实际发货", "unattributed_fba_plan", "无法归入本次采购链路，且尚未找到实际 FBA 货件的计划。它不影响库存，也不影响本次链路完成率。"]
     ];
     el.trackingSummaryCards.innerHTML = sideCards.map(function (card) {
       var active = state.summary_stage === card[4] ? " active" : "";
@@ -275,30 +303,31 @@
   }
 
   function renderLevelTabs(rows, summary) {
-    var allActive = state.history_level === "all" && state.product_category === "all" && state.summary_stage === "all" ? "active" : "";
+    var allActive = state.history_level === "all" && state.product_category === "all" ? "active" : "";
     var allButton = '<button type="button" class="' + allActive + '" data-summary-tab-level="all">全部 · ' + formatNumber(summary.msku_count || 0) + '</button>';
     el.trackingSummaryLevelTabs.innerHTML = [allButton].concat((rows || []).map(function (row) {
       var level = row.level || "未分层";
-      var active = state.history_level === level && state.product_category === "all" && state.summary_stage === "all" ? "active" : "";
+      var active = state.history_level === level && state.product_category === "all" ? "active" : "";
       return '<button type="button" class="' + active + '" data-summary-tab-level="' + escapeHtml(level) + '">' + escapeHtml(level) + ' · ' + formatNumber(row.msku_count || 0) + '</button>';
     })).join("");
   }
 
-  function renderLevelFlow(rows) {
+  function renderLevelFlow(rows, summary) {
     if (!rows.length) {
       summaryLevelFlowMap = {};
       el.trackingSummaryLevelFlow.innerHTML = "";
       return;
     }
     summaryLevelFlowMap = {};
-    el.trackingSummaryLevelFlow.innerHTML = rows.map(function (row) {
+    var scopeHint = renderLevelFlowScopeHint(summary || {});
+    el.trackingSummaryLevelFlow.innerHTML = scopeHint + rows.map(function (row) {
       var level = row.level || "未分层";
       summaryLevelFlowMap[level] = row;
       var total = Number(row.msku_count || 0);
       var current = Number(row.current_count || 0);
       var sameDay = Number(row.same_day_count || 0);
       var width = total ? Math.round((sameDay / total) * 100) : 0;
-      var rowActive = state.history_level === level && state.summary_stage === "all" ? " active" : "";
+      var rowActive = state.history_level === level ? " active" : "";
       var fbaPlanCount = Number(row.fba_plan_count || 0);
       var normalFbaPlanCount = Math.min(fbaPlanCount, Number(row.qc_passed_count || 0));
       var precreatedFbaPlanCount = Math.max(fbaPlanCount - normalFbaPlanCount, 0);
@@ -315,7 +344,7 @@
         '<span class="tracking-stage-flow">',
         nodes.map(function (node) {
           var extra = node[5] ? " · 历史/待确认 " + formatNumber(node[5]) : "";
-          return renderSummaryStage(node[0], ratioText(node[1], node[2]), node[4] + " " + formatNumber(node[2] || 0) + " · 未完成 " + formatNumber(Math.max(Number(node[2] || 0) - Number(node[1] || 0), 0)) + extra, ratioTone(node[1], node[2]), level, node[3], node[6]);
+          return renderSummaryStage(node[0], ratioText(node[1], node[2]), node[4] + " " + formatNumber(node[2] || 0) + " · 未完成 " + formatNumber(Math.max(Number(node[2] || 0) - Number(node[1] || 0), 0)) + extra, ratioTone(node[1], node[2]), level, node[3], node[6], Math.max(Number(node[2] || 0) - Number(node[1] || 0), 0));
         }).join(""),
         '</span>',
         '<span class="layer-progress"><i style="width:' + width + '%"></i></span>',
@@ -324,7 +353,8 @@
     }).join("");
   }
 
-  function renderTable(items) {
+  function renderTable(items, total, summary) {
+    var detailFilter = renderDetailFilterHint(total, summary || {});
     if (!items.length) {
       el.trackingSummaryTable.innerHTML = '<div class="empty-state">当前筛选无补货链路追踪 MSKU。</div>';
       return;
@@ -336,7 +366,7 @@
     }, {});
     gridRenderSeq += 1;
     var gridId = "summaryAgGrid-" + gridRenderSeq;
-    el.trackingSummaryTable.innerHTML = '<div id="' + gridId + '"></div>';
+    el.trackingSummaryTable.innerHTML = detailFilter + '<div id="' + gridId + '"></div>';
     var columns = [
       { headerName: "当前层级", field: "level", pinned: "left", width: 118, cellRenderer: function (params) { return '<span class="status-pill level-' + levelSort(params.value) + '">' + escapeHtml(params.value || "-") + '</span>'; } },
       { headerName: "MSKU / SKU", field: "msku", pinned: "left", width: 150, cellRenderer: function (params) { return window.kanbanGrid.subCell(params.data.msku || "-", params.data.sku || ""); } },
@@ -573,6 +603,7 @@
       '<div>',
       '<span>批次 ' + escapeHtml(String.fromCharCode(65 + (index || 0))) + '</span>',
       '<strong>' + escapeHtml(batch.purchase_plan_sn || "-") + ' · 计划 ' + formatNumber(batch.purchase_plan_qty || 0) + '</strong>',
+      batch.combined_purchase_match ? '<small class="summary-detail-combined-note">合并采购计划：' + escapeHtml(batch.combined_purchase_qty_text || "") + '</small>' : '',
       '</div>',
       '<div class="summary-detail-batch-badges">',
       statusPill(statusText, statusTone),
@@ -751,15 +782,18 @@
   function groupDetailRows(rows) {
     var grouped = {};
     rows.forEach(function (row) {
-      var key = row.purchase_plan_sn || row.order_sn || row.shipment_sn || row.source_type_label || "-";
+      var key = row.detail_batch_key || row.purchase_plan_sn || row.order_sn || row.shipment_sn || row.source_type_label || "-";
       if (!grouped[key]) {
+        var isCombinedPurchase = Boolean(row.combined_purchase_match);
         grouped[key] = {
-          purchase_plan_sn: row.purchase_plan_sn || "-",
+          purchase_plan_sn: row.detail_batch_key || row.purchase_plan_sn || "-",
           link_attribution: row.link_attribution || "",
           purchase_plan_status: row.purchase_plan_status || "-",
-          purchase_plan_qty: row.purchase_plan_qty || 0,
+          purchase_plan_qty: isCombinedPurchase ? 0 : row.purchase_plan_qty || 0,
           purchase_plan_time: row.purchase_plan_time || "",
           purchase_expect_arrive_time: row.purchase_expect_arrive_time || "",
+          combined_purchase_match: isCombinedPurchase,
+          combined_purchase_qty_text: row.combined_purchase_qty_text || "",
           purchase_order_qty: 0,
           receipt_qty: 0,
           fba_plan_qty: 0,
@@ -769,6 +803,7 @@
           has_fba_plan: false,
           has_current_fba_plan: false,
           time_summary: [],
+          seenPlanKeys: {},
           seenOrderKeys: {},
           fba_plan_lines: [],
           order_summary: [],
@@ -776,8 +811,16 @@
         };
       }
       if (row.source_type === "purchase_plan") {
+        if (grouped[key].combined_purchase_match) {
+          var planKey = row.purchase_plan_sn || "-";
+          if (!grouped[key].seenPlanKeys[planKey]) {
+            grouped[key].seenPlanKeys[planKey] = true;
+            grouped[key].purchase_plan_qty += Number(row.purchase_plan_qty || 0);
+          }
+        } else {
+          grouped[key].purchase_plan_qty = row.purchase_plan_qty || grouped[key].purchase_plan_qty;
+        }
         grouped[key].purchase_plan_status = row.purchase_plan_status || grouped[key].purchase_plan_status;
-        grouped[key].purchase_plan_qty = row.purchase_plan_qty || grouped[key].purchase_plan_qty;
         grouped[key].purchase_plan_time = row.purchase_plan_time || grouped[key].purchase_plan_time;
         grouped[key].purchase_expect_arrive_time = row.purchase_expect_arrive_time || grouped[key].purchase_expect_arrive_time;
         return;
@@ -822,6 +865,7 @@
 	      else grouped[key].order_summary.push(detailLine);
     });
     return Object.keys(grouped).map(function (key) {
+      delete grouped[key].seenPlanKeys;
       delete grouped[key].seenOrderKeys;
       finalizeFbaPlanLines(grouped[key]);
       delete grouped[key].fba_plan_lines;
@@ -890,7 +934,10 @@
 
   function applyDetailDerivedFields(row) {
     var planQty = Number(row.purchase_plan_qty || 0);
-    if (row.has_current_fba_plan && row.has_qc) {
+    if (row.combined_purchase_match && row.has_current_fba_plan) {
+      row.link_type = "合并采购匹配";
+      row.link_type_tone = "positive";
+    } else if (row.has_current_fba_plan && row.has_qc) {
       row.link_type = "正常链路";
       row.link_type_tone = "positive";
     } else if (row.has_current_fba_plan) {
@@ -1114,22 +1161,26 @@
     var tone = conversionTone(node, ratio, missing);
     var hint = node.hint || (node.baseLabel + " " + formatNumber(total) + " · 未完成 " + formatNumber(missing));
     var isSplitFba = node.stage === "fba_plan_done" && Number(node.precreatedDone || 0) > 0;
+    var missingStage = stageMissingFilter(node.stage);
     var barHtml = isSplitFba ? renderFbaSplitBar(node, maxCount) : '<span class="conversion-bar"><i class="' + escapeHtml(tone) + '" style="width:' + width + '%"></i></span>';
+    var missingAction = missing > 0 && missingStage ? '<button type="button" class="conversion-missing-link" data-summary-stage-missing-link data-summary-level="' + escapeHtml(row.level || "all") + '" data-summary-stage-missing="' + escapeHtml(missingStage) + '">查看未完成 ' + formatNumber(missing) + '</button>' : '';
     var resultHtml = isSplitFba ? [
-      '<em class="conversion-breakdown">',
+      '<span class="conversion-result">',
+      '<span class="conversion-breakdown">',
       '<span class="normal">正常 ' + formatNumber(node.normalDone || 0) + '</span>',
       '<span class="early">提前 ' + formatNumber(node.precreatedDone || 0) + '</span>',
-      missing > 0 ? '<span class="missing">未完成 ' + formatNumber(missing) + '</span>' : '',
-      '</em>'
-    ].join("") : '<em>' + (missing > 0 ? "未完成 " + formatNumber(missing) : "已完成") + '</em>';
+      '</span>',
+      missingAction,
+      '</span>'
+    ].join("") : (missingAction || '<em>已完成</em>');
     return [
-      '<button type="button" class="summary-conversion-row ' + tone + (isSplitFba ? " split-fba" : "") + active + '" data-summary-stage-filter data-summary-level="' + escapeHtml(row.level || "all") + '" data-summary-stage="' + escapeHtml(node.stage) + '">',
+      '<article class="summary-conversion-row ' + tone + (isSplitFba ? " split-fba" : "") + active + '" role="button" tabindex="0" data-summary-stage-filter data-summary-level="' + escapeHtml(row.level || "all") + '" data-summary-stage="' + escapeHtml(node.stage) + '">',
       '<span class="conversion-name"><b>' + escapeHtml(node.label) + '</b><small>' + escapeHtml(hint) + '</small></span>',
       '<strong>' + formatNumber(done) + '</strong>',
       barHtml,
       '<span class="conversion-meta ' + escapeHtml(tone) + '">' + formatPercent(ratio) + '</span>',
       resultHtml,
-      '</button>'
+      '</article>'
     ].join("");
   }
 
@@ -1212,9 +1263,39 @@
     };
   }
 
-  function renderSummaryStage(label, value, hint, tone, level, stage, title) {
-    var active = state.level_filter === level && state.summary_stage === stage ? " active" : "";
-    return '<span class="tracking-stage-card ' + escapeHtml(tone || "neutral") + active + '" title="' + escapeHtml(title || hint || "") + '" role="button" tabindex="0" data-summary-level="' + escapeHtml(level || "all") + '" data-summary-stage="' + escapeHtml(stage || "all") + '"><small>' + escapeHtml(label) + '<button class="stage-detail-link" type="button" data-summary-stage-detail data-summary-level="' + escapeHtml(level || "all") + '" data-summary-stage="' + escapeHtml(stage || "all") + '">明细</button></small><strong>' + escapeHtml(String(value || 0)) + '</strong><em>' + escapeHtml(hint || "") + '</em></span>';
+  function renderSummaryStage(label, value, hint, tone, level, stage, title, missingCount) {
+    var active = state.history_level === level && (
+      (state.summary_stage === stage && !state.detail_stage) ||
+      state.detail_stage === stageCompletedDetailFilter(stage)
+    ) ? " active" : "";
+    var missingStage = stageMissingFilter(stage);
+    var footer = Number(missingCount || 0) > 0 && missingStage
+      ? '<button class="stage-missing-link" type="button" data-summary-level="' + escapeHtml(level || "all") + '" data-summary-stage-missing="' + escapeHtml(missingStage) + '">查看未完成 ' + formatNumber(missingCount) + '</button>'
+      : '<em>' + escapeHtml(hint || "") + '</em>';
+    return '<span class="tracking-stage-card ' + escapeHtml(tone || "neutral") + active + '" title="' + escapeHtml(title || hint || "") + '" role="button" tabindex="0" data-summary-stage-complete data-summary-level="' + escapeHtml(level || "all") + '" data-summary-stage="' + escapeHtml(stage || "all") + '"><small>' + escapeHtml(label) + '<button class="stage-detail-link" type="button" data-summary-stage-detail data-summary-level="' + escapeHtml(level || "all") + '" data-summary-stage="' + escapeHtml(stage || "all") + '">明细</button></small><strong>' + escapeHtml(String(value || 0)) + '</strong>' + footer + '</span>';
+  }
+
+  function stageMissingFilter(stage) {
+    return {
+      purchase_plan_done: "no_purchase_plan",
+      supplier_shipped_done: "supplier_not_shipped",
+      local_received_done: "inbound_not_received",
+      fba_plan_done: "no_fba_plan",
+      fba_shipped_done: "fba_not_shipped",
+      fba_receiving_done: "fba_not_receiving"
+    }[stage] || "";
+  }
+
+  function stageCompletedDetailFilter(stage) {
+    return {
+      purchase_plan_done: "purchase_plan_completed",
+      supplier_shipped_done: "supplier_shipped_completed",
+      local_received_done: "local_received_completed",
+      qc_passed_done: "qc_passed_completed",
+      fba_plan_done: "fba_plan_completed",
+      fba_shipped_done: "fba_shipped_completed",
+      fba_receiving_done: "fba_receiving_completed"
+    }[stage] || "";
   }
 
   function renderChainProgress(row) {
@@ -1271,7 +1352,81 @@
     state.level_filter = "all";
     state.history_level = "all";
     state.summary_stage = "all";
+    state.level_flow_stage = "all";
+    state.detail_stage = "";
     state.product_category = "all";
+  }
+
+  function selectHistoryLevel(level, productCategory) {
+    state.level_filter = "all";
+    state.history_level = level || "all";
+    state.detail_stage = "";
+    state.product_category = productCategory || "all";
+    state.page = 1;
+    render();
+  }
+
+  function selectHistoryLevelStage(level, stage, focusTable) {
+    state.level_filter = "all";
+    state.history_level = level || "all";
+    state.detail_stage = stage || "";
+    state.product_category = "all";
+    state.page = 1;
+    render(Boolean(focusTable));
+  }
+
+  function selectHistoryLevelCompletedStage(level, stage) {
+    state.level_filter = "all";
+    state.history_level = level || "all";
+    state.summary_stage = "all";
+    state.detail_stage = stageCompletedDetailFilter(stage);
+    state.product_category = "all";
+    state.page = 1;
+    render(true);
+  }
+
+  function renderLevelFlowScopeHint(summary) {
+    if (!state.level_flow_stage || state.level_flow_stage === "all") return "";
+    return '<div class="summary-flow-scope-hint"><strong>当前状态筛选：'
+      + escapeHtml(stageLabel(state.level_flow_stage)) + ' ' + formatNumber(summary.msku_count || 0)
+      + ' 个</strong><span>下方按历史补货层级展示，同一 MSKU 曾进入多个层级时可重复出现。</span></div>';
+  }
+
+  function renderDetailFilterHint(total, summary) {
+    var hasTopStage = state.summary_stage && state.summary_stage !== "all";
+    if (!state.detail_stage && !hasTopStage) return "";
+    var parts = [];
+    if (hasTopStage) {
+      parts.push('<span>当前状态：</span><strong>' + escapeHtml(stageLabel(state.summary_stage))
+        + ' ' + formatNumber(summary.msku_count || 0) + ' 个</strong>');
+    }
+    if (state.detail_stage) {
+      parts.push('<span>明细筛选：</span><strong>'
+        + escapeHtml(state.history_level === "all" ? "全部分层" : state.history_level)
+        + ' · ' + escapeHtml(detailStageLabel(state.detail_stage))
+        + '，命中 ' + formatNumber(total || 0) + ' 个</strong>');
+    }
+    return '<div class="summary-detail-filter-hint">' + parts.join('<i>｜</i>')
+      + (state.detail_stage ? '<button type="button" data-clear-detail-stage>清除明细筛选</button>' : '')
+      + '</div>';
+  }
+
+  function detailStageLabel(stage) {
+    return {
+      no_purchase_plan: "未建采购计划",
+      purchase_plan_completed: "已建采购计划",
+      supplier_not_shipped: "采购未在途",
+      supplier_shipped_completed: "采购已在途",
+      inbound_not_received: "采购在途未到仓",
+      local_received_completed: "已到本地仓",
+      qc_passed_completed: "已质检通过",
+      no_fba_plan: "质检通过未建FBA",
+      fba_plan_completed: "已创建FBA",
+      fba_not_shipped: "FBA未出库",
+      fba_shipped_completed: "FBA已出库",
+      fba_not_receiving: "FBA未接收",
+      fba_receiving_completed: "FBA已接收"
+    }[stage] || "指定链路状态";
   }
 
   function renderCategoryMix(mix, total, level) {

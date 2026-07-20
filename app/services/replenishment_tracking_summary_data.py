@@ -68,6 +68,11 @@ def to_int(value: Any) -> int:
     return int(round(to_float(value)))
 
 
+def format_number_compact(value: Any) -> str:
+    number = to_float(value)
+    return str(int(number)) if number.is_integer() else f"{number:g}"
+
+
 def purchase_status_label(value: str | None) -> str:
     return PURCHASE_STATUS_LABELS.get(value or "none", PURCHASE_STATUS_LABELS["none"])
 
@@ -216,6 +221,8 @@ class ReplenishmentTrackingSummaryService:
         purchase_status: str = "all",
         fba_status: str = "all",
         summary_stage: str = "all",
+        level_flow_stage: str = "all",
+        detail_stage: str = "",
         category_period_days: int | str | None = 30,
         history_level: str = "all",
         product_category: str = "all",
@@ -234,18 +241,88 @@ class ReplenishmentTrackingSummaryService:
                 return self._empty_payload(safe_page, safe_page_size)
             safe_category_period = self._normalize_category_period(category_period_days)
             category_column = PRODUCT_CATEGORY_COLUMNS[safe_category_period]
-            filters, params = self._where(selected_date, entry_batch_days, level, purchase_status, fba_status, summary_stage, history_level, product_category, site, store, keyword, category_column, order_keyword)
-            summary = self._summary(conn, filters, params)
-            level_flow = self._level_flow(conn, filters, params, category_column)
-            total = self._total(conn, filters, params)
+            # The top status cards narrow the layer distribution independently.
+            # Lower-card detail actions keep this value so the selected top status
+            # remains visible while the MSKU table is further narrowed.
+            flow_filters, flow_params = self._where(
+                selected_date,
+                entry_batch_days,
+                level,
+                purchase_status,
+                fba_status,
+                level_flow_stage,
+                "all",
+                product_category,
+                site,
+                store,
+                keyword,
+                category_column,
+                order_keyword,
+            )
+            overview_filters, overview_params = self._where(
+                selected_date,
+                entry_batch_days,
+                level,
+                purchase_status,
+                fba_status,
+                summary_stage,
+                "all",
+                product_category,
+                site,
+                store,
+                keyword,
+                category_column,
+                order_keyword,
+            )
+            scoped_filters, scoped_params = self._where(
+                selected_date,
+                entry_batch_days,
+                level,
+                purchase_status,
+                fba_status,
+                summary_stage,
+                history_level,
+                product_category,
+                site,
+                store,
+                keyword,
+                category_column,
+                order_keyword,
+            )
+            detail_filters, detail_params = self._where(
+                selected_date,
+                entry_batch_days,
+                level,
+                purchase_status,
+                fba_status,
+                summary_stage,
+                history_level,
+                product_category,
+                site,
+                store,
+                keyword,
+                category_column,
+                order_keyword,
+                detail_stage,
+            )
+            summary = self._summary(conn, overview_filters, overview_params)
+            scoped_summary = (
+                summary
+                if not history_level or history_level == "all"
+                else self._summary(conn, scoped_filters, scoped_params)
+            )
+            # Keep the layer cards stable while a user narrows only the lower MSKU table.
+            level_flow = self._level_flow(conn, flow_filters, flow_params, category_column)
+            total = self._total(conn, detail_filters, detail_params)
             total_pages = max(1, math.ceil(total / safe_page_size))
             safe_page = min(safe_page, total_pages)
-            items = self._items(conn, filters, params, safe_page, safe_page_size, category_column)
+            items = self._items(conn, detail_filters, detail_params, safe_page, safe_page_size, category_column)
             meta = self._meta(conn)
         return {
             "cutoff_date": format_day(selected_date),
             "category_period_days": safe_category_period,
             "summary": summary,
+            "scoped_summary": scoped_summary,
             "level_flow": level_flow,
             "items": items,
             "total": total,
@@ -266,7 +343,72 @@ class ReplenishmentTrackingSummaryService:
                     {"cutoff_date": selected_date, "site": site, "store": store, "msku": msku},
                 )
                 rows = cursor.fetchall()
-        return {"rows": [self._map_detail_row(row) for row in rows]}
+        mapped_rows = [self._map_detail_row(row) for row in rows]
+        return {"rows": self._apply_combined_purchase_plan_match(mapped_rows)}
+
+    @staticmethod
+    def _apply_combined_purchase_plan_match(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Group one FBA plan that exactly represents several purchase plans."""
+        purchase_plans: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            plan_sn = str(row.get("purchase_plan_sn") or "").strip()
+            if row.get("source_type") == "purchase_plan" and plan_sn:
+                purchase_plans[plan_sn] = row
+        if len(purchase_plans) < 2:
+            return rows
+
+        if any(
+            row.get("source_type") == "fba_plan"
+            and str(row.get("link_attribution") or "") in {"current", "本次链路", "正常链路", "提前创建FBA"}
+            for row in rows
+        ):
+            return rows
+
+        total_qty = sum(to_float(row.get("purchase_plan_qty")) for row in purchase_plans.values())
+        if total_qty <= 0:
+            return rows
+        latest_plan_time = max(
+            (str(row.get("purchase_plan_time") or "") for row in purchase_plans.values()),
+            default="",
+        )
+        tolerance = max(total_qty * 0.2, 5)
+        candidate_orders: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            if row.get("source_type") != "fba_plan":
+                continue
+            attribution = str(row.get("link_attribution") or "")
+            if attribution not in {"historical", "历史链路", "历史/待确认"}:
+                continue
+            order_sn = str(row.get("order_sn") or "").strip()
+            plan_time = str(row.get("plan_create_time") or row.get("purchase_plan_time") or "")
+            fba_qty = to_float(row.get("shipment_plan_quantity") or row.get("purchase_plan_qty"))
+            if order_sn and plan_time >= latest_plan_time and abs(fba_qty - total_qty) <= tolerance:
+                candidate_orders[order_sn] = row
+        if len(candidate_orders) != 1:
+            return rows
+
+        fba_order_sn = next(iter(candidate_orders))
+        plan_sns = sorted(
+            purchase_plans,
+            key=lambda sn: str(purchase_plans[sn].get("purchase_plan_time") or ""),
+        )
+        batch_key = " + ".join(plan_sns)
+        qty_parts = [to_float(purchase_plans[sn].get("purchase_plan_qty")) for sn in plan_sns]
+        qty_text = " + ".join(format_number_compact(value) for value in qty_parts)
+        qty_text = f"{qty_text} = {format_number_compact(total_qty)}"
+
+        for row in rows:
+            row_plan_sn = str(row.get("purchase_plan_sn") or "").strip()
+            row_order_sn = str(row.get("order_sn") or "").strip()
+            if row_plan_sn in purchase_plans or row_order_sn == fba_order_sn:
+                row["detail_batch_key"] = batch_key
+                row["combined_purchase_match"] = True
+                row["combined_purchase_plan_sns"] = plan_sns
+                row["combined_purchase_qty"] = total_qty
+                row["combined_purchase_qty_text"] = qty_text
+            if row_order_sn == fba_order_sn and row.get("source_type") in {"fba_plan", "fba_shipment"}:
+                row["link_attribution"] = "合并采购匹配"
+        return rows
 
     @staticmethod
     def _sku_parent_sql(expr: str) -> str:
@@ -736,7 +878,7 @@ class ReplenishmentTrackingSummaryService:
         return row.get("cutoff_date")
 
     def _empty_payload(self, page: int, page_size: int) -> dict[str, Any]:
-        return {"summary": {}, "level_flow": [], "items": [], "total": 0, "page": page, "page_size": page_size, "total_pages": 1, "meta": {}}
+        return {"summary": {}, "scoped_summary": {}, "level_flow": [], "items": [], "total": 0, "page": page, "page_size": page_size, "total_pages": 1, "meta": {}}
 
     def _normalize_category_period(self, value: int | str | None) -> int:
         try:
@@ -745,7 +887,7 @@ class ReplenishmentTrackingSummaryService:
             period = 30
         return period if period in PRODUCT_CATEGORY_PERIODS else 30
 
-    def _where(self, cutoff_date, entry_batch_days, level, purchase_status, fba_status, summary_stage, history_level, product_category, site, store, keyword, category_column, order_keyword=""):
+    def _where(self, cutoff_date, entry_batch_days, level, purchase_status, fba_status, summary_stage, history_level, product_category, site, store, keyword, category_column, order_keyword="", detail_stage=""):
         clauses = ["s.cutoff_date = %(cutoff_date)s"]
         params: dict[str, Any] = {"cutoff_date": cutoff_date}
         try:
@@ -789,74 +931,13 @@ class ReplenishmentTrackingSummaryService:
         elif summary_stage == "eta_overdue":
             clauses.append("s.nearest_fba_eta_days < 0")
         elif summary_stage == "no_purchase_plan":
-            if history_level and history_level != "all":
-                clauses.append("""
-                    exists (
-                        select 1
-                        from dashboard_replenishment_tracking_summary_level_history h
-                        where h.cutoff_date = s.cutoff_date
-                          and h.country_category = s.country_category
-                          and h.seller_name_new = s.seller_name_new
-                          and h.seller_sku_adj = s.seller_sku_adj
-                          and h.historical_replenishment_level = %(history_level)s
-                          and h.purchase_plan_flag = 0
-                    )
-                """)
-                params["history_level"] = history_level
-            else:
-                clauses.append("s.purchase_plan_flag = 0")
+            clauses.append("s.purchase_plan_flag = 0")
         elif summary_stage == "purchase_plan_done":
-            if history_level and history_level != "all":
-                clauses.append("""
-                    exists (
-                        select 1
-                        from dashboard_replenishment_tracking_summary_level_history h
-                        where h.cutoff_date = s.cutoff_date
-                          and h.country_category = s.country_category
-                          and h.seller_name_new = s.seller_name_new
-                          and h.seller_sku_adj = s.seller_sku_adj
-                          and h.historical_replenishment_level = %(history_level)s
-                          and h.purchase_plan_flag = 1
-                    )
-                """)
-                params["history_level"] = history_level
-            else:
-                clauses.append("s.purchase_plan_flag = 1")
+            clauses.append("s.purchase_plan_flag = 1")
         elif summary_stage == "supplier_not_shipped":
-            if history_level and history_level != "all":
-                clauses.append("""
-                    exists (
-                        select 1
-                        from dashboard_replenishment_tracking_summary_level_history h
-                        where h.cutoff_date = s.cutoff_date
-                          and h.country_category = s.country_category
-                          and h.seller_name_new = s.seller_name_new
-                          and h.seller_sku_adj = s.seller_sku_adj
-                          and h.historical_replenishment_level = %(history_level)s
-                          and h.purchase_plan_flag = 1
-                          and h.supplier_shipped_flag = 0
-                    )
-                """)
-                params["history_level"] = history_level
-            else:
-                clauses.append("s.purchase_plan_flag = 1 and s.supplier_shipped_flag = 0")
+            clauses.append("s.purchase_plan_flag = 1 and s.supplier_shipped_flag = 0")
         elif summary_stage == "supplier_shipped_done":
-            if history_level and history_level != "all":
-                clauses.append("""
-                    exists (
-                        select 1
-                        from dashboard_replenishment_tracking_summary_level_history h
-                        where h.cutoff_date = s.cutoff_date
-                          and h.country_category = s.country_category
-                          and h.seller_name_new = s.seller_name_new
-                          and h.seller_sku_adj = s.seller_sku_adj
-                          and h.historical_replenishment_level = %(history_level)s
-                          and h.supplier_shipped_flag = 1
-                    )
-                """)
-                params["history_level"] = history_level
-            else:
-                clauses.append("s.supplier_shipped_flag = 1")
+            clauses.append("s.supplier_shipped_flag = 1")
         elif summary_stage == "inbound_not_received":
             clauses.append("s.supplier_shipped_flag = 1 and s.local_received_flag = 0")
         elif summary_stage == "local_received_done":
@@ -882,6 +963,7 @@ class ReplenishmentTrackingSummaryService:
         if history_level and history_level != "all":
             clauses.append("exists (select 1 from dashboard_replenishment_tracking_summary_level_history h where h.cutoff_date = s.cutoff_date and h.country_category = s.country_category and h.seller_name_new = s.seller_name_new and h.seller_sku_adj = s.seller_sku_adj and h.historical_replenishment_level = %(history_level)s)")
             params["history_level"] = history_level
+        self._append_detail_stage_filter(clauses, detail_stage, history_level)
         if product_category and product_category != "all":
             clauses.append(f"coalesce(s.{category_column}, s.product_category, '未分类') = %(product_category)s")
             params["product_category"] = product_category
@@ -898,6 +980,29 @@ class ReplenishmentTrackingSummaryService:
             clauses.append("coalesce(s.order_sn_summary, '') like %(order_keyword)s")
             params["order_keyword"] = f"%{order_keyword.strip()}%"
         return " and ".join(clauses), params
+
+    @staticmethod
+    def _append_detail_stage_filter(clauses: list[str], detail_stage: str, history_level: str) -> None:
+        """Apply the selected node's cutoff-day status within the historical layer."""
+        if not detail_stage:
+            return
+        stage_conditions = {
+            "no_purchase_plan": "s.purchase_plan_flag = 0",
+            "purchase_plan_completed": "s.purchase_plan_flag = 1",
+            "supplier_not_shipped": "s.purchase_plan_flag = 1 and s.supplier_shipped_flag = 0",
+            "supplier_shipped_completed": "s.supplier_shipped_flag = 1",
+            "local_received_completed": "s.local_received_flag = 1",
+            "qc_passed_completed": "s.qc_passed_flag = 1",
+            "no_fba_plan": "s.qc_passed_flag = 1 and s.fba_plan_flag = 0",
+            "fba_plan_completed": "s.fba_plan_flag = 1",
+            "fba_not_shipped": "s.fba_plan_flag = 1 and s.fba_shipped_flag = 0",
+            "fba_shipped_completed": "s.fba_shipped_flag = 1",
+            "fba_not_receiving": "s.fba_shipped_flag = 1 and s.fba_receiving_flag = 0",
+            "fba_receiving_completed": "s.fba_receiving_flag = 1",
+        }
+        condition = stage_conditions.get(detail_stage)
+        if condition:
+            clauses.append(condition)
 
     def _summary(self, conn, filters, params):
         with conn.cursor() as cursor:
@@ -949,15 +1054,17 @@ class ReplenishmentTrackingSummaryService:
                          )
                         then 1 else 0
                     end) as same_day_count,
-                    sum(case when h.purchase_plan_flag = 1 then 1 else 0 end) as purchased_count,
+                    -- The denominator is the historical layer population; every node
+                    -- uses the cutoff-day tracking status so late actions are counted.
+                    sum(case when s.purchase_plan_flag = 1 then 1 else 0 end) as purchased_count,
                     sum(case when s.purchase_status = 'none' then 1 else 0 end) as unpurchased_count,
                     sum(case when s.purchase_status <> 'none' and s.fba_status <> 'none' then 1 else 0 end) as fba_created_count,
                     sum(case when s.fba_status in ('current', 'mixed') then 1 else 0 end) as current_fba_count,
                     sum(case when s.fba_status in ('historical', 'mixed') then 1 else 0 end) as historical_fba_count,
                     sum(case when s.received_qty > 0 then 1 else 0 end) as received_count,
                     count(*) as demand_count,
-                    sum(case when h.purchase_plan_flag = 1 then 1 else 0 end) as purchase_plan_node_count,
-                    sum(case when h.supplier_shipped_flag = 1 then 1 else 0 end) as supplier_shipped_count,
+                    sum(case when s.purchase_plan_flag = 1 then 1 else 0 end) as purchase_plan_node_count,
+                    sum(case when s.supplier_shipped_flag = 1 then 1 else 0 end) as supplier_shipped_count,
                     sum(case when s.local_received_flag = 1 then 1 else 0 end) as local_received_count,
                     sum(case when s.qc_passed_flag = 1 then 1 else 0 end) as qc_passed_count,
                     sum(case when s.fba_plan_flag = 1 then 1 else 0 end) as fba_plan_count,
