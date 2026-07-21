@@ -491,7 +491,7 @@ SELECT_SUPPLIER_MOQ_SYNC_SQL = """
 select
     %(snapshot_date)s as snapshot_date,
     sku,
-    max(moq) as supplier_moq
+    min(case when moq > 0 then moq end) as supplier_moq
 from dwd_datasync.lx_product_local_product_info_GongYingShangBaoJia
 where is_primary = '是'
   and sku is not null
