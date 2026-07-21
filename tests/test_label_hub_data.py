@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.services.label_hub_data import CACHE_SECONDS, LabelHubDataService, _missing_metric_mskus
+from app.services.label_hub_data import CACHE_SECONDS, LabelHubDataService, _missing_metric_units
 
 
 DETAILS = [
@@ -182,14 +182,18 @@ class LabelHubDataTests(unittest.TestCase):
         self.assertEqual("2026-07-16", scoped_queries[0][1]["data_date"])
         self.assertIn("data_date = %(data_date)s", scoped_queries[0][0])
 
-    def test_missing_metric_mskus_treats_any_matched_scope_as_available(self):
+    def test_missing_metric_units_only_merge_rows_within_the_same_business_unit(self):
         rows = [
-            {"msku": "A1", "_metric_present": False},
-            {"msku": "A1", "_metric_present": True},
-            {"msku": "A2", "_metric_present": False},
+            {"country_category": "欧洲站", "store": "StoreA", "msku": "A1", "_metric_present": False},
+            {"country_category": "欧洲站", "store": "StoreA", "msku": "A1", "_metric_present": True},
+            {"country_category": "英国站", "store": "StoreA", "msku": "A1", "_metric_present": False},
+            {"country_category": "欧洲站", "store": "StoreA", "msku": "A2", "_metric_present": False},
         ]
 
-        self.assertEqual({"A2"}, _missing_metric_mskus(rows))
+        self.assertEqual(
+            {("英国站", "StoreA", "A1"), ("欧洲站", "StoreA", "A2")},
+            _missing_metric_units(rows),
+        )
 
     def test_parse_conditions_uses_or_within_parent_and_and_across_parents(self):
         parsed = self.service.parse_conditions("1:101|102;2:201")
@@ -295,7 +299,7 @@ class LabelHubDataTests(unittest.TestCase):
         self.assertEqual(3, star["business_unit_count"])
         self.assertEqual(2, star["unique_msku_count"])
 
-    def test_analysis_panels_deduplicate_msku_but_detail_keeps_business_units(self):
+    def test_analysis_panels_count_business_units_and_keep_unique_msku_auxiliary(self):
         cross_scope_facts = [
             {**FACTS[0], "country_category": "美国站", "store": "StoreB"},
             {**FACTS[1], "country_category": "美国站", "store": "StoreB"},
@@ -320,25 +324,25 @@ class LabelHubDataTests(unittest.TestCase):
         self.assertEqual(4, len(payload["rows"]))
         self.assertEqual(2, payload["kpis"]["sku_count"])
         self.assertEqual(2, payload["kpis"]["metric_msku_count"])
-        self.assertEqual(2, payload["issue_counts"]["all"])
-        self.assertEqual(1, payload["issue_counts"]["problem_role"])
-        self.assertEqual(1, payload["issue_counts"]["zero_sales"])
-        self.assertEqual(2, payload["diagnosis"]["subject"]["msku_count"])
+        self.assertEqual(4, payload["issue_counts"]["all"])
+        self.assertEqual(2, payload["issue_counts"]["problem_role"])
+        self.assertEqual(2, payload["issue_counts"]["zero_sales"])
+        self.assertEqual(4, payload["diagnosis"]["subject"]["msku_count"])
 
         distribution = {item["id"]: item["count"] for item in payload["distribution"]}
-        self.assertEqual(2, distribution[101])
+        self.assertEqual(4, distribution[101])
         self.assertEqual(0, distribution[102])
         sales_trend = next(item for item in payload["breakdowns"] if item["key"] == "sales_trend")
         buckets = {item["key"]: item["msku_count"] for item in sales_trend["buckets"]}
-        self.assertEqual(1, buckets["accelerating"])
-        self.assertEqual(1, buckets["stopped"])
+        self.assertEqual(2, buckets["accelerating"])
+        self.assertEqual(2, buckets["stopped"])
         lifecycle_cell = next(
             item for item in payload["matrix"]["cells"]
             if item["row_id"] == 101 and item["col_id"] == 201
         )
-        self.assertEqual(1, lifecycle_cell["count"])
+        self.assertEqual(2, lifecycle_cell["count"])
 
-    def test_aggregated_panels_choose_best_label_per_msku(self):
+    def test_aggregated_panels_choose_labels_within_each_business_unit(self):
         details = [
             *DETAILS,
             {**DETAILS[0], "sub_label_id": 103, "sub_label_name": "瘦狗产品"},
@@ -380,15 +384,16 @@ class LabelHubDataTests(unittest.TestCase):
         )
 
         distribution = {item["id"]: item["count"] for item in payload["distribution"]}
-        self.assertEqual({101: 1, 102: 1, 103: 0, 104: 0}, distribution)
-        self.assertEqual(payload["kpis"]["sku_count"], sum(distribution.values()))
+        self.assertEqual({101: 1, 102: 1, 103: 1, 104: 1}, distribution)
+        self.assertEqual(payload["population_summary"]["business_unit_count"], sum(distribution.values()))
         self.assertEqual([101, 102, 103, 104], payload["rules"]["aggregation_priority_ids"])
         trend_panel = next(item for item in payload["breakdowns"] if item["key"] == "sales_trend")
         trend_counts = {item["key"]: item["msku_count"] for item in trend_panel["buckets"]}
         self.assertEqual(1, trend_counts["accelerating"])
         self.assertEqual(1, trend_counts["stable"])
-        self.assertEqual(0, trend_counts["declining"])
-        self.assertEqual(0, payload["issue_counts"]["problem_role"])
+        self.assertEqual(1, trend_counts["declining"])
+        self.assertEqual(1, trend_counts["stopped"])
+        self.assertEqual(1, payload["issue_counts"]["problem_role"])
 
     def test_remote_breakdown_and_condition_use_the_selected_analysis_period(self):
         facts = [

@@ -160,12 +160,33 @@ def test_layer_change_drawer_uses_reconciled_ledger_and_same_dimension_labels():
     assert "当前组合变化账" in script
     assert 'row.current_unit_scope' in script
     assert 'metric_profile' in script
+
+
+def test_change_drawer_identifies_each_country_store_msku_business_unit():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+
+    assert 'row.country_category' in script
+    assert 'row.store' in script
+    assert '<th>国家类别</th><th>店铺</th><th>MSKU</th>' in script
+    assert '个经营单元' in script
+    assert '变化经营单元明细' in script
     assert '今日经营分层' in script
     assert '上次组合条件' in script
     assert 'previous_combination_conditions' in script
     assert '今日经营表现' in script
     assert "renderLayerRoutePanel" not in script
     assert ".label-hub-layer-ledger" in styles
+
+
+def test_business_unit_aggregations_are_not_labeled_as_unique_msku_counts():
+    template = (ROOT / "app" / "templates" / "label_hub.html").read_text(encoding="utf-8")
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+
+    assert "这批经营单元在其他分类中的表现" in template
+    assert ">经营单元数</button>" in template
+    assert "分析口径 \" + formatNumber(panel.denominator) + \" 个经营单元" in script
+    assert '<span>经营单元数</span>' in script
 
 
 def test_remote_breakdown_cards_keep_independent_label_periods_in_url_state():
@@ -316,7 +337,7 @@ def test_label_hub_explains_primary_label_priority_for_aggregated_msku():
     script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
 
     assert "aggregation_priority_labels" in script
-    assert "跨经营单元按业务优先级只保留一个主标签" in script
+    assert "同一经营单元按业务优先级只保留一个主标签" in script
     assert "主标签优先级" in script
 
 

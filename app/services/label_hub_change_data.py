@@ -14,6 +14,7 @@ from .label_hub_data import (
     LOCAL_VALUE_PRIORITY,
     METRIC_PERIODS,
     REMOTE_PARENT_CHILD_PRIORITY,
+    _business_unit_key,
     _parse_code_pipe,
     _parse_int_pipe,
     _parse_period_pipe,
@@ -34,6 +35,7 @@ REASON_LABELS = {
     "evidence_missing": "规则证据缺失",
     "evidence_mismatch": "本地重算与远端标签不一致",
 }
+BusinessUnitKey = tuple[str, str, str]
 
 
 def classify_sales_role(daily_sales: float, gross_margin: float) -> int:
@@ -186,34 +188,34 @@ class LabelHubChangeDataService:
             return all(not selected or row.get(field) in selected for selected, field in local_filters)
 
         pre_problem_rows = [row for row in public_rows if matches(row)]
-        grouped = self._rows_by_msku(pre_problem_rows)
+        grouped = self._rows_by_business_unit(pre_problem_rows)
 
-        def preferred_value(rows: list[dict[str, Any]], field: str) -> dict[str, str]:
+        def preferred_value(rows: list[dict[str, Any]], field: str) -> dict[BusinessUnitKey, str]:
             priority = LOCAL_VALUE_PRIORITY[field]
             rank = {value: index for index, value in enumerate(priority)}
             result = {}
-            for msku, msku_rows in self._rows_by_msku(rows).items():
-                values = {str(row.get(field) or "missing") for row in msku_rows if row.get("_metric_present")}
+            for unit, unit_rows in self._rows_by_business_unit(rows).items():
+                values = {str(row.get(field) or "missing") for row in unit_rows if row.get("_metric_present")}
                 if values:
-                    result[msku] = min(values, key=lambda value: (rank.get(value, len(rank)), value))
+                    result[unit] = min(values, key=lambda value: (rank.get(value, len(rank)), value))
             return result
 
         preferred_roles = preferred_value(pre_problem_rows, "sales_role_code")
         preferred_daily = preferred_value(pre_problem_rows, "daily_sales_band_code")
-        profit_by_msku = {
-            msku: sum(float(row.get("order_gross_profit") or 0) for row in rows if row.get("_metric_present"))
-            for msku, rows in grouped.items()
+        profit_by_unit = {
+            unit: sum(float(row.get("order_gross_profit") or 0) for row in rows if row.get("_metric_present"))
+            for unit, rows in grouped.items()
         }
         local_available = metric_scope.get("status") == "available"
-        issue_mskus = {
-            "conflict": {msku for msku, rows in grouped.items() if any(row.get("conflict") for row in rows)},
-            "missing_metrics": {msku for msku, rows in grouped.items() if local_available and not any(row.get("_metric_present") for row in rows)},
-            "zero_sales": {msku for msku, value in preferred_daily.items() if value == "zero"},
-            "negative_profit": {msku for msku, value in profit_by_msku.items() if value < 0},
-            "problem_role": {msku for msku, value in preferred_roles.items() if value == "eliminate"},
+        issue_units = {
+            "conflict": {unit for unit, rows in grouped.items() if any(row.get("conflict") for row in rows)},
+            "missing_metrics": {unit for unit, rows in grouped.items() if local_available and not any(row.get("_metric_present") for row in rows)},
+            "zero_sales": {unit for unit, value in preferred_daily.items() if value == "zero"},
+            "negative_profit": {unit for unit, value in profit_by_unit.items() if value < 0},
+            "problem_role": {unit for unit, value in preferred_roles.items() if value == "eliminate"},
         }
         problem = common["problem"]
-        selected_rows = pre_problem_rows if problem in {"", "all"} else [row for row in pre_problem_rows if row["msku"] in issue_mskus.get(problem, set())]
+        selected_rows = pre_problem_rows if problem in {"", "all"} else [row for row in pre_problem_rows if _business_unit_key(row) in issue_units.get(problem, set())]
 
         def breakdown_matches(row: dict[str, Any], *, skip_local: str = "", skip_parent: int = 0) -> bool:
             if not children_for(row, parent_id):
@@ -229,12 +231,12 @@ class LabelHubChangeDataService:
                 }[field]
                 if local_key != skip_local and selected and row.get(field) not in selected:
                     return False
-            return problem in {"", "all"} or row["msku"] in issue_mskus.get(problem, set())
+            return problem in {"", "all"} or _business_unit_key(row) in issue_units.get(problem, set())
 
         breakdowns = []
         # 分层变化抽屉要与看板卡片保持同一“主标签”口径：
         # 先在当前群体内按优先级归一，再把该层的 MSKU 集合交给两日比较使用。
-        canonical_breakdown_mskus: dict[int, dict[str, set[str]]] = {}
+        canonical_breakdown_units: dict[int, dict[str, set[BusinessUnitKey]]] = {}
         for breakdown_key, definition in LOCAL_BREAKDOWN_DEFINITIONS.items():
             candidates = [row for row in public_rows if breakdown_matches(row, skip_local=breakdown_key)]
             preferred = preferred_value(candidates, definition["field"])
@@ -242,9 +244,9 @@ class LabelHubChangeDataService:
             for bucket_key, _ in definition["buckets"]:
                 buckets.append({"key": bucket_key, "msku_count": sum(value == bucket_key for value in preferred.values())})
             missing = {
-                row["msku"] for row in candidates if not row.get("_metric_present")
+                _business_unit_key(row) for row in candidates if not row.get("_metric_present")
             } - {
-                row["msku"] for row in candidates if row.get("_metric_present")
+                _business_unit_key(row) for row in candidates if row.get("_metric_present")
             }
             buckets.append({"key": "missing", "msku_count": len(missing)})
             breakdowns.append({"source": "local", "key": breakdown_key, "parent_id": 0, "buckets": buckets})
@@ -259,9 +261,9 @@ class LabelHubChangeDataService:
         for remote_parent_id in remote_ids:
             candidates = [row for row in public_rows if breakdown_matches(row, skip_parent=remote_parent_id)]
             selected_period = period_by_parent.get(remote_parent_id, "all")
-            preferred = self._primary_map(self._rows_by_msku(candidates), remote_parent_id, selected_period, categories)
-            canonical_breakdown_mskus[remote_parent_id] = {
-                str(child["id"]): {msku for msku, child_id in preferred.items() if child_id == child["id"]}
+            preferred = self._primary_map(self._rows_by_business_unit(candidates), remote_parent_id, selected_period, categories)
+            canonical_breakdown_units[remote_parent_id] = {
+                str(child["id"]): {unit for unit, child_id in preferred.items() if child_id == child["id"]}
                 for child in categories[remote_parent_id].get("children", [])
             }
             buckets = [
@@ -270,19 +272,20 @@ class LabelHubChangeDataService:
             ]
             breakdowns.append({"source": "remote_label", "key": f"label:{remote_parent_id}", "parent_id": remote_parent_id, "buckets": buckets})
 
-        parent_mskus: dict[int, set[str]] = defaultdict(set)
-        child_mskus: dict[tuple[int, int], set[str]] = defaultdict(set)
+        parent_units: dict[int, set[BusinessUnitKey]] = defaultdict(set)
+        child_units: dict[tuple[int, int], set[BusinessUnitKey]] = defaultdict(set)
         for row in public_rows:
+            unit = _business_unit_key(row)
             for overview_parent, child_ids in row.get("_by_parent", {}).items():
-                parent_mskus[int(overview_parent)].add(row["msku"])
+                parent_units[int(overview_parent)].add(unit)
                 for child_id in child_ids:
-                    child_mskus[(int(overview_parent), int(child_id))].add(row["msku"])
+                    child_units[(int(overview_parent), int(child_id))].add(unit)
         overview = [
             {
                 "id": category["id"],
-                "unique_msku_count": len(parent_mskus[category["id"]]),
+                "unique_msku_count": len(parent_units[category["id"]]),
                 "children": [
-                    {"id": child["id"], "unique_msku_count": len(child_mskus[(category["id"], child["id"])])}
+                    {"id": child["id"], "unique_msku_count": len(child_units[(category["id"], child["id"])])}
                     for child in category.get("children", [])
                 ],
             }
@@ -291,18 +294,18 @@ class LabelHubChangeDataService:
         return {
             "parent_label_id": parent_id,
             "overview": overview,
-            "issue_counts": {"all": len(grouped), **{key: len(values) for key, values in issue_mskus.items()}},
+            "issue_counts": {"all": len(grouped), **{key: len(values) for key, values in issue_units.items()}},
             "breakdowns": breakdowns,
             "_comparison_rows": selected_rows,
             "_baseline_rows": public_rows,
-            "_canonical_breakdown_mskus": canonical_breakdown_mskus,
+            "_canonical_breakdown_units": canonical_breakdown_units,
         }
 
     @staticmethod
-    def _rows_by_msku(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
-        result: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    def _rows_by_business_unit(rows: list[dict[str, Any]]) -> dict[BusinessUnitKey, list[dict[str, Any]]]:
+        result: dict[BusinessUnitKey, list[dict[str, Any]]] = defaultdict(list)
         for row in rows:
-            result[str(row["msku"])].append(row)
+            result[_business_unit_key(row)].append(row)
         return result
 
     @staticmethod
@@ -322,30 +325,30 @@ class LabelHubChangeDataService:
 
     def _primary_map(
         self,
-        grouped: dict[str, list[dict[str, Any]]],
+        grouped: dict[BusinessUnitKey, list[dict[str, Any]]],
         parent_id: int,
         period: str,
         categories: dict[int, dict[str, Any]],
-    ) -> dict[str, int]:
+    ) -> dict[BusinessUnitKey, int]:
         priority = list(categories.get(parent_id, {}).get("aggregation_priority_ids") or REMOTE_PARENT_CHILD_PRIORITY.get(parent_id, []))
         result = {}
-        for msku, rows in grouped.items():
+        for unit, rows in grouped.items():
             child = self._primary_child(rows, parent_id, period, priority)
             if child is not None:
-                result[msku] = child
+                result[unit] = child
         return result
 
     def _signature_map(
         self,
-        grouped: dict[str, list[dict[str, Any]]],
+        grouped: dict[BusinessUnitKey, list[dict[str, Any]]],
         categories: dict[int, dict[str, Any]],
         transition_period: str,
-    ) -> dict[str, dict[int, int]]:
-        result: dict[str, dict[int, int]] = defaultdict(dict)
+    ) -> dict[BusinessUnitKey, dict[int, int]]:
+        result: dict[BusinessUnitKey, dict[int, int]] = defaultdict(dict)
         for parent_id in categories:
             period = transition_period if parent_id == 1 else "all"
-            for msku, child_id in self._primary_map(grouped, parent_id, period, categories).items():
-                result[msku][parent_id] = child_id
+            for unit, child_id in self._primary_map(grouped, parent_id, period, categories).items():
+                result[unit][parent_id] = child_id
         return result
 
     @staticmethod
@@ -489,33 +492,24 @@ class LabelHubChangeDataService:
 
     def _sales_role_reasons(
         self,
-        mskus: set[str],
-        previous_grouped: dict[str, list[dict[str, Any]]],
-        current_grouped: dict[str, list[dict[str, Any]]],
+        units: set[BusinessUnitKey],
+        previous_grouped: dict[BusinessUnitKey, list[dict[str, Any]]],
+        current_grouped: dict[BusinessUnitKey, list[dict[str, Any]]],
         evidence: dict[tuple[str, str, str, str], dict[str, Any]],
         previous_date: str,
         current_date: str,
-    ) -> tuple[dict[str, dict[str, str]], list[dict[str, Any]]]:
-        by_msku: dict[str, dict[str, str]] = {}
+    ) -> tuple[dict[BusinessUnitKey, dict[str, str]], list[dict[str, Any]]]:
+        by_unit: dict[BusinessUnitKey, dict[str, str]] = {}
         counts: Counter[str] = Counter()
-        for msku in mskus:
-            previous_units = {(row["country_category"], row["store"]) for row in previous_grouped.get(msku, [])}
-            current_units = {(row["country_category"], row["store"]) for row in current_grouped.get(msku, [])}
-            shared_units = previous_units & current_units
-            pairs = []
-            for country, store in shared_units:
-                old = evidence.get((previous_date, country, store, msku), {})
-                new = evidence.get((current_date, country, store, msku), {})
-                pairs.append(self._reason_for_pair(old, new))
-            if not pairs:
-                code = "business_unit_added" if current_units and not previous_units else ("business_unit_removed" if previous_units and not current_units else "evidence_missing")
-                pairs = [(code, REASON_LABELS[code])]
-            priority = ["both_cross", "daily_cross", "margin_cross", "evidence_mismatch", "evidence_missing", "business_unit_added", "business_unit_removed"]
-            chosen = min(pairs, key=lambda item: priority.index(item[0]) if item[0] in priority else len(priority))
-            by_msku[msku] = {"code": chosen[0], "summary": chosen[1]}
+        for unit in units:
+            country, store, msku = unit
+            old = evidence.get((previous_date, country, store, msku), {}) if unit in previous_grouped else {}
+            new = evidence.get((current_date, country, store, msku), {}) if unit in current_grouped else {}
+            chosen = self._reason_for_pair(old, new)
+            by_unit[unit] = {"code": chosen[0], "summary": chosen[1]}
             counts[chosen[0]] += 1
         distribution = [{"key": code, "label": label, "count": counts.get(code, 0)} for code, label in REASON_LABELS.items()]
-        return by_msku, distribution
+        return by_unit, distribution
 
     def get_changes(self, **filters: Any) -> dict[str, Any]:
         comparison = self._comparison()
@@ -546,12 +540,12 @@ class LabelHubChangeDataService:
         previous_rows = previous.pop("_comparison_rows", [])
         current_baseline = current.pop("_baseline_rows", [])
         previous_baseline = previous.pop("_baseline_rows", [])
-        current_canonical_breakdowns = current.pop("_canonical_breakdown_mskus", {})
-        previous_canonical_breakdowns = previous.pop("_canonical_breakdown_mskus", {})
-        current_grouped = self._rows_by_msku(current_baseline)
-        previous_grouped = self._rows_by_msku(previous_baseline)
-        current_selected = self._rows_by_msku(current_rows)
-        previous_selected = self._rows_by_msku(previous_rows)
+        current_canonical_breakdowns = current.pop("_canonical_breakdown_units", {})
+        previous_canonical_breakdowns = previous.pop("_canonical_breakdown_units", {})
+        current_grouped = self._rows_by_business_unit(current_baseline)
+        previous_grouped = self._rows_by_business_unit(previous_baseline)
+        current_selected = self._rows_by_business_unit(current_rows)
+        previous_selected = self._rows_by_business_unit(previous_rows)
         current_set = set(current_selected)
         previous_set = set(previous_selected)
         layer_parent = int(filters.get("layer_change_parent") or 0)
@@ -614,13 +608,13 @@ class LabelHubChangeDataService:
             if parent in categories
         }
 
-        changed = {msku for msku in kept if current_signatures.get(msku, {}) != previous_signatures.get(msku, {})}
-        all_mskus = current_set | previous_set
+        changed = {unit for unit in kept if current_signatures.get(unit, {}) != previous_signatures.get(unit, {})}
+        all_units = current_set | previous_set
         evidence = self._fetch_evidence(comparison["current_date"], comparison["previous_date"], transition_period)
-        reason_by_msku, reason_distribution = self._sales_role_reasons(changed | added | removed, previous_grouped, current_grouped, evidence, comparison["previous_date"], comparison["current_date"])
+        reason_by_unit, reason_distribution = self._sales_role_reasons(changed | added | removed, previous_grouped, current_grouped, evidence, comparison["previous_date"], comparison["current_date"])
 
-        def label_for(mapping: dict[str, int], msku: str) -> str:
-            return child_labels.get(mapping.get(msku), "未命中")
+        def label_for(mapping: dict[BusinessUnitKey, int], unit: BusinessUnitKey) -> str:
+            return child_labels.get(mapping.get(unit), "未命中")
 
         def unit_scope(rows: list[dict[str, Any]]) -> str:
             units = sorted({
@@ -664,13 +658,13 @@ class LabelHubChangeDataService:
             ("margin_bands", "margin_band_code", "margin_band", "毛利段"),
         )
 
-        def combination_condition_states(msku: str, source_rows: list[dict[str, Any]], is_current: bool) -> list[dict[str, Any]]:
+        def combination_condition_states(unit: BusinessUnitKey, source_rows: list[dict[str, Any]], is_current: bool) -> list[dict[str, Any]]:
             states: list[dict[str, Any]] = []
             for selected_parent, selected_children in condition_map.items():
                 maps = condition_primary_maps.get(selected_parent)
                 if not maps:
                     continue
-                selected_code = (maps[1] if is_current else maps[0]).get(msku)
+                selected_code = (maps[1] if is_current else maps[0]).get(unit)
                 states.append({
                     "dimension": parent_labels.get(selected_parent, str(selected_parent)),
                     "value": child_labels.get(selected_code, "无标签事实"),
@@ -708,43 +702,39 @@ class LabelHubChangeDataService:
             }
 
         rows = []
-        for msku in all_mskus:
-            relation = "added" if msku in added else ("removed" if msku in removed else ("changed" if msku in changed else "unchanged"))
-            trigger_parent_ids = sorted(parent_id for parent_id in set(previous_signatures.get(msku, {})) | set(current_signatures.get(msku, {})) if previous_signatures.get(msku, {}).get(parent_id) != current_signatures.get(msku, {}).get(parent_id))
-            units = {
-                (row["country_category"], row["store"])
-                for row in previous_grouped.get(msku, []) + current_grouped.get(msku, [])
-            }
-            previous_units = {(row["country_category"], row["store"]) for row in previous_grouped.get(msku, [])}
-            current_units = {(row["country_category"], row["store"]) for row in current_grouped.get(msku, [])}
-            if not previous_units:
+        for unit in all_units:
+            country_category, store, msku = unit
+            relation = "added" if unit in added else ("removed" if unit in removed else ("changed" if unit in changed else "unchanged"))
+            trigger_parent_ids = sorted(parent_id for parent_id in set(previous_signatures.get(unit, {})) | set(current_signatures.get(unit, {})) if previous_signatures.get(unit, {}).get(parent_id) != current_signatures.get(unit, {}).get(parent_id))
+            previous_rows_for_unit = previous_grouped.get(unit, [])
+            current_rows_for_unit = current_grouped.get(unit, [])
+            if not previous_rows_for_unit:
                 fact_status = "上次无标签事实"
-            elif not current_units:
+            elif not current_rows_for_unit:
                 fact_status = "本次无标签事实"
-            elif previous_units.isdisjoint(current_units):
-                fact_status = "经营单元变化"
             else:
                 fact_status = "标签事实可比"
-            reason = reason_by_msku.get(msku, {"code": "", "summary": ""})
-            previous_rows_for_msku = previous_grouped.get(msku, [])
-            current_rows_for_msku = current_grouped.get(msku, [])
-            current_metrics = metric_snapshot(current_rows_for_msku)
+            reason = reason_by_unit.get(unit, {"code": "", "summary": ""})
+            current_metrics = metric_snapshot(current_rows_for_unit)
             rows.append({
+                "business_unit_key": "|".join(unit),
+                "country_category": country_category,
+                "store": store,
                 "msku": msku,
-                "previous_label": label_for(previous_primary, msku),
-                "current_label": label_for(current_primary, msku),
-                "previous_layer_label": label_for(previous_layer_primary, msku),
-                "current_layer_label": label_for(current_layer_primary, msku),
-                "previous_combination_conditions": combination_condition_states(msku, previous_rows_for_msku, False),
-                "current_combination_conditions": combination_condition_states(msku, current_rows_for_msku, True),
+                "previous_label": label_for(previous_primary, unit),
+                "current_label": label_for(current_primary, unit),
+                "previous_layer_label": label_for(previous_layer_primary, unit),
+                "current_layer_label": label_for(current_layer_primary, unit),
+                "previous_combination_conditions": combination_condition_states(unit, previous_rows_for_unit, False),
+                "current_combination_conditions": combination_condition_states(unit, current_rows_for_unit, True),
                 "change_type": relation,
                 "change_type_label": {"added": "新增", "removed": "减少", "changed": "标签变化", "unchanged": "保持"}[relation],
                 "trigger_dimensions": [parent_labels.get(item, str(item)) for item in trigger_parent_ids],
-                "previous_matched": msku in previous_set,
-                "current_matched": msku in current_set,
-                "business_unit_count": len(units),
-                "previous_unit_scope": unit_scope(previous_rows_for_msku),
-                "current_unit_scope": unit_scope(current_rows_for_msku),
+                "previous_matched": unit in previous_set,
+                "current_matched": unit in current_set,
+                "business_unit_count": 1,
+                "previous_unit_scope": unit_scope(previous_rows_for_unit),
+                "current_unit_scope": unit_scope(current_rows_for_unit),
                 "fact_status": fact_status,
                 "metric_profile": current_metrics,
                 "sales_role_reason_code": reason["code"],
@@ -769,16 +759,16 @@ class LabelHubChangeDataService:
                 "left": transition_rows("removed"),
             }
 
-        previous_parent = Counter(label_for(previous_primary, msku) for msku in previous_grouped)
-        current_parent = Counter(label_for(current_primary, msku) for msku in current_grouped)
-        matrix_cells = Counter((label_for(previous_primary, msku), label_for(current_primary, msku)) for msku in set(previous_grouped) | set(current_grouped))
+        previous_parent = Counter(label_for(previous_primary, unit) for unit in previous_grouped)
+        current_parent = Counter(label_for(current_primary, unit) for unit in current_grouped)
+        matrix_cells = Counter((label_for(previous_primary, unit), label_for(current_primary, unit)) for unit in set(previous_grouped) | set(current_grouped))
         transition_matrix = {
             "rows": [{"key": label, "label": label, "count": count} for label, count in previous_parent.items()],
             "columns": [{"key": label, "label": label, "count": count} for label, count in current_parent.items()],
             "cells": [{"row": row, "column": column, "count": count} for (row, column), count in matrix_cells.items()],
         }
 
-        # “全部变化”只列出发生变化的 MSKU；保持不变的记录用于两期数量对账，
+        # “全部变化”只列出发生变化的经营单元；保持不变的记录用于两期数量对账，
         # 但不应混入分层变化明细，否则会掩盖当前层真正的转入、转出和标签切换。
         if change_type == "all":
             rows = [row for row in rows if row["change_type"] != "unchanged"]
@@ -794,7 +784,7 @@ class LabelHubChangeDataService:
         sort_field = sort_field if sort_field in CHANGE_SORT_FIELDS else "change_type"
         sort_dir = str(filters.get("sort_dir") or "asc").lower()
         change_rank = {"added": 0, "removed": 1, "changed": 2, "unchanged": 3}
-        rows.sort(key=lambda row: (change_rank.get(row["change_type"], 9), row["msku"]) if sort_field == "change_type" else (row.get(sort_field) or "", row["msku"]), reverse=sort_dir == "desc")
+        rows.sort(key=lambda row: (change_rank.get(row["change_type"], 9), row["country_category"], row["store"], row["msku"]) if sort_field == "change_type" else (row.get(sort_field) or "", row["country_category"], row["store"], row["msku"]), reverse=sort_dir == "desc")
         page_size = max(10, min(100, int(filters.get("page_size") or 20)))
         total_pages = max(1, math.ceil(len(rows) / page_size))
         page = min(max(1, int(filters.get("page") or 1)), total_pages)
@@ -812,7 +802,13 @@ class LabelHubChangeDataService:
                 "layer_transition_from": layer_transition_from,
                 "layer_transition_to": layer_transition_to,
             },
-            "summary": {"current": len(current_set), "previous": len(previous_set), "added": len(added), "removed": len(removed), "unchanged": len(kept), "changed": len(changed), "net": len(added) - len(removed)},
+            "summary": {
+                "current": len(current_set), "previous": len(previous_set),
+                "added": len(added), "removed": len(removed),
+                "unchanged": len(kept), "changed": len(changed),
+                "net": len(added) - len(removed),
+                "unique_msku_count": len({unit[2] for unit in all_units}),
+            },
             "overview_deltas": self._delta_overview(current.get("overview", []), previous.get("overview", [])),
             "breakdown_deltas": self._delta_breakdowns(current.get("breakdowns", []), previous.get("breakdowns", [])),
             "selected_group_delta": {"current": len(current_set), "previous": len(previous_set), "delta": len(current_set) - len(previous_set), "rate": round((len(current_set) - len(previous_set)) / len(previous_set), 4) if previous_set else None},

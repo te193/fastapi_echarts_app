@@ -8,12 +8,14 @@ DETAILS = [
     {"label_id": 1, "label_name": "销售角色", "sub_label_id": 103, "sub_label_name": "瘦狗产品", "mutual_exclusion": "互斥", "status": "已启用"},
     {"label_id": 1, "label_name": "销售角色", "sub_label_id": 104, "sub_label_name": "问题产品", "mutual_exclusion": "互斥", "status": "已启用"},
     {"label_id": 2, "label_name": "生命周期", "sub_label_id": 201, "sub_label_name": "成长期", "mutual_exclusion": "互斥", "status": "已启用"},
+    {"label_id": 2, "label_name": "生命周期", "sub_label_id": 203, "sub_label_name": "成长期", "mutual_exclusion": "互斥", "status": "已启用"},
+    {"label_id": 2, "label_name": "生命周期", "sub_label_id": 204, "sub_label_name": "成熟期", "mutual_exclusion": "互斥", "status": "已启用"},
 ]
 
 
-def internal_row(msku, child, lifecycle=201, store="StoreA"):
+def internal_row(msku, child, lifecycle=201, store="StoreA", country="欧洲站"):
     return {
-        "country_category": "欧洲站", "store": store, "msku": msku,
+        "country_category": country, "store": store, "msku": msku,
         "_by_parent": {1: {child}, 2: {lifecycle}},
         "_by_parent_period": {1: {"30d": {child}}, 2: {"current": {lifecycle}}},
     }
@@ -34,7 +36,7 @@ def payload(selected, baseline, role_count, issue_count=0, canonical_breakdowns=
         }],
         "_comparison_rows": selected,
         "_baseline_rows": baseline,
-        "_canonical_breakdown_mskus": canonical_breakdowns or {},
+        "_canonical_breakdown_units": canonical_breakdowns or {},
     }
 
 
@@ -72,7 +74,7 @@ def test_changes_reconcile_sets_sources_matrix_and_role_reason():
 
     result = service.get_changes(metric_period="30d", parent_label_id=1, transition_period="30d")
 
-    assert result["summary"] == {"current": 2, "previous": 2, "added": 1, "removed": 1, "unchanged": 1, "changed": 1, "net": 0}
+    assert result["summary"] == {"current": 2, "previous": 2, "added": 1, "removed": 1, "unchanged": 1, "changed": 1, "net": 0, "unique_msku_count": 3}
     assert result["summary"]["previous"] + result["summary"]["added"] - result["summary"]["removed"] == result["summary"]["current"]
     assert sum(item["count"] for item in result["transition_matrix"]["cells"]) == 4
     row_a = next(row for row in result["rows"] if row["msku"] == "A")
@@ -128,14 +130,14 @@ def test_layer_change_reuses_canonical_card_bucket_instead_of_any_matching_unit(
             current_baseline,
             current_baseline,
             {102: 1, 104: 1},
-            canonical_breakdowns={1: {"104": {"B"}}},
+            canonical_breakdowns={1: {"104": {("欧洲站", "StoreA", "B")}}},
         )
         if day == "2026-07-19"
         else payload(
             previous_baseline,
             previous_baseline,
             {102: 1, 104: 2},
-            canonical_breakdowns={1: {"104": {"B", "C"}}},
+            canonical_breakdowns={1: {"104": {("欧洲站", "StoreA", "B"), ("欧洲站", "StoreA", "C")}}},
         )
     )
     service._fetch_evidence = lambda *args: {}
@@ -164,3 +166,40 @@ def test_layer_change_reuses_canonical_card_bucket_instead_of_any_matching_unit(
     }]
     assert row_c["current_combination_conditions"][0]["value"] == "无标签事实"
     assert row_c["current_combination_conditions"][0]["matched"] is False
+
+
+def test_opposite_country_lifecycle_transitions_remain_two_business_units():
+    service = LabelHubChangeDataService()
+    service._hub = FakeHub()
+    previous_baseline = [
+        internal_row("QL0052b", 101, lifecycle=203, store="QINGLEE", country="欧洲站"),
+        internal_row("QL0052b", 101, lifecycle=204, store="QINGLEE", country="英国站"),
+    ]
+    current_baseline = [
+        internal_row("QL0052b", 101, lifecycle=204, store="QINGLEE", country="欧洲站"),
+        internal_row("QL0052b", 101, lifecycle=203, store="QINGLEE", country="英国站"),
+    ]
+
+    def day_payload(day, filters):
+        rows = current_baseline if day == "2026-07-19" else previous_baseline
+        result = payload(rows, rows, {101: 1})
+        result["parent_label_id"] = 2
+        return result
+
+    service._day_payload = day_payload
+    service._fetch_evidence = lambda *args: {}
+
+    result = service.get_changes(metric_period="30d", parent_label_id=2)
+
+    assert result["summary"]["changed"] == 2
+    assert result["total"] == 2
+    assert result["summary"]["unique_msku_count"] == 1
+    directions = {
+        (cell["row"], cell["column"]): cell["count"]
+        for cell in result["transition_matrix"]["cells"]
+        if cell["row"] != cell["column"]
+    }
+    assert directions == {("成长期", "成熟期"): 1, ("成熟期", "成长期"): 1}
+    identities = {(row["country_category"], row["store"], row["msku"]) for row in result["rows"]}
+    assert identities == {("欧洲站", "QINGLEE", "QL0052b"), ("英国站", "QINGLEE", "QL0052b")}
+    assert {row["business_unit_count"] for row in result["rows"]} == {1}

@@ -523,7 +523,7 @@
     var changed = Number(summary.changed || 0);
     var reason = (payload.sales_role_reasons || []).find(function (item) { return Number(item.count || 0) > 0; });
     var headline = changed
-      ? formatNumber(changed) + " 个 MSKU 标签发生流转"
+      ? formatNumber(changed) + " 个经营单元标签发生流转"
       : "当前群体标签结构保持稳定";
     var detail = "新增 " + formatNumber(summary.added) + " · 减少 " + formatNumber(summary.removed);
     if (reason) detail += " · 主要原因：" + reason.label;
@@ -553,8 +553,8 @@
   function renderChangeSankeyShell(payload) {
     var matrix = payload.transition_matrix || {};
     var hasFlow = (matrix.cells || []).some(function (cell) { return Number(cell.count || 0) > 0; });
-    return '<section class="label-hub-change-sankey-card"><header><div><span>标签流向</span><h3>上次标签 → 今日标签</h3></div><small>线条越宽，流转的 MSKU 越多；悬停可查看具体数量</small></header>' +
-      (hasFlow ? '<div class="label-hub-change-sankey" data-change-sankey role="img" aria-label="上次标签到今日标签的 MSKU 流向图"></div>' : '<div class="empty-state compact">当前筛选下暂无可展示的标签流向。</div>') +
+    return '<section class="label-hub-change-sankey-card"><header><div><span>标签流向</span><h3>上次标签 → 今日标签</h3></div><small>线条越宽，流转的经营单元越多；悬停可查看具体数量</small></header>' +
+      (hasFlow ? '<div class="label-hub-change-sankey" data-change-sankey role="img" aria-label="上次标签到今日标签的经营单元流向图"></div>' : '<div class="empty-state compact">当前筛选下暂无可展示的标签流向。</div>') +
       '</section>';
   }
 
@@ -624,9 +624,9 @@
           textStyle: { color: "#173653", fontSize: 12 },
           formatter: function (params) {
             if (params.dataType === "edge") {
-              return app.escapeHtml(params.data.previousLabel) + " → " + app.escapeHtml(params.data.currentLabel) + "<br><b>" + formatNumber(params.value) + " MSKU</b>";
+              return app.escapeHtml(params.data.previousLabel) + " → " + app.escapeHtml(params.data.currentLabel) + "<br><b>" + formatNumber(params.value) + " 个经营单元</b>";
             }
-            return app.escapeHtml(params.data.displayLabel || "") + "<br><b>" + formatNumber(params.value) + " MSKU</b>";
+            return app.escapeHtml(params.data.displayLabel || "") + "<br><b>" + formatNumber(params.value) + " 个经营单元</b>";
           }
         },
         series: [{
@@ -764,13 +764,13 @@
     function renderSide(items, direction, title) {
       var allRows = items || [];
       var rows = allRows;
-      if (!rows.length) return '<section class="label-hub-layer-transition-side"><header><span>' + title + '</span><small>本期无记录</small></header><p>没有 MSKU 在本期发生这类变化。</p></section>';
+      if (!rows.length) return '<section class="label-hub-layer-transition-side"><header><span>' + title + '</span><small>本期无记录</small></header><p>没有经营单元在本期发生这类变化。</p></section>';
       var total = allRows.reduce(function (sum, item) { return sum + Number(item.count || 0); }, 0);
-      return '<section class="label-hub-layer-transition-side"><header><span>' + title + '</span><small>共 ' + formatNumber(total) + ' MSKU</small></header><div>' + rows.map(function (item) {
+      return '<section class="label-hub-layer-transition-side"><header><span>' + title + '</span><small>共 ' + formatNumber(total) + ' 个经营单元</small></header><div>' + rows.map(function (item) {
         return '<button type="button" data-layer-transition-type="' + direction + '" data-layer-transition-from="' + app.escapeHtml(item.previous_label || "无标签事实") + '" data-layer-transition-to="' + app.escapeHtml(item.current_label || "无标签事实") + '"><span>' + app.escapeHtml(item.previous_label || "无标签事实") + '</span><i>→</i><strong>' + app.escapeHtml(item.current_label || "无标签事实") + '</strong><b>' + formatNumber(item.count) + '</b></button>';
       }).join('') + '</div></section>';
     }
-    return '<section class="label-hub-layer-transition-summary"><header><div><span>本层标签变化汇总</span><h3>从哪里进入，去了哪里</h3></div><small>仅统计当前组合中本期进入或离开的 MSKU；点击一行查看对应明细。</small></header><div class="label-hub-layer-transition-grid">' +
+    return '<section class="label-hub-layer-transition-summary"><header><div><span>本层标签变化汇总</span><h3>从哪里进入，去了哪里</h3></div><small>仅统计当前组合中本期进入或离开的经营单元；点击一行查看对应明细。</small></header><div class="label-hub-layer-transition-grid">' +
       renderSide(transitions.entered, "added", "进入来源") + renderSide(transitions.left, "removed", "离开去向") +
       '</div></section>';
   }
@@ -811,30 +811,30 @@
         var metricProfile = '<div class="label-hub-change-metric-stack"><span>' + app.escapeHtml(metric.sales_trend || "暂无数据") + ' · ' + app.escapeHtml(metric.daily_sales_band || "暂无数据") + '</span><span>' + app.escapeHtml(metric.margin_band || "暂无数据") + '</span></div>';
         var performance = '<div class="label-hub-change-metric-stack"><strong>' + app.formatCompactCurrency(metric.sales_amount || 0) + '</strong><span class="' + profitClass + '">毛利 ' + app.formatCompactCurrency(metric.order_gross_profit || 0) + ' · ' + formatPercent(metric.order_gross_margin || 0) + '</span></div>';
         var scope = '<div class="label-hub-change-scope"><span title="' + app.escapeHtml(row.previous_unit_scope || "无标签事实") + '">上 ' + app.escapeHtml(row.previous_unit_scope || "无标签事实") + '</span><span title="' + app.escapeHtml(row.current_unit_scope || "无标签事实") + '">今 ' + app.escapeHtml(row.current_unit_scope || "无标签事实") + '</span></div>';
-        return '<tr><td><button type="button" class="text-button label-hub-change-msku" data-change-msku="' + app.escapeHtml(row.msku) + '">' + app.escapeHtml(row.msku) + '</button></td><td>' + conditionStateHtml(row.previous_combination_conditions) + '</td><td>' + conditionStateHtml(row.current_combination_conditions) + '</td><td>' + app.escapeHtml(row.previous_layer_label || "未命中") + '</td><td>' + app.escapeHtml(row.current_layer_label || "未命中") + '</td><td>' + scope + '</td><td>' + metricProfile + '</td><td>' + performance + '</td><td><span class="label-hub-change-status">' + app.escapeHtml(metric.data_status || "暂无经营数据") + '</span></td><td>' + app.escapeHtml(row.fact_status || "标签事实可比") + '</td><td>' + formatNumber(row.business_unit_count) + '</td></tr>';
+        return '<tr><td>' + app.escapeHtml(row.country_category || "-") + '</td><td>' + app.escapeHtml(row.store || "-") + '</td><td><button type="button" class="text-button label-hub-change-msku" data-change-msku="' + app.escapeHtml(row.msku) + '">' + app.escapeHtml(row.msku) + '</button></td><td>' + conditionStateHtml(row.previous_combination_conditions) + '</td><td>' + conditionStateHtml(row.current_combination_conditions) + '</td><td>' + app.escapeHtml(row.previous_layer_label || "未命中") + '</td><td>' + app.escapeHtml(row.current_layer_label || "未命中") + '</td><td>' + scope + '</td><td>' + metricProfile + '</td><td>' + performance + '</td><td><span class="label-hub-change-status">' + app.escapeHtml(metric.data_status || "暂无经营数据") + '</span></td><td>' + app.escapeHtml(row.fact_status || "标签事实可比") + '</td></tr>';
       }
-      return '<tr><td><button type="button" class="text-button label-hub-change-msku" data-change-msku="' + app.escapeHtml(row.msku) + '">' + app.escapeHtml(row.msku) + '</button></td><td>' + app.escapeHtml(previousValue) + '</td><td>' + app.escapeHtml(currentValue) + '</td><td><span class="label-hub-change-type is-' + app.escapeHtml(row.change_type) + '">' + app.escapeHtml(typeLabel) + '</span></td><td>' + formatNumber(row.business_unit_count) + '</td></tr>';
+      return '<tr><td>' + app.escapeHtml(row.country_category || "-") + '</td><td>' + app.escapeHtml(row.store || "-") + '</td><td><button type="button" class="text-button label-hub-change-msku" data-change-msku="' + app.escapeHtml(row.msku) + '">' + app.escapeHtml(row.msku) + '</button></td><td>' + app.escapeHtml(previousValue) + '</td><td>' + app.escapeHtml(currentValue) + '</td><td><span class="label-hub-change-type is-' + app.escapeHtml(row.change_type) + '">' + app.escapeHtml(typeLabel) + '</span></td></tr>';
     }).join("");
-    var pagination = '<div class="label-hub-change-pagination"><span>第 ' + payload.page + " / " + payload.total_pages + ' 页，共 ' + formatNumber(payload.total) + ' 个 MSKU</span><div><button type="button" data-change-page="' + (payload.page - 1) + '"' + (payload.page <= 1 ? " disabled" : "") + '>上一页</button><button type="button" data-change-page="' + (payload.page + 1) + '"' + (payload.page >= payload.total_pages ? " disabled" : "") + '>下一页</button></div></div>';
+    var pagination = '<div class="label-hub-change-pagination"><span>第 ' + payload.page + " / " + payload.total_pages + ' 页，共 ' + formatNumber(payload.total) + ' 个经营单元</span><div><button type="button" data-change-page="' + (payload.page - 1) + '"' + (payload.page <= 1 ? " disabled" : "") + '>上一页</button><button type="button" data-change-page="' + (payload.page + 1) + '"' + (payload.page >= payload.total_pages ? " disabled" : "") + '>下一页</button></div></div>';
     if (isLayerDetail) {
-      return '<div class="label-hub-change-table-wrap"><table><thead><tr><th>MSKU</th><th>上次组合条件</th><th>今日组合条件</th><th>上次同维度标签</th><th>今日同维度标签</th><th>经营范围（上 / 今）</th><th>今日经营分层</th><th>今日经营表现</th><th>本地指标</th><th>标签事实状态</th><th>经营单元</th></tr></thead><tbody>' + (rows || '<tr><td colspan="11"><div class="empty-state compact">当前组合下没有变化 MSKU。</div></td></tr>') + '</tbody></table></div>' + pagination;
+      return '<div class="label-hub-change-table-wrap"><table><thead><tr><th>国家类别</th><th>店铺</th><th>MSKU</th><th>上次组合条件</th><th>今日组合条件</th><th>上次同维度标签</th><th>今日同维度标签</th><th>经营范围（上 / 今）</th><th>今日经营分层</th><th>今日经营表现</th><th>本地指标</th><th>标签事实状态</th></tr></thead><tbody>' + (rows || '<tr><td colspan="12"><div class="empty-state compact">当前组合下没有变化经营单元。</div></td></tr>') + '</tbody></table></div>' + pagination;
     }
-    return '<div class="label-hub-change-table-wrap"><table><thead><tr><th>MSKU</th><th>上次标签</th><th>今日标签</th><th>变化方向</th><th>经营单元</th></tr></thead><tbody>' + (rows || '<tr><td colspan="5"><div class="empty-state compact">当前筛选下没有变化 MSKU。</div></td></tr>') + '</tbody></table></div>' + pagination;
+    return '<div class="label-hub-change-table-wrap"><table><thead><tr><th>国家类别</th><th>店铺</th><th>MSKU</th><th>上次标签</th><th>今日标签</th><th>变化方向</th></tr></thead><tbody>' + (rows || '<tr><td colspan="6"><div class="empty-state compact">当前筛选下没有变化经营单元。</div></td></tr>') + '</tbody></table></div>' + pagination;
   }
 
   function renderChangeRows(payload) {
     var rows = (payload.rows || []).map(function (row) {
       var reason = row.sales_role_reason || "仅记录标签事实流转";
-      return '<tr><td><button type="button" class="text-button label-hub-change-msku" data-change-msku="' + app.escapeHtml(row.msku) + '">' + app.escapeHtml(row.msku) + '</button></td><td>' + app.escapeHtml(row.previous_label || "未命中") + '</td><td>' + app.escapeHtml(row.current_label || "未命中") + '</td><td><span class="label-hub-change-type is-' + app.escapeHtml(row.change_type) + '">' + app.escapeHtml(row.change_type_label) + '</span></td><td>' + app.escapeHtml((row.trigger_dimensions || []).join(" / ") || "无标签维度变化") + '</td><td>' + (row.previous_matched ? "是" : "否") + '</td><td>' + (row.current_matched ? "是" : "否") + '</td><td>' + formatNumber(row.business_unit_count) + '</td><td title="' + app.escapeHtml(reason) + '">' + app.escapeHtml(reason) + '</td></tr>';
+      return '<tr><td>' + app.escapeHtml(row.country_category || "-") + '</td><td>' + app.escapeHtml(row.store || "-") + '</td><td><button type="button" class="text-button label-hub-change-msku" data-change-msku="' + app.escapeHtml(row.msku) + '">' + app.escapeHtml(row.msku) + '</button></td><td>' + app.escapeHtml(row.previous_label || "未命中") + '</td><td>' + app.escapeHtml(row.current_label || "未命中") + '</td><td><span class="label-hub-change-type is-' + app.escapeHtml(row.change_type) + '">' + app.escapeHtml(row.change_type_label) + '</span></td><td>' + app.escapeHtml((row.trigger_dimensions || []).join(" / ") || "无标签维度变化") + '</td><td>' + (row.previous_matched ? "是" : "否") + '</td><td>' + (row.current_matched ? "是" : "否") + '</td><td title="' + app.escapeHtml(reason) + '">' + app.escapeHtml(reason) + '</td></tr>';
     }).join("");
-    var pagination = '<div class="label-hub-change-pagination"><span>第 ' + payload.page + " / " + payload.total_pages + ' 页，共 ' + formatNumber(payload.total) + ' 个 MSKU</span><div><button type="button" data-change-page="' + (payload.page - 1) + '"' + (payload.page <= 1 ? " disabled" : "") + '>上一页</button><button type="button" data-change-page="' + (payload.page + 1) + '"' + (payload.page >= payload.total_pages ? " disabled" : "") + '>下一页</button></div></div>';
-    return '<div class="label-hub-change-table-wrap"><table><thead><tr><th>MSKU</th><th>上次主标签</th><th>今日主标签</th><th>变化类型</th><th>触发维度</th><th>上次满足</th><th>今日满足</th><th>经营单元</th><th>销售角色原因摘要</th></tr></thead><tbody>' + (rows || '<tr><td colspan="9"><div class="empty-state compact">当前变化类型下没有 MSKU。</div></td></tr>') + '</tbody></table></div>' + pagination;
+    var pagination = '<div class="label-hub-change-pagination"><span>第 ' + payload.page + " / " + payload.total_pages + ' 页，共 ' + formatNumber(payload.total) + ' 个经营单元</span><div><button type="button" data-change-page="' + (payload.page - 1) + '"' + (payload.page <= 1 ? " disabled" : "") + '>上一页</button><button type="button" data-change-page="' + (payload.page + 1) + '"' + (payload.page >= payload.total_pages ? " disabled" : "") + '>下一页</button></div></div>';
+    return '<div class="label-hub-change-table-wrap"><table><thead><tr><th>国家类别</th><th>店铺</th><th>MSKU</th><th>上次主标签</th><th>今日主标签</th><th>变化类型</th><th>触发维度</th><th>上次满足</th><th>今日满足</th><th>销售角色原因摘要</th></tr></thead><tbody>' + (rows || '<tr><td colspan="10"><div class="empty-state compact">当前变化类型下没有经营单元。</div></td></tr>') + '</tbody></table></div>' + pagination;
   }
 
   function changeContentHtml(payload, context) {
     if (!payload.available) return '<div class="empty-state compact">暂无可比较的上次标签数据。</div>';
     return (context ? renderLayerChangeLedger(payload, context) + renderLayerTransitionSummary(payload) : renderChangeConclusion(payload, context)) +
-      '<article class="label-hub-change-detail"><header><div><span>变化 MSKU 明细</span><h3>' + (context ? '仅查看进入或离开当前组合的 MSKU' : '仅查看发生标签变化的 MSKU') + '</h3></div><small>点击 MSKU 查看两日标签画像</small></header>' +
+      '<article class="label-hub-change-detail"><header><div><span>变化经营单元明细</span><h3>' + (context ? '仅查看进入或离开当前组合的经营单元' : '仅查看发生标签变化的经营单元') + '</h3></div><small>点击 MSKU 查看两日标签画像</small></header>' +
       (context ? renderLayerChangeFilters(payload, context.change_type || "all") : "") + renderChangeList(payload, context) + '</article>';
   }
 
@@ -906,11 +906,11 @@
     var children = (item.children || []).map(function (child) {
       var checked = (selected[String(item.id)] || []).indexOf(String(child.id)) >= 0;
       var scoped = distributionById[String(child.id)] || {};
-      return '<button type="button" class="label-hub-child' + (checked ? " selected" : "") + '" data-overview-child="' + child.id + '" data-parent-id="' + item.id + '" aria-pressed="' + checked + '" title="' + app.escapeHtml(child.rule || child.definition || child.label) + '"><span><b>' + app.escapeHtml(child.label) + '</b><small>' + formatPercent(scoped.share) + '</small></span><strong>' + formatNumber(scoped.count) + '<small> MSKU</small></strong></button>';
+      return '<button type="button" class="label-hub-child' + (checked ? " selected" : "") + '" data-overview-child="' + child.id + '" data-parent-id="' + item.id + '" aria-pressed="' + checked + '" title="' + app.escapeHtml(child.rule || child.definition || child.label) + '"><span><b>' + app.escapeHtml(child.label) + '</b><small>' + formatPercent(scoped.share) + '</small></span><strong>' + formatNumber(scoped.count) + '<small> 经营单元</small></strong></button>';
     }).join("");
     var periods = (item.periods || []).join(" / ") || "无周期";
     var note = item.mutual_exclusion ? "同周期互斥" : "允许标签共现";
-    var aggregationRule = item.aggregation_rule || "跨经营单元按业务优先级只保留一个主标签。";
+    var aggregationRule = item.aggregation_rule || "同一经营单元按业务优先级只保留一个主标签。";
     elements.labelHubCategoryDetail.innerHTML = '<header><div><span class="section-kicker">当前分析标签</span><h3>' + app.escapeHtml(item.label) + '</h3></div><p>' + app.escapeHtml(periods) + " · " + app.escapeHtml(note) + ' · ' + app.escapeHtml(aggregationRule) + '</p></header><div class="label-hub-children">' + children + "</div>";
   }
 
@@ -930,14 +930,14 @@
       { key: "missing_metrics", label: "暂无经营数据", local: true, tone: "" },
       { key: "conflict", label: "标签互斥冲突", local: false, tone: Number(counts.conflict || 0) ? "danger" : "" }
     ];
-    var conditionText = conditionCount ? formatNumber(conditionCount) + " 个标签/联动条件" : "当前父标签全部 MSKU";
-    var subjectHtml = '<div class="label-hub-diagnosis-subject"><span>当前分析对象</span><h3>' + app.escapeHtml(subject.parent_label || (payload.rules || {}).label || "当前标签") + '</h3><strong>' + formatNumber(total) + ' <small>MSKU</small></strong><p>' + app.escapeHtml(conditionText) + ' · 指标覆盖 ' + formatPercent(coverageRate) + "</p></div>";
+    var conditionText = conditionCount ? formatNumber(conditionCount) + " 个标签/联动条件" : "当前父标签全部经营单元";
+    var subjectHtml = '<div class="label-hub-diagnosis-subject"><span>当前分析对象</span><h3>' + app.escapeHtml(subject.parent_label || (payload.rules || {}).label || "当前标签") + '</h3><strong>' + formatNumber(total) + ' <small>经营单元</small></strong><p>' + app.escapeHtml(conditionText) + ' · 指标覆盖 ' + formatPercent(coverageRate) + "</p></div>";
     var signalHtml = issues.map(function (item) {
       var available = !item.local || localAvailable;
       var count = Number(counts[item.key] || 0);
       var rate = total ? count / total : 0;
       var active = state.problem === item.key;
-      return '<button type="button" class="label-hub-diagnosis-item ' + item.tone + (active ? " active" : "") + '"' + (available ? ' data-problem="' + item.key + '"' : " disabled") + ' aria-pressed="' + active + '"><span><b>' + app.escapeHtml(item.label) + '</b>' + (active ? '<em>已筛选</em>' : "") + '</span><strong>' + (available ? formatNumber(count) + ' <i>MSKU</i>' : "—") + '</strong><small>' + (available ? "占当前群体 " + formatPercent(rate) : "本地经营指标暂不可用") + "</small></button>";
+      return '<button type="button" class="label-hub-diagnosis-item ' + item.tone + (active ? " active" : "") + '"' + (available ? ' data-problem="' + item.key + '"' : " disabled") + ' aria-pressed="' + active + '"><span><b>' + app.escapeHtml(item.label) + '</b>' + (active ? '<em>已筛选</em>' : "") + '</span><strong>' + (available ? formatNumber(count) + ' <i>经营单元</i>' : "—") + '</strong><small>' + (available ? "占当前群体 " + formatPercent(rate) : "本地经营指标暂不可用") + "</small></button>";
     }).join("");
     var businessHtml = '<aside class="label-hub-diagnosis-business"><span>当前群体经营表现</span><div><small>销售额</small><strong>' + app.formatCompactCurrency(business.sales_amount || 0) + '</strong></div><div><small>订单毛利润</small><strong class="' + (Number(business.order_gross_profit || 0) < 0 ? "negative" : "") + '">' + app.formatCompactCurrency(business.order_gross_profit || 0) + '</strong></div><div><small>订单毛利率</small><strong class="' + (Number(business.order_gross_margin || 0) < 0 ? "negative" : "") + '">' + app.formatPercent(business.order_gross_margin || 0) + "</strong></div></aside>";
     elements.labelHubDiagnosis.innerHTML = subjectHtml + '<div class="label-hub-diagnosis-signals">' + signalHtml + "</div>" + businessHtml;
@@ -976,7 +976,7 @@
         ? "同截止日 7天 / 30天日均对比"
         : panel.source === "local" && missingBucket
         ? formatNumber(matchedCount) + " 个有经营快照"
-        : "分析口径 " + formatNumber(panel.denominator) + " MSKU";
+        : "分析口径 " + formatNumber(panel.denominator) + " 个经营单元";
       var header = '<div><span class="label-hub-source ' + panel.source + '">' + (panel.source === "local" ? "本地经营" : "远端标签") + '</span><h3>' + app.escapeHtml(panel.label) + '</h3><small>' + scopeCopy + "</small></div>";
       if (panel.source === "remote_label") {
         var slot = Number.isFinite(Number(panel.analysis_slot)) ? Number(panel.analysis_slot) : Math.max(0, selectedRemote.indexOf(Number(panel.parent_id)));
@@ -1146,7 +1146,7 @@
     var columns = matrix.columns || [];
     var rows = matrix.rows || [];
     if (!columns.length || !rows.length) { elements.labelHubMatrix.innerHTML = '<div class="empty-state compact">当前分类没有可用的共现数据。</div>'; return; }
-    elements.labelHubMatrix.innerHTML = '<div class="label-hub-matrix-legend"><span>MSKU 数</span><small>低</small><i class="heat-level-1"></i><i class="heat-level-2"></i><i class="heat-level-3"></i><i class="heat-level-4"></i><small>高</small></div><div class="label-hub-matrix-table" style="grid-template-columns: 120px repeat(' + columns.length + ', minmax(96px, 1fr))"><div></div>' + columns.map(function (column) { return '<strong>' + app.escapeHtml(column.label) + "</strong>"; }).join("") + rows.map(function (row) { return '<strong>' + app.escapeHtml(row.label) + '</strong>' + columns.map(function (column) { var cell = cells[row.id + "|" + column.id] || { count: 0 }; return '<button type="button" class="heat-level-' + matrixHeatLevel(cell.count, maxCount) + '" data-matrix-row="' + row.id + '" data-matrix-col="' + column.id + '"><b>' + formatNumber(cell.count) + '</b><small>' + app.formatCompactCurrency(cell.sales_amount || 0) + "</small></button>"; }).join(""); }).join("") + "</div>";
+    elements.labelHubMatrix.innerHTML = '<div class="label-hub-matrix-legend"><span>经营单元数</span><small>低</small><i class="heat-level-1"></i><i class="heat-level-2"></i><i class="heat-level-3"></i><i class="heat-level-4"></i><small>高</small></div><div class="label-hub-matrix-table" style="grid-template-columns: 120px repeat(' + columns.length + ', minmax(96px, 1fr))"><div></div>' + columns.map(function (column) { return '<strong>' + app.escapeHtml(column.label) + "</strong>"; }).join("") + rows.map(function (row) { return '<strong>' + app.escapeHtml(row.label) + '</strong>' + columns.map(function (column) { var cell = cells[row.id + "|" + column.id] || { count: 0 }; return '<button type="button" class="heat-level-' + matrixHeatLevel(cell.count, maxCount) + '" data-matrix-row="' + row.id + '" data-matrix-col="' + column.id + '"><b>' + formatNumber(cell.count) + '</b><small>' + app.formatCompactCurrency(cell.sales_amount || 0) + "</small></button>"; }).join(""); }).join("") + "</div>";
   }
 
   function matrixHeatLevel(count, maxCount) {
@@ -1196,7 +1196,7 @@
       return '<details class="label-hub-rule-row"' + (index === 0 ? " open" : "") + '><summary class="label-hub-rule-row-main"><span class="label-hub-rule-name"><i>' + String(index + 1).padStart(2, "0") + '</i><b>' + app.escapeHtml(child.label || String(child.id)) + '</b></span><span class="label-hub-rule-core">' + app.escapeHtml(rule) + '</span><span class="label-hub-rule-period">' + app.escapeHtml(periods) + '</span><em>' + app.escapeHtml(status) + '</em><span class="label-hub-rule-toggle"><i class="closed">展开配置</i><i class="opened">收起配置</i></span></summary><div class="label-hub-rule-extra"><section><span>业务定义</span><p>' + app.escapeHtml(definition) + '</p></section><dl><div><dt>打标方式</dt><dd>' + app.escapeHtml(taggingMethod) + '</dd></div><div><dt>更新频率</dt><dd>' + app.escapeHtml(frequency) + '</dd></div><div><dt>负责人</dt><dd>' + app.escapeHtml(owner) + '</dd></div><div><dt>互斥配置</dt><dd>' + app.escapeHtml(mutualExclusion) + '</dd></div></dl></div></details>';
     }).join("");
     elements.labelHubRuleDrawerTitle.textContent = category.label;
-    elements.labelHubRuleDrawerContent.innerHTML = '<div class="label-hub-rule-summary"><span>' + app.escapeHtml(stateLabel) + '</span><span>' + formatNumber(children.length) + ' 个子标签</span><span>' + app.escapeHtml(allPeriods.join(" / ") || "无周期配置") + '</span><span>' + app.escapeHtml(category.mutual_exclusion ? "同周期互斥" : "允许共现") + '</span></div><div class="label-hub-rule-priority"><b>主标签优先级</b><span>' + app.escapeHtml(aggregationPriority.join(" ＞ ") || "按标签详情表顺序") + '</span><small>同一 MSKU 跨经营单元命中多个子标签时，只保留优先级最高的一项用于上方聚合分析；底部明细保留原始事实。</small></div><div class="label-hub-rule-table-head"><span>子标签</span><span>核心划分规则</span><span>周期</span><span>状态</span><span>操作</span></div><div class="label-hub-rule-detail-list">' + (ruleCards || '<div class="empty-state compact">该分类暂未配置子标签规则。</div>') + '</div>';
+    elements.labelHubRuleDrawerContent.innerHTML = '<div class="label-hub-rule-summary"><span>' + app.escapeHtml(stateLabel) + '</span><span>' + formatNumber(children.length) + ' 个子标签</span><span>' + app.escapeHtml(allPeriods.join(" / ") || "无周期配置") + '</span><span>' + app.escapeHtml(category.mutual_exclusion ? "同周期互斥" : "允许共现") + '</span></div><div class="label-hub-rule-priority"><b>主标签优先级</b><span>' + app.escapeHtml(aggregationPriority.join(" ＞ ") || "按标签详情表顺序") + '</span><small>同一国家类别、店铺、MSKU 经营单元命中多个子标签时，只保留优先级最高的一项用于上方聚合分析；底部明细保留原始事实。</small></div><div class="label-hub-rule-table-head"><span>子标签</span><span>核心划分规则</span><span>周期</span><span>状态</span><span>操作</span></div><div class="label-hub-rule-detail-list">' + (ruleCards || '<div class="empty-state compact">该分类暂未配置子标签规则。</div>') + '</div>';
     elements.labelHubRuleDrawer.hidden = false;
     elements.labelHubRuleDrawerClose.focus();
   }
