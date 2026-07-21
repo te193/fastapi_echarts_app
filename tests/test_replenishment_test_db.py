@@ -74,6 +74,8 @@ def test_result_promotion_updates_only_moq_fields_and_preserves_legacy_calculati
     assert "r.history_recovery_flag" in sql
     assert "r.max_cg_box_pcs" in sql
     assert "r.executable_replenish_qty" in sql
+    assert "r.calculated_replenish_box_qty" in sql
+    assert "r.calculated_replenish_cost" in sql
     assert "r.moq_shortfall_qty" in sql
     assert "test_schema" not in sql
     assert "r.replenish_qty =" not in sql

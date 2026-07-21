@@ -136,6 +136,8 @@ def build_result_moq_update_sql(production_schema: str) -> str:
                 else 'met'
             end,
             r.calculated_replenish_qty = ({calculated_qty}),
+            r.calculated_replenish_box_qty = ({calculated_box_qty}),
+            r.calculated_replenish_cost = ({calculated_cost}),
             r.executable_replenish_qty = case when {below_minimum} then 0 else ({calculated_qty}) end,
             r.executable_replenish_box_qty = case when {below_minimum} then 0 else ({calculated_box_qty}) end,
             r.executable_replenish_cost = case when {below_minimum} then 0 else ({calculated_cost}) end,

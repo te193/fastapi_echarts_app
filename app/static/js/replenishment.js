@@ -8,6 +8,7 @@
   var LEVEL_SUFFICIENT = "\u5e93\u5b58\u5145\u8db3";
   var LEVEL_ZERO_SALES = "\u65e5\u9500\u4e3a0";
   var LEVEL_HISTORY_RECOVERY = "\u5386\u53f2\u515c\u5e95";
+  var LEVEL_BELOW_MOQ = "\u4f4e\u4e8e\u6700\u5c0f\u8d77\u8ba2\u91cf";
   var CATEGORY_MIX_ORDER = [
     "\u95ee\u9898\u4ea7\u54c1",
     "\u7626\u72d7\u4ea7\u54c1",
@@ -51,6 +52,10 @@
     "用途：补充识别短期日销偏低或日销为0但历史销售能力还在的 SKU，不改变库存支撑分层结果。",
     "补货数量按恢复一箱展示：有采购箱规取一箱数量，无箱规按 50 个；补货货值 = 补货数量 * (采购单价 + 头程运费)。",
     "该层不计入需要补货 MSKU 三层合计，但补货数量和补货货值汇总会包含这批恢复数量。"
+  ];
+  LEVEL_HELP[LEVEL_BELOW_MOQ] = [
+    "\u8ba1\u7b97\u8865\u8d27\u91cf\u4f4e\u4e8e\u9996\u9009\u4f9b\u5e94\u5546\u7684\u6700\u5c0f\u8d77\u8ba2\u91cf\u3002",
+    "\u660e\u7ec6\u548c\u5bfc\u51fa\u4fdd\u7559\u539f\u8ba1\u7b97\u7684\u8865\u8d27\u6570\u91cf\u3001\u7bb1\u6570\u548c\u8d27\u503c\uff0c\u4f46\u4e0d\u8ba1\u5165\u7d27\u6025\u3001\u5efa\u8bae\u3001\u8ba1\u5212\u8865\u8d27\u53ca\u9876\u90e8\u53ef\u6267\u884c\u6c47\u603b\u3002"
   ];
   var FLOW_HELP = [
     "\u6d41\u8f6c\u6307\u6807\u53e3\u5f84\uff1a\u6309\u5f53\u524d\u8865\u8d27\u65e5\u671f\u4e0e\u4e0a\u4e00\u4e2a\u5df2\u751f\u6210\u8865\u8d27\u7ed3\u679c\u65e5\u671f\u5bf9\u6bd4\u3002",
@@ -214,6 +219,7 @@
     ].forEach(function (pair) {
       elements[pair[0]].addEventListener("change", function () {
         state[pair[1]] = pair[1] === "category_period_days" ? Number(this.value || 30) : this.value;
+        if (pair[1] === "level") state.moq_status = "all";
         state.page = 1;
         render();
       });
@@ -402,7 +408,9 @@
       return;
     }
     var actionRows = rows.filter(function (row) { return Number(row.sort || 0) <= 3; });
-    var passiveRows = rows.filter(function (row) { return Number(row.sort || 0) > 3; });
+    var passiveRows = rows.filter(function (row) {
+      return Number(row.sort || 0) > 3 && row.level !== LEVEL_BELOW_MOQ;
+    });
     var maxQty = actionRows.reduce(function (max, row) {
       return Math.max(max, Number(row.replenish_qty || 0));
     }, 0) || 1;
@@ -436,7 +444,7 @@
           '</button>'
         ].join("");
       }).join(""),
-      '<button type="button" class="pool-chip moq-warning-chip' + (state.moq_status === "below_minimum" ? " active" : "") + '" data-moq-status="below_minimum">',
+      '<button type="button" class="pool-chip moq-warning-chip' + (state.moq_status === "below_minimum" || state.level === LEVEL_BELOW_MOQ ? " active" : "") + '" data-moq-status="below_minimum">',
       '<span class="mix-icon">!</span>',
       '<span class="pool-chip-title">' + text.moqWarning + '</span>',
       '<strong>' + formatNumber((payload.summary || {}).moq_warning_count || 0) + '</strong>',
@@ -1325,6 +1333,7 @@
     if (key === 4) return "\u8db3";
     if (key === 5) return "0";
     if (key === 6) return "\u53f2";
+    if (key === 7) return "\u8d77";
     return "-";
   }
 })();
