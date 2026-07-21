@@ -52,7 +52,8 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("dashboard_replenishment_supplier_moq_sync", step.target_table)
         self.assertIn("lx_product_local_product_info_GongYingShangBaoJia", step.source_select_statement)
         self.assertIn("is_primary = '是'", step.source_select_statement)
-        self.assertIn("max(moq) as supplier_moq", step.source_select_statement)
+        self.assertIn("min(case when moq > 0 then moq end) as supplier_moq", step.source_select_statement)
+        self.assertNotIn("max(moq) as supplier_moq", step.source_select_statement)
         self.assertEqual(("snapshot_date", "sku", "supplier_moq"), step.target_columns)
         self.assertIn("supplier_moq_sync", replenishment_update.DEFAULT_STEP_ORDER)
 
