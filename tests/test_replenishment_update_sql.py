@@ -40,6 +40,8 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("dashboard_replenishment_supplier_moq_sync", ddl)
         self.assertIn("supplier_moq", ddl)
         self.assertIn("calculated_replenish_qty", ddl)
+        self.assertIn("calculated_replenish_box_qty", ddl)
+        self.assertIn("calculated_replenish_cost", ddl)
         self.assertIn("executable_replenish_qty", ddl)
         self.assertIn("executable_replenish_box_qty", ddl)
         self.assertIn("executable_replenish_cost", ddl)
@@ -67,6 +69,8 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("when calculated_replenish_qty < supplier_moq then 'below_minimum'", sql)
         self.assertIn("else 'met'", sql)
         self.assertIn("when g.moq_status = 'below_minimum' then 0", sql)
+        self.assertIn("r.calculated_replenish_box_qty = g.calculated_replenish_box_qty", sql)
+        self.assertIn("r.calculated_replenish_cost = g.calculated_replenish_cost", sql)
         self.assertNotIn("when moq_status = 'below_minimum' then 0", sql)
         self.assertIn("greatest(supplier_moq - calculated_replenish_qty, 0)", sql)
         self.assertLess(

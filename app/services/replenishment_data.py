@@ -19,6 +19,7 @@ LEVEL_PLANNED = "\u8ba1\u5212\u8865\u8d27"
 LEVEL_SUFFICIENT = "\u5e93\u5b58\u5145\u8db3"
 LEVEL_ZERO_SALES = "\u65e5\u9500\u4e3a0"
 LEVEL_HISTORY_RECOVERY = "\u5386\u53f2\u515c\u5e95"
+LEVEL_BELOW_MOQ = "\u4f4e\u4e8e\u6700\u5c0f\u8d77\u8ba2\u91cf"
 LEVEL_FOLLOWED_BLOCK = "\u88ab\u8ddf\u5356\u70b9\u4e0d\u8865\u8d27"
 LEVEL_UNKNOWN = "\u672a\u5206\u5c42"
 ASIN_MERGE_CONSOLIDATED_BLOCK = "\u540cASIN\u5df2\u5408\u5e76\u81f3\u4e3b\u94fe\u63a5"
@@ -49,7 +50,8 @@ FLOW_LEVEL_ORDER = {
     LEVEL_SUFFICIENT: 4,
     LEVEL_ZERO_SALES: 5,
     LEVEL_HISTORY_RECOVERY: 6,
-    LEVEL_UNKNOWN: 7,
+    LEVEL_BELOW_MOQ: 7,
+    LEVEL_UNKNOWN: 8,
     FLOW_ENTRY_LABEL: 99,
 }
 PRODUCT_CATEGORY_SQL_COLUMNS = set(PRODUCT_CATEGORY_SALES_COLUMNS.values()) | {
@@ -189,6 +191,8 @@ REPLENISHMENT_COLUMN_LABELS.update({
     "supplier_moq": "\u6700\u5c0f\u8d77\u8ba2\u91cf",
     "moq_status": "MOQ\u72b6\u6001",
     "calculated_replenish_qty": "\u8ba1\u7b97\u8865\u8d27\u91cf",
+    "calculated_replenish_box_qty": "\u8ba1\u7b97\u8865\u8d27\u7bb1\u6570",
+    "calculated_replenish_cost": "\u8ba1\u7b97\u8865\u8d27\u8d27\u503c",
     "executable_replenish_qty": "\u53ef\u6267\u884c\u8865\u8d27\u91cf",
     "executable_replenish_box_qty": "\u53ef\u6267\u884c\u8865\u8d27\u7bb1\u6570",
     "executable_replenish_cost": "\u53ef\u6267\u884c\u8865\u8d27\u8d27\u503c",
@@ -641,6 +645,7 @@ class ReplenishmentDataService:
                 {"key": LEVEL_SUFFICIENT, "label": LEVEL_SUFFICIENT},
                 {"key": LEVEL_ZERO_SALES, "label": LEVEL_ZERO_SALES},
                 {"key": LEVEL_HISTORY_RECOVERY, "label": LEVEL_HISTORY_RECOVERY},
+                {"key": LEVEL_BELOW_MOQ, "label": LEVEL_BELOW_MOQ},
             ],
         }
 
@@ -693,9 +698,9 @@ class ReplenishmentDataService:
             "level_sufficient": LEVEL_SUFFICIENT,
             "level_zero_sales": LEVEL_ZERO_SALES,
             "level_history_recovery": LEVEL_HISTORY_RECOVERY,
+            "level_below_moq": LEVEL_BELOW_MOQ,
         }
         display_level_expr = self._display_level_expr()
-        history_recovery_condition = self._history_recovery_display_condition()
         display_replenish_qty_expr = self._display_replenish_qty_expr()
         display_replenish_box_qty_expr = self._display_replenish_box_qty_expr()
         display_replenish_cost_expr = self._display_replenish_cost_expr()
@@ -717,7 +722,7 @@ class ReplenishmentDataService:
                     sum(case when {display_level_expr} = %(level_planned)s then 1 else 0 end) as planned_count,
                     sum(case when {display_level_expr} = %(level_sufficient)s then 1 else 0 end) as sufficient_count,
                     sum(case when {display_level_expr} = %(level_zero_sales)s then 1 else 0 end) as zero_sales_count,
-                    sum(case when {history_recovery_condition} then 1 else 0 end) as history_recovery_count,
+                    sum(case when {display_level_expr} = %(level_history_recovery)s then 1 else 0 end) as history_recovery_count,
                     sum(case when moq_status = 'below_minimum' then 1 else 0 end) as moq_warning_count,
                     sum(case when moq_status = 'below_minimum' then calculated_replenish_qty else 0 end) as moq_warning_calculated_qty
                 from dashboard_pur_plan_replenish_data
@@ -927,7 +932,8 @@ class ReplenishmentDataService:
     def _display_level_expr(self, alias: str = "") -> str:
         prefix = f"{alias}." if alias else ""
         return (
-            f"case when {self._asin_merge_zero_qty_display_condition(alias)} "
+            f"case when {prefix}moq_status = 'below_minimum' then %(level_below_moq)s "
+            f"when {self._asin_merge_zero_qty_display_condition(alias)} "
             f"then %(level_sufficient)s when {self._history_recovery_display_condition(alias)} "
             f"then %(level_history_recovery)s else {prefix}support_replenish_level end"
         )
@@ -935,7 +941,8 @@ class ReplenishmentDataService:
     def _display_level_sort_expr(self, alias: str = "") -> str:
         prefix = f"{alias}." if alias else ""
         return (
-            f"case when {self._asin_merge_zero_qty_display_condition(alias)} "
+            f"case when {prefix}moq_status = 'below_minimum' then 7 "
+            f"when {self._asin_merge_zero_qty_display_condition(alias)} "
             f"then 4 when {self._history_recovery_display_condition(alias)} "
             f"then 6 else {prefix}support_replenish_level_sort end"
         )
@@ -978,6 +985,15 @@ class ReplenishmentDataService:
             f"then coalesce({prefix}executable_replenish_box_qty, 0) else {legacy_expr} end"
         )
 
+    def _calculated_replenish_box_qty_expr(self, alias: str = "") -> str:
+        prefix = f"{alias}." if alias else ""
+        legacy_expr = (
+            f"case when {self._history_recovery_display_condition(alias)} "
+            f"then case when coalesce({prefix}max_cg_box_pcs, 0) > 0 then 1 else 0 end "
+            f"else coalesce({prefix}replenish_box_qty, 0) end"
+        )
+        return f"coalesce({prefix}calculated_replenish_box_qty, {legacy_expr})"
+
     def _display_replenish_cost_expr(self, alias: str = "") -> str:
         prefix = f"{alias}." if alias else ""
         unit_cost_expr = f"coalesce({prefix}max_cg_price, 0) + coalesce({prefix}max_cg_transport_costs, 0)"
@@ -989,6 +1005,40 @@ class ReplenishmentDataService:
         return (
             f"case when {prefix}moq_status is not null "
             f"then coalesce({prefix}executable_replenish_cost, 0) else {legacy_expr} end"
+        )
+
+    def _calculated_replenish_cost_expr(self, alias: str = "") -> str:
+        prefix = f"{alias}." if alias else ""
+        unit_cost_expr = f"coalesce({prefix}max_cg_price, 0) + coalesce({prefix}max_cg_transport_costs, 0)"
+        legacy_expr = (
+            f"case when {self._history_recovery_display_condition(alias)} "
+            f"then {self._history_recovery_restore_qty_expr(alias)} * ({unit_cost_expr}) "
+            f"else coalesce({prefix}replenish_cost, 0) end"
+        )
+        return f"coalesce({prefix}calculated_replenish_cost, {legacy_expr})"
+
+    def _detail_replenish_qty_expr(self, alias: str = "") -> str:
+        prefix = f"{alias}." if alias else ""
+        return (
+            f"case when {prefix}moq_status = 'below_minimum' "
+            f"then coalesce({prefix}calculated_replenish_qty, 0) "
+            f"else {self._display_replenish_qty_expr(alias)} end"
+        )
+
+    def _detail_replenish_box_qty_expr(self, alias: str = "") -> str:
+        prefix = f"{alias}." if alias else ""
+        return (
+            f"case when {prefix}moq_status = 'below_minimum' "
+            f"then {self._calculated_replenish_box_qty_expr(alias)} "
+            f"else {self._display_replenish_box_qty_expr(alias)} end"
+        )
+
+    def _detail_replenish_cost_expr(self, alias: str = "") -> str:
+        prefix = f"{alias}." if alias else ""
+        return (
+            f"case when {prefix}moq_status = 'below_minimum' "
+            f"then {self._calculated_replenish_cost_expr(alias)} "
+            f"else {self._display_replenish_cost_expr(alias)} end"
         )
 
     def _display_block_reason_expr(self, alias: str = "") -> str:
@@ -1036,6 +1086,7 @@ class ReplenishmentDataService:
     def _with_display_level_params(self, params: dict[str, Any]) -> dict[str, Any]:
         return {
             **params,
+            "level_below_moq": LEVEL_BELOW_MOQ,
             "level_history_recovery": LEVEL_HISTORY_RECOVERY,
             "level_sufficient": LEVEL_SUFFICIENT,
             "level_followed_block": LEVEL_FOLLOWED_BLOCK,
@@ -1473,10 +1524,10 @@ class ReplenishmentDataService:
         period_metrics = period_metrics or self._product_category_metric_sql(30)
         display_level_expr = self._display_level_expr()
         display_level_sort_expr = self._display_level_sort_expr()
-        display_replenish_qty_expr = self._display_replenish_qty_expr()
+        display_replenish_qty_expr = self._detail_replenish_qty_expr()
         calculated_replenish_qty_expr = self._calculated_replenish_qty_expr()
-        display_replenish_box_qty_expr = self._display_replenish_box_qty_expr()
-        display_replenish_cost_expr = self._display_replenish_cost_expr()
+        display_replenish_box_qty_expr = self._detail_replenish_box_qty_expr()
+        display_replenish_cost_expr = self._detail_replenish_cost_expr()
         display_product_daily_sales_expr = self._display_product_daily_sales_expr(period_metrics, "r")
         display_block_reason_expr = self._display_block_reason_expr("r")
         display_asin_merge_reason_expr = self._display_asin_merge_reason_expr("r")
@@ -1649,10 +1700,12 @@ class ReplenishmentDataService:
         if column == "gp_margin_range":
             return f"{period_metrics['margin_range_expr']} as {self._quote_identifier(column)}"
         display_columns = {
+            "support_replenish_level": self._display_level_expr(),
+            "support_replenish_level_sort": self._display_level_sort_expr(),
             "calculated_replenish_qty": self._calculated_replenish_qty_expr(),
-            "replenish_qty": self._display_replenish_qty_expr(),
-            "replenish_box_qty": self._display_replenish_box_qty_expr(),
-            "replenish_cost": self._display_replenish_cost_expr(),
+            "replenish_qty": self._detail_replenish_qty_expr(),
+            "replenish_box_qty": self._detail_replenish_box_qty_expr(),
+            "replenish_cost": self._detail_replenish_cost_expr(),
         }
         if column in display_columns:
             return f"{display_columns[column]} as {self._quote_identifier(column)}"
