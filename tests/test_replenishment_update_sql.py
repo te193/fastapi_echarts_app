@@ -37,6 +37,45 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("asin_merge_flag", ddl)
         self.assertIn("asin_merge_target", ddl)
         self.assertIn("asin_merge_reason", ddl)
+        self.assertIn("dashboard_replenishment_supplier_moq_sync", ddl)
+        self.assertIn("supplier_moq", ddl)
+        self.assertIn("calculated_replenish_qty", ddl)
+        self.assertIn("executable_replenish_qty", ddl)
+        self.assertIn("executable_replenish_box_qty", ddl)
+        self.assertIn("executable_replenish_cost", ddl)
+        self.assertIn("moq_shortfall_qty", ddl)
+        self.assertIn("moq_status", ddl)
+
+    def test_supplier_moq_sync_loads_primary_supplier_quotes(self):
+        step = replenishment_update.STEPS["supplier_moq_sync"]
+
+        self.assertIn("dashboard_replenishment_supplier_moq_sync", step.target_table)
+        self.assertIn("lx_product_local_product_info_GongYingShangBaoJia", step.source_select_statement)
+        self.assertIn("is_primary = '是'", step.source_select_statement)
+        self.assertIn("max(moq) as supplier_moq", step.source_select_statement)
+        self.assertEqual(("snapshot_date", "sku", "supplier_moq"), step.target_columns)
+        self.assertIn("supplier_moq_sync", replenishment_update.DEFAULT_STEP_ORDER)
+
+    def test_moq_gating_preserves_calculated_qty_and_zeros_only_below_minimum(self):
+        sql = "\n".join(replenishment_update.STEPS["moq_gating"].statements)
+
+        self.assertIn("history_recovery_flag", sql)
+        self.assertIn("max_cg_box_pcs", sql)
+        self.assertIn("else 50", sql)
+        self.assertIn("when supplier_moq is null or supplier_moq <= 0 then 'unconfigured'", sql)
+        self.assertIn("when calculated_replenish_qty < supplier_moq then 'below_minimum'", sql)
+        self.assertIn("else 'met'", sql)
+        self.assertIn("when g.moq_status = 'below_minimum' then 0", sql)
+        self.assertNotIn("when moq_status = 'below_minimum' then 0", sql)
+        self.assertIn("greatest(supplier_moq - calculated_replenish_qty, 0)", sql)
+        self.assertLess(
+            replenishment_update.DEFAULT_STEP_ORDER.index("replenishment_result"),
+            replenishment_update.DEFAULT_STEP_ORDER.index("moq_gating"),
+        )
+        self.assertLess(
+            replenishment_update.DEFAULT_STEP_ORDER.index("moq_gating"),
+            replenishment_update.DEFAULT_STEP_ORDER.index("country_metrics"),
+        )
 
     def test_history_daily_sync_step_loads_fixed_remote_history(self):
         step = replenishment_update.STEPS["history_daily_sync"]

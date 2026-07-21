@@ -79,6 +79,11 @@
     detailRows: "\u660e\u7ec6\u884c\u6570",
     calcMsku: "\u8fdb\u5165\u8865\u8d27\u8ba1\u7b97",
     replenishQty: "\u8865\u8d27\u6570\u91cf",
+    calculatedReplenishQty: "\u8ba1\u7b97\u8865\u8d27\u91cf",
+    supplierMoq: "\u6700\u5c0f\u8d77\u8ba2\u91cf",
+    moqShortfall: "\u8d77\u8ba2\u5dee\u989d",
+    moqStatus: "MOQ \u72b6\u6001",
+    moqWarning: "\u4f4e\u4e8e\u6700\u5c0f\u8d77\u8ba2\u91cf",
     avgSupportDays: "\u5e73\u5747\u652f\u6491\u5929\u6570",
     actionLayers: "\u8865\u8d27\u5206\u5c42",
     basePool: "\u6d4b\u7b97\u8303\u56f4\u5206\u5e03",
@@ -156,6 +161,7 @@
     site: query.get("site") || "all",
     store: query.get("store") || "all",
     keyword: query.get("keyword") || "",
+    moq_status: query.get("moq_status") || "all",
     category_period_days: Number(query.get("category_period_days") || 30),
     sort_field: query.get("sort_field") || "",
     sort_dir: query.get("sort_dir") || "",
@@ -252,6 +258,7 @@
       state.site = "all";
       state.store = "all";
       state.keyword = "";
+      state.moq_status = "all";
       state.category_period_days = 30;
       state.sort_field = "";
       state.sort_dir = "";
@@ -429,9 +436,24 @@
           '</button>'
         ].join("");
       }).join(""),
+      '<button type="button" class="pool-chip moq-warning-chip' + (state.moq_status === "below_minimum" ? " active" : "") + '" data-moq-status="below_minimum">',
+      '<span class="mix-icon">!</span>',
+      '<span class="pool-chip-title">' + text.moqWarning + '</span>',
+      '<strong>' + formatNumber((payload.summary || {}).moq_warning_count || 0) + '</strong>',
+      '<small>' + text.calculatedReplenishQty + ' ' + formatNumber((payload.summary || {}).moq_warning_calculated_qty || 0) + '</small>',
+      '</button>',
       '<div class="pool-note">' + text.skuCount + ' ' + formatNumber((payload.summary || {}).all_msku_count || (payload.summary || {}).sku_count) + '</div>',
       '</div>'
     ].join("");
+    Array.from(elements.layerVizGrid.querySelectorAll("[data-moq-status]")).forEach(function (node) {
+      node.addEventListener("click", function () {
+        state.moq_status = "below_minimum";
+        state.level = "all";
+        state.category = "all";
+        state.page = 1;
+        render();
+      });
+    });
     Array.from(elements.layerVizGrid.querySelectorAll("[data-category]")).forEach(function (node) {
       node.addEventListener("click", function (event) {
         event.preventDefault();
@@ -469,6 +491,7 @@
   function selectLayerDetails(level, category) {
     state.level = level || "all";
     state.category = category || "all";
+    state.moq_status = "all";
     state.page = 1;
     render();
     window.setTimeout(function () {
@@ -786,6 +809,10 @@
         numberColumn(text.purchasePlan, "purchase_plan_quantity", 118, 0),
         numberColumn(text.sales30d, "sales_30d", 110, 0),
         numberColumn(text.needQty, "need_qty", 120, 2),
+        numberColumn(text.calculatedReplenishQty, "calculated_replenish_qty", 132, 0),
+        numberColumn(text.supplierMoq, "supplier_moq", 118, 0),
+        numberColumn(text.moqShortfall, "moq_shortfall_qty", 112, 0),
+        { headerName: text.moqStatus, field: "moq_status", width: 128, cellRenderer: function (params) { return '<span class="status-pill moq-' + app.escapeHtml(params.value || "") + '">' + app.escapeHtml(moqStatusLabel(params.value)) + '</span>'; } },
         numberColumn(text.replenishQty, "replenish_qty", 122, 0),
         numberColumn(text.boxQty, "box_qty", 96, 0),
         { headerName: text.replenishValue, field: "cost", width: 132, type: "numericColumn", sort: colSort("cost"), cellRenderer: function (params) { return formatCurrency(params.value); } },
@@ -1068,7 +1095,7 @@
 
   function exportReplenishment() {
     var params = new URLSearchParams();
-    ["snapshot_date", "level", "category", "category_period_days", "site", "store", "keyword", "sort_field", "sort_dir"].forEach(function (key) {
+    ["snapshot_date", "level", "category", "category_period_days", "site", "store", "keyword", "moq_status", "sort_field", "sort_dir"].forEach(function (key) {
       var value = state[key];
       if (value !== undefined && value !== null && value !== "" && value !== "all") params.set(key, value);
     });
@@ -1253,6 +1280,14 @@
 
   function formatCurrency(value) {
     return "\u00a5" + Number(value || 0).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
+  }
+
+  function moqStatusLabel(value) {
+    if (value === "below_minimum") return "\u4f4e\u4e8e MOQ";
+    if (value === "met") return "\u5df2\u8fbe MOQ";
+    if (value === "unconfigured") return "MOQ \u672a\u914d\u7f6e";
+    if (value === "not_applicable") return "\u65e0\u8865\u8d27\u91cf";
+    return "-";
   }
 
   function signedCurrency(value) {
