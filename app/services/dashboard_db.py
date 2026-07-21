@@ -2,11 +2,9 @@
 
 import base64
 import configparser
-import hashlib
 import math
 import os
 import re
-import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -16,12 +14,8 @@ from typing import Any
 import pymysql
 
 from etl.dashboard_daily_update import (
-    DELETE_PERIOD_SNAPSHOT_SQL,
-    INSERT_PERIOD_SNAPSHOT_SQL,
     PERIOD_PRESET_TABLES,
     SchemaConfig,
-    period_delete_sql,
-    period_insert_sql,
     render_sql,
 )
 
@@ -135,8 +129,8 @@ class PeriodWindow:
     start_date: date
     end_date: date
     snapshot_date: date
-    period_table: str = "etl_datasync.dashboard_product_period_snapshot"
-    period_code: str = "custom"
+    period_table: str = "etl_datasync.dashboard_product_period_90d_snapshot"
+    period_code: str = "last_90_days"
 
     @property
     def days(self) -> int:
@@ -363,7 +357,6 @@ class DashboardDbService:
     def get_dashboard_payload(self, filters: dict[str, Any]) -> dict[str, Any]:
         with self.connect() as conn:
             window = self._resolve_window(conn, filters)
-            self._ensure_period_snapshot(conn, window)
             stats = self._fetch_dashboard_stats(conn, window, filters)
             daily_sales_chart = self._fetch_band_counts(conn, window, filters, "daily_sales_band", DAILY_SALES_BANDS)
             margin_chart = self._fetch_band_counts(conn, window, filters, "margin_band", MARGIN_BANDS)
@@ -1398,7 +1391,6 @@ class DashboardDbService:
     ) -> dict[str, Any]:
         with self.connect() as conn:
             window = self._resolve_window(conn, filters)
-            self._ensure_period_snapshot(conn, window)
             total = self._count_period_items(conn, window, filters)
             total_pages = max(1, math.ceil(total / page_size))
             safe_page = min(max(page, 1), total_pages)
@@ -1425,7 +1417,6 @@ class DashboardDbService:
     def get_detail_export_payload(self, filters: dict[str, Any]) -> dict[str, Any]:
         with self.connect() as conn:
             window = self._resolve_window(conn, filters)
-            self._ensure_period_snapshot(conn, window)
             columns, rows = self._fetch_period_export_rows(conn, window, filters)
 
         return {
@@ -1443,9 +1434,10 @@ class DashboardDbService:
 
         with self.connect(autocommit=True) as conn:
             bounds = self._get_daily_bounds(conn)
-            period_table = self._render_period_table(
-                self._preset_table_for_range(bounds["max_date"], period_start, period_end)
-            )
+            selected_table = self._preset_table_for_range(bounds["max_date"], period_start, period_end)
+            if selected_table is None:
+                return {"error": "not_found"}
+            period_table = self._render_period_table(selected_table)
             with conn.cursor() as cursor:
                 cursor.execute(
                     f"""
@@ -1583,7 +1575,14 @@ class DashboardDbService:
         if start_date > end_date:
             start_date, end_date = default_start, default_end
         period_table = self._preset_table_for_range(bounds["max_date"], start_date, end_date)
-        period_code = {table: name for name, table in PERIOD_PRESET_TABLES.items()}.get(period_table, "custom")
+        if period_table is None:
+            start_date, end_date = default_start, default_end
+            period_table = self._preset_table_for_range(bounds["max_date"], start_date, end_date)
+        if period_table is None:
+            period_table = PERIOD_PRESET_TABLES["last_90_days"]
+            start_date = max(bounds["min_date"], bounds["max_date"] - timedelta(days=89))
+            end_date = bounds["max_date"]
+        period_code = {table: name for name, table in PERIOD_PRESET_TABLES.items()}[period_table]
         snapshot_date = self._get_period_snapshot_date(conn, period_table, start_date, end_date)
         return PeriodWindow(
             start_date=start_date,
@@ -1609,9 +1608,6 @@ class DashboardDbService:
         end_date: date,
     ) -> date:
         latest_snapshot_date = self._get_latest_snapshot_date(conn)
-        if period_table == "etl_datasync.dashboard_product_period_snapshot":
-            return latest_snapshot_date
-
         rendered_table = self._render_period_table(period_table)
         with conn.cursor() as cursor:
             cursor.execute(
@@ -1626,7 +1622,7 @@ class DashboardDbService:
             row = cursor.fetchone() or {}
         return row.get("snapshot_date") or latest_snapshot_date
 
-    def _preset_table_for_range(self, biz_date: date, start_date: date, end_date: date) -> str:
+    def _preset_table_for_range(self, biz_date: date, start_date: date, end_date: date) -> str | None:
         month_start = date(biz_date.year, biz_date.month, 1)
         last_month_end = month_start - timedelta(days=1)
         last_month_start = date(last_month_end.year, last_month_end.month, 1)
@@ -1640,10 +1636,10 @@ class DashboardDbService:
         for name, (preset_start, preset_end) in presets.items():
             if start_date == preset_start and end_date == preset_end:
                 return PERIOD_PRESET_TABLES[name]
-        return "etl_datasync.dashboard_product_period_snapshot"
+        return None
 
     def _render_period_table(self, table_name: str) -> str:
-        allowed_tables = set(PERIOD_PRESET_TABLES.values()) | {"etl_datasync.dashboard_product_period_snapshot"}
+        allowed_tables = set(PERIOD_PRESET_TABLES.values())
         if table_name not in allowed_tables:
             raise RuntimeError(f"Unexpected period table: {table_name}")
         return render_sql(table_name, self.schemas)
@@ -2236,9 +2232,7 @@ class DashboardDbService:
     def _lifecycle_metric_table(self, metric_days: int) -> str:
         if metric_days == 30:
             return "etl_datasync.dashboard_product_period_30d_snapshot"
-        if metric_days == 90:
-            return "etl_datasync.dashboard_product_period_90d_snapshot"
-        return "etl_datasync.dashboard_product_period_snapshot"
+        return "etl_datasync.dashboard_product_period_90d_snapshot"
 
     def _period_snapshot_window(
         self,
@@ -2421,74 +2415,6 @@ class DashboardDbService:
             "cells": cells,
             "total": len(rows),
         }
-
-    def _ensure_period_snapshot(self, conn, window: PeriodWindow) -> None:
-        params = {
-            "snapshot_date": window.snapshot_date,
-            "period_start": window.start_date,
-            "period_end": window.end_date,
-        }
-        period_table = self._render_period_table(window.period_table)
-        lock_raw = f"{window.period_table}:{window.snapshot_date}:{window.start_date}:{window.end_date}"
-        lock_name = "dashboard_period:" + hashlib.sha1(lock_raw.encode("utf-8")).hexdigest()
-        lock_acquired = False
-        with conn.cursor() as cursor:
-            try:
-                cursor.execute(
-                    f"""
-                    select count(*) as total
-                    from {period_table}
-                    where snapshot_date = %(snapshot_date)s
-                      and period_start = %(period_start)s
-                      and period_end = %(period_end)s
-                    """,
-                    params,
-                )
-                exists = to_int((cursor.fetchone() or {}).get("total")) > 0
-                if exists:
-                    return
-
-                cursor.execute("select get_lock(%s, 30) as locked", (lock_name,))
-                lock_acquired = to_int((cursor.fetchone() or {}).get("locked")) == 1
-                if not lock_acquired:
-                    raise RuntimeError("Timed out waiting for period snapshot lock")
-
-                cursor.execute(
-                    f"""
-                    select count(*) as total
-                    from {period_table}
-                    where snapshot_date = %(snapshot_date)s
-                      and period_start = %(period_start)s
-                      and period_end = %(period_end)s
-                    """,
-                    params,
-                )
-                exists = to_int((cursor.fetchone() or {}).get("total")) > 0
-                if exists:
-                    return
-
-                if window.period_table == "etl_datasync.dashboard_product_period_snapshot":
-                    delete_sql = DELETE_PERIOD_SNAPSHOT_SQL
-                    insert_sql = INSERT_PERIOD_SNAPSHOT_SQL
-                else:
-                    delete_sql = period_delete_sql(window.period_table)
-                    insert_sql = period_insert_sql(window.period_table)
-                for attempt in range(3):
-                    try:
-                        cursor.execute(render_sql(delete_sql, self.schemas), params)
-                        cursor.execute(render_sql(insert_sql, self.schemas), params)
-                        conn.commit()
-                        return
-                    except pymysql.err.OperationalError as exc:
-                        conn.rollback()
-                        if exc.args and exc.args[0] in {1205, 1213} and attempt < 2:
-                            time.sleep(0.4 * (attempt + 1))
-                            continue
-                        raise
-            finally:
-                if lock_acquired:
-                    cursor.execute("select release_lock(%s)", (lock_name,))
-                    conn.commit()
 
     def _base_period_params(self, window: PeriodWindow) -> dict[str, Any]:
         return {
