@@ -5824,6 +5824,26 @@ body[data-page="price_review"] .price-review-filter-panel {
   color: #64748b;
 }
 
+.pool-chip.moq-warning-chip {
+  border-color: #fdba74;
+  background: #fff7ed;
+}
+
+.pool-chip.moq-warning-chip .mix-icon {
+  background: #ffedd5;
+  color: #c2410c;
+}
+
+.pool-chip.moq-warning-chip.active {
+  border-color: #ea580c;
+  box-shadow: 0 0 0 2px rgba(234, 88, 12, 0.12);
+}
+
+.status-pill.moq-below_minimum {
+  background: #ffedd5;
+  color: #c2410c;
+}
+
 .pool-note {
   margin-top: auto;
   padding: 12px;

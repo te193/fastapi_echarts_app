@@ -20,7 +20,7 @@ def test_margin_price_assets_use_cache_busting_versions():
     replenishment_template = (ROOT / "app" / "templates" / "replenishment.html").read_text(encoding="utf-8")
 
     assert "styles.css') }}?v=20260717countrymatrix2" in base_template
-    assert "replenishment.js') }}?v=20260710fbaattribution1" in replenishment_template
+    assert "replenishment.js') }}?v=20260721moq1" in replenishment_template
     assert "replenishment_tracking_summary.js') }}?v=20260720linkedfilters5" in replenishment_template
 
 

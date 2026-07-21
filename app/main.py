@@ -1112,6 +1112,7 @@ def api_replenishment(
     site: str = Query(default="all"),
     store: str = Query(default="all"),
     keyword: str = Query(default=""),
+    moq_status: str = Query(default="all"),
     category_period_days: int = Query(default=30),
     sort_field: str = Query(default=""),
     sort_dir: str = Query(default=""),
@@ -1125,6 +1126,7 @@ def api_replenishment(
         site=site,
         store=store,
         keyword=keyword,
+        moq_status=moq_status,
         category_period_days=category_period_days,
         sort_field=sort_field,
         sort_dir=sort_dir,
@@ -1142,6 +1144,7 @@ def api_replenishment_export(
     site: str = Query(default="all"),
     store: str = Query(default="all"),
     keyword: str = Query(default=""),
+    moq_status: str = Query(default="all"),
     sort_field: str = Query(default=""),
     sort_dir: str = Query(default=""),
 ) -> StreamingResponse:
@@ -1153,6 +1156,7 @@ def api_replenishment_export(
         site=site,
         store=store,
         keyword=keyword,
+        moq_status=moq_status,
         sort_field=sort_field,
         sort_dir=sort_dir,
     )

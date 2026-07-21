@@ -33,9 +33,11 @@ DEFAULT_STEP_ORDER = [
     "self_asin_sync",
     "fba_shipment_sync",
     "order_profit_source_sync",
+    "supplier_moq_sync",
     "check_daily_snapshots",
     "salable_days_stat",
     "replenishment_result",
+    "moq_gating",
     "country_metrics",
 ]
 
@@ -63,6 +65,7 @@ REPLENISHMENT_WORK_TABLES = {
     "tmp_asin_merge_assignments": "etl_datasync.dashboard_replenishment_work_asin_merge_assignments_v3",
     "tmp_asin_merge_purchase_fields": "etl_datasync.dashboard_replenishment_work_asin_merge_purchase_fields_v3",
     "tmp_replenishment_country_listing_price": "etl_datasync.dashboard_replenishment_work_country_listing_price_v3",
+    "tmp_replenishment_moq_gate": "etl_datasync.dashboard_replenishment_work_moq_gate_v1",
 }
 
 
@@ -259,6 +262,17 @@ create table if not exists etl_datasync.dashboard_replenishment_order_profit_sou
 ) engine=InnoDB default charset=utf8mb4;
 """
 
+CREATE_SUPPLIER_MOQ_SYNC_SQL = """
+create table if not exists etl_datasync.dashboard_replenishment_supplier_moq_sync (
+    snapshot_date date not null,
+    sku varchar(500) not null,
+    supplier_moq decimal(18,4) null,
+    synced_at datetime not null default current_timestamp,
+    primary key (snapshot_date, sku),
+    key idx_repl_supplier_moq_sku (sku, snapshot_date)
+) engine=InnoDB default charset=utf8mb4;
+"""
+
 CREATE_REPLENISHMENT_RESULT_SQL = """
 create table if not exists etl_datasync.dashboard_pur_plan_replenish_data (
     cur_date date not null,
@@ -374,6 +388,13 @@ create table if not exists etl_datasync.dashboard_pur_plan_replenish_data (
     replenish_qty decimal(18,4) null,
     replenish_box_qty decimal(18,4) null,
     replenish_cost decimal(18,4) null,
+    supplier_moq decimal(18,4) null,
+    moq_status varchar(32) null,
+    calculated_replenish_qty decimal(18,4) null,
+    executable_replenish_qty decimal(18,4) null,
+    executable_replenish_box_qty decimal(18,4) null,
+    executable_replenish_cost decimal(18,4) null,
+    moq_shortfall_qty decimal(18,4) null,
     amz_instock_sales_ratio decimal(18,6) null,
     instock_intrans_pur_sales_ratio decimal(18,6) null,
     fllow_flag tinyint null,
@@ -444,6 +465,7 @@ DDL_STATEMENTS = (
     CREATE_LISTING_BASIC_SYNC_SQL,
     CREATE_FBA_SHIPMENT_SYNC_SQL,
     CREATE_ORDER_PROFIT_SOURCE_SYNC_SQL,
+    CREATE_SUPPLIER_MOQ_SYNC_SQL,
     CREATE_REPLENISHMENT_RESULT_SQL,
     CREATE_COUNTRY_METRICS_SQL,
 )
@@ -473,6 +495,25 @@ LISTING_BASIC_COLUMNS = (
     "max_cg_price",
     "max_cg_transport_costs",
 )
+
+SUPPLIER_MOQ_COLUMNS = ("snapshot_date", "sku", "supplier_moq")
+
+DELETE_SUPPLIER_MOQ_SYNC_SQL = """
+delete from etl_datasync.dashboard_replenishment_supplier_moq_sync
+where snapshot_date = %(snapshot_date)s
+"""
+
+SELECT_SUPPLIER_MOQ_SYNC_SQL = """
+select
+    %(snapshot_date)s as snapshot_date,
+    sku,
+    max(moq) as supplier_moq
+from dwd_datasync.lx_product_local_product_info_GongYingShangBaoJia
+where is_primary = '是'
+  and sku is not null
+  and sku <> ''
+group by sku
+"""
 
 DELETE_LISTING_BASIC_SYNC_SQL = "delete from etl_datasync.dashboard_replenishment_listing_basic_sync;"
 
@@ -2361,6 +2402,71 @@ REPLENISHMENT_TEMPORARY_SQL = (
     REPLENISHMENT_RESULT_SQL,
 )
 
+MOQ_GATING_SQL = """
+drop table if exists tmp_replenishment_moq_gate;
+create table tmp_replenishment_moq_gate as
+select
+    base.*,
+    case
+        when base.calculated_replenish_qty <= 0 then 'not_applicable'
+        when supplier_moq is null or supplier_moq <= 0 then 'unconfigured'
+        when calculated_replenish_qty < supplier_moq then 'below_minimum'
+        else 'met'
+    end as moq_status,
+    case
+        when base.calculated_replenish_qty > 0 and base.supplier_moq > 0
+            then greatest(supplier_moq - calculated_replenish_qty, 0)
+        else 0
+    end as moq_shortfall_qty
+from (
+    select
+        r.cur_date,
+        r.country_category,
+        r.seller_name_new,
+        r.seller_sku_adj,
+        m.supplier_moq,
+        case
+            when coalesce(r.history_recovery_flag, 0) = 1
+             and coalesce(r.support_replenish_level_sort, 99) not in (1, 2, 3)
+                then case when coalesce(r.max_cg_box_pcs, 0) > 0 then r.max_cg_box_pcs else 50 end
+            else coalesce(r.replenish_qty, 0)
+        end as calculated_replenish_qty,
+        case
+            when coalesce(r.history_recovery_flag, 0) = 1
+             and coalesce(r.support_replenish_level_sort, 99) not in (1, 2, 3)
+                then case when coalesce(r.max_cg_box_pcs, 0) > 0 then 1 else 0 end
+            else coalesce(r.replenish_box_qty, 0)
+        end as calculated_replenish_box_qty,
+        case
+            when coalesce(r.history_recovery_flag, 0) = 1
+             and coalesce(r.support_replenish_level_sort, 99) not in (1, 2, 3)
+                then (case when coalesce(r.max_cg_box_pcs, 0) > 0 then r.max_cg_box_pcs else 50 end)
+                   * (coalesce(r.max_cg_price, 0) + coalesce(r.max_cg_transport_costs, 0))
+            else coalesce(r.replenish_cost, 0)
+        end as calculated_replenish_cost
+    from etl_datasync.dashboard_pur_plan_replenish_data r
+    left join etl_datasync.dashboard_replenishment_supplier_moq_sync m
+           on m.snapshot_date = r.cur_date
+          and binary m.sku = binary r.max_sku
+    where r.cur_date = %(snapshot_date)s
+) base;
+
+update etl_datasync.dashboard_pur_plan_replenish_data r
+inner join tmp_replenishment_moq_gate g
+        on g.cur_date = r.cur_date
+       and g.country_category = r.country_category
+       and g.seller_name_new = r.seller_name_new
+       and g.seller_sku_adj = r.seller_sku_adj
+set r.supplier_moq = g.supplier_moq,
+    r.moq_status = g.moq_status,
+    r.calculated_replenish_qty = g.calculated_replenish_qty,
+    r.executable_replenish_qty = case when g.moq_status = 'below_minimum' then 0 else g.calculated_replenish_qty end,
+    r.executable_replenish_box_qty = case when g.moq_status = 'below_minimum' then 0 else g.calculated_replenish_box_qty end,
+    r.executable_replenish_cost = case when g.moq_status = 'below_minimum' then 0 else g.calculated_replenish_cost end,
+    r.moq_shortfall_qty = g.moq_shortfall_qty
+where r.cur_date = %(snapshot_date)s;
+"""
+
 DELETE_COUNTRY_METRICS_SQL = """
 delete from etl_datasync.dashboard_replenishment_country_metrics
 where snapshot_date = %(snapshot_date)s
@@ -2531,6 +2637,13 @@ STEPS = {
         "etl_datasync.dashboard_replenishment_order_profit_source",
         ORDER_PROFIT_SOURCE_COLUMNS,
     ),
+    "supplier_moq_sync": SourceLoadStep(
+        "supplier_moq_sync",
+        DELETE_SUPPLIER_MOQ_SYNC_SQL,
+        SELECT_SUPPLIER_MOQ_SYNC_SQL,
+        "etl_datasync.dashboard_replenishment_supplier_moq_sync",
+        SUPPLIER_MOQ_COLUMNS,
+    ),
     "history_daily_sync": SourceLoadStep(
         "history_daily_sync",
         DELETE_HISTORY_DAILY_SYNC_SQL,
@@ -2543,6 +2656,10 @@ STEPS = {
     "replenishment_result": ReplenishmentStep(
         "replenishment_result",
         tuple(statement.strip() + ";" for statement in REPLENISHMENT_RESULT_SQL.split(";") if statement.strip()),
+    ),
+    "moq_gating": ReplenishmentStep(
+        "moq_gating",
+        tuple(statement.strip() + ";" for statement in MOQ_GATING_SQL.split(";") if statement.strip()),
     ),
     "country_metrics": ReplenishmentStep(
         "country_metrics",
@@ -2734,6 +2851,13 @@ def ensure_replenishment_columns(cursor, schemas: SchemaConfig) -> None:
             ("asin_merge_flag", "tinyint not null default 0", "replenish_block_reason"),
             ("asin_merge_target", "varchar(255) null", "asin_merge_flag"),
             ("asin_merge_reason", "varchar(64) null", "asin_merge_target"),
+            ("supplier_moq", "decimal(18,4) null", "replenish_cost"),
+            ("moq_status", "varchar(32) null", "supplier_moq"),
+            ("calculated_replenish_qty", "decimal(18,4) null", "moq_status"),
+            ("executable_replenish_qty", "decimal(18,4) null", "calculated_replenish_qty"),
+            ("executable_replenish_box_qty", "decimal(18,4) null", "executable_replenish_qty"),
+            ("executable_replenish_cost", "decimal(18,4) null", "executable_replenish_box_qty"),
+            ("moq_shortfall_qty", "decimal(18,4) null", "executable_replenish_cost"),
         ],
     }
     for table_name, columns in column_specs.items():
