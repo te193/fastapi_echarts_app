@@ -423,6 +423,26 @@ def api_label_hub_msku(data_date: str, country_category: str, store: str, msku: 
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@app.get("/api/label-hub/msku-country-profile")
+def api_label_hub_msku_country_profile(
+    country_category: str,
+    store: str,
+    msku: str,
+    metric_period: str = "30d",
+) -> dict:
+    try:
+        return country_label_hub_service.get_label_hub_country_profile(
+            country_category=country_category,
+            store=store,
+            msku=msku,
+            metric_period=metric_period,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="国家画像暂不可用，请稍后重试") from exc
+
+
 @app.get("/api/label-hub/changes")
 def api_label_hub_changes(
     data_date: str = "", country_category: str = "all", store: str = "all", keyword: str = "",

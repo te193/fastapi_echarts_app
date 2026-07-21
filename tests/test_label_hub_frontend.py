@@ -14,6 +14,7 @@ def test_label_hub_uses_url_conditions_and_profile_drawer_contract():
     assert 'app.writeQueryState(state);' in script
     assert 'conditions: serializeConditions(state.conditions)' in script
     assert '"/api/label-hub/msku"' in script
+    assert '"/api/label-hub/msku-country-profile"' in script
     assert 'window.kanbanGrid.makeGrid("labelHubTable"' in script
     assert 'metric_period: state.metric_period' in script
     assert 'analysis_parent_ids: state.analysis_parent_ids' in script
@@ -30,6 +31,7 @@ def test_label_hub_template_exposes_overview_diagnosis_and_breakdowns():
     for element_id in (
         "labelHubMetricPeriod", "labelHubScope", "labelHubPopulationSummary", "labelHubCategories", "labelHubBreakdowns",
         "labelHubMeasureTabs", "labelHubDiagnosis", "labelHubMatrixPanel", "labelHubDrawerContent",
+        "labelHubCountryProfileDrawer", "labelHubCountryProfileContent",
     ):
         assert f'id="{element_id}"' in template
 
@@ -80,6 +82,67 @@ def test_label_hub_frontend_renders_six_linked_panels_and_structured_profile():
     assert "profile.navigation_links" in script
     assert 'data-negative="' in script
     assert "rowHeight: 52" in script
+
+
+def test_label_hub_country_profile_is_a_separate_lazy_drawer_column():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+
+    assert "function countryProfileColumn()" in script
+    assert "function openCountryProfileDrawer(row)" in script
+    assert "function countryProfilePriceCell(price, priceStatus)" in script
+    assert "function countryProfileRankCell(metrics, metricStatus)" in script
+    assert 'class="label-hub-country-rank-value"' in script
+    assert "countryProfileMetricRow('小类排名', ranking)" not in script
+    assert "function countryProfileLimitPriceCell(limitPrices, price, limitPriceStatus)" in script
+    assert "limitPrices.margin_prices" in script
+    assert "function countryProfileMetricsCell(metrics, metricPeriod, metricStatus)" in script
+    assert "function countryProfileTrafficCell(metrics, metricStatus)" in script
+    assert "function countryProfileCountryTagsCell(item)" in script
+    assert 'var marginInterval = item.price_margin_interval || "--";' in script
+    assert 'var pricingLabel = ((item.pricing || {}).label || "定价标签未命中");' not in script
+    assert "function countryProfileSalesRolesCell(salesRoles)" in script
+    assert "metric_period: state.metric_period || \"30d\"" in script
+    assert "7d 国家销售角色" in script
+    assert "小类排名" in script
+    assert "毛利定价" in script
+    assert "label-hub-country-profile-table-wrap" in styles
+    assert "label-hub-country-profile-metrics" in styles
+    assert ".label-hub-country-rank-value" in styles
+    assert "label-hub-country-price-ladder" in styles
+    assert "label-hub-country-role-grid" in styles
+
+
+def test_label_hub_country_profile_uses_compact_full_height_table():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+
+    assert "<small>取经营窗口最后一天</small>" not in script
+    assert "countryProfileMetricRow('TACOS', tacos)" in script
+    assert ".label-hub-country-name { display: grid; justify-items: center;" in styles
+    assert "<tr><td class=\"label-hub-country-identity\">" in script
+    assert ".label-hub-country-identity { display: table-cell; }" in styles
+    assert ".label-hub-country-profile-table tbody td.label-hub-country-identity { vertical-align: middle; }" in styles
+    assert "String(price.currency || \"\") + formatNumber(price.value)" not in script
+    assert "var local = price.value === null || price.value === undefined ? \"--\" : formatNumber(price.value);" in script
+    assert "#labelHubCountryProfileDrawer .label-hub-country-profile-table-wrap { max-height: min(78vh, 820px); overflow: auto; scrollbar-gutter: stable; }" in styles
+    assert "#labelHubCountryProfileDrawer .label-hub-country-profile-table thead th { position: sticky; top: 0; z-index: 6; }" in styles
+    assert ".label-hub-country-profile-table-wrap { overflow: visible;" in styles
+    assert ".label-hub-country-profile-table tbody tr { height: 126px; }" not in styles
+
+
+def test_label_hub_country_profile_uses_replenishment_detail_header():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+
+    assert 'class="label-hub-country-profile-detail-head"' in script
+    assert '<p class="section-kicker">国家明细</p>' in script
+    assert "identity.sku || '--'" in script
+    assert "summary.country_count || 0" in script
+    assert "label-hub-country-profile-detail-subtitle" in script
+    assert "label-hub-country-profile-detail-note" in script
+    assert "label-hub-country-profile-basic-item" not in script
+    assert ".label-hub-country-profile-detail-head" in styles
 
 
 def test_layer_change_drawer_uses_reconciled_ledger_and_same_dimension_labels():
@@ -396,6 +459,16 @@ def test_country_detail_overview_matches_label_hub_information_structure():
     assert "renderCrossCountryComparison" in script
     assert "country-profile-compare-table" in script
     assert "一行一个国家，直接横向比较标签差异与经营结果" in script
+
+
+def test_country_profile_drawer_uses_compact_grouped_table_layout():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+
+    assert "function countryProfileCountryTagsCell(item)" in script
+    assert "function countryProfileSalesRolesCell(salesRoles)" in script
+    assert "label-hub-country-price-ladder" in styles
+    assert "label-hub-country-role-grid" in styles
 
 
 def test_sales_role_has_label_hub_return_link():

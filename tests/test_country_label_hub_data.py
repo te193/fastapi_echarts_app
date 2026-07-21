@@ -1,6 +1,9 @@
 import unittest
+from datetime import date
+from types import SimpleNamespace
 from unittest.mock import patch
 
+from app.services import country_label_hub_data
 from app.services.country_label_hub_data import CountryLabelHubDataService
 from app.services.label_hub_data import LabelHubDataService
 
@@ -58,6 +61,34 @@ class CountryLabelHubDataTests(unittest.TestCase):
     def setUp(self):
         self.service = CountryLabelHubDataService(FakeShared())
 
+    def test_price_margin_interval_uses_listing_price_against_margin_ladder(self):
+        ladder = {
+            "available": True,
+            "margin_prices": [
+                {"margin": 35, "value": 20},
+                {"margin": 30, "value": 18},
+                {"margin": 25, "value": 16},
+                {"margin": 20, "value": 15},
+                {"margin": 15, "value": 14},
+                {"margin": 10, "value": 13},
+                {"margin": 5, "value": 12},
+                {"margin": 0, "value": 10},
+            ],
+        }
+
+        cases = [
+            ({"available": True, "value": 19}, ladder, "30%–35%"),
+            ({"available": True, "value": 18}, ladder, "30%–35%"),
+            ({"available": True, "value": 20}, ladder, "≥35%"),
+            ({"available": True, "value": 9.99}, ladder, "<0%"),
+            ({"available": False}, ladder, "--"),
+            ({"available": True, "value": 19}, {"available": False}, "--"),
+        ]
+
+        for price, limit_prices, expected in cases:
+            with self.subTest(price=price, expected=expected):
+                self.assertEqual(expected, country_label_hub_data._price_margin_interval(price, limit_prices))
+
     def test_country_page_only_exposes_four_country_scope_parents(self):
         self.assertEqual({4, 7, 13, 14}, {item["id"] for item in self.service.get_meta()["categories"]})
 
@@ -100,6 +131,138 @@ class CountryLabelHubDataTests(unittest.TestCase):
 
         self.assertEqual(row["msku"], profile["identity"]["msku"])
         self.assertTrue(profile["tag_profile"]["labels"])
+
+    def test_label_hub_country_profile_keeps_current_store_scope_and_splits_role_periods(self):
+        self.service._cached_listing_prices = lambda *_: (
+            "2026-07-16",
+            {"美国": {"value": 19.99, "currency": "$", "value_cny": 144.5, "available": True}},
+        )
+        self.service._cached_limit_prices = lambda *_: (
+            "2026-07-16",
+            {"美国": {"margin_price_35": 21.5, "margin_price_10": 16.2, "margin_prices": [{"margin": 35, "value": 21.5}, {"margin": 10, "value": 16.2}], "currency": "USD", "available": True}},
+        )
+        self.service._cached_country_profile_metrics = lambda *_: {
+            "window": {"period_code": "30d", "period_start": "2026-06-16", "period_end": "2026-07-15"},
+            "sku": "SKU-01",
+            "metrics": {"美国": {"sales_qty": 12, "sales_amount": 180, "order_gross_profit": 30, "small_category_ranking": 55}},
+        }
+
+        profile = self.service.get_label_hub_country_profile(
+            country_category="北美站",
+            store="StoreA",
+            msku="A1",
+        )
+
+        self.assertEqual("2026-07-15", profile["scope"]["label_date"])
+        self.assertEqual("SKU-01", profile["identity"]["sku"])
+        self.assertEqual("2026-07-16", profile["scope"]["price_snapshot_date"])
+        self.assertEqual("2026-07-16", profile["scope"]["limit_price_snapshot_date"])
+        self.assertEqual(["美国"], [item["country"] for item in profile["countries"]])
+        self.assertEqual("明星产品", profile["countries"][0]["sales_roles"]["30d"]["label"])
+        self.assertIsNone(profile["countries"][0]["sales_roles"]["7d"])
+        self.assertEqual(21.5, profile["countries"][0]["limit_prices"]["margin_price_35"])
+        self.assertEqual("--", profile["countries"][0]["price_margin_interval"])
+        self.assertEqual(
+            [{"margin": 35, "value": 21.5}, {"margin": 10, "value": 16.2}],
+            profile["countries"][0]["limit_prices"]["margin_prices"],
+        )
+        self.assertEqual(55, profile["countries"][0]["metrics"]["small_category_ranking"])
+        self.assertTrue(profile["countries"][0]["price"]["available"])
+        self.assertEqual(12, profile["countries"][0]["metrics"]["sales_qty"])
+        self.assertEqual("30d", profile["scope"]["metric_period"])
+
+    def test_country_profile_daily_sales_uses_inventory_days_and_returns_sku(self):
+        class FakeCursor:
+            def __init__(self):
+                self.query_count = 0
+
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+            def execute(self, *_): self.query_count += 1
+            def fetchone(self): return {"period_end": date(2026, 7, 15)}
+            def fetchall(self):
+                return [{
+                    "country": "美国", "sku": "SKU-01", "sales_qty": 12,
+                    "inventory_days": 3, "sales_amount": 180,
+                    "order_gross_profit": 30,
+                }]
+
+        class FakeConnection:
+            def __init__(self): self.fake_cursor = FakeCursor()
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+            def cursor(self): return self.fake_cursor
+
+        self.service._shared._dashboard = SimpleNamespace(
+            schemas=None,
+            connect=lambda: FakeConnection(),
+        )
+        with patch("app.services.country_label_hub_data.render_sql", side_effect=lambda table, _: table):
+            result = self.service._cached_country_profile_metrics(
+                "2026-07-15", "北美站", "StoreA", "A1", "30d"
+            )
+
+        self.assertEqual("SKU-01", result["sku"])
+        self.assertEqual(3, result["metrics"]["美国"]["inventory_days"])
+        self.assertEqual(4, result["metrics"]["美国"]["daily_sales"])
+
+    def test_country_profile_daily_sales_is_zero_without_inventory_days(self):
+        class FakeCursor:
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+            def execute(self, *_): return None
+            def fetchone(self): return {"period_end": date(2026, 7, 15)}
+            def fetchall(self):
+                return [{
+                    "country": "美国", "sku": "SKU-01", "sales_qty": 12,
+                    "inventory_days": 0, "sales_amount": 180,
+                    "order_gross_profit": 30,
+                }]
+
+        class FakeConnection:
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+            def cursor(self): return FakeCursor()
+
+        self.service._shared._dashboard = SimpleNamespace(
+            schemas=None,
+            connect=lambda: FakeConnection(),
+        )
+        with patch("app.services.country_label_hub_data.render_sql", side_effect=lambda table, _: table):
+            result = self.service._cached_country_profile_metrics(
+                "2026-07-15", "北美站", "StoreA", "A1", "30d"
+            )
+
+        self.assertEqual(0, result["metrics"]["美国"]["daily_sales"])
+
+    def test_country_profile_sorts_by_sales_then_fixed_country_order(self):
+        countries = ["荷兰", "德国", "西班牙", "法国"]
+        profile_facts = [
+            {**fact, "country": country}
+            for country in countries
+            for fact in FACTS[:4]
+        ]
+        self.service._cached_profile_country_facts = lambda *_: profile_facts
+        self.service._cached_listing_prices = lambda *_: ("2026-07-16", {})
+        self.service._cached_limit_prices = lambda *_: ("2026-07-16", {})
+        self.service._cached_country_profile_metrics = lambda *_: {
+            "window": {},
+            "metrics": {
+                "荷兰": {"sales_qty": 0},
+                "德国": {"sales_qty": 0},
+                "西班牙": {"sales_qty": 12},
+                "法国": {"sales_qty": 12},
+            },
+        }
+
+        profile = self.service.get_label_hub_country_profile(
+            country_category="北美站", store="StoreA", msku="A1"
+        )
+
+        self.assertEqual(
+            ["法国", "西班牙", "德国", "荷兰"],
+            [item["country"] for item in profile["countries"]],
+        )
 
     def test_country_label_units_use_the_full_four_field_key(self):
         payload = self.service.get_payload(metric_period="30d", page_size=20)

@@ -33,6 +33,15 @@ class FakeLabelHubChangeService:
         return {"summary": {"current": 425}}
 
 
+class FakeCountryProfileService:
+    def __init__(self):
+        self.calls = []
+
+    def get_label_hub_country_profile(self, **kwargs):
+        self.calls.append(kwargs)
+        return {"countries": []}
+
+
 class LabelHubApiTests(unittest.TestCase):
     def test_label_hub_page_route_exists(self):
         response = TestClient(main.app).get("/label-hub")
@@ -119,6 +128,18 @@ class LabelHubApiTests(unittest.TestCase):
         self.assertEqual("all", service.calls[0]["layer_change_period"])
         self.assertEqual("瘦狗产品", service.calls[0]["layer_transition_from"])
         self.assertEqual("问题产品", service.calls[0]["layer_transition_to"])
+
+    def test_country_profile_route_keeps_row_identity_only(self):
+        service = FakeCountryProfileService()
+        with patch("app.main.country_label_hub_service", service):
+            payload = main.api_label_hub_msku_country_profile(
+                country_category="欧洲站",
+                store="StoreA",
+                msku="A1",
+            )
+
+        self.assertEqual({"countries": []}, payload)
+        self.assertEqual({"country_category": "欧洲站", "store": "StoreA", "msku": "A1", "metric_period": "30d"}, service.calls[0])
 
 
 if __name__ == "__main__":
