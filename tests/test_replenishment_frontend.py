@@ -19,8 +19,8 @@ def test_margin_price_assets_use_cache_busting_versions():
     base_template = (ROOT / "app" / "templates" / "base.html").read_text(encoding="utf-8")
     replenishment_template = (ROOT / "app" / "templates" / "replenishment.html").read_text(encoding="utf-8")
 
-    assert "styles.css') }}?v=20260717countrymatrix2" in base_template
-    assert "replenishment.js') }}?v=20260721moq1" in replenishment_template
+    assert "styles.css') }}?v=20260721moq2" in base_template
+    assert "replenishment.js') }}?v=20260721moq2" in replenishment_template
     assert "replenishment_tracking_summary.js') }}?v=20260720linkedfilters5" in replenishment_template
 
 
@@ -99,6 +99,25 @@ def test_replenishment_grid_shows_followed_origin_columns():
     assert 'field: "asin_merge_status"' in script
     assert 'field: "asin_merge_target"' in script
     assert 'field: "asin_merge_reason"' in script
+
+
+def test_below_moq_is_an_independent_display_layer_without_duplicate_pool_card():
+    script = (ROOT / "app" / "static" / "js" / "replenishment.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+
+    assert 'var LEVEL_BELOW_MOQ = "\\u4f4e\\u4e8e\\u6700\\u5c0f\\u8d77\\u8ba2\\u91cf";' in script
+    assert 'row.level !== LEVEL_BELOW_MOQ' in script
+    assert 'state.level === LEVEL_BELOW_MOQ' in script
+    assert 'if (key === 7) return "\\u8d77";' in script
+    assert '.status-pill.level-7' in styles
+    assert '#c2410c' in styles
+
+
+def test_changing_level_filter_clears_moq_warning_filter():
+    script = (ROOT / "app" / "static" / "js" / "replenishment.js").read_text(encoding="utf-8")
+    change_handler = script[script.index('["levelSelect", "level"]'):script.index('elements.datePickerBtn.addEventListener')]
+
+    assert 'if (pair[1] === "level") state.moq_status = "all";' in change_handler
 
 
 def test_replenishment_grid_compacts_long_followed_links():
