@@ -185,6 +185,16 @@ REPLENISHMENT_COLUMN_LABELS = {
     "updated_at": "更新时间",
 }
 
+REPLENISHMENT_COLUMN_LABELS.update({
+    "supplier_moq": "\u6700\u5c0f\u8d77\u8ba2\u91cf",
+    "moq_status": "MOQ\u72b6\u6001",
+    "calculated_replenish_qty": "\u8ba1\u7b97\u8865\u8d27\u91cf",
+    "executable_replenish_qty": "\u53ef\u6267\u884c\u8865\u8d27\u91cf",
+    "executable_replenish_box_qty": "\u53ef\u6267\u884c\u8865\u8d27\u7bb1\u6570",
+    "executable_replenish_cost": "\u53ef\u6267\u884c\u8865\u8d27\u8d27\u503c",
+    "moq_shortfall_qty": "\u8d77\u8ba2\u5dee\u989d",
+})
+
 REPLENISHMENT_EXPORT_EXCLUDED_COLUMNS = {
     "stockout_status",
     "gamount_30d",
@@ -267,6 +277,7 @@ class ReplenishmentDataService:
         site: str = "all",
         store: str = "all",
         keyword: str = "",
+        moq_status: str = "all",
         category_period_days: int | str | None = 30,
         sort_field: str = "",
         sort_dir: str = "",
@@ -287,6 +298,7 @@ class ReplenishmentDataService:
                 store,
                 keyword,
                 category_expr=period_metrics["category_expr"],
+                moq_status=moq_status,
             )
             summary = self._summary(conn, filters, params)
             level_summary = self._level_summary(conn, filters, params, period_metrics["category_expr"])
@@ -371,6 +383,7 @@ class ReplenishmentDataService:
         site: str = "all",
         store: str = "all",
         keyword: str = "",
+        moq_status: str = "all",
         sort_field: str = "",
         sort_dir: str = "",
     ) -> list[dict[str, Any]]:
@@ -382,6 +395,7 @@ class ReplenishmentDataService:
             site=site,
             store=store,
             keyword=keyword,
+            moq_status=moq_status,
             sort_field=sort_field,
             sort_dir=sort_dir,
         )["rows"]
@@ -395,6 +409,7 @@ class ReplenishmentDataService:
         site: str = "all",
         store: str = "all",
         keyword: str = "",
+        moq_status: str = "all",
         sort_field: str = "",
         sort_dir: str = "",
     ) -> dict[str, Any]:
@@ -412,6 +427,7 @@ class ReplenishmentDataService:
                 store,
                 keyword,
                 category_expr=period_metrics["category_expr"],
+                moq_status=moq_status,
             )
             columns = self._export_columns(conn)
             rows = self._export_items(
@@ -637,6 +653,7 @@ class ReplenishmentDataService:
         store: str,
         keyword: str,
         category_expr: str | None = None,
+        moq_status: str = "all",
     ) -> tuple[str, dict[str, Any]]:
         clauses = ["cur_date = %(snapshot_date)s"]
         params: dict[str, Any] = self._with_display_level_params({"snapshot_date": snapshot_date})
@@ -662,6 +679,9 @@ class ReplenishmentDataService:
                 "or country_category like %(keyword)s or coalesce(max_sku, '') like %(keyword)s)"
             )
             params["keyword"] = f"%{keyword.strip()}%"
+        if moq_status in {"below_minimum", "unconfigured", "met", "not_applicable"}:
+            clauses.append("moq_status = %(moq_status)s")
+            params["moq_status"] = moq_status
         return " and ".join(clauses), params
 
     def _summary(self, conn, filters: str, params: dict[str, Any]) -> dict[str, Any]:
@@ -697,7 +717,9 @@ class ReplenishmentDataService:
                     sum(case when {display_level_expr} = %(level_planned)s then 1 else 0 end) as planned_count,
                     sum(case when {display_level_expr} = %(level_sufficient)s then 1 else 0 end) as sufficient_count,
                     sum(case when {display_level_expr} = %(level_zero_sales)s then 1 else 0 end) as zero_sales_count,
-                    sum(case when {history_recovery_condition} then 1 else 0 end) as history_recovery_count
+                    sum(case when {history_recovery_condition} then 1 else 0 end) as history_recovery_count,
+                    sum(case when moq_status = 'below_minimum' then 1 else 0 end) as moq_warning_count,
+                    sum(case when moq_status = 'below_minimum' then calculated_replenish_qty else 0 end) as moq_warning_calculated_qty
                 from dashboard_pur_plan_replenish_data
                 where {filters}
                 """,
@@ -719,6 +741,8 @@ class ReplenishmentDataService:
             "sufficient_count": to_int(row.get("sufficient_count")),
             "zero_sales_count": to_int(row.get("zero_sales_count")),
             "history_recovery_count": to_int(row.get("history_recovery_count")),
+            "moq_warning_count": to_int(row.get("moq_warning_count")),
+            "moq_warning_calculated_qty": round(to_float(row.get("moq_warning_calculated_qty")), 2),
         }
 
     def _level_summary(self, conn, filters: str, params: dict[str, Any], category_expr: str) -> list[dict[str, Any]]:
@@ -819,6 +843,7 @@ class ReplenishmentDataService:
     def _calc_pool_condition(self, prefix: str = "") -> str:
         return (
             f"{prefix}support_replenish_level_sort in (1, 2, 3) "
+            f"and coalesce({prefix}moq_status, '') <> 'below_minimum' "
             f"and not (coalesce({prefix}asin_merge_flag, 0) = 1 "
             f"and coalesce({prefix}replenish_qty, 0) = 0)"
         )
@@ -921,26 +946,49 @@ class ReplenishmentDataService:
 
     def _display_replenish_qty_expr(self, alias: str = "") -> str:
         prefix = f"{alias}." if alias else ""
-        return (
+        legacy_expr = (
             f"case when {self._history_recovery_display_condition(alias)} "
             f"then {self._history_recovery_restore_qty_expr(alias)} else coalesce({prefix}replenish_qty, 0) end"
+        )
+        return (
+            f"case when {prefix}moq_status is not null "
+            f"then coalesce({prefix}executable_replenish_qty, 0) else {legacy_expr} end"
+        )
+
+    def _calculated_replenish_qty_expr(self, alias: str = "") -> str:
+        prefix = f"{alias}." if alias else ""
+        legacy_expr = (
+            f"case when {self._history_recovery_display_condition(alias)} "
+            f"then {self._history_recovery_restore_qty_expr(alias)} else coalesce({prefix}replenish_qty, 0) end"
+        )
+        return (
+            f"case when {prefix}moq_status is not null "
+            f"then coalesce({prefix}calculated_replenish_qty, 0) else {legacy_expr} end"
         )
 
     def _display_replenish_box_qty_expr(self, alias: str = "") -> str:
         prefix = f"{alias}." if alias else ""
-        return (
+        legacy_expr = (
             f"case when {self._history_recovery_display_condition(alias)} "
             f"then case when coalesce({prefix}max_cg_box_pcs, 0) > 0 then 1 else 0 end "
             f"else coalesce({prefix}replenish_box_qty, 0) end"
+        )
+        return (
+            f"case when {prefix}moq_status is not null "
+            f"then coalesce({prefix}executable_replenish_box_qty, 0) else {legacy_expr} end"
         )
 
     def _display_replenish_cost_expr(self, alias: str = "") -> str:
         prefix = f"{alias}." if alias else ""
         unit_cost_expr = f"coalesce({prefix}max_cg_price, 0) + coalesce({prefix}max_cg_transport_costs, 0)"
-        return (
+        legacy_expr = (
             f"case when {self._history_recovery_display_condition(alias)} "
             f"then {self._history_recovery_restore_qty_expr(alias)} * ({unit_cost_expr}) "
             f"else coalesce({prefix}replenish_cost, 0) end"
+        )
+        return (
+            f"case when {prefix}moq_status is not null "
+            f"then coalesce({prefix}executable_replenish_cost, 0) else {legacy_expr} end"
         )
 
     def _display_block_reason_expr(self, alias: str = "") -> str:
@@ -1426,6 +1474,7 @@ class ReplenishmentDataService:
         display_level_expr = self._display_level_expr()
         display_level_sort_expr = self._display_level_sort_expr()
         display_replenish_qty_expr = self._display_replenish_qty_expr()
+        calculated_replenish_qty_expr = self._calculated_replenish_qty_expr()
         display_replenish_box_qty_expr = self._display_replenish_box_qty_expr()
         display_replenish_cost_expr = self._display_replenish_cost_expr()
         display_product_daily_sales_expr = self._display_product_daily_sales_expr(period_metrics, "r")
@@ -1495,6 +1544,10 @@ class ReplenishmentDataService:
                     sc_quantity_purchase_plan,
                     final_sales_30d,
                     replenish_need_qty,
+                    {calculated_replenish_qty_expr} as calculated_replenish_qty,
+                    supplier_moq,
+                    moq_shortfall_qty,
+                    moq_status,
                     {display_replenish_qty_expr} as replenish_qty,
                     {display_replenish_box_qty_expr} as replenish_box_qty,
                     {display_replenish_cost_expr} as replenish_cost,
@@ -1595,6 +1648,14 @@ class ReplenishmentDataService:
             return f"{period_metrics['category_expr']} as {self._quote_identifier(column)}"
         if column == "gp_margin_range":
             return f"{period_metrics['margin_range_expr']} as {self._quote_identifier(column)}"
+        display_columns = {
+            "calculated_replenish_qty": self._calculated_replenish_qty_expr(),
+            "replenish_qty": self._display_replenish_qty_expr(),
+            "replenish_box_qty": self._display_replenish_box_qty_expr(),
+            "replenish_cost": self._display_replenish_cost_expr(),
+        }
+        if column in display_columns:
+            return f"{display_columns[column]} as {self._quote_identifier(column)}"
         return self._quote_identifier(column)
 
     def _export_columns(self, conn) -> list[dict[str, str]]:
@@ -1810,6 +1871,10 @@ class ReplenishmentDataService:
             "purchase_plan_quantity": round(to_float(row.get("sc_quantity_purchase_plan")), 2),
             "sales_30d": round(to_float(row.get("final_sales_30d")), 2),
             "need_qty": round(to_float(row.get("replenish_need_qty")), 2),
+            "calculated_replenish_qty": round(to_float(row.get("calculated_replenish_qty")), 2),
+            "supplier_moq": round(to_float(row.get("supplier_moq")), 2) if row.get("supplier_moq") is not None else None,
+            "moq_shortfall_qty": round(to_float(row.get("moq_shortfall_qty")), 2),
+            "moq_status": row.get("moq_status") or "",
             "replenish_qty": round(to_float(row.get("replenish_qty")), 2),
             "box_qty": round(to_float(row.get("replenish_box_qty")), 2),
             "cost": round(to_float(row.get("replenish_cost")), 2),
