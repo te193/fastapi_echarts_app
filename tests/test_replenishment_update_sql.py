@@ -457,6 +457,70 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertNotIn("when coalesce(history_recovery_flag, 0) = 1 then max_cg_box_pcs", sql)
         self.assertNotIn("when coalesce(history_recovery_flag, 0) = 1 then 1", sql)
 
+    def test_asin_purchase_cost_inheritance_does_not_require_box_size(self):
+        sql = " ".join(replenishment_update.REPLENISHMENT_RESULT_SQL.split())
+
+        self.assertIn(
+            "nullif(ranked.max_cg_box_pcs, 0) as effective_max_cg_box_pcs",
+            sql,
+        )
+        self.assertNotIn("where coalesce(calc.max_cg_box_pcs, 0) > 0", sql)
+        self.assertIn("where calc.max_cg_price is not null", sql)
+        self.assertIn("and calc.max_cg_transport_costs is not null", sql)
+
+    def test_asin_purchase_fields_rank_origin_before_follow_link(self):
+        sql = " ".join(replenishment_update.REPLENISHMENT_RESULT_SQL.split())
+        purchase_sql = sql.split("create temporary table tmp_asin_merge_purchase_fields as", 1)[1]
+        purchase_sql = purchase_sql.split("insert into etl_datasync.dashboard_pur_plan_replenish_data", 1)[0]
+
+        followed_rank = "case when coalesce(calc.followed_flag, 0) = 1 then 0 else 1 end"
+        own_rank = "case when coalesce(calc.fllow_flag, 1) = 1 then 0 else 1 end"
+        sales_rank = "case when coalesce(calc.sales_30, 0) > 0 then 0 else 1 end"
+
+        self.assertLess(purchase_sql.index(followed_rank), purchase_sql.index(own_rank))
+        self.assertLess(purchase_sql.index(own_rank), purchase_sql.index(sales_rank))
+
+    def test_asin_purchase_fields_do_not_turn_zero_box_into_inherited_box(self):
+        sql = " ".join(replenishment_update.REPLENISHMENT_RESULT_SQL.split())
+        purchase_sql = sql.split("create temporary table tmp_asin_merge_purchase_fields as", 1)[1]
+        purchase_sql = purchase_sql.split("insert into etl_datasync.dashboard_pur_plan_replenish_data", 1)[0]
+
+        self.assertIn("nullif(ranked.max_cg_box_pcs, 0) as effective_max_cg_box_pcs", purchase_sql)
+        self.assertIn("ranked.max_cg_price as effective_max_cg_price", purchase_sql)
+        self.assertIn("ranked.max_cg_transport_costs as effective_max_cg_transport_costs", purchase_sql)
+
+    def test_no_box_replenishment_cost_uses_effective_unit_cost(self):
+        sql = " ".join(replenishment_update.REPLENISHMENT_RESULT_SQL.split())
+        final_cost_sql = sql.split("end as replenish_box_qty,", 1)[1].split("end as replenish_cost,", 1)[0]
+
+        group_no_box = (
+            "greatest(round(group_replenish_need_qty * sales_adj_factor, 0), 50) "
+            "* (effective_max_cg_price + effective_max_cg_transport_costs)"
+        )
+        normal_no_box = (
+            "greatest(round(normal_replenish_need_qty * sales_adj_factor, 0), 50) "
+            "* (effective_max_cg_price + effective_max_cg_transport_costs)"
+        )
+
+        self.assertIn(group_no_box, final_cost_sql)
+        self.assertIn(normal_no_box, final_cost_sql)
+
+    def test_blocked_follow_and_asin_non_target_rows_zero_qty_box_and_cost(self):
+        sql = " ".join(replenishment_update.REPLENISHMENT_RESULT_SQL.split())
+        final_sql = sql.split("from ( select calc.*", 1)[0]
+
+        self.assertGreaterEqual(
+            final_sql.count("when coalesce(followed_flag, 0) = 1 then 0"),
+            3,
+        )
+        self.assertGreaterEqual(
+            final_sql.count(
+                "when coalesce(asin_merge_flag, 0) = 1 "
+                "and coalesce(asin_merge_target_flag, 0) = 0 then 0"
+            ),
+            3,
+        )
+
     def test_country_metrics_sql_is_display_only_by_period(self):
         sql = replenishment_update.BUILD_COUNTRY_METRICS_SQL
 

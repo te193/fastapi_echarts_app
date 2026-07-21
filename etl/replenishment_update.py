@@ -2046,7 +2046,7 @@ create temporary table tmp_asin_merge_purchase_fields as
 select
     ranked.country_category,
     ranked.max_asin,
-    ranked.max_cg_box_pcs as effective_max_cg_box_pcs,
+    nullif(ranked.max_cg_box_pcs, 0) as effective_max_cg_box_pcs,
     ranked.max_cg_price as effective_max_cg_price,
     ranked.max_cg_transport_costs as effective_max_cg_transport_costs
 from (
@@ -2068,8 +2068,7 @@ from (
     inner join tmp_asin_merge_groups grp
             on calc.country_category = grp.country_category
            and calc.max_asin = grp.max_asin
-    where coalesce(calc.max_cg_box_pcs, 0) > 0
-      and calc.max_cg_price is not null
+    where calc.max_cg_price is not null
       and calc.max_cg_transport_costs is not null
 ) ranked
 where ranked.rn = 1;
