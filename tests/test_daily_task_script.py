@@ -72,3 +72,43 @@ def test_daily_update_dry_run_skips_dingtalk_transmission():
     assert '$IsDryRun = $args -contains "--dry-run"' in script
     assert "if ($IsDryRun)" in script
     assert "DingTalk notification skipped in dry-run mode." in script
+
+
+def test_daily_update_runs_label_evidence_after_sales_role_before_replenishment():
+    script = SCRIPT.read_text(encoding="utf-8")
+
+    assert "-m etl.label_rule_evidence_snapshot_update" in script
+    assert (
+        script.index("-m etl.sales_role_snapshot_update")
+        < script.index("-m etl.label_rule_evidence_snapshot_update")
+        < script.index("-m etl.replenishment_update")
+    )
+
+
+def test_daily_update_uses_dedicated_label_evidence_logs_and_stage():
+    script = SCRIPT.read_text(encoding="utf-8")
+
+    assert "etl_label_rule_evidence_run_$RunStamp.log" in script
+    assert "etl_label_rule_evidence_run_$RunStamp.err.log" in script
+    assert '-Stage "label_evidence"' in script
+    assert "LabelEvidenceStdoutLog" in script
+    assert "LabelEvidenceStderrLog" in script
+
+
+def test_label_evidence_failure_warns_and_continues_daily_chain():
+    script = SCRIPT.read_text(encoding="utf-8")
+    failure_block = script.split("if ($LabelEvidenceExitCode -ne 0) {", 1)[1].split("} else {", 1)[0]
+
+    assert "Write-Warning" in failure_block
+    assert '-Status "failed" -Stage "label_evidence"' in failure_block
+    assert "exit $LabelEvidenceExitCode" not in failure_block
+    assert script.index(failure_block) < script.index("-m etl.replenishment_update")
+
+
+def test_source_preflight_failure_notifies_and_exits_before_dashboard_etl():
+    script = SCRIPT.read_text(encoding="utf-8")
+    failure_block = script.split("if ($PreflightExitCode -ne 0) {", 1)[1].split("}", 1)[0]
+
+    assert '-Status "failed" -Stage "source_preflight"' in failure_block
+    assert "exit $PreflightExitCode" in failure_block
+    assert script.index("exit $PreflightExitCode") < script.index("-m etl.dashboard_daily_update")

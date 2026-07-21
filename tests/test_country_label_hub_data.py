@@ -1,5 +1,5 @@
 import unittest
-from datetime import date
+from datetime import date, timedelta
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -234,6 +234,183 @@ class CountryLabelHubDataTests(unittest.TestCase):
             )
 
         self.assertEqual(0, result["metrics"]["美国"]["daily_sales"])
+
+    def test_country_profile_deduplicates_repeated_label_facts(self):
+        facts = [
+            {**fact, "country": "CountryA", "country_category": "RegionA"}
+            for fact in FACTS[:4]
+        ]
+        self.service._cached_profile_country_facts = lambda *_: facts + [dict(facts[0])]
+        self.service._cached_listing_prices = lambda *_: (None, {})
+        self.service._cached_limit_prices = lambda *_: (None, {})
+        self.service._cached_country_profile_metrics = lambda *_: {"window": {}, "metrics": {}, "sku": None}
+
+        profile = self.service.get_label_hub_country_profile(
+            country_category="RegionA", store="StoreA", msku="A1"
+        )
+
+        raw_labels = profile["countries"][0]["raw_labels"]
+        self.assertEqual(1, profile["summary"]["country_count"])
+        self.assertEqual(4, len(raw_labels))
+        self.assertEqual(4, len({
+            (item["parent_id"], item["period"], item["id"])
+            for item in raw_labels
+        }))
+
+    def test_country_profile_reconciles_partial_labels_and_missing_prices(self):
+        facts = [
+            {**fact, "country": "CountryA", "country_category": "RegionA"}
+            for fact in FACTS[:2]
+        ]
+        self.service._cached_profile_country_facts = lambda *_: facts
+        self.service._cached_listing_prices = lambda *_: (None, {})
+        self.service._cached_limit_prices = lambda *_: (None, {})
+        self.service._cached_country_profile_metrics = lambda *_: {"window": {}, "metrics": {}, "sku": None}
+
+        profile = self.service.get_label_hub_country_profile(
+            country_category="RegionA", store="StoreA", msku="A1"
+        )
+
+        self.assertEqual(1, profile["summary"]["country_count"])
+        self.assertEqual(0, profile["summary"]["complete_label_country_count"])
+        self.assertEqual(1, profile["summary"]["missing_price_country_count"])
+        self.assertEqual("partial_labels", profile["countries"][0]["data_status"])
+
+    def test_country_profile_invalid_metric_period_falls_back_before_loading_metrics(self):
+        captured = []
+        self.service._cached_profile_country_facts = lambda *_: FACTS[:4]
+        self.service._cached_listing_prices = lambda *_: (None, {})
+        self.service._cached_limit_prices = lambda *_: (None, {})
+        self.service._cached_country_profile_metrics = lambda *args: captured.append(args) or {
+            "window": {}, "metrics": {}, "sku": None
+        }
+
+        profile = self.service.get_label_hub_country_profile(
+            country_category="RegionA", store="StoreA", msku="A1", metric_period="365d"
+        )
+
+        self.assertEqual("30d", profile["scope"]["metric_period"])
+        self.assertEqual("30d", captured[0][-1])
+
+    def test_country_profile_keeps_labels_when_optional_sources_fail(self):
+        def fail(message):
+            raise RuntimeError(message)
+
+        self.service._cached_profile_country_facts = lambda *_: FACTS[:4]
+        self.service._cached_listing_prices = lambda *_: fail("price offline")
+        self.service._cached_limit_prices = lambda *_: fail("limit offline")
+        self.service._cached_country_profile_metrics = lambda *_: fail("metrics offline")
+
+        profile = self.service.get_label_hub_country_profile(
+            country_category="RegionA", store="StoreA", msku="A1"
+        )
+
+        self.assertEqual("unavailable", profile["scope"]["listing_price_status"])
+        self.assertEqual("unavailable", profile["scope"]["limit_price_status"])
+        self.assertEqual("unavailable", profile["scope"]["local_metrics_status"])
+        self.assertEqual(1, len(profile["countries"]))
+        self.assertEqual(4, len(profile["countries"][0]["raw_labels"]))
+
+    def test_country_profile_metric_windows_follow_requested_period(self):
+        for period in ("7d", "14d", "90d"):
+            with self.subTest(period=period):
+                executed = []
+
+                class FakeCursor:
+                    def __enter__(self): return self
+                    def __exit__(self, *_): return False
+                    def execute(self, sql, params): executed.append((sql, dict(params)))
+                    def fetchone(self): return {"period_end": date(2026, 7, 15)}
+                    def fetchall(self): return []
+
+                class FakeConnection:
+                    def __enter__(self): return self
+                    def __exit__(self, *_): return False
+                    def cursor(self): return FakeCursor()
+
+                service = CountryLabelHubDataService(FakeShared())
+                service._shared._dashboard = SimpleNamespace(schemas=None, connect=lambda: FakeConnection())
+                with patch("app.services.country_label_hub_data.render_sql", side_effect=lambda table, _: table):
+                    result = service._cached_country_profile_metrics(
+                        "2026-07-15", "RegionA", "StoreA", "A1", period
+                    )
+
+                expected_start = date(2026, 7, 15) - timedelta(days=int(period[:-1]) - 1)
+                self.assertEqual(expected_start, executed[1][1]["period_start"])
+                self.assertEqual(date(2026, 7, 15), executed[1][1]["period_end"])
+                self.assertEqual(period, result["window"]["period_code"])
+
+    def test_country_profile_metrics_return_empty_when_no_period_end_exists(self):
+        test_case = self
+
+        class FakeCursor:
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+            def execute(self, *_): return None
+            def fetchone(self): return {"period_end": None}
+            def fetchall(self): test_case.fail("detail query must not run without a period end")
+
+        class FakeConnection:
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+            def cursor(self): return FakeCursor()
+
+        self.service._shared._dashboard = SimpleNamespace(schemas=None, connect=lambda: FakeConnection())
+        with patch("app.services.country_label_hub_data.render_sql", side_effect=lambda table, _: table):
+            result = self.service._cached_country_profile_metrics(
+                "2026-07-15", "RegionA", "StoreA", "A1", "30d"
+            )
+
+        self.assertEqual({"window": {}, "metrics": {}, "sku": None}, result)
+
+    def test_country_profile_metrics_reuse_cache_for_identical_scope(self):
+        connections = []
+
+        class FakeCursor:
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+            def execute(self, *_): return None
+            def fetchone(self): return {"period_end": date(2026, 7, 15)}
+            def fetchall(self): return []
+
+        class FakeConnection:
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+            def cursor(self): return FakeCursor()
+
+        def connect():
+            connections.append(1)
+            return FakeConnection()
+
+        self.service._shared._dashboard = SimpleNamespace(schemas=None, connect=connect)
+        with patch("app.services.country_label_hub_data.render_sql", side_effect=lambda table, _: table):
+            first = self.service._cached_country_profile_metrics(
+                "2026-07-15", "RegionA", "StoreA", "A1", "30d"
+            )
+            second = self.service._cached_country_profile_metrics(
+                "2026-07-15", "RegionA", "StoreA", "A1", "30d"
+            )
+
+        self.assertIs(first, second)
+        self.assertEqual(1, len(connections))
+
+    def test_country_profile_passes_selected_store_and_msku_to_lazy_sources(self):
+        calls = []
+        self.service._cached_profile_country_facts = lambda *args: calls.append(("facts", args)) or FACTS[:4]
+        self.service._cached_listing_prices = lambda *args: calls.append(("price", args)) or (None, {})
+        self.service._cached_limit_prices = lambda *args: calls.append(("limit", args)) or (None, {})
+        self.service._cached_country_profile_metrics = lambda *args: calls.append(("metrics", args)) or {
+            "window": {}, "metrics": {}, "sku": None
+        }
+
+        self.service.get_label_hub_country_profile(
+            country_category="RegionA", store="Store-X", msku="MSKU-X", metric_period="14d"
+        )
+
+        self.assertEqual(("2026-07-15", "RegionA", "Store-X", "MSKU-X"), calls[0][1])
+        self.assertEqual(("RegionA", "Store-X", "MSKU-X"), calls[1][1])
+        self.assertEqual(("RegionA", "Store-X", "MSKU-X"), calls[2][1])
+        self.assertEqual(("2026-07-15", "RegionA", "Store-X", "MSKU-X", "14d"), calls[3][1])
 
     def test_country_profile_sorts_by_sales_then_fixed_country_order(self):
         countries = ["荷兰", "德国", "西班牙", "法国"]

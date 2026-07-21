@@ -142,5 +142,31 @@ class LabelHubApiTests(unittest.TestCase):
         self.assertEqual({"country_category": "欧洲站", "store": "StoreA", "msku": "A1", "metric_period": "30d"}, service.calls[0])
 
 
+    def test_country_profile_route_maps_missing_profile_to_not_found(self):
+        class MissingProfileService:
+            def get_label_hub_country_profile(self, **kwargs):
+                raise ValueError("profile not found")
+
+        with patch("app.main.country_label_hub_service", MissingProfileService()), self.assertRaises(HTTPException) as ctx:
+            main.api_label_hub_msku_country_profile(
+                country_category="RegionA", store="StoreA", msku="A1"
+            )
+
+        self.assertEqual(404, ctx.exception.status_code)
+        self.assertEqual("profile not found", ctx.exception.detail)
+
+    def test_country_profile_route_maps_source_failure_to_service_unavailable(self):
+        class FailingProfileService:
+            def get_label_hub_country_profile(self, **kwargs):
+                raise RuntimeError("source offline")
+
+        with patch("app.main.country_label_hub_service", FailingProfileService()), self.assertRaises(HTTPException) as ctx:
+            main.api_label_hub_msku_country_profile(
+                country_category="RegionA", store="StoreA", msku="A1"
+            )
+
+        self.assertEqual(503, ctx.exception.status_code)
+
+
 if __name__ == "__main__":
     unittest.main()
