@@ -209,6 +209,30 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
         self.assertEqual("是", rows[0]["fllow_flag"])
         self.assertEqual("是", rows[0]["followed_flag"])
 
+    def test_export_items_formats_moq_status_in_chinese(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+        conn = FakeConnection(
+            [
+                {"moq_status": "met"},
+                {"moq_status": "below_minimum"},
+                {"moq_status": "unconfigured"},
+                {"moq_status": "not_applicable"},
+            ]
+        )
+
+        rows = service._export_items(
+            conn,
+            filters="cur_date = %(snapshot_date)s",
+            params={"snapshot_date": "2026-07-22"},
+            sort_field="",
+            sort_dir="",
+            columns=["moq_status"],
+        )
+
+        self.assertEqual(
+            ["已达起订量", "低于最小起订量", "MOQ未配置", "不适用"],
+            [row["moq_status"] for row in rows],
+        )
 
     def test_export_items_uses_selected_period_category_expression(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)
