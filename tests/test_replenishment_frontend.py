@@ -20,7 +20,7 @@ def test_margin_price_assets_use_cache_busting_versions():
     replenishment_template = (ROOT / "app" / "templates" / "replenishment.html").read_text(encoding="utf-8")
 
     assert "styles.css') }}?v=20260721moq2" in base_template
-    assert "replenishment.js') }}?v=20260721moq2" in replenishment_template
+    assert "replenishment.js') }}?v=20260722moq3" in replenishment_template
     assert "replenishment_tracking_summary.js') }}?v=20260720linkedfilters5" in replenishment_template
 
 
@@ -107,7 +107,9 @@ def test_below_moq_is_an_independent_display_layer_without_duplicate_pool_card()
 
     assert 'var LEVEL_BELOW_MOQ = "\\u4f4e\\u4e8e\\u6700\\u5c0f\\u8d77\\u8ba2\\u91cf";' in script
     assert 'row.level !== LEVEL_BELOW_MOQ' in script
+    assert 'Number(row.sort || 0) !== 7' in script
     assert 'state.level === LEVEL_BELOW_MOQ' in script
+    assert "'<small>' + text.replenishQty + ' ' + formatNumber((payload.summary || {}).moq_warning_calculated_qty || 0) + '</small>'" in script
     assert 'if (key === 7) return "\\u8d77";' in script
     assert '.status-pill.level-7' in styles
     assert '#c2410c' in styles
