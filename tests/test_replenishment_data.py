@@ -230,7 +230,7 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            ["已达起订量", "低于最小起订量", "MOQ未配置", "不适用"],
+            ["已达起订量", "低于最小起订量", "MOQ未配置", "补货数量为0"],
             [row["moq_status"] for row in rows],
         )
 

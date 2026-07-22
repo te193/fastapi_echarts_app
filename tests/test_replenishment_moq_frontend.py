@@ -21,3 +21,8 @@ def test_replenishment_table_exposes_moq_comparison_columns():
 
 def test_export_includes_moq_status_filter():
     assert '"moq_status"' in JS[JS.index("function exportReplenishment"):]
+
+
+def test_not_applicable_moq_status_uses_clear_zero_quantity_label():
+    assert 'if (value === "not_applicable") return "\\u8865\\u8d27\\u6570\\u91cf\\u4e3a0";' in JS
+    assert '\\u65e0\\u8865\\u8d27\\u91cf' not in JS
