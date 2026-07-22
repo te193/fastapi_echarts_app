@@ -242,6 +242,16 @@ def format_yes_no_status(value: Any) -> str:
     return "是" if to_int(value) == 1 else "否"
 
 
+def format_moq_status(value: Any) -> str:
+    status = str(value or "").strip()
+    return {
+        "met": "已达起订量",
+        "below_minimum": "低于最小起订量",
+        "unconfigured": "MOQ未配置",
+        "not_applicable": "不适用",
+    }.get(status, status)
+
+
 def format_day(value: date | None) -> str | None:
     return value.isoformat() if value else None
 
@@ -1699,6 +1709,8 @@ class ReplenishmentDataService:
                 row["followed_flag"] = format_yes_no_status(row.get("followed_flag"))
             if "asin_merge_flag" in row:
                 row["asin_merge_flag"] = format_yes_no_status(row.get("asin_merge_flag"))
+            if "moq_status" in row:
+                row["moq_status"] = format_moq_status(row.get("moq_status"))
         return rows
 
     def _export_select_expression(self, column: str, period_metrics: dict[str, str]) -> str:
