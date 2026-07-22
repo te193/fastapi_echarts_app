@@ -409,7 +409,7 @@
     }
     var actionRows = rows.filter(function (row) { return Number(row.sort || 0) <= 3; });
     var passiveRows = rows.filter(function (row) {
-      return Number(row.sort || 0) > 3 && row.level !== LEVEL_BELOW_MOQ;
+      return Number(row.sort || 0) > 3 && Number(row.sort || 0) !== 7 && row.level !== LEVEL_BELOW_MOQ;
     });
     var maxQty = actionRows.reduce(function (max, row) {
       return Math.max(max, Number(row.replenish_qty || 0));
@@ -448,7 +448,7 @@
       '<span class="mix-icon">!</span>',
       '<span class="pool-chip-title">' + text.moqWarning + '</span>',
       '<strong>' + formatNumber((payload.summary || {}).moq_warning_count || 0) + '</strong>',
-      '<small>' + text.calculatedReplenishQty + ' ' + formatNumber((payload.summary || {}).moq_warning_calculated_qty || 0) + '</small>',
+      '<small>' + text.replenishQty + ' ' + formatNumber((payload.summary || {}).moq_warning_calculated_qty || 0) + '</small>',
       '</button>',
       '<div class="pool-note">' + text.skuCount + ' ' + formatNumber((payload.summary || {}).all_msku_count || (payload.summary || {}).sku_count) + '</div>',
       '</div>'
