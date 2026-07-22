@@ -13,7 +13,7 @@ if (-not (Test-Path -LiteralPath $LauncherScript)) {
     throw "Web launcher script was not found: $LauncherScript"
 }
 
-$TaskArgument = "-NoProfile -ExecutionPolicy Bypass -File `"$LauncherScript`""
+$TaskArgument = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$LauncherScript`""
 
 $Action = New-ScheduledTaskAction `
     -Execute "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" `

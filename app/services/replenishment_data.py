@@ -943,10 +943,13 @@ class ReplenishmentDataService:
 
     def _display_replenish_cost_expr(self, alias: str = "") -> str:
         prefix = f"{alias}." if alias else ""
-        unit_cost_expr = f"coalesce({prefix}max_cg_price, 0) + coalesce({prefix}max_cg_transport_costs, 0)"
+        unit_cost_expr = f"{prefix}max_cg_price + {prefix}max_cg_transport_costs"
         return (
             f"case when {self._history_recovery_display_condition(alias)} "
+            f"then case when {prefix}max_cg_price is not null "
+            f"and {prefix}max_cg_transport_costs is not null "
             f"then {self._history_recovery_restore_qty_expr(alias)} * ({unit_cost_expr}) "
+            f"else 0 end "
             f"else coalesce({prefix}replenish_cost, 0) end"
         )
 

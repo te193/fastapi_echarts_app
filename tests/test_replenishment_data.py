@@ -423,9 +423,11 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
         qty_expr = service._history_recovery_restore_qty_expr("r")
         cost_expr = service._display_replenish_cost_expr("r")
 
+        self.assertIn("r.max_cg_price is not null", cost_expr)
+        self.assertIn("r.max_cg_transport_costs is not null", cost_expr)
         self.assertIn(f"then {qty_expr} *", cost_expr)
-        self.assertIn("coalesce(r.max_cg_price, 0)", cost_expr)
-        self.assertIn("coalesce(r.max_cg_transport_costs, 0)", cost_expr)
+        self.assertIn("(r.max_cg_price + r.max_cg_transport_costs)", cost_expr)
+        self.assertIn("else 0 end", cost_expr)
 
     def test_normal_display_rows_preserve_stored_replenishment_cost(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)
