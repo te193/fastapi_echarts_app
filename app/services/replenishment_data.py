@@ -169,7 +169,7 @@ REPLENISHMENT_COLUMN_LABELS = {
     "replenish_trigger_qty": "补货触发量",
     "sales_change_rate_adj": "销量变化率调整",
     "sales_adj_factor": "销量调整系数",
-    "final_profit_rate": "最终利润率",
+    "final_profit_rate": "订单原始毛利率",
     "replenish_qty": "补货数量",
     "replenish_box_qty": "补货箱数",
     "replenish_cost": "补货货值",
@@ -198,6 +198,10 @@ REPLENISHMENT_COLUMN_LABELS.update({
     "executable_replenish_cost": "\u53ef\u6267\u884c\u8865\u8d27\u8d27\u503c",
     "moq_shortfall_qty": "\u8d77\u8ba2\u5dee\u989d",
 })
+
+REPLENISHMENT_EXPORT_LABEL_OVERRIDES = {
+    "final_profit_rate": "订单原始毛利率",
+}
 
 REPLENISHMENT_EXPORT_EXCLUDED_COLUMNS = {
     "stockout_status",
@@ -914,7 +918,10 @@ class ReplenishmentDataService:
         prefix = f"{alias}." if alias else ""
         return (
             f"coalesce({prefix}history_recovery_flag, 0) = 1 "
-            f"and coalesce({prefix}support_replenish_level_sort, 99) not in (1, 2, 3)"
+            f"and coalesce({prefix}support_replenish_level_sort, 99) not in (1, 2, 3) "
+            f"and not ({self._followed_block_display_condition(alias)}) "
+            f"and not (coalesce({prefix}asin_merge_flag, 0) = 1 "
+            f"and coalesce({prefix}replenish_qty, 0) = 0)"
         )
 
     def _asin_merge_zero_qty_display_condition(self, alias: str = "") -> str:
@@ -927,7 +934,7 @@ class ReplenishmentDataService:
 
     def _followed_block_display_condition(self, alias: str = "") -> str:
         prefix = f"{alias}." if alias else ""
-        return f"{prefix}replenish_block_reason = %(level_followed_block)s"
+        return f"coalesce({prefix}replenish_block_reason, '') = %(level_followed_block)s"
 
     def _display_level_expr(self, alias: str = "") -> str:
         prefix = f"{alias}." if alias else ""
@@ -1729,7 +1736,9 @@ class ReplenishmentDataService:
         return [
             {
                 "name": row.get("column_name"),
-                "label": row.get("column_comment") or REPLENISHMENT_COLUMN_LABELS.get(row.get("column_name"), row.get("column_name")),
+                "label": REPLENISHMENT_EXPORT_LABEL_OVERRIDES.get(row.get("column_name"))
+                or row.get("column_comment")
+                or REPLENISHMENT_COLUMN_LABELS.get(row.get("column_name"), row.get("column_name")),
             }
             for row in rows
             if row.get("column_name") and row.get("column_name") not in REPLENISHMENT_EXPORT_EXCLUDED_COLUMNS

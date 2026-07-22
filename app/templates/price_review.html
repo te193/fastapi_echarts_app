@@ -42,11 +42,18 @@
 </section>
 
 <!-- Unified filter panel -->
-<section class="panel" style="margin-bottom: 18px;">
+<section class="panel price-review-filter-panel" style="margin-bottom: 18px;">
   <div class="filters-grid price-review-filters">
     <label class="filter-control">
       <span>调价日期</span>
-      <input id="adjustDateInput" type="date">
+      <div class="snapshot-date-control price-review-date-control">
+        <button id="adjustDateButton" class="snapshot-date-trigger" type="button" aria-label="调价日期" aria-expanded="false" aria-controls="adjustCalendarPanel">
+          <span id="adjustDateValue">--</span>
+          <span class="snapshot-date-icon" aria-hidden="true">▾</span>
+        </button>
+        <input id="adjustDateInput" type="hidden">
+        <div id="adjustCalendarPanel" class="snapshot-calendar-panel" hidden></div>
+      </div>
     </label>
     <label class="filter-control">
       <span>对比周期</span>
@@ -293,5 +300,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', path='js/price_review.js') }}?v=20260605tables"></script>
+<script src="{{ url_for('static', path='js/price_review.js') }}?v=20260714calendar3"></script>
 {% endblock %}

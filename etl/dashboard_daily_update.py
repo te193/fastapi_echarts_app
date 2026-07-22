@@ -2695,7 +2695,6 @@ DDL_STATEMENTS = (
     CREATE_INVENTORY_WEEKLY_SQL,
     CREATE_LISTING_PRICE_SQL,
     CREATE_LIMIT_PRICE_SQL,
-    CREATE_PERIOD_SNAPSHOT_SQL,
     *(period_create_sql(table_name) for table_name in PERIOD_PRESET_TABLES.values()),
     CREATE_MATRIX_PERIOD_SNAPSHOT_SQL,
     CREATE_ALERT_COMPARISON_SNAPSHOT_SQL,
@@ -2827,10 +2826,6 @@ STEPS = {
         extract_source_select(INSERT_LIMIT_PRICE_SQL),
         "etl_datasync.dashboard_limit_price_daily_snapshot",
         LIMIT_PRICE_COLUMNS,
-    ),
-    "period_snapshot": SqlStep(
-        "period_snapshot",
-        (DELETE_PERIOD_SNAPSHOT_SQL, INSERT_PERIOD_SNAPSHOT_SQL),
     ),
     "period_preset_snapshots": PeriodPresetStep("period_preset_snapshots"),
     "alert_comparison_snapshots": AlertComparisonStep("alert_comparison_snapshots"),
@@ -3621,7 +3616,7 @@ def main() -> None:
         default="all",
         help="Comma separated step names or all. "
         "Available: product_performance_daily, monthly_goal_actual_snapshot, goal_dimension_snapshot, annual_goal_snapshot, restock_snapshot, inventory_snapshot, inventory_weekly_snapshot, inventory_weekly_remote_snapshot, "
-        "listing_price_snapshot, limit_price_snapshot, period_snapshot, period_preset_snapshots, "
+        "listing_price_snapshot, limit_price_snapshot, period_preset_snapshots, "
         "alert_comparison_snapshots, alert_monthly_metric_snapshots, "
         "opportunity_comparison_snapshots, price_review_source_load, price_review_tracking.",
     )

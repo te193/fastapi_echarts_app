@@ -33,6 +33,7 @@ DEFAULT_STEP_ORDER = [
     "self_asin_sync",
     "fba_shipment_sync",
     "supplier_moq_sync",
+    "order_profit_source_sync",
     "check_daily_snapshots",
     "salable_days_stat",
     "replenishment_result",
@@ -258,6 +259,20 @@ create table if not exists etl_datasync.dashboard_replenishment_supplier_moq_syn
 ) engine=InnoDB default charset=utf8mb4;
 """
 
+CREATE_ORDER_PROFIT_SOURCE_SYNC_SQL = """
+create table if not exists etl_datasync.dashboard_replenishment_order_profit_source (
+    seller_name_new varchar(100) not null,
+    seller_sku_adj varchar(100) not null,
+    country_category varchar(20) not null,
+    best_country varchar(64) not null,
+    order_cnt_20 int not null,
+    final_profit_rate decimal(10,6) null,
+    synced_at datetime not null default current_timestamp,
+    primary key (seller_name_new, seller_sku_adj, country_category),
+    key idx_repl_order_profit_country (country_category, best_country)
+) engine=InnoDB default charset=utf8mb4;
+"""
+
 CREATE_REPLENISHMENT_RESULT_SQL = """
 create table if not exists etl_datasync.dashboard_pur_plan_replenish_data (
     cur_date date not null,
@@ -452,6 +467,7 @@ DDL_STATEMENTS = (
     CREATE_LISTING_BASIC_SYNC_SQL,
     CREATE_FBA_SHIPMENT_SYNC_SQL,
     CREATE_SUPPLIER_MOQ_SYNC_SQL,
+    CREATE_ORDER_PROFIT_SOURCE_SYNC_SQL,
     CREATE_REPLENISHMENT_RESULT_SQL,
     CREATE_COUNTRY_METRICS_SQL,
 )
@@ -759,6 +775,130 @@ where msku is not null
   and msku <> ''
   and seller_name_new is not null
   and country_category is not null
+"""
+
+ORDER_PROFIT_SOURCE_COLUMNS = (
+    "seller_name_new",
+    "seller_sku_adj",
+    "country_category",
+    "best_country",
+    "order_cnt_20",
+    "final_profit_rate",
+)
+
+DELETE_ORDER_PROFIT_SOURCE_SYNC_SQL = (
+    "delete from etl_datasync.dashboard_replenishment_order_profit_source;"
+)
+
+SELECT_ORDER_PROFIT_SOURCE_SYNC_SQL = """
+with order_base as (
+    select
+        create_time,
+        country,
+        amazon_order_id,
+        cast(
+            case
+                when locate('-', seller_name) > 0
+                    then left(seller_name, locate('-', seller_name) - 1)
+                else seller_name
+            end as char(100)
+        ) as seller_name_new,
+        cast(
+            if(
+                length(substring_index(seller_sku, ',', 1)) > 16,
+                replace(
+                    substring_index(substring_index(seller_sku, ',', 1), '-', 1),
+                    'amzn.gr.',
+                    ''
+                ),
+                substring_index(seller_sku, ',', 1)
+            ) as char(100)
+        ) as seller_sku_adj,
+        cast(
+            case
+                when country = '英国' then '英国站'
+                when country in ('美国', '加拿大', '巴西', '墨西哥') then '北美站'
+                else '欧洲站'
+            end as char(20)
+        ) as country_category,
+        sales_price_amount,
+        profit
+    from dwd_datasync.lx_sales_mws_orders_detail
+    where create_time >= date_sub(%(biz_date)s, interval 90 day)
+      and create_time < date_add(%(biz_date)s, interval 1 day)
+      and nullif(seller_name, '') is not null
+      and nullif(seller_sku, '') is not null
+      and nullif(country, '') is not null
+),
+recent_five_ranked as (
+    select
+        order_base.*,
+        row_number() over (
+            partition by seller_name_new, seller_sku_adj, country_category, country
+            order by create_time desc, amazon_order_id desc
+        ) as rn_5
+    from order_base
+),
+country_metrics as (
+    select
+        seller_name_new,
+        seller_sku_adj,
+        country_category,
+        country,
+        count(*) as order_cnt_5,
+        sum(sales_price_amount) as sales_price_amount_5,
+        sum(profit) as profit_5,
+        sum(profit) / sum(sales_price_amount) as profit_rate_5
+    from recent_five_ranked
+    where rn_5 <= 5
+    group by seller_name_new, seller_sku_adj, country_category, country
+    having count(*) = 5
+       and sum(sales_price_amount) <> 0
+),
+selected_country as (
+    select
+        seller_name_new,
+        seller_sku_adj,
+        country_category,
+        country as best_country
+    from (
+        select
+            country_metrics.*,
+            row_number() over (
+                partition by seller_name_new, seller_sku_adj, country_category
+                order by profit_rate_5 desc, sales_price_amount_5 desc, profit_5 desc, country
+            ) as country_rank
+        from country_metrics
+    ) ranked_countries
+    where country_rank = 1
+),
+recent_twenty_ranked as (
+    select
+        order_base.*,
+        selected_country.best_country,
+        row_number() over (
+            partition by order_base.seller_name_new, order_base.seller_sku_adj,
+                         order_base.country_category
+            order by order_base.create_time desc, order_base.amazon_order_id desc
+        ) as rn_20
+    from order_base
+    inner join selected_country
+            on order_base.seller_name_new = selected_country.seller_name_new
+           and order_base.seller_sku_adj = selected_country.seller_sku_adj
+           and order_base.country_category = selected_country.country_category
+           and order_base.country = selected_country.best_country
+)
+select
+    seller_name_new,
+    seller_sku_adj,
+    country_category,
+    best_country,
+    count(*) as order_cnt_20,
+    round(sum(profit) / sum(sales_price_amount), 2) as final_profit_rate
+from recent_twenty_ranked
+where rn_20 <= 20
+group by seller_name_new, seller_sku_adj, country_category, best_country
+having sum(sales_price_amount) <> 0
 """
 
 HISTORY_DAILY_COLUMNS = (
@@ -1530,6 +1670,7 @@ from (
         m.pprofit_14 / nullif(m.amount_14, 0) as pprofit_ratio_14,
         m.pprofit_7 / nullif(m.amount_7, 0) as pprofit_ratio_7,
         m.pprofit_3 / nullif(m.amount_3, 0) as pprofit_ratio_3,
+        gp.final_profit_rate,
         coalesce(f.total, 0) as total,
         coalesce(f.total_price, 0) as total_price,
         coalesce(f.available_total, 0) as available_total,
@@ -1726,6 +1867,10 @@ from (
            on c.country_category = scr.country_category
           and c.seller_name_new = scr.seller_name_new
           and c.seller_sku_adj = scr.seller_sku_adj
+    left join etl_datasync.dashboard_replenishment_order_profit_source gp
+           on c.country_category = gp.country_category
+          and c.seller_name_new = gp.seller_name_new
+          and c.seller_sku_adj = gp.seller_sku_adj
 ) metric_base;
 
 drop temporary table if exists tmp_pur_plan_support_calc_base;
@@ -1826,19 +1971,24 @@ select
     max(coalesce(daily_avg_sales, 0)) as group_daily_avg_sales,
     max(coalesce(pre_replenish_comp_months, 4)) as group_replenish_comp_months,
     sum(coalesce(support_inventory_qty, 0)) as group_support_inventory_qty,
-    sum(case when coalesce(followed_flag, 0) = 0 then 1 else 0 end) as eligible_target_link_count,
+    sum(case when coalesce(fllow_flag, 1) = 0 then 1 else 0 end) as eligible_target_link_count,
     case
         when max(coalesce(daily_avg_sales, 0)) <= 0 then null
-        else sum(coalesce(support_inventory_qty, 0)) / max(coalesce(daily_avg_sales, 0))
+        else sum(coalesce(support_inventory_qty, 0))
+            / max(coalesce(daily_avg_sales, 0))
     end as group_inventory_support_days,
     max(coalesce(pre_replenish_comp_months, 4)) * 30 * max(coalesce(daily_avg_sales, 0))
         - sum(coalesce(support_inventory_qty, 0)) as group_replenish_need_qty,
     case
         when max(coalesce(daily_avg_sales, 0)) <= 0 then 5
-        when sum(coalesce(support_inventory_qty, 0)) / max(coalesce(daily_avg_sales, 0)) <= 35 then 1
-        when sum(coalesce(support_inventory_qty, 0)) / max(coalesce(daily_avg_sales, 0)) <= 65 then 2
-        when sum(coalesce(support_inventory_qty, 0)) / max(coalesce(daily_avg_sales, 0)) <= 90 then 3
-        when sum(coalesce(support_inventory_qty, 0)) / max(coalesce(daily_avg_sales, 0)) > 90 then 4
+        when sum(coalesce(support_inventory_qty, 0))
+            / max(coalesce(daily_avg_sales, 0)) <= 35 then 1
+        when sum(coalesce(support_inventory_qty, 0))
+            / max(coalesce(daily_avg_sales, 0)) <= 65 then 2
+        when sum(coalesce(support_inventory_qty, 0))
+            / max(coalesce(daily_avg_sales, 0)) <= 90 then 3
+        when sum(coalesce(support_inventory_qty, 0))
+            / max(coalesce(daily_avg_sales, 0)) > 90 then 4
         else 2
     end as group_support_replenish_level_sort
 from (
@@ -1859,7 +2009,7 @@ from (
 ) group_base
 group by country_category, max_asin
 having link_count > 1
-   and (has_follow_link > 0 or has_followed_origin > 0);
+   and has_follow_link > 0;
 
 drop temporary table if exists tmp_asin_merge_targets;
 create temporary table tmp_asin_merge_targets as
@@ -1893,7 +2043,7 @@ from (
     inner join tmp_asin_merge_groups grp
             on calc.country_category = grp.country_category
            and calc.max_asin = grp.max_asin
-    where coalesce(calc.followed_flag, 0) = 0
+    where coalesce(calc.fllow_flag, 1) = 0
       and grp.eligible_target_link_count > 0
 ) ranked
 where ranked.rn = 1;
@@ -1939,7 +2089,7 @@ create temporary table tmp_asin_merge_purchase_fields as
 select
     ranked.country_category,
     ranked.max_asin,
-    ranked.max_cg_box_pcs as effective_max_cg_box_pcs,
+    nullif(ranked.max_cg_box_pcs, 0) as effective_max_cg_box_pcs,
     ranked.max_cg_price as effective_max_cg_price,
     ranked.max_cg_transport_costs as effective_max_cg_transport_costs
 from (
@@ -1961,8 +2111,7 @@ from (
     inner join tmp_asin_merge_groups grp
             on calc.country_category = grp.country_category
            and calc.max_asin = grp.max_asin
-    where coalesce(calc.max_cg_box_pcs, 0) > 0
-      and calc.max_cg_price is not null
+    where calc.max_cg_price is not null
       and calc.max_cg_transport_costs is not null
 ) ranked
 where ranked.rn = 1;
@@ -2118,7 +2267,7 @@ select
     pre_replenish_trigger_qty as replenish_trigger_qty,
     sales_change_rate_adj,
     sales_adj_factor,
-    pprofit_ratio_30 as final_profit_rate,
+    final_profit_rate,
     case when coalesce(followed_flag, 0) = 1 then 0
         when coalesce(asin_merge_flag, 0) = 1 and coalesce(asin_merge_target_flag, 0) = 0 then 0
         when coalesce(asin_merge_flag, 0) = 1 and asin_merge_reason = '同ASIN库存充足不补货' then 0
@@ -2491,6 +2640,13 @@ STEPS = {
         SELECT_SUPPLIER_MOQ_SYNC_SQL,
         "etl_datasync.dashboard_replenishment_supplier_moq_sync",
         SUPPLIER_MOQ_COLUMNS,
+    ),
+    "order_profit_source_sync": SourceLoadStep(
+        "order_profit_source_sync",
+        DELETE_ORDER_PROFIT_SOURCE_SYNC_SQL,
+        SELECT_ORDER_PROFIT_SOURCE_SYNC_SQL,
+        "etl_datasync.dashboard_replenishment_order_profit_source",
+        ORDER_PROFIT_SOURCE_COLUMNS,
     ),
     "history_daily_sync": SourceLoadStep(
         "history_daily_sync",

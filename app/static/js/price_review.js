@@ -6,6 +6,8 @@
   var matrixData = {};
   var defaultAdjustDate = "";
   var initializedFromUrl = false;
+  var adjustCalendarItems = [];
+  var adjustCalendarMonth = "";
 
   // Global filter state — passed to every API call
   var filterState = {
@@ -59,6 +61,7 @@
 
   function syncFilterInputs() {
     if (elements.adjustDateInput) elements.adjustDateInput.value = filterState.adjust_date || "";
+    setAdjustDateLabel(filterState.adjust_date || "");
     if (elements.compareDaysSelect) elements.compareDaysSelect.value = filterState.compare_days;
     if (elements.countrySelect) elements.countrySelect.value = filterState.country;
     if (elements.storeSelect) elements.storeSelect.value = filterState.store;
@@ -80,7 +83,7 @@
       "secondAdjustSummary", "secondAdjustDateChart", "secondAdjustGapChart", "secondAdjustGrid",
       "topListTabs", "topListGrid",
       // Filters
-      "adjustDateInput", "compareDaysSelect",
+      "adjustDateButton", "adjustDateValue", "adjustDateInput", "adjustCalendarPanel", "compareDaysSelect",
       "countrySelect", "storeSelect", "dropRangeSelect", "riskLevelSelect", "priceBandSelect", "adjustmentTypeSelect", "keywordInput",
       "applyFiltersBtn", "resetFiltersBtn",
       // SKU table
@@ -170,6 +173,33 @@
     if (elements.closePriceReviewDrawerBtn) elements.closePriceReviewDrawerBtn.addEventListener("click", closePriceReviewDrawer);
     if (elements.priceReviewDrawerMask) elements.priceReviewDrawerMask.addEventListener("click", closePriceReviewDrawer);
 
+    if (elements.adjustDateButton && elements.adjustCalendarPanel) {
+      elements.adjustDateButton.addEventListener("click", function (event) {
+        event.stopPropagation();
+        toggleAdjustCalendar();
+      });
+      elements.adjustCalendarPanel.addEventListener("click", function (event) {
+        event.stopPropagation();
+        var nav = event.target.closest("[data-adjust-calendar-nav]");
+        var dateButton = event.target.closest("[data-adjust-date]");
+        if (nav) {
+          adjustCalendarMonth = shiftAdjustMonth(adjustCalendarMonth, Number(nav.getAttribute("data-adjust-calendar-nav")));
+          renderAdjustCalendar();
+          return;
+        }
+        if (dateButton) {
+          var selectedDate = dateButton.getAttribute("data-adjust-date") || "";
+          elements.adjustDateInput.value = selectedDate;
+          setAdjustDateLabel(selectedDate);
+          renderAdjustCalendar();
+          closeAdjustCalendar();
+        }
+      });
+      document.addEventListener("click", function (event) {
+        if (!event.target.closest(".price-review-date-control")) closeAdjustCalendar();
+      });
+    }
+
     // Top list tabs
     if (elements.topListTabs) {
       elements.topListTabs.addEventListener("click", function (event) {
@@ -209,6 +239,8 @@
     if (elements.resetFiltersBtn) {
       elements.resetFiltersBtn.addEventListener("click", function () {
         if (elements.adjustDateInput) elements.adjustDateInput.value = defaultAdjustDate;
+        setAdjustDateLabel(defaultAdjustDate);
+        renderAdjustCalendar();
         if (elements.compareDaysSelect) elements.compareDaysSelect.value = "7";
         if (elements.countrySelect) elements.countrySelect.value = "all";
         if (elements.storeSelect) elements.storeSelect.value = "all";
@@ -318,11 +350,18 @@
 
   function loadCalendar() {
     if (!elements.calendarGrid) return Promise.resolve();
-    return app.apiGet("/api/price-adjustments/daily-counts?days=30")
-      .then(function (payload) {
-        var items = payload.items || [];
-        applyDefaultAdjustDate(items);
-        renderCalendar(items);
+    return Promise.all([
+      app.apiGet("/api/price-adjustments/daily-counts?days=30"),
+      app.apiGet("/api/price-adjustments/daily-counts?include_all=true")
+    ])
+      .then(function (payloads) {
+        var recentItems = payloads[0].items || [];
+        var allItems = payloads[1].items || [];
+        adjustCalendarItems = allItems;
+        applyDefaultAdjustDate(allItems);
+        adjustCalendarMonth = adjustCalendarMonth || adjustMonthKey(filterState.adjust_date || defaultAdjustDate);
+        renderAdjustCalendar();
+        renderCalendar(recentItems);
       })
       .catch(function (err) {
         console.error("Failed to load calendar:", err);
@@ -340,6 +379,100 @@
         return;
       }
     }
+  }
+
+  function toggleAdjustCalendar() {
+    if (!elements.adjustCalendarPanel) return;
+    if (elements.adjustCalendarPanel.hidden) {
+      var selectedDate = elements.adjustDateInput ? elements.adjustDateInput.value : filterState.adjust_date;
+      adjustCalendarMonth = adjustMonthKey(selectedDate || defaultAdjustDate);
+      renderAdjustCalendar();
+      elements.adjustCalendarPanel.hidden = false;
+      elements.adjustDateButton.setAttribute("aria-expanded", "true");
+      return;
+    }
+    closeAdjustCalendar();
+  }
+
+  function closeAdjustCalendar() {
+    if (!elements.adjustCalendarPanel || !elements.adjustDateButton) return;
+    elements.adjustCalendarPanel.hidden = true;
+    elements.adjustDateButton.setAttribute("aria-expanded", "false");
+  }
+
+  function setAdjustDateLabel(dateValue) {
+    if (!elements.adjustDateValue) return;
+    elements.adjustDateValue.textContent = dateValue ? dateValue.replace(/-/g, "/") : "--";
+  }
+
+  function renderAdjustCalendar() {
+    if (!elements.adjustCalendarPanel) return;
+    var availableItems = adjustCalendarItems.filter(function (item) {
+      return item.clickable && item.count > 0;
+    });
+    if (!availableItems.length) {
+      elements.adjustCalendarPanel.innerHTML = '<div class="snapshot-calendar-empty">暂无可用调价日期</div>';
+      return;
+    }
+    var selectedDate = elements.adjustDateInput ? elements.adjustDateInput.value : filterState.adjust_date;
+    var month = adjustCalendarMonth || adjustMonthKey(selectedDate || availableItems[availableItems.length - 1].date);
+    adjustCalendarMonth = month;
+    var parts = month.split("-");
+    var year = Number(parts[0]);
+    var monthIndex = Number(parts[1]) - 1;
+    var firstDay = new Date(year, monthIndex, 1);
+    var daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+    var leading = (firstDay.getDay() + 6) % 7;
+    var available = {};
+    availableItems.forEach(function (item) { available[item.date] = true; });
+    var itemsByDate = {};
+    adjustCalendarItems.forEach(function (item) { itemsByDate[item.date] = item; });
+    var html = [
+      '<div class="snapshot-calendar-head">',
+      '<button type="button" class="snapshot-calendar-nav" data-adjust-calendar-nav="-1" aria-label="上个月">‹</button>',
+      '<strong>' + year + '年' + pad2(monthIndex + 1) + '月</strong>',
+      '<button type="button" class="snapshot-calendar-nav" data-adjust-calendar-nav="1" aria-label="下个月">›</button>',
+      '</div>',
+      '<div class="snapshot-calendar-weekdays">',
+      ["一", "二", "三", "四", "五", "六", "日"].map(function (day) { return '<span>' + day + '</span>'; }).join(""),
+      '</div>',
+      '<div class="snapshot-calendar-days">'
+    ];
+    for (var i = 0; i < leading; i += 1) html.push('<span class="snapshot-calendar-spacer"></span>');
+    for (var dayNumber = 1; dayNumber <= daysInMonth; dayNumber += 1) {
+      var dateValue = year + "-" + pad2(monthIndex + 1) + "-" + pad2(dayNumber);
+      var enabled = !!available[dateValue];
+      var dayItem = itemsByDate[dateValue];
+      var countHtml = dayItem && dayItem.count > 0
+        ? '<span class="snapshot-calendar-day-count">' + app.escapeHtml(String(dayItem.count)) + '个</span>'
+        : "";
+      html.push(
+        '<button type="button" class="snapshot-calendar-day' +
+        (enabled ? "" : " disabled") +
+        (dateValue === selectedDate ? " active" : "") +
+        '" ' + (enabled ? 'data-adjust-date="' + dateValue + '"' : "disabled") +
+        '><span class="snapshot-calendar-day-number">' + dayNumber + '</span>' + countHtml + '</button>'
+      );
+    }
+    html.push('</div><p class="snapshot-calendar-foot">只显示近30天有调价数据的日期</p>');
+    elements.adjustCalendarPanel.innerHTML = html.join("");
+  }
+
+  function adjustMonthKey(dateValue) {
+    var parts = String(dateValue || "").split("-");
+    if (parts.length !== 3) return "";
+    return parts[0] + "-" + parts[1];
+  }
+
+  function shiftAdjustMonth(monthValue, offset) {
+    var parts = String(monthValue || "").split("-");
+    if (parts.length !== 2) return monthValue;
+    var dateValue = new Date(Number(parts[0]), Number(parts[1]) - 1 + offset, 1);
+    return dateValue.getFullYear() + "-" + pad2(dateValue.getMonth() + 1);
+  }
+
+  function pad2(value) {
+    return String(value).padStart(2, "0");
   }
 
   function renderCalendar(items) {

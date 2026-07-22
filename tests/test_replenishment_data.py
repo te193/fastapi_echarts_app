@@ -99,6 +99,7 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
                 {"column_name": "gprofit_ratio_3d", "column_comment": ""},
                 {"column_name": "pre_1m_predict_abcd_category", "column_comment": ""},
                 {"column_name": "pre_1q_predict_abcd_category", "column_comment": ""},
+                {"column_name": "final_profit_rate", "column_comment": "最终利润率"},
                 {"column_name": "replenish_qty", "column_comment": ""},
             ]
         )
@@ -116,6 +117,7 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
                 "asin_merge_flag",
                 "asin_merge_target",
                 "asin_merge_reason",
+                "final_profit_rate",
                 "replenish_qty",
             ],
             names,
@@ -123,6 +125,7 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
         labels = {column["name"]: column["label"] for column in columns}
         self.assertEqual("是否跟卖", labels["fllow_flag"])
         self.assertEqual("是否被跟卖", labels["followed_flag"])
+        self.assertEqual("订单原始毛利率", labels["final_profit_rate"])
 
     def test_serialize_item_exposes_follow_status(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)
@@ -327,7 +330,10 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
         level_expr = service._display_level_expr()
         sort_expr = service._display_level_sort_expr()
 
-        self.assertIn("replenish_block_reason = %(level_followed_block)s", condition)
+        self.assertIn(
+            "coalesce(replenish_block_reason, '') = %(level_followed_block)s",
+            condition,
+        )
         self.assertNotIn("then %(level_followed_block)s", level_expr)
         self.assertNotIn("replenish_block_reason = %(level_followed_block)s then 7", sort_expr)
 
@@ -340,7 +346,10 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
 
         self.assertIn("asin_merge_flag", condition)
         self.assertIn("replenish_qty", condition)
-        self.assertIn("not (replenish_block_reason = %(level_followed_block)s)", condition)
+        self.assertIn(
+            "not (coalesce(replenish_block_reason, '') = %(level_followed_block)s)",
+            condition,
+        )
         self.assertIn("then %(level_sufficient)s", level_expr)
         self.assertIn("then 4", sort_expr)
         self.assertEqual(
@@ -432,10 +441,17 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
     def test_history_recovery_display_replenish_qty_restores_one_box(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)
 
+        condition = service._history_recovery_display_condition()
         qty_expr = service._display_replenish_qty_expr()
         box_expr = service._display_replenish_box_qty_expr()
         cost_expr = service._display_replenish_cost_expr()
 
+        self.assertIn(
+            "not (coalesce(replenish_block_reason, '') = %(level_followed_block)s)",
+            condition,
+        )
+        self.assertIn("not (coalesce(asin_merge_flag, 0) = 1", condition)
+        self.assertIn("coalesce(replenish_qty, 0) = 0", condition)
         self.assertIn("max_cg_box_pcs", qty_expr)
         self.assertIn("else 50", qty_expr)
         self.assertIn("then 1 else 0", box_expr)
@@ -545,6 +561,23 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
         self.assertEqual(20, item["moq_shortfall_qty"])
         self.assertEqual("below_minimum", item["moq_status"])
         self.assertEqual(0, item["replenish_qty"])
+    def test_history_recovery_display_cost_uses_restored_qty_and_unit_cost(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+
+        qty_expr = service._history_recovery_restore_qty_expr("r")
+        cost_expr = service._display_replenish_cost_expr("r")
+
+        self.assertIn(f"then {qty_expr} *", cost_expr)
+        self.assertIn("coalesce(r.max_cg_price, 0)", cost_expr)
+        self.assertIn("coalesce(r.max_cg_transport_costs, 0)", cost_expr)
+
+    def test_normal_display_rows_preserve_stored_replenishment_cost(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+
+        cost_expr = service._display_replenish_cost_expr("r")
+
+        self.assertIn("else coalesce(r.replenish_cost, 0) end", cost_expr)
+        self.assertEqual(1, cost_expr.count("r.replenish_cost"))
 
     def test_calc_pool_condition_excludes_zero_qty_asin_merge_rows(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)
