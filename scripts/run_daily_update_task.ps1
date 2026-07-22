@@ -56,6 +56,10 @@ function Send-DashboardDingTalkNotification {
         "--preflight-stderr", $PreflightStderrLog,
         "--dashboard-stdout", $StdoutLog,
         "--dashboard-stderr", $StderrLog,
+        "--sales-role-stdout", $SalesRoleStdoutLog,
+        "--sales-role-stderr", $SalesRoleStderrLog,
+        "--label-evidence-stdout", $LabelEvidenceStdoutLog,
+        "--label-evidence-stderr", $LabelEvidenceStderrLog,
         "--replenishment-stdout", $ReplenishmentStdoutLog,
         "--replenishment-stderr", $ReplenishmentStderrLog,
         "--tracking-stdout", $ReplenishmentTrackingStdoutLog,
@@ -129,7 +133,7 @@ $SalesRoleExitCode = $LASTEXITCODE
 $ErrorActionPreference = $PreviousErrorActionPreference
 
 if ($SalesRoleExitCode -ne 0) {
-    Send-DashboardDingTalkNotification -Status "failed" -Stage "dashboard" -ExitCode $SalesRoleExitCode -ErrorMessage "Sales role ETL failed with exit code $SalesRoleExitCode."
+    Send-DashboardDingTalkNotification -Status "failed" -Stage "sales_role" -ExitCode $SalesRoleExitCode -ErrorMessage "Sales role ETL failed with exit code $SalesRoleExitCode."
     Write-Error "Sales role ETL failed with exit code $SalesRoleExitCode. See $SalesRoleStdoutLog and $SalesRoleStderrLog."
     exit $SalesRoleExitCode
 }

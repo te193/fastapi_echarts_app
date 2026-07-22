@@ -57,6 +57,10 @@ def test_daily_update_task_sends_dingtalk_notifications():
     assert '"--tracking-stderr", $ReplenishmentTrackingStderrLog' in script
     assert '"--return-goods-stdout", $ReturnGoodsStdoutLog' in script
     assert '"--return-goods-stderr", $ReturnGoodsStderrLog' in script
+    assert '"--sales-role-stdout", $SalesRoleStdoutLog' in script
+    assert '"--sales-role-stderr", $SalesRoleStderrLog' in script
+    assert '"--label-evidence-stdout", $LabelEvidenceStdoutLog' in script
+    assert '"--label-evidence-stderr", $LabelEvidenceStderrLog' in script
 
 
 def test_dingtalk_notification_does_not_replace_etl_exit_code():

@@ -306,7 +306,10 @@ def _tracking_window_counts(detail: dict[str, object]) -> dict[int, int]:
 def _tracking_summary_result(detail: dict[str, object]) -> dict[str, object]:
     for line in detail.get("result_lines") or []:
         text = str(line)
-        if not text.startswith("[success] replenishment_tracking_summary cutoff_date="):
+        if not (
+            text.startswith("[success] replenishment_tracking_summary cutoff_date=")
+            or text.startswith("[success] cutoff_date=")
+        ):
             continue
         cutoff_match = re.search(r"\bcutoff_date=(\d{4}-\d{2}-\d{2})", text)
         summary_match = re.search(r"\bsummary_rows=(\d+)", text)
@@ -440,12 +443,165 @@ def _format_business_result_summary(
     ]
 
 
+def _sales_role_result(path: Path) -> tuple[int, int]:
+    period_rows: dict[int, int] = {}
+    pattern = re.compile(r"^\[success\]\s+(\d+)d:.*rows=(\d+)$")
+    for line in _read_lines(path):
+        match = pattern.match(line.strip())
+        if match:
+            period_rows[int(match.group(1))] = int(match.group(2))
+    return len(period_rows), period_rows.get(30, 0)
+
+
+def _label_evidence_result(path: Path) -> tuple[str, int]:
+    label_date = ""
+    rows = 0
+    for line in _read_lines(path):
+        stripped = line.strip()
+        if stripped.startswith("label_dates") and ":" in stripped:
+            label_date = stripped.split(":", 1)[1].split(",", 1)[0].strip()
+        elif stripped.startswith("rows") and ":" in stripped:
+            value = stripped.split(":", 1)[1].strip()
+            if value.isdigit():
+                rows = int(value)
+    return label_date, rows
+
+
+def _return_goods_result(path: Path) -> tuple[str, int]:
+    snapshot_date = ""
+    rows = 0
+    for line in _read_lines(path):
+        date_match = re.search(r"snapshot_date=(\d{4}-\d{2}-\d{2})", line)
+        if date_match:
+            snapshot_date = date_match.group(1)
+        row_match = re.search(r"dashboard_return_goods_events\s+rows=(\d+)", line)
+        if row_match:
+            rows = int(row_match.group(1))
+    return snapshot_date, rows
+
+
+def _period_snapshot_count(detail: dict[str, object], prefix: str) -> int:
+    periods: set[str] = set()
+    pattern = re.compile(rf"^\[success\]\s+{re.escape(prefix)}\.d(\d+):")
+    for line in detail.get("result_lines") or []:
+        match = pattern.match(str(line))
+        if match:
+            periods.add(match.group(1))
+    return len(periods)
+
+
+def _format_enriched_business_result_summary(
+    preflight_detail: dict[str, object],
+    dashboard_detail: dict[str, object],
+    replenishment_detail: dict[str, object],
+    tracking_detail: dict[str, object],
+    preflight_stdout: Path,
+    preflight_stderr: Path,
+    dashboard_stdout: Path,
+    dashboard_stderr: Path,
+    sales_role_stdout: Path,
+    sales_role_stderr: Path,
+    label_evidence_stdout: Path,
+    label_evidence_stderr: Path,
+    replenishment_stdout: Path,
+    replenishment_stderr: Path,
+    tracking_stdout: Path,
+    tracking_stderr: Path,
+    return_goods_stdout: Path,
+    return_goods_stderr: Path,
+) -> list[str]:
+    lines = _format_business_result_summary(
+        preflight_detail,
+        dashboard_detail,
+        replenishment_detail,
+        tracking_detail,
+        preflight_stdout,
+        preflight_stderr,
+        dashboard_stdout,
+        dashboard_stderr,
+        replenishment_stdout,
+        replenishment_stderr,
+        tracking_stdout,
+        tracking_stderr,
+        return_goods_stdout,
+        return_goods_stderr,
+    )
+
+    acceptance_heading = "#### \u4e1a\u52a1\u9a8c\u6536"
+    health_heading = "#### \u6570\u636e\u5065\u5eb7"
+    if acceptance_heading in lines and health_heading in lines:
+        start = lines.index(acceptance_heading)
+        end = lines.index(health_heading)
+        lines[start:end] = []
+
+    core_heading = "#### \u6838\u5fc3\u7ed3\u679c"
+    health_index = lines.index(health_heading)
+    period_count, sales_role_30d = _sales_role_result(sales_role_stdout)
+    label_date, label_rows = _label_evidence_result(label_evidence_stdout)
+    return_date, return_rows = _return_goods_result(return_goods_stdout)
+    limit_price_rows = _count_step(dashboard_detail, "limit_price_snapshot")
+    alert_periods = _period_snapshot_count(dashboard_detail, "alert_comparison_snapshots")
+    opportunity_periods = _period_snapshot_count(
+        dashboard_detail, "opportunity_comparison_snapshots"
+    )
+
+    extra_results: list[str] = []
+    if period_count:
+        extra_results.append(
+            f"- \u9500\u552e\u89d2\u8272 / \u751f\u547d\u5468\u671f\uff1a{period_count} \u4e2a\u5468\u671f\u5df2\u66f4\u65b0\uff0c"
+            f"30\u5929 {_format_number(sales_role_30d)} \u4e2a MSKU"
+        )
+    if label_rows:
+        extra_results.append(
+            f"- \u6807\u7b7e\u89c4\u5219\u8bc1\u636e\uff1a\u5df2\u66f4\u65b0\u5230 {_format_month_day(label_date)}\uff0c"
+            f"{_format_number(label_rows)} \u6761"
+        )
+    if return_rows:
+        extra_results.append(
+            f"- \u8fd4\u5382\u54c1\uff1a\u5df2\u66f4\u65b0\u5230 {_format_month_day(return_date)}\uff0c"
+            f"{_format_number(return_rows)} \u6761"
+        )
+    if limit_price_rows:
+        extra_results.append(
+            f"- \u9650\u4ef7\u6570\u636e\uff1a\u5df2\u66f4\u65b0\uff0c\u7ea6 "
+            f"{_format_approx_count(limit_price_rows)}"
+        )
+    if alert_periods or opportunity_periods:
+        extra_results.append(
+            f"- \u5f02\u5e38\u9884\u8b66 / \u673a\u4f1a\u6c60\uff1a"
+            f"{alert_periods}/{opportunity_periods} \u4e2a\u5468\u671f\u5df2\u66f4\u65b0"
+        )
+    lines[health_index:health_index] = [*extra_results, ""]
+
+    duration_heading = "#### \u6267\u884c\u8017\u65f6"
+    core_index = lines.index(core_heading)
+    extra_durations = [
+        f"- \u9500\u552e\u89d2\u8272 ETL\uff1a{_format_duration(_duration_seconds(sales_role_stderr, sales_role_stdout))}",
+        f"- \u6807\u7b7e\u8bc1\u636e ETL\uff1a{_format_duration(_duration_seconds(label_evidence_stderr, label_evidence_stdout))}",
+        f"- \u8fd4\u5382\u54c1 ETL\uff1a{_format_duration(_duration_seconds(return_goods_stderr, return_goods_stdout))}",
+    ]
+    if duration_heading in lines:
+        insert_at = core_index
+        while insert_at > 0 and lines[insert_at - 1] == "":
+            insert_at -= 1
+        lines[insert_at:insert_at] = [*extra_durations, ""]
+
+    status_heading = "#### \u72b6\u6001"
+    if status_heading in lines:
+        status_index = lines.index(status_heading)
+        lines[status_index + 1 :] = ["- 7/7 \u4e2a\u6bcf\u65e5\u66f4\u65b0\u6a21\u5757\u6267\u884c\u6210\u529f"]
+    return lines
+
+
 def _stage_label(stage: str) -> str:
     labels = {
         "source_preflight": "远端数据预检",
         "dashboard": "总 ETL",
+        "sales_role": "销售角色 ETL",
+        "label_evidence": "标签证据 ETL",
         "replenishment": "补货 ETL",
         "replenishment_tracking": "补货追踪 ETL",
+        "return_goods": "返厂品 ETL",
         "all": "全部流程",
     }
     return labels.get(stage, stage)
@@ -594,6 +750,10 @@ def build_markdown(
     tracking_stderr: Path | None = None,
     return_goods_stdout: Path | None = None,
     return_goods_stderr: Path | None = None,
+    sales_role_stdout: Path | None = None,
+    sales_role_stderr: Path | None = None,
+    label_evidence_stdout: Path | None = None,
+    label_evidence_stderr: Path | None = None,
     error_message: str = "",
 ) -> str:
     preflight_stdout = preflight_stdout or project_root / "logs" / "source-preflight-not-created.log"
@@ -602,6 +762,10 @@ def build_markdown(
     tracking_stderr = tracking_stderr or project_root / "logs" / "tracking-not-created.err.log"
     return_goods_stdout = return_goods_stdout or project_root / "logs" / "return-goods-not-created.log"
     return_goods_stderr = return_goods_stderr or project_root / "logs" / "return-goods-not-created.err.log"
+    sales_role_stdout = sales_role_stdout or project_root / "logs" / "sales-role-not-created.log"
+    sales_role_stderr = sales_role_stderr or project_root / "logs" / "sales-role-not-created.err.log"
+    label_evidence_stdout = label_evidence_stdout or project_root / "logs" / "label-evidence-not-created.log"
+    label_evidence_stderr = label_evidence_stderr or project_root / "logs" / "label-evidence-not-created.err.log"
     is_success = status == "success"
     title = "看板定时任务执行成功" if is_success else "看板定时任务执行失败"
     icon = "✅" if is_success else "❌"
@@ -622,7 +786,7 @@ def build_markdown(
         lines.extend(
             [
                 "",
-                *_format_business_result_summary(
+                *_format_enriched_business_result_summary(
                     preflight_detail,
                     dashboard_detail,
                     replenishment_detail,
@@ -631,6 +795,10 @@ def build_markdown(
                     preflight_stderr,
                     dashboard_stdout,
                     dashboard_stderr,
+                    sales_role_stdout,
+                    sales_role_stderr,
+                    label_evidence_stdout,
+                    label_evidence_stderr,
                     replenishment_stdout,
                     replenishment_stderr,
                     tracking_stdout,
@@ -643,6 +811,8 @@ def build_markdown(
     else:
         failed_stderr = {
             "source_preflight": preflight_stderr,
+            "sales_role": sales_role_stderr,
+            "label_evidence": label_evidence_stderr,
             "replenishment": replenishment_stderr,
             "replenishment_tracking": tracking_stderr,
             "return_goods": return_goods_stderr,
@@ -723,6 +893,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tracking-stderr", type=Path)
     parser.add_argument("--return-goods-stdout", type=Path)
     parser.add_argument("--return-goods-stderr", type=Path)
+    parser.add_argument("--sales-role-stdout", type=Path)
+    parser.add_argument("--sales-role-stderr", type=Path)
+    parser.add_argument("--label-evidence-stdout", type=Path)
+    parser.add_argument("--label-evidence-stderr", type=Path)
     parser.add_argument("--error-message", default="")
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
@@ -746,6 +920,10 @@ def main() -> int:
         tracking_stderr=args.tracking_stderr,
         return_goods_stdout=args.return_goods_stdout,
         return_goods_stderr=args.return_goods_stderr,
+        sales_role_stdout=args.sales_role_stdout,
+        sales_role_stderr=args.sales_role_stderr,
+        label_evidence_stdout=args.label_evidence_stdout,
+        label_evidence_stderr=args.label_evidence_stderr,
         error_message=args.error_message,
     )
 
