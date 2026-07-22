@@ -82,6 +82,21 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
             replenishment_update.DEFAULT_STEP_ORDER.index("country_metrics"),
         )
 
+    def test_moq_gating_history_recovery_respects_existing_replenishment_blocks(self):
+        sql = "\n".join(replenishment_update.STEPS["moq_gating"].statements)
+
+        self.assertGreaterEqual(
+            sql.count("coalesce(r.replenish_block_reason, '') <> '被跟卖点不补货'"),
+            3,
+        )
+        self.assertGreaterEqual(
+            sql.count(
+                "not (coalesce(r.asin_merge_flag, 0) = 1 "
+                "and coalesce(r.replenish_qty, 0) = 0)"
+            ),
+            3,
+        )
+
     def test_history_daily_sync_step_loads_fixed_remote_history(self):
         step = replenishment_update.STEPS["history_daily_sync"]
 

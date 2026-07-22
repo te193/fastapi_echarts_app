@@ -2430,18 +2430,24 @@ from (
         case
             when coalesce(r.history_recovery_flag, 0) = 1
              and coalesce(r.support_replenish_level_sort, 99) not in (1, 2, 3)
+             and coalesce(r.replenish_block_reason, '') <> '被跟卖点不补货'
+             and not (coalesce(r.asin_merge_flag, 0) = 1 and coalesce(r.replenish_qty, 0) = 0)
                 then case when coalesce(r.max_cg_box_pcs, 0) > 0 then r.max_cg_box_pcs else 50 end
             else coalesce(r.replenish_qty, 0)
         end as calculated_replenish_qty,
         case
             when coalesce(r.history_recovery_flag, 0) = 1
              and coalesce(r.support_replenish_level_sort, 99) not in (1, 2, 3)
+             and coalesce(r.replenish_block_reason, '') <> '被跟卖点不补货'
+             and not (coalesce(r.asin_merge_flag, 0) = 1 and coalesce(r.replenish_qty, 0) = 0)
                 then case when coalesce(r.max_cg_box_pcs, 0) > 0 then 1 else 0 end
             else coalesce(r.replenish_box_qty, 0)
         end as calculated_replenish_box_qty,
         case
             when coalesce(r.history_recovery_flag, 0) = 1
              and coalesce(r.support_replenish_level_sort, 99) not in (1, 2, 3)
+             and coalesce(r.replenish_block_reason, '') <> '被跟卖点不补货'
+             and not (coalesce(r.asin_merge_flag, 0) = 1 and coalesce(r.replenish_qty, 0) = 0)
                 then (case when coalesce(r.max_cg_box_pcs, 0) > 0 then r.max_cg_box_pcs else 50 end)
                    * (coalesce(r.max_cg_price, 0) + coalesce(r.max_cg_transport_costs, 0))
             else coalesce(r.replenish_cost, 0)
