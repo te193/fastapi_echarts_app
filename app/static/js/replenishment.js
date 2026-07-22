@@ -1294,7 +1294,7 @@
     if (value === "below_minimum") return "\u4f4e\u4e8e MOQ";
     if (value === "met") return "\u5df2\u8fbe MOQ";
     if (value === "unconfigured") return "MOQ \u672a\u914d\u7f6e";
-    if (value === "not_applicable") return "\u65e0\u8865\u8d27\u91cf";
+    if (value === "not_applicable") return "\u8865\u8d27\u6570\u91cf\u4e3a0";
     return "-";
   }
 

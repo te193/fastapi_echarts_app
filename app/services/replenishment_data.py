@@ -248,7 +248,7 @@ def format_moq_status(value: Any) -> str:
         "met": "已达起订量",
         "below_minimum": "低于最小起订量",
         "unconfigured": "MOQ未配置",
-        "not_applicable": "不适用",
+        "not_applicable": "补货数量为0",
     }.get(status, status)
 
 
