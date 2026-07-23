@@ -30,8 +30,8 @@ REASON_LABELS = {
     "daily_cross": "日销跨线",
     "margin_cross": "毛利率跨线",
     "both_cross": "日销与毛利率同时跨线",
-    "business_unit_added": "新增经营单元",
-    "business_unit_removed": "经营单元消失",
+    "business_unit_added": "新增记录",
+    "business_unit_removed": "记录消失",
     "evidence_missing": "规则证据缺失",
     "evidence_mismatch": "本地重算与远端标签不一致",
 }
@@ -241,15 +241,15 @@ class LabelHubChangeDataService:
             candidates = [row for row in public_rows if breakdown_matches(row, skip_local=breakdown_key)]
             preferred = preferred_value(candidates, definition["field"])
             buckets = []
-            for bucket_key, _ in definition["buckets"]:
-                buckets.append({"key": bucket_key, "msku_count": sum(value == bucket_key for value in preferred.values())})
+            for bucket_key, bucket_label in definition["buckets"]:
+                buckets.append({"key": bucket_key, "label": bucket_label, "msku_count": sum(value == bucket_key for value in preferred.values())})
             missing = {
                 _business_unit_key(row) for row in candidates if not row.get("_metric_present")
             } - {
                 _business_unit_key(row) for row in candidates if row.get("_metric_present")
             }
-            buckets.append({"key": "missing", "msku_count": len(missing)})
-            breakdowns.append({"source": "local", "key": breakdown_key, "parent_id": 0, "buckets": buckets})
+            buckets.append({"key": "missing", "label": "暂无经营数据", "msku_count": len(missing)})
+            breakdowns.append({"source": "local", "key": breakdown_key, "label": definition["label"], "parent_id": 0, "buckets": buckets})
 
         remote_ids = []
         for candidate in list(common["analysis_parent_ids"]) + [2, 8, 9, 11, 3] + list(categories):
@@ -267,10 +267,10 @@ class LabelHubChangeDataService:
                 for child in categories[remote_parent_id].get("children", [])
             }
             buckets = [
-                {"key": str(child["id"]), "id": child["id"], "msku_count": sum(child_id == child["id"] for child_id in preferred.values())}
+                {"key": str(child["id"]), "id": child["id"], "label": child["label"], "msku_count": sum(child_id == child["id"] for child_id in preferred.values())}
                 for child in categories[remote_parent_id].get("children", [])
             ]
-            breakdowns.append({"source": "remote_label", "key": f"label:{remote_parent_id}", "parent_id": remote_parent_id, "buckets": buckets})
+            breakdowns.append({"source": "remote_label", "key": f"label:{remote_parent_id}", "label": categories[remote_parent_id]["label"], "parent_id": remote_parent_id, "label_period": selected_period, "buckets": buckets})
 
         parent_units: dict[int, set[BusinessUnitKey]] = defaultdict(set)
         child_units: dict[tuple[int, int], set[BusinessUnitKey]] = defaultdict(set)
@@ -394,6 +394,7 @@ class LabelHubChangeDataService:
                 previous_count = int(old_buckets.get(bucket_key, {}).get("msku_count") or 0)
                 buckets.append({
                     "key": bucket_key,
+                    "label": bucket.get("label") or bucket_key,
                     "current_count": current_count,
                     "previous_count": previous_count,
                     "delta": current_count - previous_count,
@@ -402,6 +403,8 @@ class LabelHubChangeDataService:
                 "source": panel_key[0],
                 "key": panel_key[1],
                 "parent_id": panel_key[2],
+                "label": panel.get("label") or panel_key[1],
+                "label_period": panel.get("label_period") or "",
                 "buckets": buckets,
             })
         return result
@@ -759,6 +762,22 @@ class LabelHubChangeDataService:
                 "left": transition_rows("removed"),
             }
 
+        combination_summary = {
+            "previous": len(previous_set),
+            "current": len(current_set),
+            "added": len(added),
+            "removed": len(removed),
+            "unchanged": len(kept),
+            "net": len(added) - len(removed),
+            "entered": layer_transitions["entered"][:3],
+            "left": layer_transitions["left"][:3],
+            "reason_summary": sorted(
+                (item for item in reason_distribution if int(item.get("count") or 0) > 0),
+                key=lambda item: int(item.get("count") or 0),
+                reverse=True,
+            )[:3],
+        }
+
         previous_parent = Counter(label_for(previous_primary, unit) for unit in previous_grouped)
         current_parent = Counter(label_for(current_primary, unit) for unit in current_grouped)
         matrix_cells = Counter((label_for(previous_primary, unit), label_for(current_primary, unit)) for unit in set(previous_grouped) | set(current_grouped))
@@ -768,7 +787,7 @@ class LabelHubChangeDataService:
             "cells": [{"row": row, "column": column, "count": count} for (row, column), count in matrix_cells.items()],
         }
 
-        # “全部变化”只列出发生变化的经营单元；保持不变的记录用于两期数量对账，
+        # “全部变化”只列出发生变化的记录；保持不变的记录用于两期数量对账，
         # 但不应混入分层变化明细，否则会掩盖当前层真正的转入、转出和标签切换。
         if change_type == "all":
             rows = [row for row in rows if row["change_type"] != "unchanged"]
@@ -809,10 +828,12 @@ class LabelHubChangeDataService:
                 "net": len(added) - len(removed),
                 "unique_msku_count": len({unit[2] for unit in all_units}),
             },
+            "combination_summary": combination_summary,
             "overview_deltas": self._delta_overview(current.get("overview", []), previous.get("overview", [])),
             "breakdown_deltas": self._delta_breakdowns(current.get("breakdowns", []), previous.get("breakdowns", [])),
             "selected_group_delta": {"current": len(current_set), "previous": len(previous_set), "delta": len(current_set) - len(previous_set), "rate": round((len(current_set) - len(previous_set)) / len(previous_set), 4) if previous_set else None},
             "issue_deltas": {key: int(current.get("issue_counts", {}).get(key, 0)) - int(previous.get("issue_counts", {}).get(key, 0)) for key in set(current.get("issue_counts", {})) | set(previous.get("issue_counts", {}))},
+            "issue_counts": {"current": current.get("issue_counts", {}), "previous": previous.get("issue_counts", {})},
             "transition_matrix": transition_matrix,
             "sales_role_reasons": reason_distribution,
             "layer_transitions": layer_transitions,

@@ -1,5 +1,6 @@
 import unittest
-from datetime import date
+from datetime import date, datetime
+from threading import Barrier
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -60,6 +61,30 @@ class FakeShared:
 class CountryLabelHubDataTests(unittest.TestCase):
     def setUp(self):
         self.service = CountryLabelHubDataService(FakeShared())
+
+    def test_country_detail_count_uses_lightweight_cached_aggregate(self):
+        executed = []
+
+        class Cursor:
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+            def execute(self, sql, params): executed.append((sql, params))
+            def fetchone(self): return {"country_unit_count": 41}
+
+        class Connection:
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+            def cursor(self): return Cursor()
+
+        self.service._shared._source_connection = lambda: Connection()
+
+        first = self.service.get_country_detail_count(data_date="2026-07-15", country_category="北美站")
+        second = self.service.get_country_detail_count(data_date="2026-07-15", country_category="北美站")
+
+        self.assertEqual({"country_unit_count": 41}, first)
+        self.assertEqual(first, second)
+        self.assertEqual(1, len(executed))
+        self.assertIn("group by country, country_category, store, msku", executed[0][0].lower())
 
     def test_price_margin_interval_uses_listing_price_against_margin_ladder(self):
         ladder = {
@@ -132,6 +157,23 @@ class CountryLabelHubDataTests(unittest.TestCase):
         self.assertEqual(row["msku"], profile["identity"]["msku"])
         self.assertTrue(profile["tag_profile"]["labels"])
 
+    def test_label_hub_country_profile_reuses_warm_country_facts_without_querying_again(self):
+        shared = FakeShared()
+        service = CountryLabelHubDataService(shared)
+        service._facts_cache["2026-07-15"] = (datetime.now(), FACTS)
+
+        with patch.object(
+            shared,
+            "_fetch_facts",
+            side_effect=AssertionError("warm country facts should be reused"),
+            create=True,
+        ):
+            facts = service._cached_profile_country_facts(
+                "2026-07-15", "北美站", "StoreA", "A1"
+            )
+
+        self.assertEqual(4, len(facts))
+
     def test_label_hub_country_profile_keeps_current_store_scope_and_splits_role_periods(self):
         self.service._cached_listing_prices = lambda *_: (
             "2026-07-16",
@@ -170,6 +212,34 @@ class CountryLabelHubDataTests(unittest.TestCase):
         self.assertTrue(profile["countries"][0]["price"]["available"])
         self.assertEqual(12, profile["countries"][0]["metrics"]["sales_qty"])
         self.assertEqual("30d", profile["scope"]["metric_period"])
+
+    def test_label_hub_country_profile_loads_independent_sources_concurrently(self):
+        barrier = Barrier(3)
+        self.service._cached_profile_country_facts = lambda *_: FACTS[:4]
+
+        def listing(*_):
+            barrier.wait(timeout=0.2)
+            return "2026-07-16", {}
+
+        def limits(*_):
+            barrier.wait(timeout=0.2)
+            return "2026-07-16", {}
+
+        def metrics(*_):
+            barrier.wait(timeout=0.2)
+            return {"window": {}, "metrics": {}, "sku": "SKU-01"}
+
+        self.service._cached_listing_prices = listing
+        self.service._cached_limit_prices = limits
+        self.service._cached_country_profile_metrics = metrics
+
+        profile = self.service.get_label_hub_country_profile(
+            country_category="北美站", store="StoreA", msku="A1"
+        )
+
+        self.assertEqual("available", profile["scope"]["listing_price_status"])
+        self.assertEqual("available", profile["scope"]["limit_price_status"])
+        self.assertEqual("available", profile["scope"]["local_metrics_status"])
 
     def test_country_profile_daily_sales_uses_inventory_days_and_returns_sku(self):
         class FakeCursor:
@@ -273,6 +343,78 @@ class CountryLabelHubDataTests(unittest.TestCase):
         self.assertEqual(2, payload["total"])
         self.assertEqual(4, len(payload["rows"][0]["labels"]))
         self.assertIn("国家销售角色", payload["rows"][0]["label_summary"])
+
+    def test_detail_base_rows_expand_real_sku_metrics_without_copying_business_totals(self):
+        self.service._country_detail_metric_provider = lambda **kwargs: {
+            "status": "available",
+            "window": {"period_code": "30d"},
+            "rows": [
+                {"country": "美国", "country_category": "北美站", "store": "StoreA", "msku": "A1", "sku": "SKU-A", "sales_amount": 100, "order_gross_profit": 20},
+                {"country": "墨西哥", "country_category": "墨西哥站", "store": "StoreA", "msku": "A1", "sku": "SKU-A", "sales_amount": 50, "order_gross_profit": -5},
+            ],
+        }
+
+        payload = self.service.get_country_detail_base_rows(data_date="2026-07-15", metric_period="30d")
+
+        self.assertEqual("available", payload["metric_status"])
+        self.assertEqual([50, 100], sorted(row["sales_amount"] for row in payload["rows"]))
+        self.assertEqual({"SKU-A"}, {row["sku"] for row in payload["rows"]})
+
+    def test_detail_base_rows_keep_label_rows_when_country_metrics_fail(self):
+        def fail(**kwargs):
+            raise RuntimeError("daily source offline")
+
+        self.service._country_detail_metric_provider = fail
+
+        payload = self.service.get_country_detail_base_rows(data_date="2026-07-15", metric_period="30d")
+
+        self.assertEqual("unavailable", payload["metric_status"])
+        self.assertEqual(2, len(payload["rows"]))
+        self.assertTrue(all(row["data_status"] == "国家经营指标暂不可用" for row in payload["rows"]))
+
+    def test_country_detail_metrics_fall_back_to_existing_yearly_fact(self):
+        self.service._cached_country_detail_metrics = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("missing view"))
+        self.service._cached_country_detail_raw_metrics = lambda **kwargs: {
+            "status": "available", "window": {}, "rows": [{"country": "美国", "sku": "SKU-A"}]
+        }
+
+        payload = self.service._country_detail_metrics_with_fallback(data_date="2026-07-15", metric_period="30d")
+
+        self.assertEqual("SKU-A", payload["rows"][0]["sku"])
+
+    def test_country_detail_metrics_return_latest_positive_ranking(self):
+        statements = []
+
+        class Cursor:
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+            def execute(self, sql, params): statements.append(sql)
+            def fetchone(self): return {"period_end": date(2026, 7, 15)}
+            def fetchall(self):
+                return [{
+                    "country": "美国", "country_category": "北美站", "store": "StoreA",
+                    "msku": "A1", "sku": "SKU-A", "ranking": 18,
+                }]
+
+        class Connection:
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+            def cursor(self): return Cursor()
+
+        self.service._shared._dashboard = SimpleNamespace(
+            schemas=SimpleNamespace(),
+            connect=lambda: Connection(),
+        )
+        with patch("app.services.country_label_hub_data.render_sql", return_value="product_daily"):
+            payload = self.service._cached_country_detail_metrics(
+                data_date="2026-07-15", metric_period="30d",
+                country_category="all", store="all", keyword="", identifiers=[],
+            )
+
+        self.assertEqual(18, payload["rows"][0]["ranking"])
+        metric_sql = statements[-1].lower()
+        self.assertIn("ranking > 0", metric_sql)
+        self.assertIn("as ranking", metric_sql)
 
     def test_country_is_part_of_the_unit_key_without_duplicating_local_metrics(self):
         extra = {**FACTS[0], "country": "加拿大"}

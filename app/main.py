@@ -3,7 +3,7 @@ import io
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
@@ -13,13 +13,14 @@ from fastapi.templating import Jinja2Templates
 from openpyxl import Workbook
 from openpyxl.comments import Comment
 from openpyxl.styles import PatternFill
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from etl.dashboard_daily_update import COLUMN_COMMENTS
 
 from .services.dashboard_db import dashboard_service
 from .services.country_label_hub_data import country_label_hub_service
 from .services.label_hub_data import label_hub_service
+from .services.label_hub_detail_data import label_hub_detail_service
 from .services.label_hub_change_data import label_hub_change_service
 from .services.price_review_data import price_review_service
 from .services.replenishment_data import replenishment_service
@@ -159,6 +160,37 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 class AdjustmentDayNotePayload(BaseModel):
     note: str = ""
+
+
+class LabelHubDetailRequest(BaseModel):
+    detail_view: Literal["business_unit", "country"] = "business_unit"
+    data_date: str = ""
+    metric_period: str = "30d"
+    country_category: str = "all"
+    store: str = "all"
+    keyword: str = ""
+    parent_label_id: int = 0
+    compare_parent_id: int = 0
+    conditions: str = ""
+    label_period: str = "all"
+    analysis_parent_ids: list[int] = Field(default_factory=list)
+    analysis_periods: list[str] = Field(default_factory=list)
+    identifiers: list[str] = Field(default_factory=list)
+    country_categories: list[str] = Field(default_factory=list)
+    stores: list[str] = Field(default_factory=list)
+    countries: list[str] = Field(default_factory=list)
+    sales_roles: list[str] = Field(default_factory=list)
+    sales_trends: list[str] = Field(default_factory=list)
+    daily_sales_bands: list[str] = Field(default_factory=list)
+    margin_bands: list[str] = Field(default_factory=list)
+    ranking_bands: list[str] = Field(default_factory=list)
+    problems: list[str] = Field(default_factory=list)
+    detail_conditions: str = ""
+    problem_mode: Literal["any", "all"] = "any"
+    page: int = Field(default=1, ge=1)
+    page_size: Literal[20, 50, 100] = 20
+    sort_field: str = "sales_amount"
+    sort_dir: Literal["asc", "desc"] = "desc"
 
 
 def _parse_date(value: str | None) -> date | None:
@@ -421,6 +453,16 @@ def api_label_hub_msku(data_date: str, country_category: str, store: str, msku: 
         return label_hub_service.get_msku_profile(data_date=data_date, country_category=country_category, store=store, msku=msku, metric_period=metric_period)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/api/label-hub/details")
+def api_label_hub_details(request: LabelHubDetailRequest) -> dict:
+    try:
+        return label_hub_detail_service.get_details(**request.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="标签明细数据暂不可用，请稍后重试") from exc
 
 
 @app.get("/api/label-hub/msku-country-profile")

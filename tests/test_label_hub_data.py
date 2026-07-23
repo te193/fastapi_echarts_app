@@ -117,7 +117,7 @@ class LabelHubDataTests(unittest.TestCase):
     def test_label_fact_and_metric_cache_keeps_five_minutes(self):
         self.assertEqual(300, CACHE_SECONDS)
 
-    def test_payload_always_uses_latest_meta_date_even_when_url_contains_older_date(self):
+    def test_payload_honors_non_empty_requested_data_date(self):
         service = LabelHubDataService()
         requested_dates = []
         service.get_meta = lambda: {
@@ -133,6 +133,18 @@ class LabelHubDataTests(unittest.TestCase):
         }
 
         service.get_payload(data_date="2026-07-15", metric_period="30d", page_size=20)
+
+        self.assertEqual(["2026-07-15"], requested_dates)
+
+    def test_payload_uses_meta_date_when_requested_data_date_is_empty(self):
+        service = LabelHubDataService()
+        requested_dates = []
+        service.get_meta = lambda: {"default_data_date": "2026-07-16", "data_dates": ["2026-07-16"]}
+        service._cached_details = lambda: DETAILS
+        service._cached_facts = lambda data_date: requested_dates.append(data_date) or [{**FACTS[0], "data_date": data_date}]
+        service._cached_metrics = lambda data_date, period: {"status": "available", "window": {}, "metrics": {}}
+
+        service.get_payload(data_date="", metric_period="30d", page_size=20)
 
         self.assertEqual(["2026-07-16"], requested_dates)
 
@@ -325,7 +337,7 @@ class LabelHubDataTests(unittest.TestCase):
         self.assertEqual(2, payload["kpis"]["sku_count"])
         self.assertEqual(2, payload["kpis"]["metric_msku_count"])
         self.assertEqual(4, payload["issue_counts"]["all"])
-        self.assertEqual(2, payload["issue_counts"]["problem_role"])
+        self.assertEqual(0, payload["issue_counts"]["problem_role"])
         self.assertEqual(2, payload["issue_counts"]["zero_sales"])
         self.assertEqual(4, payload["diagnosis"]["subject"]["msku_count"])
 
@@ -394,6 +406,48 @@ class LabelHubDataTests(unittest.TestCase):
         self.assertEqual(1, trend_counts["declining"])
         self.assertEqual(1, trend_counts["stopped"])
         self.assertEqual(1, payload["issue_counts"]["problem_role"])
+
+    def test_problem_role_issue_uses_remote_sales_role_label_scope(self):
+        details = [
+            *DETAILS,
+            {**DETAILS[0], "sub_label_id": 104, "sub_label_name": "问题产品"},
+        ]
+        facts = [
+            {**FACTS[0], "msku": "A1", "label_id": 104, "label_period": "30d"},
+            {**FACTS[0], "msku": "A2", "label_id": 101, "label_period": "30d"},
+        ]
+        metrics = {
+            ("欧洲站", "StoreA", "A1"): {
+                **METRICS[("欧洲站", "StoreA", "A1")],
+                "sales_role": "明星产品",
+                "sales_role_code": "star",
+            },
+            ("欧洲站", "StoreA", "A2"): {
+                **METRICS[("欧洲站", "StoreA", "A2")],
+                "sales_role": "问题产品",
+                "sales_role_code": "eliminate",
+            },
+        }
+
+        payload = self.service.build_payload(
+            details=details, facts=facts, metrics=metrics, data_date="2026-07-13",
+            parent_label_id=1, compare_parent_id=2, conditions={}, label_period="30d",
+            country_category="all", store="all", keyword="", page=1, page_size=20,
+            sort_field="sales_amount", sort_dir="desc",
+            metric_scope={"status": "available", "window": {"period_code": "30d"}},
+        )
+        filtered = self.service.build_payload(
+            details=details, facts=facts, metrics=metrics, data_date="2026-07-13",
+            parent_label_id=1, compare_parent_id=2, conditions={}, label_period="30d",
+            country_category="all", store="all", keyword="", page=1, page_size=20,
+            sort_field="sales_amount", sort_dir="desc", problem="problem_role",
+            metric_scope={"status": "available", "window": {"period_code": "30d"}},
+        )
+
+        problem_distribution = next(item for item in payload["distribution"] if item["id"] == 104)
+        self.assertEqual(problem_distribution["count"], payload["issue_counts"]["problem_role"])
+        self.assertEqual(["A1"], [row["msku"] for row in filtered["rows"]])
+        self.assertIn("problem_role", filtered["rows"][0]["issue_codes"])
 
     def test_remote_breakdown_and_condition_use_the_selected_analysis_period(self):
         facts = [
@@ -558,10 +612,7 @@ class LabelHubDataTests(unittest.TestCase):
         }.items():
             self.assertEqual(value, rows["A1"][field])
         self.assertEqual([], rows["A1"]["issue_codes"])
-        self.assertEqual(
-            ["标签冲突", "日销为 0", "订单毛利为负", "问题产品"],
-            rows["A2"]["issue_labels"],
-        )
+        self.assertEqual(["标签冲突", "日销为 0", "订单毛利为负"], rows["A2"]["issue_labels"])
 
     def test_build_payload_keeps_label_rows_without_local_metric_match(self):
         payload = self.service.build_payload(
@@ -653,6 +704,26 @@ class LabelHubDataTests(unittest.TestCase):
         self.assertEqual([101], [item["id"] for item in profile["tag_profile"]["analysis_labels"]])
         self.assertEqual([1301], [item["id"] for item in profile["tag_profile"]["site_scope_labels"]])
         self.assertEqual(2, len(profile["tag_profile"]["labels"]))
+
+    def test_business_detail_base_rows_include_label_profile_fields(self):
+        service = LabelHubDataService.__new__(LabelHubDataService)
+        raw_row = {
+            "country_category": "欧洲站",
+            "store": "StoreA",
+            "msku": "MSKU-1",
+            "_metric_present": False,
+            "_label_facts": [{**FACTS[0], "detail": DETAILS[0]}],
+        }
+        service.get_payload = lambda **kwargs: {
+            "scope": {"local_metrics_status": "available"},
+            "_comparison_rows": [raw_row],
+        }
+
+        payload = service.get_business_detail_base_rows()
+
+        self.assertEqual([101], [item["id"] for item in payload["rows"][0]["labels"]])
+        self.assertTrue(payload["rows"][0]["label_summary"])
+        self.assertIs(payload["rows"][0]["metric_present"], False)
 
     def test_fact_fetch_aggregates_remote_rows_before_expanding_them_locally(self):
         class Cursor:

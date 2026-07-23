@@ -303,6 +303,14 @@
     }
     elements.exportReplenishmentBtn.addEventListener("click", exportReplenishment);
     elements.tableWrap.addEventListener("click", function (event) {
+      var copyButton = event.target.closest("[data-replenishment-copy]");
+      if (copyButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        copyReplenishmentCode(copyButton);
+        if (event.detail > 0) copyButton.blur();
+        return;
+      }
       var button = event.target.closest("[data-country-detail]");
       if (!button) return;
       var row = window.replenishmentCountryRowMap ? window.replenishmentCountryRowMap[button.dataset.rowKey || ""] : null;
@@ -781,6 +789,79 @@
     });
   }
 
+  function fallbackCopyText(value) {
+    return new Promise(function (resolve, reject) {
+      var textarea = document.createElement("textarea");
+      textarea.value = value;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        if (document.execCommand("copy")) resolve();
+        else reject(new Error("copy command failed"));
+      } catch (error) {
+        reject(error);
+      } finally {
+        document.body.removeChild(textarea);
+      }
+    });
+  }
+
+  function copyText(value) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(value).catch(function () {
+        return fallbackCopyText(value);
+      });
+    }
+    return fallbackCopyText(value);
+  }
+
+  function copyReplenishmentCode(button) {
+    if (!button) return;
+    var value = String(button.dataset.copyValue || "").trim();
+    var kind = String(button.dataset.replenishmentCopy || "").toUpperCase();
+    if (!value) return;
+    var defaultLabel = "复制 " + kind + " " + value;
+    copyText(value).then(function () {
+      button.classList.add("is-success");
+      button.setAttribute("aria-label", kind + " " + value + " 已复制");
+      button.title = "已复制";
+    }).catch(function () {
+      button.classList.add("is-error");
+      button.setAttribute("aria-label", kind + " " + value + " 复制失败");
+      button.title = "复制失败";
+    }).then(function () {
+      window.setTimeout(function () {
+        button.setAttribute("aria-label", defaultLabel);
+        button.title = "复制 " + kind;
+        button.classList.remove("is-success", "is-error");
+      }, 1200);
+    });
+  }
+
+  function renderReplenishmentCopyButton(kind, value) {
+    if (!value) return "";
+    var label = String(kind || "").toUpperCase();
+    return '<button type="button" class="replenishment-code-copy" data-replenishment-copy="' +
+      app.escapeHtml(String(kind || "")) + '" data-copy-value="' + app.escapeHtml(value) +
+      '" aria-label="复制 ' + app.escapeHtml(label + " " + value) + '" title="复制 ' +
+      app.escapeHtml(label) + '"><svg class="replenishment-copy-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">' +
+      '<rect x="5" y="5" width="8" height="8" rx="1"></rect><path d="M3 10V3h7"></path></svg></button>';
+  }
+
+  function renderReplenishmentCodeCell(params) {
+    var row = params.data || {};
+    var msku = String(row.msku || "").trim();
+    var sku = String(row.sku || "").trim();
+    return '<span class="replenishment-code-cell"><span class="replenishment-code-line replenishment-code-primary">' +
+      '<span class="replenishment-code-value">' + app.escapeHtml(msku || "-") + '</span>' +
+      renderReplenishmentCopyButton("msku", msku) + '</span>' +
+      '<span class="replenishment-code-line replenishment-code-secondary"><span class="replenishment-code-value">' +
+      app.escapeHtml(sku || "-") + '</span>' + renderReplenishmentCopyButton("sku", sku) + '</span></span>';
+  }
+
   function renderTable(payload) {
     var rows = payload.items || [];
     if (!rows.length) {
@@ -801,7 +882,7 @@
       onFilterChanged: handleGridFilterChanged,
       columnDefs: [
         { headerName: text.level, field: "level", pinned: "left", width: 118, sort: colSort("level"), cellRenderer: function (params) { return '<span class="status-pill level-' + app.escapeHtml(String((params.data || {}).level_sort || "")) + '">' + app.escapeHtml(params.value || "") + '</span>'; } },
-        { headerName: "MSKU / SKU", field: "msku", pinned: "left", width: 150, sort: colSort("msku"), cellRenderer: function (params) { return window.kanbanGrid.subCell(params.data.msku || "-", params.data.sku || ""); } },
+        { headerName: "MSKU / SKU", field: "msku", pinned: "left", width: 178, sort: colSort("msku"), cellRenderer: renderReplenishmentCodeCell },
         { headerName: text.store, field: "store", width: 130, sort: colSort("store") },
         { headerName: text.site, field: "country", width: 110, sort: colSort("country") },
         { headerName: text.countryPerformance, field: "country_summary", width: 188, cellRenderer: renderCountrySummaryCell },

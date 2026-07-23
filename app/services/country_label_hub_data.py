@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from collections import OrderedDict, defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from itertools import combinations
 from threading import RLock
@@ -10,8 +11,11 @@ from urllib.parse import urlencode
 
 from etl.dashboard_daily_update import render_sql
 
-from .label_hub_data import CACHE_SECONDS, LabelHubDataService, _number, _period_order, label_hub_service
-from .label_hub_local_metrics import METRIC_PERIODS
+from .label_hub_data import (
+    CACHE_SECONDS, LABEL_DETAIL_TABLE, LABEL_FACT_TABLE, REFUND_MSKU_PREFIX,
+    LabelHubDataService, _number, _period_order, label_hub_service,
+)
+from .label_hub_local_metrics import METRIC_PERIODS, _sales_trend
 
 
 COUNTRY_PARENT_IDS = (4, 7, 13, 14)
@@ -120,6 +124,10 @@ class CountryLabelHubDataService:
         self._listing_price_cache: dict[tuple[str, str], tuple[datetime, str | None, dict[str, dict[str, Any]]]] = {}
         self._limit_price_cache: dict[tuple[str, str, str], tuple[datetime, str | None, dict[str, dict[str, Any]]]] = {}
         self._country_profile_metrics_cache: dict[tuple[str, str, str, str, str], tuple[datetime, dict[str, Any]]] = {}
+        self._country_detail_metrics_cache: OrderedDict[tuple[Any, ...], tuple[datetime, dict[str, Any]]] = OrderedDict()
+        self._country_detail_raw_metrics_cache: OrderedDict[tuple[Any, ...], tuple[datetime, dict[str, Any]]] = OrderedDict()
+        self._country_detail_count_cache: OrderedDict[tuple[Any, ...], tuple[datetime, dict[str, int]]] = OrderedDict()
+        self._country_detail_metric_provider: Callable[..., dict[str, Any]] = self._country_detail_metrics_with_fallback
 
     def get_meta(self) -> dict[str, Any]:
         if self._meta_cache and (datetime.now() - self._meta_cache[0]).total_seconds() < CACHE_SECONDS:
@@ -276,6 +284,410 @@ class CountryLabelHubDataService:
             "page_size": page_size,
             "total_pages": total_pages,
         }
+
+    def get_country_detail_base_rows(self, **filters: Any) -> dict[str, Any]:
+        """Return country/SKU rows with country-level metrics for the shared detail API."""
+        meta = self.get_meta()
+        data_date = str(filters.get("data_date") or meta.get("default_data_date") or "")
+        metric_period = str(filters.get("metric_period") or "30d").lower()
+        if metric_period not in METRIC_PERIODS:
+            raise ValueError("metric_period 仅支持 7d、14d、30d、90d")
+
+        details = self._shared._cached_details()
+        categories = list(meta.get("categories") or [])
+        category_by_id = {int(item["id"]): item for item in categories}
+        child_detail = {
+            int(item["sub_label_id"]): item
+            for item in details
+            if int(item["label_id"]) in COUNTRY_PARENT_SET
+        }
+        periods = self._resolve_periods(categories, {}, metric_period)
+        grouped: dict[tuple[str, str, str, str], list[dict[str, Any]]] = defaultdict(list)
+        for fact in self._cached_country_facts(data_date):
+            detail = child_detail.get(int(fact.get("label_id") or 0))
+            if not detail:
+                continue
+            key = (
+                str(fact.get("country") or "未配置国家"),
+                str(fact.get("country_category") or ""),
+                str(fact.get("store") or ""),
+                str(fact.get("msku") or ""),
+            )
+            grouped[key].append({**fact, "detail": detail})
+
+        label_rows = {
+            key: self._make_row(
+                key, label_facts, category_by_id, child_detail, periods,
+                {"status": "unavailable", "metrics": {}, "window": {}},
+            )
+            for key, label_facts in grouped.items()
+        }
+        self._mark_cross_country_inconsistency(list(label_rows.values()))
+        if str(filters.get("detail_view") or "country") == "business_unit" and not filters.get("identifiers"):
+            metric_scope = {"status": "labels_only", "window": {}, "rows": []}
+        else:
+            try:
+                metric_scope = self._country_detail_metric_provider(
+                    data_date=data_date,
+                    metric_period=metric_period,
+                    country_category=str(filters.get("country_category") or "all"),
+                    store=str(filters.get("store") or "all"),
+                    keyword=str(filters.get("keyword") or ""),
+                    identifiers=list(filters.get("identifiers") or []),
+                )
+            except Exception:
+                metric_scope = {"status": "unavailable", "window": {}, "rows": []}
+
+        metric_status = str(metric_scope.get("status") or "unavailable")
+        metric_rows = list(metric_scope.get("rows") or [])
+        result: list[dict[str, Any]] = []
+        matched_label_keys: set[tuple[str, str, str, str]] = set()
+        for metric in metric_rows:
+            key = (
+                str(metric.get("country") or "未配置国家"),
+                str(metric.get("country_category") or ""),
+                str(metric.get("store") or metric.get("seller_name_new") or ""),
+                str(metric.get("msku") or metric.get("seller_sku_adj") or ""),
+            )
+            matched_label_keys.add(key)
+            row = dict(label_rows.get(key) or {
+                "country": key[0], "country_category": key[1], "store": key[2], "msku": key[3],
+                "_primary": {}, "_by_parent_period": {}, "conflict": False,
+                "conflict_parent_ids": [], "cross_country_inconsistent": False,
+            })
+            row.update(metric)
+            row["store"] = key[2]
+            row["msku"] = key[3]
+            row["sku"] = str(metric.get("sku") or metric.get("local_sku") or "")
+            row["_metric_present"] = True
+            self._finish_country_detail_row(row, child_detail, metric_status)
+            result.append(row)
+
+        for key, source in label_rows.items():
+            if key in matched_label_keys:
+                continue
+            row = dict(source)
+            row["sku"] = ""
+            row["_metric_present"] = False
+            self._finish_country_detail_row(row, child_detail, metric_status)
+            result.append(row)
+
+        country_category = str(filters.get("country_category") or "all")
+        store = str(filters.get("store") or "all")
+        keyword = str(filters.get("keyword") or "").strip().casefold()
+        result = [
+            row for row in result
+            if (country_category == "all" or row.get("country_category") == country_category)
+            and (store == "all" or row.get("store") == store)
+            and (
+                not keyword
+                or keyword in " ".join(str(row.get(field) or "") for field in ("country", "country_category", "store", "msku", "sku")).casefold()
+            )
+        ]
+        warnings = [] if metric_status in {"available", "labels_only"} else ["国家经营指标暂不可用，当前仅展示标签明细"]
+        return {
+            "rows": result,
+            "metric_status": metric_status,
+            "metric_window": metric_scope.get("window") or {},
+            "warnings": warnings,
+        }
+
+    def get_country_detail_count(self, **filters: Any) -> dict[str, int]:
+        """Count country detail units without materializing all country label rows."""
+        data_date = str(filters.get("data_date") or self.get_meta().get("default_data_date") or "")
+        country_category = str(filters.get("country_category") or "all")
+        store = str(filters.get("store") or "all")
+        keyword = str(filters.get("keyword") or "").strip()
+        cache_key = (data_date, country_category, store, keyword.casefold())
+        now = datetime.now()
+        with self._base_rows_lock:
+            cached = self._country_detail_count_cache.get(cache_key)
+            if cached and (now - cached[0]).total_seconds() < CACHE_SECONDS:
+                self._country_detail_count_cache.move_to_end(cache_key)
+                return dict(cached[1])
+
+        clauses = [
+            "data_date = %(data_date)s",
+            "msku not like %(refund_prefix)s",
+            f"label_id in (select sub_label_id from {LABEL_DETAIL_TABLE} where label_id in ({','.join(map(str, COUNTRY_PARENT_IDS))}))",
+        ]
+        params: dict[str, Any] = {"data_date": data_date, "refund_prefix": f"{REFUND_MSKU_PREFIX}%"}
+        if country_category != "all":
+            clauses.append("country_category = %(country_category)s")
+            params["country_category"] = country_category
+        if store != "all":
+            clauses.append("store = %(store)s")
+            params["store"] = store
+        if keyword:
+            clauses.append("(msku like %(keyword)s or store like %(keyword)s)")
+            params["keyword"] = f"%{keyword}%"
+
+        with self._shared._source_connection() as conn, conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                select count(*) as country_unit_count
+                from (
+                    select country, country_category, store, msku
+                    from {LABEL_FACT_TABLE}
+                    where {' and '.join(clauses)}
+                    group by country, country_category, store, msku
+                ) scoped_country_units
+                """,
+                params,
+            )
+            count = int((cursor.fetchone() or {}).get("country_unit_count") or 0)
+        result = {"country_unit_count": count}
+        with self._base_rows_lock:
+            self._country_detail_count_cache[cache_key] = (now, result)
+            self._country_detail_count_cache.move_to_end(cache_key)
+            while len(self._country_detail_count_cache) > 16:
+                self._country_detail_count_cache.popitem(last=False)
+        return dict(result)
+
+    @staticmethod
+    def _finish_country_detail_row(row: dict[str, Any], child_detail: dict[int, dict[str, Any]], metric_status: str) -> None:
+        sales = _number(row.get("sales_amount"))
+        profit = _number(row.get("order_gross_profit"))
+        qty = _number(row.get("sales_qty"))
+        inventory_days = int(_number(row.get("inventory_days")) or 0)
+        if row.get("daily_sales") is None and row.get("_metric_present"):
+            row["daily_sales"] = qty / inventory_days if qty is not None and inventory_days else 0.0
+        if row.get("order_gross_margin") is None:
+            row["order_gross_margin"] = profit / sales if profit is not None and sales else None
+        daily = _number(row.get("daily_sales"))
+        if daily is None:
+            row["daily_sales_band_code"], row["daily_sales_band"] = "missing", "暂无经营数据"
+        elif daily <= 0:
+            row["daily_sales_band_code"], row["daily_sales_band"] = "zero", "日销 0"
+        elif daily < 1:
+            row["daily_sales_band_code"], row["daily_sales_band"] = "lt1", "日销 <1"
+        elif daily <= 5:
+            row["daily_sales_band_code"], row["daily_sales_band"] = "1_5", "日销 1–5"
+        else:
+            row["daily_sales_band_code"], row["daily_sales_band"] = "gt5", "日销 >5"
+        margin = _number(row.get("order_gross_margin"))
+        if margin is None:
+            row["margin_band_code"], row["margin_band"] = "missing", "暂无经营数据"
+        elif margin < 0.05:
+            row["margin_band_code"], row["margin_band"] = "lt5", "<5%"
+        elif margin < 0.10:
+            row["margin_band_code"], row["margin_band"] = "5_10", "5%–10%"
+        elif margin < 0.15:
+            row["margin_band_code"], row["margin_band"] = "10_15", "10%–15%"
+        elif margin < 0.25:
+            row["margin_band_code"], row["margin_band"] = "15_25", "15%–25%"
+        else:
+            row["margin_band_code"], row["margin_band"] = "gt25", ">=25%"
+        role_label = str(row.get("country_sales_role_label") or "")
+        row["sales_role_code"] = next((code for word, code in (("明星", "star"), ("潜力", "potential"), ("孵化", "incubation"), ("问题", "eliminate")) if word in role_label), "missing")
+        daily_7d = None
+        daily_30d = None
+        if row.get("_metric_present"):
+            days_7d = int(_number(row.get("inventory_days_7d")) or 0)
+            days_30d = int(_number(row.get("inventory_days_30d")) or 0)
+            qty_7d = _number(row.get("sales_qty_7d"))
+            qty_30d = _number(row.get("sales_qty_30d"))
+            daily_7d = qty_7d / days_7d if qty_7d is not None and days_7d else 0.0
+            daily_30d = qty_30d / days_30d if qty_30d is not None and days_30d else 0.0
+        trend_code, trend_label, trend_ratio = _sales_trend(daily_7d, daily_30d)
+        row["sales_trend_code"] = trend_code
+        row["sales_trend"] = trend_label
+        row["sales_trend_ratio"] = trend_ratio
+        primary = row.get("_primary") or {}
+        row["_by_parent"] = {
+            int(parent): set().union(*periods.values()) if periods else set()
+            for parent, periods in (row.get("_by_parent_period") or {}).items()
+        }
+        row["labels"] = [
+            {
+                "parent_id": int(parent), "id": int(child),
+                "label": str(child_detail.get(int(child), {}).get("sub_label_name") or child),
+            }
+            for parent, child in primary.items() if child
+        ]
+        row["data_status"] = (
+            "国家经营指标可用" if row.get("_metric_present")
+            else ("暂无国家经营数据" if metric_status == "available" else "国家经营指标暂不可用")
+        )
+
+    def _cached_country_detail_metrics(self, **filters: Any) -> dict[str, Any]:
+        cache_key = (
+            str(filters.get("data_date") or ""), str(filters.get("metric_period") or "30d"),
+            str(filters.get("country_category") or "all"), str(filters.get("store") or "all"),
+            str(filters.get("keyword") or "").casefold(),
+            tuple(sorted(str(item).strip().casefold() for item in filters.get("identifiers") or [] if str(item).strip())),
+        )
+        cached = self._country_detail_metrics_cache.get(cache_key)
+        if cached and (datetime.now() - cached[0]).total_seconds() < CACHE_SECONDS:
+            self._country_detail_metrics_cache.move_to_end(cache_key)
+            return cached[1]
+        data_date, metric_period, country_category, store, keyword, identifiers = cache_key
+        table = render_sql("etl_datasync.dashboard_product_performance_daily", self._shared._dashboard.schemas)
+        where = ["dt_date between %(query_start)s and %(period_end)s"]
+        params: dict[str, Any] = {"data_date": data_date}
+        if country_category != "all":
+            where.append("country_category = %(country_category)s")
+            params["country_category"] = country_category
+        if store != "all":
+            where.append("seller_name_new = %(store)s")
+            params["store"] = store
+        if keyword:
+            where.append("(lower(seller_sku_adj) like %(keyword)s or lower(local_sku) like %(keyword)s)")
+            params["keyword"] = f"%{keyword}%"
+        if identifiers:
+            names = []
+            for index, value in enumerate(identifiers):
+                name = f"identifier_{index}"
+                names.append(f"%({name})s")
+                params[name] = value
+            where.append(f"(lower(seller_sku_adj) in ({', '.join(names)}) or lower(local_sku) in ({', '.join(names)}))")
+        with self._shared._dashboard.connect() as conn, conn.cursor() as cursor:
+            cursor.execute(f"select max(dt_date) as period_end from {table} where dt_date <= %(data_date)s", params)
+            period_end = (cursor.fetchone() or {}).get("period_end")
+            if not period_end:
+                return {"status": "available", "window": {}, "rows": []}
+            if isinstance(period_end, datetime):
+                period_end = period_end.date()
+            period_start = period_end - timedelta(days=int(metric_period[:-1]) - 1)
+            trend_7_start = period_end - timedelta(days=6)
+            trend_30_start = period_end - timedelta(days=29)
+            query_start = min(period_start, trend_30_start)
+            params.update({
+                "period_start": period_start, "period_end": period_end, "query_start": query_start,
+                "trend_7_start": trend_7_start, "trend_30_start": trend_30_start,
+            })
+            cursor.execute(
+                f"""
+                select country, country_category, seller_name_new as store,
+                       seller_sku_adj as msku, local_sku as sku,
+                       count(distinct case when dt_date >= %(period_start)s and afn_fulfillable_quantity > 0 then dt_date end) as inventory_days,
+                       count(distinct case when dt_date >= %(trend_7_start)s and afn_fulfillable_quantity > 0 then dt_date end) as inventory_days_7d,
+                       count(distinct case when dt_date >= %(trend_30_start)s and afn_fulfillable_quantity > 0 then dt_date end) as inventory_days_30d,
+                       sum(case when dt_date >= %(period_start)s then coalesce(sales_qty, 0) else 0 end) as sales_qty,
+                       sum(case when dt_date >= %(trend_7_start)s then coalesce(sales_qty, 0) else 0 end) as sales_qty_7d,
+                       sum(case when dt_date >= %(trend_30_start)s then coalesce(sales_qty, 0) else 0 end) as sales_qty_30d,
+                       sum(case when dt_date >= %(period_start)s then coalesce(sales_amount, 0) else 0 end) as sales_amount,
+                       sum(case when dt_date >= %(period_start)s then coalesce(order_gross_profit, 0) else 0 end) as order_gross_profit,
+                       sum(case when dt_date >= %(period_start)s then coalesce(ad_spend, 0) else 0 end) as ad_spend,
+                       sum(case when dt_date >= %(period_start)s then coalesce(ad_sales, 0) else 0 end) as ad_sales,
+                       sum(case when dt_date >= %(period_start)s then coalesce(sessions_total, 0) else 0 end) as sessions_total,
+                       sum(case when dt_date >= %(period_start)s then coalesce(ad_clicks, 0) else 0 end) as ad_clicks,
+                       sum(case when dt_date >= %(period_start)s then coalesce(return_count, 0) else 0 end) as return_count,
+                       sum(case when dt_date >= %(period_start)s then coalesce(return_amount, 0) else 0 end) as return_amount,
+                       max(case when dt_date = %(period_end)s then afn_fulfillable_quantity end) as ending_inventory_qty,
+                       max(case when dt_date = %(period_end)s and ranking > 0 then ranking end) as ranking
+                from {table}
+                where {' and '.join(where)}
+                group by country, country_category, seller_name_new, seller_sku_adj, local_sku
+                """,
+                params,
+            )
+            rows = cursor.fetchall()
+        result = {
+            "status": "available",
+            "window": {
+                "period_code": metric_period,
+                "period_start": period_start.isoformat(),
+                "period_end": period_end.isoformat(),
+            },
+            "rows": rows,
+        }
+        self._country_detail_metrics_cache[cache_key] = (datetime.now(), result)
+        self._country_detail_metrics_cache.move_to_end(cache_key)
+        while len(self._country_detail_metrics_cache) > 8:
+            self._country_detail_metrics_cache.popitem(last=False)
+        return result
+
+    def _country_detail_metrics_with_fallback(self, **filters: Any) -> dict[str, Any]:
+        try:
+            return self._cached_country_detail_metrics(**filters)
+        except Exception:
+            return self._cached_country_detail_raw_metrics(**filters)
+
+    def _cached_country_detail_raw_metrics(self, **filters: Any) -> dict[str, Any]:
+        """Fallback to the existing yearly Lingxing product-performance fact table."""
+        data_date = str(filters.get("data_date") or "")
+        metric_period = str(filters.get("metric_period") or "30d")
+        country_category = str(filters.get("country_category") or "all")
+        store = str(filters.get("store") or "all")
+        keyword = str(filters.get("keyword") or "").strip().casefold()
+        identifiers = tuple(sorted(str(item).strip().casefold() for item in filters.get("identifiers") or [] if str(item).strip()))
+        cache_key = (data_date, metric_period, country_category, store, keyword, identifiers)
+        cached = self._country_detail_raw_metrics_cache.get(cache_key)
+        if cached and (datetime.now() - cached[0]).total_seconds() < CACHE_SECONDS:
+            self._country_detail_raw_metrics_cache.move_to_end(cache_key)
+            return cached[1]
+        year = data_date[:4]
+        if not year.isdigit():
+            raise ValueError("国家经营指标日期无效")
+        table = render_sql(
+            f"etl_datasync.etl_dispose_lx_statistics_product_performance_{year}",
+            self._shared._dashboard.schemas,
+        )
+        period_end = datetime.strptime(data_date, "%Y-%m-%d").date()
+        period_start = period_end - timedelta(days=int(metric_period[:-1]) - 1)
+        trend_7_start = period_end - timedelta(days=6)
+        trend_30_start = period_end - timedelta(days=29)
+        query_start = min(period_start, trend_30_start)
+        where = ["start_date between %(query_start)s and %(period_end)s"]
+        params: dict[str, Any] = {
+            "query_start": query_start, "period_start": period_start, "period_end": period_end,
+            "trend_7_start": trend_7_start, "trend_30_start": trend_30_start,
+        }
+        if country_category != "all":
+            where.append("country_category = %(country_category)s")
+            params["country_category"] = country_category
+        if store != "all":
+            where.append("seller_name_new = %(store)s")
+            params["store"] = store
+        if keyword:
+            where.append("(lower(seller_sku_adj) like %(keyword)s or lower(local_sku) like %(keyword)s)")
+            params["keyword"] = f"%{keyword}%"
+        if identifiers:
+            names = []
+            for index, value in enumerate(identifiers):
+                name = f"raw_identifier_{index}"
+                names.append(f"%({name})s")
+                params[name] = value
+            where.append(f"(lower(seller_sku_adj) in ({', '.join(names)}) or lower(local_sku) in ({', '.join(names)}))")
+        with self._shared._dashboard.connect() as conn, conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                select country, country_category, seller_name_new as store,
+                       seller_sku_adj as msku, local_sku as sku,
+                       count(distinct case when start_date >= %(period_start)s and afn_fulfillable_quantity > 0 then start_date end) as inventory_days,
+                       count(distinct case when start_date >= %(trend_7_start)s and afn_fulfillable_quantity > 0 then start_date end) as inventory_days_7d,
+                       count(distinct case when start_date >= %(trend_30_start)s and afn_fulfillable_quantity > 0 then start_date end) as inventory_days_30d,
+                       sum(case when start_date >= %(period_start)s then coalesce(volume, 0) else 0 end) as sales_qty,
+                       sum(case when start_date >= %(trend_7_start)s then coalesce(volume, 0) else 0 end) as sales_qty_7d,
+                       sum(case when start_date >= %(trend_30_start)s then coalesce(volume, 0) else 0 end) as sales_qty_30d,
+                       sum(case when start_date >= %(period_start)s then coalesce(amount, 0) else 0 end) as sales_amount,
+                       sum(case when start_date >= %(period_start)s then coalesce(gross_profit, 0) else 0 end) as order_gross_profit,
+                       sum(case when start_date >= %(period_start)s then coalesce(spend, 0) else 0 end) as ad_spend,
+                       sum(case when start_date >= %(period_start)s then coalesce(ad_sales_amount, 0) else 0 end) as ad_sales,
+                       sum(case when start_date >= %(period_start)s then coalesce(sessions_total, 0) else 0 end) as sessions_total,
+                       sum(case when start_date >= %(period_start)s then coalesce(clicks, 0) else 0 end) as ad_clicks,
+                       sum(case when start_date >= %(period_start)s then coalesce(return_count, 0) else 0 end) as return_count,
+                       sum(case when start_date >= %(period_start)s then coalesce(return_amount, 0) else 0 end) as return_amount,
+                       max(case when start_date = %(period_end)s then afn_fulfillable_quantity end) as ending_inventory_qty,
+                       max(case when start_date = %(period_end)s and `rank` > 0 then `rank` end) as ranking
+                from {table}
+                where {' and '.join(where)}
+                group by country, country_category, seller_name_new, seller_sku_adj, local_sku
+                """,
+                params,
+            )
+            rows = cursor.fetchall()
+        result = {
+            "status": "available",
+            "window": {"period_code": metric_period, "period_start": period_start.isoformat(), "period_end": period_end.isoformat()},
+            "rows": rows,
+        }
+        self._country_detail_raw_metrics_cache[cache_key] = (datetime.now(), result)
+        self._country_detail_raw_metrics_cache.move_to_end(cache_key)
+        while len(self._country_detail_raw_metrics_cache) > 8:
+            self._country_detail_raw_metrics_cache.popitem(last=False)
+        return result
 
     def _cached_country_facts(self, data_date: str) -> list[dict[str, Any]]:
         cached = self._facts_cache.get(data_date)
@@ -612,24 +1024,29 @@ class CountryLabelHubDataService:
         if metric_period not in METRIC_PERIODS:
             metric_period = "30d"
 
-        try:
-            price_date, prices = self._cached_listing_prices(country_category, store, msku)
-            price_status = "available"
-        except Exception:
-            price_date, prices, price_status = None, {}, "unavailable"
-        try:
-            limit_price_date, limit_prices = self._cached_limit_prices(country_category, store, msku)
-            limit_price_status = "available"
-        except Exception:
-            limit_price_date, limit_prices, limit_price_status = None, {}, "unavailable"
-        try:
-            metric_scope = self._cached_country_profile_metrics(
-                data_date, country_category, store, msku, metric_period
+        with ThreadPoolExecutor(max_workers=3, thread_name_prefix="country-profile") as executor:
+            price_future = executor.submit(self._cached_listing_prices, country_category, store, msku)
+            limit_price_future = executor.submit(self._cached_limit_prices, country_category, store, msku)
+            metric_future = executor.submit(
+                self._cached_country_profile_metrics,
+                data_date, country_category, store, msku, metric_period,
             )
-            metric_status = "available"
-        except Exception:
-            metric_scope = {"window": {}, "metrics": {}, "sku": None}
-            metric_status = "unavailable"
+            try:
+                price_date, prices = price_future.result()
+                price_status = "available"
+            except Exception:
+                price_date, prices, price_status = None, {}, "unavailable"
+            try:
+                limit_price_date, limit_prices = limit_price_future.result()
+                limit_price_status = "available"
+            except Exception:
+                limit_price_date, limit_prices, limit_price_status = None, {}, "unavailable"
+            try:
+                metric_scope = metric_future.result()
+                metric_status = "available"
+            except Exception:
+                metric_scope = {"window": {}, "metrics": {}, "sku": None}
+                metric_status = "unavailable"
 
         by_country: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for fact in facts:
@@ -936,18 +1353,28 @@ class CountryLabelHubDataService:
         cached = self._profile_facts_cache.get(cache_key)
         if cached and (datetime.now() - cached[0]).total_seconds() < CACHE_SECONDS:
             return cached[1]
-        fetcher = getattr(self._shared, "_fetch_facts", None)
-        facts = (
-            fetcher(data_date, country_category=country_category, store=store, keyword=msku, parent_ids=COUNTRY_PARENT_IDS)
-            if callable(fetcher)
-            else [
+        country_cache = self._facts_cache.get(data_date)
+        if country_cache and (datetime.now() - country_cache[0]).total_seconds() < CACHE_SECONDS:
+            facts = [
                 fact
-                for fact in self._cached_country_facts(data_date)
+                for fact in country_cache[1]
                 if str(fact.get("country_category") or "") == country_category
                 and str(fact.get("store") or "") == store
                 and str(fact.get("msku") or "") == msku
             ]
-        )
+        else:
+            fetcher = getattr(self._shared, "_fetch_facts", None)
+            facts = (
+                fetcher(data_date, country_category=country_category, store=store, keyword=msku, parent_ids=COUNTRY_PARENT_IDS)
+                if callable(fetcher)
+                else [
+                    fact
+                    for fact in self._cached_country_facts(data_date)
+                    if str(fact.get("country_category") or "") == country_category
+                    and str(fact.get("store") or "") == store
+                    and str(fact.get("msku") or "") == msku
+                ]
+            )
         facts = [fact for fact in facts if str(fact.get("msku") or "") == msku]
         self._profile_facts_cache[cache_key] = (datetime.now(), facts)
         return facts
