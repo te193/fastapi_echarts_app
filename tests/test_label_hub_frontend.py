@@ -25,6 +25,93 @@ def test_label_hub_uses_url_conditions_and_profile_drawer_contract():
     assert "panel.rules" in script
 
 
+def test_label_hub_detail_workbench_uses_independent_post_flow_and_dual_views():
+    template = (ROOT / "app" / "templates" / "label_hub.html").read_text(encoding="utf-8")
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+
+    for element_id in (
+        "labelHubDetailView", "labelHubDetailIdentifiers", "labelHubDetailLabels",
+        "labelHubDetailCountries", "labelHubDetailCountryCategories", "labelHubDetailStores",
+        "labelHubDetailProblems", "labelHubDetailProblemMode", "labelHubDetailSalesRoles",
+        "labelHubDetailSalesTrends", "labelHubDetailDailyBands", "labelHubDetailMarginBands",
+        "labelHubDetailApply", "labelHubDetailClear", "labelHubIdentifierResolution",
+    ):
+        assert f'id="{element_id}"' in template
+    assert 'fetch("/api/label-hub/details"' in script
+    assert "function buildDetailPayload()" in script
+    assert "function renderDetails()" in script
+    assert "detail_view:" in script
+    assert 'localStorage.getItem("labelHubDetailView")' in script
+    assert 'localStorage.setItem("labelHubDetailView"' in script
+    assert '<option value="business_unit">MSKU维度</option>' in template
+    assert '"MSKU维度 " + formatNumber(counts.business_unit_count)' in script
+    assert "renderTable(payload);" not in script.split('app.apiGet("/api/label-hub", buildParams())', 1)[1].split("}).catch", 1)[0]
+    assert "countryIdentityColumns" in script
+    assert 'headerName: "国家"' in script
+    assert 'headerName: "SKU"' in script
+
+
+def test_detail_filters_use_compact_toolbar_and_collapsed_advanced_panel():
+    template = (ROOT / "app" / "templates" / "label_hub.html").read_text(encoding="utf-8")
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+
+    for element_id in (
+        "labelHubDetailToolbar", "labelHubDetailAdvanced", "labelHubDetailMore",
+        "labelHubDetailActiveFilters", "labelHubDetailActiveFilterList",
+    ):
+        assert f'id="{element_id}"' in template
+    assert 'id="labelHubDetailAdvanced" class="label-hub-detail-advanced" hidden' in template
+    assert "function initDetailFilterSelects()" in script
+    assert "function destroyDetailFilterSelects()" in script
+    assert "function toggleDetailAdvancedFilters()" in script
+    assert "function renderDetailActiveFilters()" in script
+    assert "new window.SlimSelect" in script
+    toolbar_index = template.index('id="labelHubDetailToolbar"')
+    labels_index = template.index('id="labelHubDetailLabels"')
+    advanced_index = template.index('id="labelHubDetailAdvanced"')
+    problems_index = template.index('id="labelHubDetailProblems"')
+    assert toolbar_index < labels_index < advanced_index < problems_index
+
+
+def test_country_detail_exposes_ranking_filter_state_and_column():
+    template = (ROOT / "app" / "templates" / "label_hub.html").read_text(encoding="utf-8")
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+
+    assert 'id="labelHubDetailRankingBands"' in template
+    for value in ("top10", "11_20", "21_50", "51_100", "gt100", "missing"):
+        assert f'value="{value}"' in template
+    assert "ranking_bands: []" in script
+    assert "ranking_bands: detailState.ranking_bands" in script
+    assert '["ranking_bands", detailState.detail_view === "country" ? "排名" : "排名（已保留）"' in script
+    assert 'headerName: "排名", field: "ranking"' in script
+
+
+def test_detail_filters_match_compact_reference_visual_language():
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+    base = (ROOT / "app" / "templates" / "base.html").read_text(encoding="utf-8")
+
+    assert ".label-hub-detail-toolbar" in styles
+    assert ".label-hub-detail-advanced" in styles
+    assert ".label-hub-detail-active-filters" in styles
+    assert ".label-hub-detail-filter-chip" in styles
+    assert ".label-hub-detail-filter-control .ss-main:has(.ss-value)" in styles
+    assert ".ss-value .ss-value-text" in styles
+    assert "color: #155ba6;" in styles
+    assert "styles.css') }}?v=20260723replcopy1" in base
+    assert ".label-hub-detail-workbench select[multiple] { min-height: 64px" not in styles
+
+
+def test_detail_filter_action_buttons_follow_primary_secondary_hierarchy():
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+
+    assert ".label-hub-detail-apply:hover" in styles
+    assert ".label-hub-detail-apply:active" in styles
+    assert ".label-hub-detail-clear:hover" in styles
+    assert ".label-hub-detail-clear:active" in styles
+    assert ".label-hub-detail-apply:focus-visible" in styles
+    assert ".label-hub-detail-clear:focus-visible" in styles
+
+
 def test_label_hub_template_exposes_overview_diagnosis_and_breakdowns():
     template = (ROOT / "app" / "templates" / "label_hub.html").read_text(encoding="utf-8")
 
@@ -34,6 +121,25 @@ def test_label_hub_template_exposes_overview_diagnosis_and_breakdowns():
         "labelHubCountryProfileDrawer", "labelHubCountryProfileContent",
     ):
         assert f'id="{element_id}"' in template
+
+
+def test_current_combination_change_reuses_changes_api_and_compact_ledger():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+
+    for heading in ("上次", "今日", "本期进入", "本期离开", "简要说明"):
+        assert heading in script
+    assert "未选择联动条件" in script
+    assert "新增记录" in script
+    assert 'app.apiGet("/api/label-hub/changes"' in script
+    assert 'app.apiGet("/api/label-hub/highlights"' not in script
+    assert "renderCurrentCombinationChange" in script
+
+
+def test_change_table_does_not_call_same_visible_label_a_switch():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+
+    assert 'previousValue !== currentValue ? "标签切换" : "其他标签变化"' in script
+    assert "row.trigger_dimensions" in script
 
 
 def test_label_hub_reuses_sales_role_page_visual_structure():
@@ -49,7 +155,7 @@ def test_label_hub_reuses_sales_role_page_visual_structure():
     assert 'id="labelHubConditionRow" class="label-hub-condition-row" hidden' in template
 
 
-def test_label_hub_uses_progressive_coverage_and_problem_first_analysis_layout():
+def test_label_hub_uses_clear_msku_counts_and_problem_first_analysis_layout():
     template = (ROOT / "app" / "templates" / "label_hub.html").read_text(encoding="utf-8")
     script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
     styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
@@ -62,13 +168,27 @@ def test_label_hub_uses_progressive_coverage_and_problem_first_analysis_layout()
     assert "function renderCategoryDetail(payload)" in script
     assert "function renderPopulationSummary(payload)" in script
     assert "renderPopulationSummary(payload);" in script
-    for label in ("去重 MSKU", "经营单元", "跨范围 MSKU"):
+    for label in ("去重 MSKU", "店铺商品记录", "跨范围 MSKU"):
         assert label in script
+    assert "去重覆盖 " not in script
+    assert '<div class="label-hub-coverage">' not in script
+    assert "同一 MSKU 出现在多个店铺或国家类别" in script
+    assert 'note: "国家类别 + 店铺 + MSKU"' in script
     assert "renderCategoryDetail(payload);" in script
     assert ".label-hub-categories { display: grid; grid-template-columns: repeat(4" in label_styles
     assert "font-size: 9px" not in label_styles
     assert ".label-hub-filters .label-hub-filter-primary,\n  .label-hub-categories" in label_styles
     assert ".label-hub-overview-section .sales-role-section-head" in label_styles
+
+
+def test_label_hub_overview_cards_have_subtle_depth_and_hover_feedback():
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+
+    assert ".label-hub-overview-section .label-hub-population-card" in styles
+    assert ".label-hub-overview-section .label-hub-category-card:hover" in styles
+    assert "linear-gradient(145deg, #fff 0%, #fbfdff 100%)" in styles
+    assert "transform: translateY(-2px);" in styles
+    assert "@media (prefers-reduced-motion: reduce)" in styles
 
 
 def test_label_hub_frontend_renders_six_linked_panels_and_structured_profile():
@@ -113,6 +233,35 @@ def test_label_hub_country_profile_is_a_separate_lazy_drawer_column():
     assert "label-hub-country-role-grid" in styles
 
 
+def test_label_hub_table_uses_explicit_profile_and_copy_actions():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+
+    assert "function renderMskuCell(params)" in script
+    assert 'data-copy-msku="' in script
+    assert '<svg class="label-hub-copy-icon"' in script
+    assert 'data-label-profile' in script
+    assert "function copyMsku(button, value)" in script
+    assert 'event.colDef.field === "label_summary"' in script
+    assert "openDrawer(event.data)" in script
+    assert "onRowClicked:" not in script
+    assert ".label-hub-msku-copy" in styles
+    assert "user-select: text" in styles
+    assert "#labelHubTable .ag-row:hover .label-hub-msku-copy" in styles
+    assert "#labelHubTable .label-hub-msku-copy:hover" in styles
+    assert "pointer-events: none" in styles
+
+
+def test_label_hub_copy_releases_mouse_focus_after_click():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+    copy_click = script[
+        script.index('var copyButton = target && target.closest("[data-copy-msku]");'):
+        script.index("if (!event.data || !event.colDef) return;", script.index('var copyButton = target && target.closest("[data-copy-msku]");'))
+    ]
+
+    assert "copyButton.blur();" in copy_click
+
+
 def test_label_hub_country_profile_uses_compact_full_height_table():
     script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
     styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
@@ -120,7 +269,8 @@ def test_label_hub_country_profile_uses_compact_full_height_table():
     assert "<small>取经营窗口最后一天</small>" not in script
     assert "countryProfileMetricRow('TACOS', tacos)" in script
     assert ".label-hub-country-name { display: grid; justify-items: center;" in styles
-    assert "<tr><td class=\"label-hub-country-identity\">" in script
+    assert "<tr class=\"label-hub-country-profile-row" in script
+    assert "<td class=\"label-hub-country-identity\">" in script
     assert ".label-hub-country-identity { display: table-cell; }" in styles
     assert ".label-hub-country-profile-table tbody td.label-hub-country-identity { vertical-align: middle; }" in styles
     assert "String(price.currency || \"\") + formatNumber(price.value)" not in script
@@ -169,8 +319,8 @@ def test_change_drawer_identifies_each_country_store_msku_business_unit():
     assert 'row.country_category' in script
     assert 'row.store' in script
     assert '<th>国家类别</th><th>店铺</th><th>MSKU</th>' in script
-    assert '个经营单元' in script
-    assert '变化经营单元明细' in script
+    assert '条记录' in script
+    assert '变化记录' in script
     assert '今日经营分层' in script
     assert '上次组合条件' in script
     assert 'previous_combination_conditions' in script
@@ -183,10 +333,14 @@ def test_business_unit_aggregations_are_not_labeled_as_unique_msku_counts():
     template = (ROOT / "app" / "templates" / "label_hub.html").read_text(encoding="utf-8")
     script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
 
-    assert "这批经营单元在其他分类中的表现" in template
-    assert ">经营单元数</button>" in template
-    assert "分析口径 \" + formatNumber(panel.denominator) + \" 个经营单元" in script
-    assert '<span>经营单元数</span>' in script
+    assert "这批店铺商品记录在其他分类中的表现" in template
+    assert ">记录数</button>" in template
+    assert "分析范围 \" + formatNumber(panel.denominator) + \" 条记录" in script
+    assert '<span>记录数</span>' in script
+    assert "经营单元" not in template
+    assert "经营单元" not in script
+    assert "MSKU明细" not in template
+    assert "MSKU明细" not in script
 
 
 def test_remote_breakdown_cards_keep_independent_label_periods_in_url_state():
@@ -312,7 +466,7 @@ def test_remote_breakdown_nodes_have_enough_distinct_colors_for_long_status_list
     assert len(colors) >= 12
     assert len(set(colors)) == len(colors)
     assert "remoteBucketColor(panel, bucket)" in script
-    assert "?v=20260717" in template
+    assert "?v=20260723copyblur1" in template
 
 
 def test_label_hub_issue_overview_shows_selected_group_problem_counts():
@@ -329,15 +483,24 @@ def test_label_hub_issue_overview_shows_selected_group_problem_counts():
     assert "payload.issue_counts" in script
     for key in ("problem_role", "zero_sales", "negative_profit", "missing_metrics", "conflict"):
         assert f'"{key}"' in script
+    assert re.search(r'\{\s*key:\s*"problem_role".*?local:\s*false', script)
     assert "占当前群体" in script
     assert 'data-problem="' in script
+    diagnosis_handler = re.search(
+        r'elements\.labelHubDiagnosis\.addEventListener\("click".*?\n\s*\}\);',
+        script,
+        re.S,
+    )
+    assert diagnosis_handler
+    assert 'detailState.problems = state.problem === "all" ? [] : [state.problem]' in diagnosis_handler.group(0)
+    assert 'detailState.problem_mode = "any"' in diagnosis_handler.group(0)
 
 
 def test_label_hub_explains_primary_label_priority_for_aggregated_msku():
     script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
 
     assert "aggregation_priority_labels" in script
-    assert "同一经营单元按业务优先级只保留一个主标签" in script
+    assert "同一国家类别 + 店铺 + MSKU 组合按业务优先级只保留一个主标签" in script
     assert "主标签优先级" in script
 
 
@@ -463,7 +626,7 @@ def test_current_category_detail_uses_period_scoped_distribution():
     assert "distributionById" in script
     assert 'cache: "no-store"' in common
     assert "js/common.js') }}?v=20260715cache2" in base
-    assert "js/label_hub.js') }}?v=20260717labelloading1" in template
+    assert "js/label_hub.js') }}?v=20260723copyblur1" in template
 
 
 def test_country_detail_overview_matches_label_hub_information_structure():
@@ -492,8 +655,46 @@ def test_country_profile_drawer_uses_compact_grouped_table_layout():
     assert "label-hub-country-role-grid" in styles
 
 
+def test_country_detail_profile_keeps_comparison_and_prioritizes_clicked_country():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+
+    assert "function prioritizeCountryProfileCountries(countries, currentCountry)" in script
+    assert "prioritizeCountryProfileCountries(profile.countries || [], row.country)" in script
+    assert '" is-current-country"' in script
+    assert ".label-hub-country-profile-table tbody tr.is-current-country td" in styles
+
+
 def test_sales_role_has_label_hub_return_link():
     script = (ROOT / "app" / "static" / "js" / "sales_role.js").read_text(encoding="utf-8")
 
     assert 'href = "/label-hub?" + params.toString();' in script
     assert '查看全部标签' in script
+
+
+def test_detail_advanced_filters_use_balanced_responsive_layout():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+
+    assert "grid-template-columns: repeat(5, minmax(0, 1fr));" in styles
+    assert "elements.labelHubRankingFilterHint.hidden = countryActive || !detailState.ranking_bands.length;" in script
+
+
+def test_identifier_input_has_expandable_batch_search_panel():
+    template = (ROOT / "app" / "templates" / "label_hub.html").read_text(encoding="utf-8")
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+
+    for element_id in (
+        "labelHubIdentifierExpand",
+        "labelHubIdentifierPopover",
+        "labelHubIdentifierBatchInput",
+        "labelHubIdentifierBatchClear",
+        "labelHubIdentifierBatchClose",
+        "labelHubIdentifierBatchSearch",
+    ):
+        assert f'id="{element_id}"' in template
+    assert "function openIdentifierPopover()" in script
+    assert "function closeIdentifierPopover(restoreFocus)" in script
+    assert "elements.labelHubIdentifierBatchSearch.addEventListener" in script
+    assert ".label-hub-identifier-popover" in styles

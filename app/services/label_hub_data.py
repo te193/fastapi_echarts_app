@@ -16,6 +16,8 @@ LABEL_FACT_TABLE = "dws_datasync.dws_标签表"
 REFUND_MSKU_PREFIX = "Amazon.Found."
 CACHE_SECONDS = 300
 EXCLUDED_ANALYSIS_PARENT_IDS = {4, 7, 13, 14}
+SALES_ROLE_PARENT_ID = 1
+PROBLEM_PRODUCT_CHILD_ID = 104
 
 REMOTE_PARENT_CHILD_PRIORITY = {
     1: [101, 102, 103, 104],
@@ -130,6 +132,48 @@ def _missing_metric_units(rows: list[dict[str, Any]]) -> set[tuple[str, str, str
     return all_units - matched_units
 
 
+def _public_business_row(row: dict[str, Any]) -> dict[str, Any]:
+    labels = [
+        {
+            "parent_id": int(item["detail"]["label_id"]),
+            "parent_label": item["detail"].get("label_name") or "",
+            "id": int(item["label_id"]),
+            "label": item["detail"].get("sub_label_name") or "",
+            "period": item.get("label_period") or "",
+        }
+        for item in sorted(
+            row.get("_label_facts") or [],
+            key=lambda item: (
+                int(item["detail"]["label_id"]),
+                int(item["label_id"]),
+                str(item.get("label_period") or ""),
+            ),
+        )
+        if int(item["detail"]["label_id"]) not in EXCLUDED_ANALYSIS_PARENT_IDS
+    ]
+    summary_groups: dict[tuple[int, int], dict[str, Any]] = {}
+    for item in labels:
+        group = summary_groups.setdefault(
+            (item["parent_id"], item["id"]),
+            {"parent_label": item["parent_label"], "label": item["label"], "periods": []},
+        )
+        if item["period"] and item["period"] not in group["periods"]:
+            group["periods"].append(item["period"])
+    label_summary = " / ".join(
+        f"{item['parent_label']}：{item['label']}"
+        + (f"（{'/'.join(sorted(item['periods'], key=_period_order))}）" if item["periods"] else "")
+        for item in summary_groups.values()
+    )
+    public = {key: value for key, value in row.items() if not key.startswith("_")}
+    metric_present = row.get("_metric_present", row.get("metric_present", True))
+    return {
+        **public,
+        "metric_present": bool(metric_present),
+        "labels": labels,
+        "label_summary": label_summary,
+    }
+
+
 class LabelHubDataService:
     """Read-only aggregation service for the dynamic label dashboard."""
 
@@ -190,7 +234,7 @@ class LabelHubDataService:
                     "mutual_exclusion": any("互斥" in str(item.get("mutual_exclusion") or "") for item in children),
                     "aggregation_priority_ids": priority_ids,
                     "aggregation_priority_labels": [child_labels[item] for item in priority_ids],
-                    "aggregation_rule": "同一经营单元命中多个子标签时，按业务优先级只保留一个主标签。",
+                    "aggregation_rule": "同一国家类别 + 店铺 + MSKU 组合命中多个子标签时，按业务优先级只保留一个主标签。",
                     "children": [
                         {
                             "id": int(item["sub_label_id"]),
@@ -357,6 +401,18 @@ class LabelHubDataService:
                 return by_parent_period.get(parent, {}).get(analysis_period, set())
             return by_parent.get(parent, set())
 
+        def preferred_remote_child(
+            by_parent: dict[int, set[int]],
+            by_parent_period: dict[int, dict[str, set[int]]],
+            parent: int,
+        ) -> int | None:
+            children = scoped_parent_children(by_parent, by_parent_period, parent)
+            if not children:
+                return None
+            priority = category_by_id.get(parent, {}).get("aggregation_priority_ids", [])
+            rank = {child_id: index for index, child_id in enumerate(priority)}
+            return min(children, key=lambda child_id: (rank.get(child_id, len(rank)), child_id))
+
         baseline_rows: list[dict[str, Any]] = []
         for key, label_facts in grouped.items():
             by_parent: dict[int, set[int]] = defaultdict(set)
@@ -374,6 +430,11 @@ class LabelHubDataService:
                 and any(len(children) > 1 for children in by_parent_period.get(category["id"], {}).values())
             }
             metric = metrics.get(key)
+            sales_role_label_id = preferred_remote_child(
+                by_parent,
+                by_parent_period,
+                SALES_ROLE_PARENT_ID,
+            )
             lifecycle_labels = [detail_by_id[child].get("sub_label_name") or "" for child in sorted(by_parent.get(2, set())) if child in detail_by_id]
             current_labels = [
                 detail_by_id[child].get("sub_label_name") or ""
@@ -390,6 +451,7 @@ class LabelHubDataService:
                     "_by_parent_period": by_parent_period,
                     "_metric": metric or {},
                     "_metric_present": metric is not None,
+                    "_sales_role_label_id": sales_role_label_id,
                     "conflict": bool(conflict_parents),
                     "conflict_parent_ids": sorted(conflict_parents),
                     "current_label": " / ".join(current_labels) or "未命中",
@@ -441,7 +503,7 @@ class LabelHubDataService:
                     issue_pairs.append(("zero_sales", "日销为 0"))
                 if (row.get("order_gross_profit") or 0) < 0:
                     issue_pairs.append(("negative_profit", "订单毛利为负"))
-                if row.get("sales_role_code") == "eliminate":
+                if row.get("_sales_role_label_id") == PROBLEM_PRODUCT_CHILD_ID:
                     issue_pairs.append(("problem_role", "问题产品"))
             row["issue_codes"] = [code for code, _ in issue_pairs]
             row["issue_labels"] = [label for _, label in issue_pairs]
@@ -566,7 +628,6 @@ class LabelHubDataService:
         pre_problem_rows = [row for row in baseline_rows if row_matches(row, include_problem=False)]
         pre_problem_units = {_business_unit_key(row) for row in pre_problem_rows}
         missing_metric_units = _missing_metric_units(pre_problem_rows)
-        preferred_roles = preferred_local_values(pre_problem_rows, "sales_role_code")
         preferred_daily_sales = preferred_local_values(pre_problem_rows, "daily_sales_band_code")
         profit_by_unit: dict[tuple[str, str, str], float] = defaultdict(float)
         for row in pre_problem_rows:
@@ -577,7 +638,11 @@ class LabelHubDataService:
             "missing_metrics": missing_metric_units if local_metrics_available else set(),
             "zero_sales": {unit for unit, value in preferred_daily_sales.items() if value == "zero"},
             "negative_profit": {unit for unit, value in profit_by_unit.items() if value < 0},
-            "problem_role": {unit for unit, value in preferred_roles.items() if value == "eliminate"},
+            "problem_role": {
+                _business_unit_key(row)
+                for row in pre_problem_rows
+                if row.get("_sales_role_label_id") == PROBLEM_PRODUCT_CHILD_ID
+            },
         }
         selected_problem_units = issue_units.get(problem, set())
         rows = [
@@ -713,7 +778,13 @@ class LabelHubDataService:
 
         diagnosis_items = [
             diagnosis_item("zero_sales", "日销为 0", "zero_sales", lambda row: row.get("daily_sales_band_code") == "zero", metric_denominator=True, available=local_metrics_available),
-            diagnosis_item("problem_role", "问题产品", "problem_role", lambda row: row.get("sales_role_code") == "eliminate", metric_denominator=True, available=local_metrics_available),
+            diagnosis_item(
+                "problem_role",
+                "问题产品",
+                "problem_role",
+                lambda row: row.get("_sales_role_label_id") == PROBLEM_PRODUCT_CHILD_ID,
+                metric_denominator=False,
+            ),
             diagnosis_item("negative_profit", "订单毛利为负", "negative_profit", lambda row: (row.get("order_gross_profit") or 0) < 0, metric_denominator=True, available=local_metrics_available),
             diagnosis_item("missing_metrics", "暂无经营数据", "missing_metrics", lambda row: not row["_metric_present"], metric_denominator=False, available=local_metrics_available),
             diagnosis_item("conflict", "标签互斥冲突", "conflict", lambda row: row["conflict"], metric_denominator=False),
@@ -756,34 +827,7 @@ class LabelHubDataService:
         total_pages = max(1, math.ceil(len(rows) / safe_page_size))
         safe_page = min(max(1, int(page or 1)), total_pages)
         start = (safe_page - 1) * safe_page_size
-        page_rows = []
-        for row in rows[start : start + safe_page_size]:
-            labels = [
-                {
-                    "parent_id": int(item["detail"]["label_id"]),
-                    "parent_label": item["detail"].get("label_name") or "",
-                    "id": int(item["label_id"]),
-                    "label": item["detail"].get("sub_label_name") or "",
-                    "period": item.get("label_period") or "",
-                }
-                for item in sorted(row["_label_facts"], key=lambda item: (int(item["detail"]["label_id"]), int(item["label_id"]), str(item.get("label_period") or "")))
-                if int(item["detail"]["label_id"]) not in EXCLUDED_ANALYSIS_PARENT_IDS
-            ]
-            summary_groups: dict[tuple[int, int], dict[str, Any]] = {}
-            for item in labels:
-                group = summary_groups.setdefault(
-                    (item["parent_id"], item["id"]),
-                    {"parent_label": item["parent_label"], "label": item["label"], "periods": []},
-                )
-                if item["period"] and item["period"] not in group["periods"]:
-                    group["periods"].append(item["period"])
-            label_summary = " / ".join(
-                f"{item['parent_label']}：{item['label']}"
-                + (f"（{'/'.join(sorted(item['periods'], key=_period_order))}）" if item["periods"] else "")
-                for item in summary_groups.values()
-            )
-            public = {key: value for key, value in row.items() if not key.startswith("_")}
-            page_rows.append({**public, "labels": labels, "label_summary": label_summary})
+        page_rows = [_public_business_row(row) for row in rows[start : start + safe_page_size]]
 
         scope = {
             "label_data_date": data_date,
@@ -955,7 +999,7 @@ class LabelHubDataService:
 
     def get_payload(self, **filters: Any) -> dict[str, Any]:
         meta = self.get_meta()
-        data_date = str(meta["default_data_date"])
+        data_date = str(filters.get("data_date") or meta["default_data_date"])
         metric_period = str(filters.get("metric_period") or "30d").lower()
         if metric_period not in METRIC_PERIODS:
             raise ValueError("metric_period 不存在")
@@ -990,9 +1034,20 @@ class LabelHubDataService:
             page_size=int(filters.get("page_size") or 20),
             sort_field=str(filters.get("sort_field") or "problem_priority"),
             sort_dir=str(filters.get("sort_dir") or "desc"),
+            include_internal=bool(filters.get("_include_internal")),
         )
         self._start_comparison_warmup(metric_period)
         return payload
+
+    def get_business_detail_base_rows(self, **filters: Any) -> dict[str, Any]:
+        """Return globally scoped business rows for the dedicated detail service."""
+        payload = self.get_payload(**filters, _include_internal=True)
+        metric_status = str(payload.get("scope", {}).get("local_metrics_status") or "unknown")
+        return {
+            "rows": [_public_business_row(row) for row in payload.pop("_comparison_rows", [])],
+            "metric_status": metric_status,
+            "warnings": [] if metric_status == "available" else ["本地经营指标暂不完整"],
+        }
 
     def get_msku_profile(self, **filters: Any) -> dict[str, Any]:
         data_date = str(self.get_meta()["default_data_date"])

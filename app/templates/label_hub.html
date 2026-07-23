@@ -37,44 +37,46 @@
     </div>
   </section>
 
-  <section class="sales-role-panel label-hub-section-panel label-hub-overview-section">
+  <nav id="labelHubSectionNav" class="label-hub-section-nav" aria-label="页面内容导航">
+    <a class="active" href="#labelHubCoverageSection" data-section-link="labelHubCoverageSection">标签覆盖</a>
+    <a href="#labelHubIssueSection" data-section-link="labelHubIssueSection">问题概览</a>
+    <a href="#labelHubLinkageSection" data-section-link="labelHubLinkageSection">多维联动</a>
+    <a href="#labelHubRelationSection" data-section-link="labelHubRelationSection">标签关系</a>
+    <a href="#labelHubDetailSection" data-section-link="labelHubDetailSection">经营明细</a>
+  </nav>
+
+  <div hidden aria-hidden="true">
+    <select id="labelHubTransitionPeriod" tabindex="-1"></select>
+    <select id="labelHubChangeType" tabindex="-1"><option value="all">全部变化</option><option value="added">新增</option><option value="removed">减少</option><option value="changed">标签变化</option><option value="unchanged">保持</option></select>
+  </div>
+
+  <section id="labelHubCoverageSection" class="sales-role-panel label-hub-section-panel label-hub-overview-section label-hub-anchor-section">
     <div class="sales-role-section-head">
       <div><p class="section-kicker">标签覆盖全景</p><h2>每个标签覆盖多少 MSKU</h2></div>
-      <p class="summary-hint">主数按 MSKU 去重；经营单元保留国家类别、店铺和 MSKU 的完整口径。</p>
+      <p class="summary-hint">主数按 MSKU 去重；店铺商品记录按国家类别和店铺展开。</p>
     </div>
     <div id="labelHubPopulationSummary" class="label-hub-population-summary" aria-live="polite"></div>
     <div id="labelHubCategories" class="label-hub-categories"></div>
     <div id="labelHubCategoryDetail" class="label-hub-category-detail" aria-live="polite"></div>
   </section>
 
-  <section class="sales-role-panel label-hub-section-panel label-hub-cohort label-hub-diagnosis-panel">
+  <section id="labelHubIssueSection" class="sales-role-panel label-hub-section-panel label-hub-cohort label-hub-diagnosis-panel label-hub-anchor-section">
     <div class="sales-role-section-head">
       <div><p class="section-kicker">群体问题</p><h2>选中标签群体的问题概览</h2></div>
-      <p class="summary-hint">统计当前标签条件内各类问题经营单元，点击问题项可直接筛选下方明细。</p>
+      <p class="summary-hint">统计当前标签条件内各类问题对应的店铺商品记录，点击问题项可直接筛选下方明细。</p>
     </div>
     <div id="labelHubDiagnosis" class="label-hub-diagnosis" aria-live="polite"></div>
   </section>
 
-  <section id="labelHubChangesPanel" class="sales-role-panel label-hub-changes-panel label-hub-section-panel" aria-labelledby="labelHubChangesTitle" hidden>
-    <div class="sales-role-section-head label-hub-change-head">
-      <div><p class="section-kicker">每日变化</p><h2 id="labelHubChangesTitle">今日标签变化</h2><p id="labelHubChangeScope" class="summary-hint">主看板已就绪，正在异步核对最近两次标签数据。</p></div>
-      <div class="label-hub-change-controls">
-        <label class="sales-role-field compact"><span>变化周期</span><select id="labelHubTransitionPeriod"></select></label>
-        <label class="sales-role-field compact"><span>变化类型</span><select id="labelHubChangeType"><option value="all">全部变化</option><option value="added">新增</option><option value="removed">减少</option><option value="changed">标签变化</option><option value="unchanged">保持</option></select></label>
-      </div>
-    </div>
-    <div id="labelHubChangeContent" class="label-hub-change-content" aria-live="polite"><div class="empty-state compact">正在加载变化数据…</div></div>
-  </section>
-
-  <section class="sales-role-panel label-hub-section-panel label-hub-breakdown-section">
+  <section id="labelHubLinkageSection" class="sales-role-panel label-hub-section-panel label-hub-breakdown-section label-hub-anchor-section">
     <div class="sales-role-section-head label-hub-analysis-head">
-        <div><p class="section-kicker">多维联动</p><h2>这批经营单元在其他分类中的表现</h2><p class="summary-hint">先看群体结构，再点击分类联动筛选下方矩阵与明细。</p></div>
+        <div><p class="section-kicker">多维联动</p><h2>这批店铺商品记录在其他分类中的表现</h2><p class="summary-hint">先看群体结构，再点击分类联动筛选下方矩阵与明细。</p></div>
       <div class="label-hub-analysis-actions">
         <div id="labelHubChangeBrief" class="label-hub-change-brief" aria-live="polite">
           <span>较上期变化</span><strong>正在核对最近两次标签数据…</strong>
         </div>
         <div id="labelHubMeasureTabs" class="label-hub-measure-tabs" role="group" aria-label="图表指标">
-          <button type="button" data-measure="msku_count" class="active">经营单元数</button>
+          <button type="button" data-measure="msku_count" class="active">记录数</button>
           <button type="button" data-measure="sales_amount">销售额</button>
           <button type="button" data-measure="order_gross_profit">毛利润</button>
         </div>
@@ -83,21 +85,24 @@
     <div id="labelHubBreakdowns" class="label-hub-breakdowns"></div>
   </section>
 
-  <div class="label-hub-insight-grid">
-    <section id="labelHubMatrixPanel" class="sales-role-panel label-hub-secondary-panel label-hub-matrix-panel">
+  <div id="labelHubRelationSection" class="label-hub-anchor-section">
+    <div class="label-hub-insight-grid">
+      <section id="labelHubMatrixPanel" class="sales-role-panel label-hub-secondary-panel label-hub-matrix-panel">
       <div class="sales-role-section-head">
         <div><p class="section-kicker">标签关系</p><h2>当前标签与对比标签共现</h2></div>
         <label class="sales-role-field compact"><span>对比大类</span><select id="labelHubCompare"></select></label>
       </div>
       <div id="labelHubMatrix" class="sales-role-matrix"></div>
-    </section>
+      </section>
+    </div>
   </div>
 
-  <section class="sales-role-panel detail-panel label-hub-secondary-panel label-hub-detail-panel">
+  <section id="labelHubDetailSection" class="sales-role-panel detail-panel label-hub-secondary-panel label-hub-detail-panel label-hub-anchor-section">
     <div class="sales-role-section-head">
-        <div><p class="section-kicker">问题队列</p><h2>经营单元明细与下钻</h2></div>
+        <div><p class="section-kicker">问题队列</p><h2>经营明细与问题定位</h2></div>
       <div class="label-hub-table-tools">
         <p id="labelHubTableSummary" class="summary-hint"></p>
+        <label class="page-size-control" for="labelHubDetailView"><span>维度</span><select id="labelHubDetailView"><option value="business_unit">MSKU维度</option><option value="country">国家明细</option></select></label>
         <label class="page-size-control label-hub-table-view-control" for="labelHubTableView">
           <span>字段</span>
           <select id="labelHubTableView" aria-label="明细字段视图">
@@ -114,6 +119,51 @@
             <option value="100">100 条</option>
           </select>
         </label>
+      </div>
+    </div>
+    <div class="label-hub-detail-workbench">
+      <div id="labelHubDetailToolbar" class="label-hub-detail-toolbar">
+        <div class="label-hub-detail-code-control">
+          <label class="label-hub-detail-code-field">
+            <span class="label-hub-detail-code-prefix">MSKU / SKU</span>
+            <input id="labelHubDetailIdentifiers" type="text" autocomplete="off" placeholder="输入 MSKU / SKU，支持空格、逗号分隔（最多 100 个）">
+          </label>
+          <button id="labelHubIdentifierExpand" class="label-hub-identifier-expand" type="button" aria-label="展开批量输入" aria-expanded="false" aria-controls="labelHubIdentifierPopover">
+            <img src="{{ url_for('static', path='img/ag-grid-menu.svg') }}" alt="" aria-hidden="true">
+          </button>
+          <div id="labelHubIdentifierPopover" class="label-hub-identifier-popover" role="dialog" aria-label="批量输入 MSKU 或 SKU" hidden>
+            <textarea id="labelHubIdentifierBatchInput" autocomplete="off" spellcheck="false" placeholder="精确搜索，一行一项，最多支持 100 个"></textarea>
+            <div class="label-hub-identifier-popover-actions">
+              <button id="labelHubIdentifierBatchClear" class="label-hub-identifier-popover-button" type="button">清空</button>
+              <span aria-hidden="true"></span>
+              <button id="labelHubIdentifierBatchClose" class="label-hub-identifier-popover-button" type="button">关闭</button>
+              <button id="labelHubIdentifierBatchSearch" class="label-hub-identifier-popover-button is-primary" type="button">搜索</button>
+            </div>
+          </div>
+        </div>
+        <label class="label-hub-detail-filter-control"><span>标签</span><select id="labelHubDetailLabels" multiple data-placeholder="全部标签" aria-label="明细标签多选"></select></label>
+        <label class="label-hub-detail-filter-control"><span>国家类别</span><select id="labelHubDetailCountryCategories" multiple data-placeholder="全部类别"></select></label>
+        <label class="label-hub-detail-filter-control"><span>店铺</span><select id="labelHubDetailStores" multiple data-placeholder="全部店铺"></select></label>
+        <label id="labelHubDetailCountriesField" class="label-hub-detail-filter-control"><span>国家</span><select id="labelHubDetailCountries" multiple data-placeholder="全部国家"></select><small id="labelHubCountryFilterHint">仅国家明细视图生效</small></label>
+        <button id="labelHubDetailMore" class="label-hub-detail-more" type="button" aria-expanded="false" aria-controls="labelHubDetailAdvanced">更多筛选 <span id="labelHubDetailMoreCount" hidden>0</span></button>
+        <button id="labelHubDetailApply" class="primary-button label-hub-detail-apply" type="button">应用筛选</button>
+        <button id="labelHubDetailClear" class="text-button label-hub-detail-clear" type="button">重置</button>
+      </div>
+      <div id="labelHubDetailAdvanced" class="label-hub-detail-advanced" hidden>
+        <label class="label-hub-detail-filter-control"><span>销售角色</span><select id="labelHubDetailSalesRoles" multiple data-placeholder="全部角色"><option value="star">明星产品</option><option value="potential">潜力产品</option><option value="incubation">孵化产品</option><option value="eliminate">问题产品</option><option value="missing">暂无数据</option></select></label>
+        <label class="label-hub-detail-filter-control"><span>销售趋势</span><select id="labelHubDetailSalesTrends" multiple data-placeholder="全部趋势"><option value="accelerating">明显增长</option><option value="growing">增长</option><option value="stable">稳定</option><option value="slowing">放缓</option><option value="declining">下滑</option><option value="stopped">停销</option><option value="missing">暂无数据</option></select></label>
+        <label class="label-hub-detail-filter-control"><span>日销段</span><select id="labelHubDetailDailyBands" multiple data-placeholder="全部日销段"><option value="zero">0</option><option value="lt1">小于 1</option><option value="1_5">1–5</option><option value="gt5">大于 5</option><option value="missing">暂无数据</option></select></label>
+        <label class="label-hub-detail-filter-control"><span>毛利段</span><select id="labelHubDetailMarginBands" multiple data-placeholder="全部毛利段"><option value="lt5">小于 5%</option><option value="5_10">5%–10%</option><option value="10_15">10%–15%</option><option value="15_25">15%–25%</option><option value="gt25">大于 25%</option><option value="missing">暂无数据</option></select></label>
+        <label id="labelHubDetailRankingField" class="label-hub-detail-filter-control"><span>排名</span><select id="labelHubDetailRankingBands" multiple data-placeholder="全部排名"><option value="top10">前10</option><option value="11_20">11–20</option><option value="21_50">21–50</option><option value="51_100">51–100</option><option value="gt100">100名后</option><option value="missing">暂无排名</option></select><small id="labelHubRankingFilterHint" hidden>仅国家明细视图生效</small></label>
+      </div>
+      <div hidden>
+        <select id="labelHubDetailProblems" multiple aria-label="问题筛选状态"><option value="problem_role">问题产品</option><option value="zero_sales">零销量</option><option value="negative_profit">负毛利</option><option value="low_margin">低毛利</option><option value="missing_metrics">指标缺失</option><option value="conflict">标签冲突</option><option value="site_status_abnormal">站点状态异常</option><option value="pricing_risk">定价风险</option><option value="cross_country_inconsistent">跨国标签不一致</option></select>
+        <select id="labelHubDetailProblemMode"><option value="any">满足任一</option><option value="all">满足全部</option></select>
+      </div>
+      <div id="labelHubDetailActiveFilters" class="label-hub-detail-active-filters">
+        <span class="label-hub-detail-active-label">已选条件</span>
+        <div id="labelHubDetailActiveFilterList" class="label-hub-detail-active-filter-list"><span class="label-hub-detail-empty-filter">暂无明细筛选</span></div>
+        <p id="labelHubIdentifierResolution" class="summary-hint" aria-live="polite"></p>
       </div>
     </div>
     <div id="labelHubTable" class="detail-table-wrap"></div>
@@ -148,5 +198,5 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', path='vendor/slim-select/slimselect.js') }}?v=4.0.5"></script>
-<script src="{{ url_for('static', path='js/label_hub.js') }}?v=20260717labelloading1changes5layeronly"></script>
+<script src="{{ url_for('static', path='js/label_hub.js') }}?v=20260723copyblur1"></script>
 {% endblock %}

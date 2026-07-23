@@ -76,6 +76,10 @@ def test_changes_reconcile_sets_sources_matrix_and_role_reason():
 
     assert result["summary"] == {"current": 2, "previous": 2, "added": 1, "removed": 1, "unchanged": 1, "changed": 1, "net": 0, "unique_msku_count": 3}
     assert result["summary"]["previous"] + result["summary"]["added"] - result["summary"]["removed"] == result["summary"]["current"]
+    assert result["combination_summary"]["previous"] == result["summary"]["previous"]
+    assert result["combination_summary"]["current"] == result["summary"]["current"]
+    assert result["combination_summary"]["net"] == result["summary"]["net"]
+    assert sum(item["count"] for item in result["combination_summary"]["reason_summary"]) == 3
     assert sum(item["count"] for item in result["transition_matrix"]["cells"]) == 4
     row_a = next(row for row in result["rows"] if row["msku"] == "A")
     assert row_a["change_type"] == "changed"

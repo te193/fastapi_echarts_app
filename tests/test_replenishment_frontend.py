@@ -19,8 +19,8 @@ def test_margin_price_assets_use_cache_busting_versions():
     base_template = (ROOT / "app" / "templates" / "base.html").read_text(encoding="utf-8")
     replenishment_template = (ROOT / "app" / "templates" / "replenishment.html").read_text(encoding="utf-8")
 
-    assert "styles.css') }}?v=20260721moq2" in base_template
-    assert "replenishment.js') }}?v=20260722moq3" in replenishment_template
+    assert "styles.css') }}?v=20260723replcopy1" in base_template
+    assert "replenishment.js') }}?v=20260723replcopyblur1" in replenishment_template
     assert "replenishment_tracking_summary.js') }}?v=20260720linkedfilters5" in replenishment_template
 
 
@@ -154,3 +154,29 @@ def test_replenishment_grid_displays_listing_tags_as_compact_text_column():
     assert 'width: 190' in script
     assert 'minWidth: 150' in script
     assert 'maxWidth: 260' in script
+
+
+def test_replenishment_msku_and_sku_have_row_hover_copy_actions():
+    script = (ROOT / "app" / "static" / "js" / "replenishment.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+
+    assert "function renderReplenishmentCodeCell(params)" in script
+    assert 'renderReplenishmentCopyButton("msku", msku)' in script
+    assert 'renderReplenishmentCopyButton("sku", sku)' in script
+    assert 'data-replenishment-copy="' in script
+    assert '<svg class="replenishment-copy-icon"' in script
+    assert 'var copyButton = event.target.closest("[data-replenishment-copy]");' in script
+    assert "copyReplenishmentCode(copyButton);" in script
+    assert ".replenishment-code-copy" in styles
+    assert "#replenishmentAgGrid .ag-row:hover .replenishment-code-copy" in styles
+    assert "pointer-events: none" in styles
+
+
+def test_replenishment_copy_releases_mouse_focus_after_click():
+    script = (ROOT / "app" / "static" / "js" / "replenishment.js").read_text(encoding="utf-8")
+    copy_click = script[
+        script.index('var copyButton = event.target.closest("[data-replenishment-copy]");'):
+        script.index('var button = event.target.closest("[data-country-detail]");')
+    ]
+
+    assert "copyButton.blur();" in copy_click

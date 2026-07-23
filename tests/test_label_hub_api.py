@@ -24,6 +24,15 @@ class FakeLabelHubService:
         return {"msku": "MSKU1"}
 
 
+class FakeLabelHubDetailService:
+    def __init__(self):
+        self.calls = []
+
+    def get_details(self, **kwargs):
+        self.calls.append(kwargs)
+        return {"rows": [], "total": 0}
+
+
 class FakeLabelHubChangeService:
     def __init__(self):
         self.calls = []
@@ -43,6 +52,77 @@ class FakeCountryProfileService:
 
 
 class LabelHubApiTests(unittest.TestCase):
+    def test_detail_payload_forwards_post_request_contract(self):
+        service = FakeLabelHubDetailService()
+        request = main.LabelHubDetailRequest(
+            detail_view="business_unit",
+            data_date="2026-07-13",
+            metric_period="30d",
+            country_category="Europe",
+            store="StoreA",
+            keyword="needle",
+            parent_label_id=1,
+            compare_parent_id=2,
+            conditions="1:101",
+            label_period="7d",
+            analysis_parent_ids=[2, 8],
+            analysis_periods=["7d", "30d"],
+            identifiers=["MSKU-1"],
+            country_categories=["Europe"],
+            stores=["StoreA"],
+            countries=["DE"],
+            sales_roles=["star"],
+            sales_trends=["growing"],
+            daily_sales_bands=["gt5"],
+            margin_bands=["gt25"],
+            ranking_bands=["11_20"],
+            problems=["conflict"],
+            detail_conditions="2:201",
+            problem_mode="all",
+            page=2,
+            page_size=50,
+            sort_field="msku",
+            sort_dir="asc",
+        )
+
+        with patch("app.main.label_hub_detail_service", service):
+            payload = main.api_label_hub_details(request)
+
+        self.assertEqual({"rows": [], "total": 0}, payload)
+        self.assertEqual(["MSKU-1"], service.calls[0]["identifiers"])
+        self.assertEqual([2, 8], service.calls[0]["analysis_parent_ids"])
+        self.assertEqual("2:201", service.calls[0]["detail_conditions"])
+        self.assertEqual(["11_20"], service.calls[0]["ranking_bands"])
+        self.assertEqual(50, service.calls[0]["page_size"])
+
+    def test_detail_payload_maps_value_error_to_400_and_unexpected_failure_to_503(self):
+        class FailingService:
+            def __init__(self, error):
+                self.error = error
+
+            def get_details(self, **kwargs):
+                raise self.error
+
+        request = main.LabelHubDetailRequest()
+        for error, expected_status in ((ValueError("bad input"), 400), (RuntimeError("offline"), 503)):
+            with self.subTest(expected_status=expected_status):
+                with patch("app.main.label_hub_detail_service", FailingService(error)), self.assertRaises(HTTPException) as ctx:
+                    main.api_label_hub_details(request)
+                self.assertEqual(expected_status, ctx.exception.status_code)
+                if expected_status == 503:
+                    self.assertEqual("标签明细数据暂不可用，请稍后重试", ctx.exception.detail)
+                    self.assertNotIn("offline", ctx.exception.detail)
+
+    def test_detail_http_validation_rejects_non_positive_page_and_invalid_sort(self):
+        client = TestClient(main.app)
+
+        invalid_page = client.post("/api/label-hub/details", json={"page": 0})
+        invalid_sort = client.post("/api/label-hub/details", json={"sort_field": "not_a_column"})
+
+        self.assertEqual(422, invalid_page.status_code)
+        self.assertEqual(400, invalid_sort.status_code)
+        self.assertIn("排序字段", invalid_sort.json()["detail"])
+
     def test_label_hub_page_route_exists(self):
         response = TestClient(main.app).get("/label-hub")
 
@@ -50,6 +130,9 @@ class LabelHubApiTests(unittest.TestCase):
         self.assertIn('main class="main-content page-loading"', response.text)
         self.assertIn('aria-busy="true"', response.text)
         self.assertIn("标签看板", response.text)
+        self.assertIn('id="labelHubSectionNav"', response.text)
+        self.assertNotIn('id="labelHubHighlightsSection"', response.text)
+        self.assertNotIn("当前组合变化</h2>", response.text)
 
     def test_country_label_hub_page_route_exists(self):
         response = TestClient(main.app).get("/country-label-hub")
