@@ -407,6 +407,32 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("greatest(coalesce(ks.r_7d_salable_days, 0), coalesce(fm.origin_r_7d_salable_days, 0))", sql)
         self.assertIn("greatest(coalesce(ks.r_3d_salable_days, 0), coalesce(fm.origin_r_3d_salable_days, 0))", sql)
 
+    def test_follow_result_displays_origin_salable_days_for_short_windows_only(self):
+        sql = replenishment_update.REPLENISHMENT_RESULT_SQL
+
+        self.assertIn(
+            "greatest(coalesce(ks.r_30d_salable_days, 0), coalesce(fm.origin_r_30d_salable_days, 0)) as result_r_30d_salable_days",
+            sql,
+        )
+        self.assertIn(
+            "greatest(coalesce(ks.r_14d_salable_days, 0), coalesce(fm.origin_r_14d_salable_days, 0)) as result_r_14d_salable_days",
+            sql,
+        )
+        self.assertIn(
+            "greatest(coalesce(ks.r_7d_salable_days, 0), coalesce(fm.origin_r_7d_salable_days, 0)) as result_r_7d_salable_days",
+            sql,
+        )
+        self.assertIn(
+            "greatest(coalesce(ks.r_3d_salable_days, 0), coalesce(fm.origin_r_3d_salable_days, 0)) as result_r_3d_salable_days",
+            sql,
+        )
+        self.assertIn("result_r_30d_salable_days as r_30d_salable_days", sql)
+        self.assertIn("result_r_14d_salable_days as r_14d_salable_days", sql)
+        self.assertIn("result_r_7d_salable_days as r_7d_salable_days", sql)
+        self.assertIn("result_r_3d_salable_days as r_3d_salable_days", sql)
+        self.assertIn("coalesce(ks.r_180d_salable_days, 0) as r_180d_salable_days", sql)
+        self.assertIn("coalesce(ks.r_90d_salable_days, 0) as r_90d_salable_days", sql)
+
     def test_follow_sales_affects_replenishment_qty_and_support_layer(self):
         sql = replenishment_update.REPLENISHMENT_RESULT_SQL
 
