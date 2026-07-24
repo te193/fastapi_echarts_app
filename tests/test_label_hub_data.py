@@ -1,10 +1,17 @@
 import sys
+import threading
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.services.label_hub_data import CACHE_SECONDS, LabelHubDataService, _missing_metric_units
+from app.services.label_hub_data import (
+    CACHE_SECONDS,
+    SOURCE_INITIAL_CONTENT_CHECK_DELAY_SECONDS,
+    LabelHubDataService,
+    _missing_metric_units,
+)
 
 
 DETAILS = [
@@ -117,6 +124,87 @@ class LabelHubDataTests(unittest.TestCase):
     def test_label_fact_and_metric_cache_keeps_five_minutes(self):
         self.assertEqual(300, CACHE_SECONDS)
 
+    def test_remote_invalidation_clears_label_caches_but_keeps_local_metrics(self):
+        service = LabelHubDataService()
+        service._meta_cache = {"default_data_date": "2026-07-21"}
+        service._meta_cache_at = object()
+        service._details_cache = (object(), [{"sub_label_id": 101}])
+        service._facts_cache["2026-07-21"] = (object(), [{"label_id": 101}])
+        service._metrics_cache[("2026-07-21", "30d")] = (object(), {"status": "available"})
+        service._payload_cache[("cached",)] = (object(), {"rows": []})
+        callback_calls = []
+        service.register_source_invalidation_callback(lambda: callback_calls.append(True))
+
+        service._invalidate_remote_caches()
+
+        self.assertIsNone(service._meta_cache)
+        self.assertIsNone(service._details_cache)
+        self.assertEqual({}, service._facts_cache)
+        self.assertEqual({}, service._payload_cache)
+        self.assertIn(("2026-07-21", "30d"), service._metrics_cache)
+        self.assertEqual([True], callback_calls)
+
+    def test_quick_fingerprint_change_invalidates_cache_in_background(self):
+        service = LabelHubDataService()
+        service._source_quick_fingerprint = ("old",)
+        service._source_content_fingerprint = ("old-content",)
+        service._payload_cache[("cached",)] = (object(), {"rows": []})
+        invalidated = threading.Event()
+        service.register_source_invalidation_callback(invalidated.set)
+        service._fetch_quick_source_fingerprint = lambda: ("new",)
+        service._fetch_content_source_fingerprint = lambda: ("new-content",)
+
+        service._schedule_source_validation()
+
+        self.assertTrue(invalidated.wait(1))
+        self.assertEqual({}, service._payload_cache)
+        self.assertEqual(("new",), service._source_quick_fingerprint)
+
+    def test_initial_source_validation_defers_the_deep_content_scan(self):
+        service = LabelHubDataService()
+        quick_finished = threading.Event()
+        content_calls = []
+        service._fetch_quick_source_fingerprint = lambda: quick_finished.set() or ("quick",)
+        service._fetch_content_source_fingerprint = lambda: content_calls.append(True) or ("content",)
+
+        service._schedule_source_validation()
+
+        self.assertTrue(quick_finished.wait(1))
+        self.assertEqual([], content_calls)
+
+    def test_source_validation_runs_deep_scan_after_initial_delay(self):
+        service = LabelHubDataService()
+        service._source_validation_started_at = datetime.now() - timedelta(
+            seconds=SOURCE_INITIAL_CONTENT_CHECK_DELAY_SECONDS + 1
+        )
+        content_finished = threading.Event()
+        service._fetch_quick_source_fingerprint = lambda: ("quick",)
+        service._fetch_content_source_fingerprint = lambda: content_finished.set() or ("content",)
+
+        service._schedule_source_validation()
+
+        self.assertTrue(content_finished.wait(1))
+        self.assertEqual(("content",), service._source_content_fingerprint)
+
+    def test_public_payload_reuses_the_same_filter_result(self):
+        service = LabelHubDataService()
+        build_calls = []
+        service.get_meta = lambda: {"default_data_date": "2026-07-16"}
+        service._cached_details = lambda: []
+        service._cached_facts = lambda data_date: []
+        service._cached_metrics = lambda data_date, period: {"status": "available", "window": {}, "metrics": {}}
+        service._start_comparison_warmup = lambda period: None
+        service.build_payload = lambda **kwargs: build_calls.append(kwargs) or {"build": len(build_calls)}
+
+        first = service.get_payload(data_date="2026-07-16", metric_period="30d", page=1, page_size=20)
+        second = service.get_payload(data_date="2026-07-16", metric_period="30d", page=1, page_size=20)
+        third = service.get_payload(data_date="2026-07-16", metric_period="30d", page=2, page_size=20)
+
+        self.assertIs(first, second)
+        self.assertEqual(1, first["build"])
+        self.assertEqual(2, third["build"])
+        self.assertEqual(2, len(build_calls))
+
     def test_payload_honors_non_empty_requested_data_date(self):
         service = LabelHubDataService()
         requested_dates = []
@@ -166,10 +254,8 @@ class LabelHubDataTests(unittest.TestCase):
                 lowered = self.sql.lower()
                 if "sub_label_id" in lowered and "order by label_id" in lowered:
                     return DETAILS
-                if "count(*) as fact_count" in lowered:
-                    return [{"label_id": 101, "fact_count": 2, "label_periods": "30d"}]
-                if "distinct country_category, store" in lowered:
-                    return [{"country_category": "欧洲站", "store": "StoreA"}]
+                if "select distinct data_date" in lowered:
+                    return [{"data_date": "2026-07-16"}]
                 return []
 
             def __enter__(self): return self
@@ -184,15 +270,32 @@ class LabelHubDataTests(unittest.TestCase):
         connection = Connection()
         service = LabelHubDataService.__new__(LabelHubDataService)
         service._source_connection = lambda: connection
+        service._facts_cache = {}
+        service._fetch_facts = lambda *args, **kwargs: [
+            {
+                "data_date": "2026-07-16",
+                "country_category": "欧洲站",
+                "store": "StoreA",
+                "msku": "A1",
+                "label_id": 101,
+                "label_period": "30d",
+            },
+            {
+                "data_date": "2026-07-16",
+                "country_category": "欧洲站",
+                "store": "StoreA",
+                "msku": "A2",
+                "label_id": 101,
+                "label_period": "30d",
+            },
+        ]
 
         _, stats, dates, filters = service._fetch_meta_bundle()
 
         self.assertEqual(["2026-07-16"], dates)
         self.assertEqual(2, stats[101]["fact_count"])
         self.assertEqual(["欧洲站"], filters["country_categories"])
-        scoped_queries = [item for item in connection.cursor_instance.executions if "count(*) as fact_count" in item[0].lower()]
-        self.assertEqual("2026-07-16", scoped_queries[0][1]["data_date"])
-        self.assertIn("data_date = %(data_date)s", scoped_queries[0][0])
+        self.assertIn("2026-07-16", service._facts_cache)
 
     def test_missing_metric_units_only_merge_rows_within_the_same_business_unit(self):
         rows = [
