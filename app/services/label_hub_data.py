@@ -15,6 +15,15 @@ LABEL_DETAIL_TABLE = "dws_datasync.dws_标签详情表"
 LABEL_FACT_TABLE = "dws_datasync.dws_标签表"
 REFUND_MSKU_PREFIX = "Amazon.Found."
 CACHE_SECONDS = 300
+# The source snapshots are date-keyed and only change during the daily refresh.
+# Keep them longer than the filter-result cache so ordinary navigation does not
+# repeatedly reconnect to the remote warehouse.
+SOURCE_CACHE_SECONDS = 1800
+SOURCE_QUICK_CHECK_SECONDS = 15
+SOURCE_CONTENT_CHECK_SECONDS = 300
+# The deep fingerprint scans both retained label snapshots.  Do not start that
+# scan while the first dashboard and comparison requests are still warming.
+SOURCE_INITIAL_CONTENT_CHECK_DELAY_SECONDS = 30
 EXCLUDED_ANALYSIS_PARENT_IDS = {4, 7, 13, 14}
 SALES_ROLE_PARENT_ID = 1
 PROBLEM_PRODUCT_CHILD_ID = 104
@@ -185,9 +194,152 @@ class LabelHubDataService:
         self._details_cache: tuple[datetime, list[dict[str, Any]]] | None = None
         self._facts_cache: dict[str, tuple[datetime, list[dict[str, Any]]]] = {}
         self._metrics_cache: dict[tuple[str, str], tuple[datetime, dict[str, Any]]] = {}
+        self._payload_cache: dict[tuple[Any, ...], tuple[datetime, dict[str, Any]]] = {}
+        self._payload_cache_lock = threading.Lock()
         self._comparison_dates: list[str] = []
         self._comparison_warm_lock = threading.Lock()
         self._comparison_warm_events: dict[tuple[str, str], threading.Event] = {}
+        self._source_state_lock = threading.Lock()
+        self._source_validation_running = False
+        self._source_quick_checked_at: datetime | None = None
+        self._source_content_checked_at: datetime | None = None
+        self._source_quick_fingerprint: tuple[Any, ...] | None = None
+        self._source_content_fingerprint: tuple[Any, ...] | None = None
+        self._source_validation_started_at = datetime.now()
+        self._source_generation = 0
+        self._source_invalidation_callbacks: list[Callable[[], None]] = []
+
+    @staticmethod
+    def _payload_cache_key(data_date: str, metric_period: str, filters: dict[str, Any]) -> tuple[Any, ...]:
+        """Build a stable key for the public dashboard response."""
+        keys = (
+            "country_category", "store", "keyword", "parent_label_id", "compare_parent_id",
+            "analysis_parent_ids", "analysis_periods", "conditions", "label_period",
+            "sales_roles", "sales_trends", "daily_sales_bands", "margin_bands", "problem",
+            "page", "page_size", "sort_field", "sort_dir",
+        )
+        return (data_date, metric_period, *(str(filters.get(key) or "") for key in keys))
+
+    def _get_cached_payload(self, key: tuple[Any, ...]) -> dict[str, Any] | None:
+        now = datetime.now()
+        with self._payload_cache_lock:
+            cached = self._payload_cache.get(key)
+            if cached and (now - cached[0]).total_seconds() < CACHE_SECONDS:
+                return cached[1]
+            if cached:
+                self._payload_cache.pop(key, None)
+        return None
+
+    def _cache_payload(self, key: tuple[Any, ...], payload: dict[str, Any]) -> None:
+        with self._payload_cache_lock:
+            self._payload_cache[key] = (datetime.now(), payload)
+            if len(self._payload_cache) > 64:
+                oldest_key = min(self._payload_cache, key=lambda item: self._payload_cache[item][0])
+                self._payload_cache.pop(oldest_key, None)
+
+    def register_source_invalidation_callback(self, callback: Callable[[], None]) -> None:
+        self._source_invalidation_callbacks.append(callback)
+
+    def _invalidate_remote_caches(self) -> None:
+        self._meta_cache = None
+        self._meta_cache_at = None
+        self._details_cache = None
+        self._facts_cache.clear()
+        self._comparison_dates = []
+        with self._payload_cache_lock:
+            self._payload_cache.clear()
+        with self._source_state_lock:
+            self._source_generation += 1
+        for callback in tuple(self._source_invalidation_callbacks):
+            try:
+                callback()
+            except Exception:
+                # A secondary view must not prevent the shared cache from refreshing.
+                continue
+
+    def _schedule_source_validation(self) -> None:
+        now = datetime.now()
+        with self._source_state_lock:
+            if self._source_validation_running:
+                return
+            if (
+                self._source_quick_checked_at
+                and (now - self._source_quick_checked_at).total_seconds() < SOURCE_QUICK_CHECK_SECONDS
+            ):
+                return
+            self._source_validation_running = True
+
+        def validate() -> None:
+            try:
+                quick_fingerprint = self._fetch_quick_source_fingerprint()
+                quick_changed = False
+                run_content_check = False
+                with self._source_state_lock:
+                    quick_changed = (
+                        self._source_quick_fingerprint is not None
+                        and self._source_quick_fingerprint != quick_fingerprint
+                    )
+                    self._source_quick_fingerprint = quick_fingerprint
+                    self._source_quick_checked_at = datetime.now()
+                    initial_delay_elapsed = (
+                        datetime.now() - self._source_validation_started_at
+                    ).total_seconds() >= SOURCE_INITIAL_CONTENT_CHECK_DELAY_SECONDS
+                    run_content_check = (
+                        quick_changed
+                        or (
+                            initial_delay_elapsed
+                            and self._source_content_checked_at is None
+                        )
+                        or (
+                            self._source_content_checked_at is not None
+                            and (
+                                datetime.now() - self._source_content_checked_at
+                            ).total_seconds() >= SOURCE_CONTENT_CHECK_SECONDS
+                        )
+                    )
+                    if quick_changed:
+                        self._source_content_fingerprint = None
+                if quick_changed:
+                    self._invalidate_remote_caches()
+
+                if run_content_check:
+                    content_fingerprint = self._fetch_content_source_fingerprint()
+                    content_changed = False
+                    with self._source_state_lock:
+                        content_changed = (
+                            self._source_content_fingerprint is not None
+                            and self._source_content_fingerprint != content_fingerprint
+                        )
+                        self._source_content_fingerprint = content_fingerprint
+                        self._source_content_checked_at = datetime.now()
+                    if content_changed:
+                        self._invalidate_remote_caches()
+            except Exception:
+                # Validation is advisory. A temporary fingerprint failure must not
+                # turn a valid cached dashboard into an error page.
+                with self._source_state_lock:
+                    self._source_quick_checked_at = datetime.now()
+            finally:
+                with self._source_state_lock:
+                    self._source_validation_running = False
+
+        threading.Thread(
+            target=validate,
+            name="label-hub-source-validation",
+            daemon=True,
+        ).start()
+
+    def force_source_refresh(self) -> dict[str, Any]:
+        quick_fingerprint = self._fetch_quick_source_fingerprint()
+        self._invalidate_remote_caches()
+        with self._source_state_lock:
+            self._source_quick_fingerprint = quick_fingerprint
+            self._source_quick_checked_at = datetime.now()
+            # The next background validation rebuilds the deep fingerprint.
+            # A manual refresh must not synchronously scan the full remote table.
+            self._source_content_fingerprint = None
+            self._source_content_checked_at = None
+        return {"status": "refreshed", "generation": self._source_generation}
 
     def parse_conditions(self, value: str) -> dict[int, set[int]]:
         value = str(value or "").strip()
@@ -874,7 +1026,8 @@ class LabelHubDataService:
         return payload
 
     def get_meta(self) -> dict[str, Any]:
-        if self._meta_cache and self._meta_cache_at and (datetime.now() - self._meta_cache_at).total_seconds() < 300:
+        if self._meta_cache and self._meta_cache_at and (datetime.now() - self._meta_cache_at).total_seconds() < SOURCE_CACHE_SECONDS:
+            self._schedule_source_validation()
             return self._meta_cache
         details, stats, dates, source_filters = self._fetch_meta_bundle()
         self._details_cache = (datetime.now(), details)
@@ -912,6 +1065,7 @@ class LabelHubDataService:
             },
         }
         self._meta_cache, self._meta_cache_at = payload, datetime.now()
+        self._schedule_source_validation()
         return payload
 
     def _comparison_scope(self) -> dict[str, Any]:
@@ -933,14 +1087,14 @@ class LabelHubDataService:
 
     def _cached_facts(self, data_date: str) -> list[dict[str, Any]]:
         cached = self._facts_cache.get(data_date)
-        if cached and (datetime.now() - cached[0]).total_seconds() < CACHE_SECONDS:
+        if cached and (datetime.now() - cached[0]).total_seconds() < SOURCE_CACHE_SECONDS:
             return cached[1]
         facts = self._fetch_facts(data_date, excluded_parent_ids=EXCLUDED_ANALYSIS_PARENT_IDS)
         self._facts_cache[data_date] = (datetime.now(), facts)
         return facts
 
     def _cached_details(self) -> list[dict[str, Any]]:
-        if self._details_cache and (datetime.now() - self._details_cache[0]).total_seconds() < 300:
+        if self._details_cache and (datetime.now() - self._details_cache[0]).total_seconds() < SOURCE_CACHE_SECONDS:
             return self._details_cache[1]
         details = self._fetch_details()
         self._details_cache = (datetime.now(), details)
@@ -949,7 +1103,7 @@ class LabelHubDataService:
     def _cached_metrics(self, data_date: str, metric_period: str) -> dict[str, Any]:
         cache_key = (data_date, metric_period)
         cached = self._metrics_cache.get(cache_key)
-        if cached and (datetime.now() - cached[0]).total_seconds() < CACHE_SECONDS:
+        if cached and (datetime.now() - cached[0]).total_seconds() < SOURCE_CACHE_SECONDS:
             return cached[1]
         payload = self._local_metrics.fetch(data_date, metric_period)
         self._metrics_cache[cache_key] = (datetime.now(), payload)
@@ -967,8 +1121,8 @@ class LabelHubDataService:
         if (
             facts_cached
             and metrics_cached
-            and (now - facts_cached[0]).total_seconds() < CACHE_SECONDS
-            and (now - metrics_cached[0]).total_seconds() < CACHE_SECONDS
+            and (now - facts_cached[0]).total_seconds() < SOURCE_CACHE_SECONDS
+            and (now - metrics_cached[0]).total_seconds() < SOURCE_CACHE_SECONDS
         ):
             return
         with self._comparison_warm_lock:
@@ -1003,6 +1157,13 @@ class LabelHubDataService:
         metric_period = str(filters.get("metric_period") or "30d").lower()
         if metric_period not in METRIC_PERIODS:
             raise ValueError("metric_period 不存在")
+        cacheable = not bool(filters.get("_include_internal"))
+        cache_key = self._payload_cache_key(data_date, metric_period, filters)
+        if cacheable:
+            cached_payload = self._get_cached_payload(cache_key)
+            if cached_payload is not None:
+                self._start_comparison_warmup(metric_period)
+                return cached_payload
         country_category = str(filters.get("country_category") or "all")
         store = str(filters.get("store") or "all")
         keyword = str(filters.get("keyword") or "")
@@ -1036,6 +1197,8 @@ class LabelHubDataService:
             sort_dir=str(filters.get("sort_dir") or "desc"),
             include_internal=bool(filters.get("_include_internal")),
         )
+        if cacheable:
+            self._cache_payload(cache_key, payload)
         self._start_comparison_warmup(metric_period)
         return payload
 
@@ -1128,44 +1291,169 @@ class LabelHubDataService:
     def _source_connection(self):
         return self._dashboard.source_connect()
 
+    def _fetch_quick_source_fingerprint(self) -> tuple[Any, ...]:
+        """Read cheap table metadata plus the indexed latest label date.
+
+        ``created_time`` is intentionally excluded: it has no remote index and a
+        MAX scan currently costs several seconds. InnoDB UPDATE_TIME/table size
+        catches normal reloads immediately; the slower content checksum remains
+        a periodic fallback for rare same-size in-place edits.
+        """
+        fact_name = LABEL_FACT_TABLE.split(".", 1)[1]
+        detail_name = LABEL_DETAIL_TABLE.split(".", 1)[1]
+        with self._source_connection() as conn, conn.cursor() as cursor:
+            cursor.execute(
+                f"select max(data_date) as latest_date from {LABEL_FACT_TABLE}"
+            )
+            facts = cursor.fetchone() or {}
+            cursor.execute(
+                """
+                select table_name, table_rows, update_time, data_length, index_length
+                from information_schema.tables
+                where table_schema = 'dws_datasync'
+                  and table_name in (%s, %s)
+                order by table_name
+                """,
+                (fact_name, detail_name),
+            )
+            tables = cursor.fetchall()
+        table_markers = tuple(
+            (
+                str(row.get("TABLE_NAME") or row.get("table_name") or ""),
+                int(row.get("TABLE_ROWS") or row.get("table_rows") or 0),
+                str(row.get("UPDATE_TIME") or row.get("update_time") or ""),
+                int(row.get("DATA_LENGTH") or row.get("data_length") or 0),
+                int(row.get("INDEX_LENGTH") or row.get("index_length") or 0),
+            )
+            for row in tables
+        )
+        return (_date_text(facts.get("latest_date")), *table_markers)
+
+    def _fetch_content_source_fingerprint(self) -> tuple[Any, ...]:
+        """Hash relevant content server-side so in-place edits are detected."""
+        with self._source_connection() as conn, conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                select count(*) as row_count,
+                       coalesce(bit_xor(row_hash), 0) as xor_hash,
+                       coalesce(sum(row_hash), 0) as sum_hash
+                from (
+                    select crc32(concat_ws(
+                        '|',
+                        data_date,
+                        coalesce(country, ''),
+                        coalesce(country_category, ''),
+                        coalesce(store, ''),
+                        coalesce(msku, ''),
+                        coalesce(label_id, ''),
+                        coalesce(label_period, '')
+                    )) as row_hash
+                    from {LABEL_FACT_TABLE}
+                    where data_date in (
+                        select data_date
+                        from (
+                            select distinct data_date
+                            from {LABEL_FACT_TABLE}
+                            where msku not like %(refund_prefix)s
+                            order by data_date desc
+                            limit 2
+                        ) recent_dates
+                    )
+                      and msku not like %(refund_prefix)s
+                ) fact_rows
+                """,
+                {"refund_prefix": f"{REFUND_MSKU_PREFIX}%"},
+            )
+            facts = cursor.fetchone() or {}
+            cursor.execute(
+                f"""
+                select count(*) as row_count,
+                       coalesce(bit_xor(row_hash), 0) as xor_hash,
+                       coalesce(sum(row_hash), 0) as sum_hash
+                from (
+                    select crc32(concat_ws(
+                        '|',
+                        coalesce(label_id, ''),
+                        coalesce(label_name, ''),
+                        coalesce(sub_label_id, ''),
+                        coalesce(sub_label_name, ''),
+                        coalesce(tag_rule, ''),
+                        coalesce(business_definition, ''),
+                        coalesce(business_owner, ''),
+                        coalesce(label_category, ''),
+                        coalesce(update_frequency, ''),
+                        coalesce(mutual_exclusion, ''),
+                        coalesce(status, ''),
+                        coalesce(tagging_method, '')
+                    )) as row_hash
+                    from {LABEL_DETAIL_TABLE}
+                    where sub_label_id is not null
+                ) detail_rows
+                """
+            )
+            details = cursor.fetchone() or {}
+        return (
+            int(facts.get("row_count") or 0),
+            str(facts.get("xor_hash") or "0"),
+            str(facts.get("sum_hash") or "0"),
+            int(details.get("row_count") or 0),
+            str(details.get("xor_hash") or "0"),
+            str(details.get("sum_hash") or "0"),
+        )
+
     def _fetch_meta_bundle(self):
         with self._source_connection() as conn, conn.cursor() as cursor:
             cursor.execute(f"select label_id, label_name, sub_label_id, sub_label_name, tag_rule, business_definition, business_owner, label_category, update_frequency, mutual_exclusion, status, tagging_method from {LABEL_DETAIL_TABLE} where sub_label_id is not null order by label_id, sub_label_id")
             details = cursor.fetchall()
-            cursor.execute(f"select distinct data_date from {LABEL_FACT_TABLE} where msku not like %(refund_prefix)s order by data_date desc limit 2", {"refund_prefix": f"{REFUND_MSKU_PREFIX}%"})
+            # data_date has a remote index. Keep this lookup index-only; applying
+            # an MSKU predicate here would force a large fact-table scan.
+            cursor.execute(f"select distinct data_date from {LABEL_FACT_TABLE} order by data_date desc limit 2")
             comparison_dates = [_date_text(row.get("data_date")) for row in cursor.fetchall()]
             comparison_dates = [item for item in comparison_dates if item]
-            if not comparison_dates:
-                cursor.execute(f"select max(data_date) as data_date from {LABEL_FACT_TABLE} where msku not like %(refund_prefix)s", {"refund_prefix": f"{REFUND_MSKU_PREFIX}%"})
-                latest_row = cursor.fetchone() or {}
-                latest_fallback = _date_text(latest_row.get("data_date"))
-                comparison_dates = [latest_fallback] if latest_fallback else []
-            self._comparison_dates = comparison_dates
-            latest_date = comparison_dates[0] if comparison_dates else ""
-            dates = [latest_date] if latest_date else []
-            stats = {}
-            if latest_date:
-                params = {"data_date": latest_date, "refund_prefix": f"{REFUND_MSKU_PREFIX}%"}
-                cursor.execute(f"select label_id, count(*) as fact_count, group_concat(distinct label_period order by label_period) as label_periods from {LABEL_FACT_TABLE} where data_date = %(data_date)s and msku not like %(refund_prefix)s group by label_id", params)
-                stats = {
-                    int(row["label_id"]): {
-                        "fact_count": row["fact_count"],
-                        "latest_date": latest_date,
-                        "periods": [item for item in str(row.get("label_periods") or "").split(",") if item],
-                    }
-                    for row in cursor.fetchall()
-                }
-            source_filters = {"country_categories": [], "stores": [], "stores_by_country": {}}
-            if dates:
-                params = {"data_date": dates[0], "refund_prefix": f"{REFUND_MSKU_PREFIX}%"}
-                cursor.execute(f"select distinct country_category, store from {LABEL_FACT_TABLE} where data_date = %(data_date)s and msku not like %(refund_prefix)s and country_category is not null and country_category != '' and store is not null and store != '' order by country_category, store", params)
-                pairs = cursor.fetchall()
-                source_filters["country_categories"] = sorted({row["country_category"] for row in pairs})
-                source_filters["stores"] = sorted({row["store"] for row in pairs})
-                stores_by_country: dict[str, set[str]] = defaultdict(set)
-                for row in pairs:
-                    stores_by_country[row["country_category"]].add(row["store"])
-                source_filters["stores_by_country"] = {country: sorted(stores) for country, stores in stores_by_country.items()}
+        self._comparison_dates = comparison_dates
+        latest_date = comparison_dates[0] if comparison_dates else ""
+        dates = [latest_date] if latest_date else []
+        facts = (
+            self._fetch_facts(latest_date, excluded_parent_ids=EXCLUDED_ANALYSIS_PARENT_IDS)
+            if latest_date
+            else []
+        )
+        if latest_date:
+            # The first dashboard request needs these same rows. Reusing them
+            # avoids separate GROUP BY and DISTINCT scans during cold startup.
+            self._facts_cache[latest_date] = (datetime.now(), facts)
+
+        stats_by_child: dict[int, dict[str, Any]] = {}
+        for row in facts:
+            child_id = int(row.get("label_id") or 0)
+            item = stats_by_child.setdefault(
+                child_id,
+                {"fact_count": 0, "latest_date": latest_date, "periods": set()},
+            )
+            item["fact_count"] += 1
+            if row.get("label_period"):
+                item["periods"].add(str(row["label_period"]))
+        stats = {
+            child_id: {**item, "periods": sorted(item["periods"], key=_period_order)}
+            for child_id, item in stats_by_child.items()
+        }
+
+        pairs = {
+            (str(row.get("country_category") or ""), str(row.get("store") or ""))
+            for row in facts
+            if row.get("country_category") and row.get("store")
+        }
+        stores_by_country: dict[str, set[str]] = defaultdict(set)
+        for country_category, store_name in pairs:
+            stores_by_country[country_category].add(store_name)
+        source_filters = {
+            "country_categories": sorted({item[0] for item in pairs}),
+            "stores": sorted({item[1] for item in pairs}),
+            "stores_by_country": {
+                country_category: sorted(stores)
+                for country_category, stores in stores_by_country.items()
+            },
+        }
         return details, stats, dates, source_filters
 
     def _fetch_details(self):

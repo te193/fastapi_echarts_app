@@ -423,6 +423,14 @@ def api_label_hub_meta() -> dict:
     return label_hub_service.get_meta()
 
 
+@app.post("/api/label-hub/refresh")
+def api_label_hub_refresh() -> dict:
+    try:
+        return label_hub_service.force_source_refresh()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="远端标签刷新失败，请稍后重试") from exc
+
+
 @app.get("/api/label-hub")
 def api_label_hub(
     data_date: str = "", country_category: str = "all", store: str = "all", keyword: str = "",
@@ -495,6 +503,7 @@ def api_label_hub_changes(
     sort_field: str = "change_type", sort_dir: str = "asc",
     layer_change_parent: int = 0, layer_change_bucket: str = "", layer_change_period: str = "all",
     layer_transition_from: str = "", layer_transition_to: str = "",
+    layer_transition_parent: int = 0, layer_transition_previous: str = "", layer_transition_current: str = "",
 ) -> dict:
     try:
         return label_hub_change_service.get_changes(
@@ -509,6 +518,9 @@ def api_label_hub_changes(
             layer_change_parent=layer_change_parent, layer_change_bucket=layer_change_bucket,
             layer_change_period=layer_change_period,
             layer_transition_from=layer_transition_from, layer_transition_to=layer_transition_to,
+            layer_transition_parent=layer_transition_parent,
+            layer_transition_previous=layer_transition_previous,
+            layer_transition_current=layer_transition_current,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

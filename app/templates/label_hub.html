@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}?v=20260724rulemetrics1">
 <link rel="stylesheet" href="{{ url_for('static', path='vendor/slim-select/slimselect.css') }}?v=4.0.5">
 {% endblock %}
 
@@ -198,5 +199,5 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', path='vendor/slim-select/slimselect.js') }}?v=4.0.5"></script>
-<script src="{{ url_for('static', path='js/label_hub.js') }}?v=20260723copyblur1"></script>
+<script src="{{ url_for('static', path='js/label_hub.js') }}?v=20260724speed1"></script>
 {% endblock %}

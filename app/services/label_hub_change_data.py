@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import math
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
@@ -35,6 +36,21 @@ REASON_LABELS = {
     "evidence_missing": "规则证据缺失",
     "evidence_mismatch": "本地重算与远端标签不一致",
 }
+RULE_METRIC_DEFINITIONS = {
+    "daily_sales": ("日销", "number"),
+    "tag_margin_rate": ("打标毛利率", "percent_value"),
+    "margin_rate": ("毛利率", "percent_value"),
+    "inventory_support_days": ("库存可支撑天数", "days"),
+    "period_sales_qty": ("周期销量", "number"),
+    "sales_qty": ("销量", "number"),
+    "sales_amount": ("打标销售额", "money"),
+    "tag_gross_profit": ("打标毛利润", "money"),
+    "return_rate": ("退货率", "percent_value"),
+    "natural_traffic_ratio": ("自然流量占比", "percent_value"),
+    "ad_traffic_ratio": ("广告流量占比", "percent_value"),
+    "tacos": ("TACOS", "percent_value"),
+    "days_since_launch": ("上架天数", "days"),
+}
 BusinessUnitKey = tuple[str, str, str]
 
 
@@ -61,7 +77,140 @@ class LabelHubChangeDataService:
         self._hub = label_hub_service
         self._result_cache: dict[tuple[Any, ...], tuple[datetime, dict[str, Any]]] = {}
         self._evidence_cache: dict[tuple[str, str, str], tuple[datetime, dict[tuple[str, str, str, str], dict[str, Any]]]] = {}
+        self._remote_evidence_cache: dict[tuple[str, str, int, str], tuple[datetime, dict[tuple[str, str, str, str], list[dict[str, Any]]]]] = {}
         self._base_day_cache: dict[tuple[str, str], tuple[datetime, dict[str, Any]]] = {}
+        self._hub.register_source_invalidation_callback(self._clear_remote_label_caches)
+
+    def _clear_remote_label_caches(self) -> None:
+        self._result_cache.clear()
+        self._base_day_cache.clear()
+        self._remote_evidence_cache.clear()
+
+    @staticmethod
+    def _decode_remote_evidence(value: Any) -> dict[str, Any]:
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, (bytes, bytearray)):
+            value = value.decode("utf-8", errors="replace")
+        if not value:
+            return {}
+        try:
+            decoded = json.loads(str(value))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return {}
+        return decoded if isinstance(decoded, dict) else {}
+
+    def _fetch_remote_evidence(
+        self,
+        current_date: str,
+        previous_date: str,
+        parent_id: int,
+        period: str,
+        units: set[BusinessUnitKey] | None = None,
+    ) -> dict[tuple[str, str, str, str], list[dict[str, Any]]]:
+        if not parent_id or units == set():
+            return {}
+        cache_key = (current_date, previous_date, parent_id, period)
+        if units is None:
+            cached = self._remote_evidence_cache.get(cache_key)
+            if cached and (datetime.now() - cached[0]).total_seconds() < CACHE_SECONDS:
+                return cached[1]
+
+        child_ids = sorted({
+            int(row.get("sub_label_id") or 0)
+            for row in self._hub._cached_details()
+            if int(row.get("label_id") or 0) == parent_id
+            and int(row.get("sub_label_id") or 0)
+        })
+        if not child_ids:
+            return {}
+
+        period_sql = ""
+        params: dict[str, Any] = {
+            "current_date": current_date,
+            "previous_date": previous_date,
+        }
+        child_placeholders = []
+        for index, child_id in enumerate(child_ids):
+            name = f"child_id_{index}"
+            child_placeholders.append(f"%({name})s")
+            params[name] = child_id
+        if period and period != "all":
+            period_sql = " and f.label_period = %(period)s"
+            params["period"] = period
+
+        unit_sql = ""
+        if units is not None:
+            unit_clauses = []
+            for index, (country_category, store, msku) in enumerate(sorted(units)):
+                unit_clauses.append(
+                    "("
+                    f"f.country_category = %(unit_cc_{index})s and "
+                    f"f.store = %(unit_store_{index})s and "
+                    f"f.msku = %(unit_msku_{index})s"
+                    ")"
+                )
+                params[f"unit_cc_{index}"] = country_category
+                params[f"unit_store_{index}"] = store
+                params[f"unit_msku_{index}"] = msku
+            unit_sql = " and (" + " or ".join(unit_clauses) + ")"
+
+        try:
+            with self._hub._source_connection() as conn, conn.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    select f.data_date, f.country_category, f.store, f.msku,
+                           f.label_id as sub_label_id, f.label_period, f.evidence_json
+                    from dws_datasync.dws_标签表 f
+                    where f.data_date in (%(current_date)s, %(previous_date)s)
+                      and f.label_id in ({", ".join(child_placeholders)})
+                      and f.msku not like 'Amazon.Found.%%'
+                      and f.evidence_json is not null
+                      {period_sql}
+                      {unit_sql}
+                    """,
+                    params,
+                )
+                rows = cursor.fetchall()
+        except Exception:
+            rows = []
+        result: dict[tuple[str, str, str, str], list[dict[str, Any]]] = defaultdict(list)
+        for source in rows:
+            row = dict(source)
+            row["evidence"] = self._decode_remote_evidence(row.get("evidence_json"))
+            result[
+                (
+                    str(row.get("data_date") or ""),
+                    str(row.get("country_category") or ""),
+                    str(row.get("store") or ""),
+                    str(row.get("msku") or ""),
+                )
+            ].append(row)
+        resolved = dict(result)
+        if units is None:
+            self._remote_evidence_cache[cache_key] = (datetime.now(), resolved)
+        return resolved
+
+    @staticmethod
+    def _select_remote_evidence(
+        evidence: dict[tuple[str, str, str, str], list[dict[str, Any]]],
+        data_date: str,
+        unit: BusinessUnitKey,
+        expected_sub_label_id: int | None,
+        period: str,
+    ) -> dict[str, Any]:
+        candidates = evidence.get((data_date, unit[0], unit[1], unit[2]), [])
+        if expected_sub_label_id:
+            exact = [row for row in candidates if int(row.get("sub_label_id") or 0) == expected_sub_label_id]
+            if exact:
+                candidates = exact
+        if period and period != "all":
+            exact_period = [row for row in candidates if str(row.get("label_period") or "") == period]
+            if exact_period:
+                candidates = exact_period
+        if not candidates:
+            return {}
+        return max(candidates, key=lambda row: (str(row.get("label_period") or ""), int(row.get("sub_label_id") or 0)))
 
     def _comparison(self) -> dict[str, Any]:
         return dict((self._hub.get_meta().get("comparison") or {}))
@@ -493,6 +642,35 @@ class LabelHubChangeDataService:
         )
         return code, summary
 
+    @staticmethod
+    def _remote_reason_evidence(value: dict[str, Any]) -> dict[str, Any]:
+        """Adapt remote evidence_json to the local sales-role reason schema."""
+        if not value:
+            return {}
+        payload = value.get("evidence")
+        if not isinstance(payload, dict):
+            return {}
+        metrics = payload.get("metrics")
+        if not isinstance(metrics, dict):
+            return {}
+
+        daily_sales = metrics.get("daily_sales")
+        margin_rate = metrics.get("tag_margin_rate")
+        if margin_rate is None:
+            margin_rate = metrics.get("margin_rate")
+        if daily_sales is None or margin_rate is None:
+            return {"evidence_status": "missing"}
+
+        margin_value = float(margin_rate)
+        if abs(margin_value) > 1:
+            margin_value /= 100
+        return {
+            "daily_sales": float(daily_sales),
+            "tag_gross_margin": margin_value,
+            "remote_sub_label_id": int(value.get("sub_label_id") or 0),
+            "evidence_status": "matched",
+        }
+
     def _sales_role_reasons(
         self,
         units: set[BusinessUnitKey],
@@ -506,9 +684,18 @@ class LabelHubChangeDataService:
         counts: Counter[str] = Counter()
         for unit in units:
             country, store, msku = unit
-            old = evidence.get((previous_date, country, store, msku), {}) if unit in previous_grouped else {}
-            new = evidence.get((current_date, country, store, msku), {}) if unit in current_grouped else {}
-            chosen = self._reason_for_pair(old, new)
+            had_previous_unit = unit in previous_grouped
+            has_current_unit = unit in current_grouped
+            old = evidence.get((previous_date, country, store, msku), {}) if had_previous_unit else {}
+            new = evidence.get((current_date, country, store, msku), {}) if has_current_unit else {}
+            if not had_previous_unit:
+                chosen = ("business_unit_added", REASON_LABELS["business_unit_added"])
+            elif not has_current_unit:
+                chosen = ("business_unit_removed", REASON_LABELS["business_unit_removed"])
+            elif not old or not new:
+                chosen = ("evidence_missing", REASON_LABELS["evidence_missing"])
+            else:
+                chosen = self._reason_for_pair(old, new)
             by_unit[unit] = {"code": chosen[0], "summary": chosen[1]}
             counts[chosen[0]] += 1
         distribution = [{"key": code, "label": label, "count": counts.get(code, 0)} for code, label in REASON_LABELS.items()]
@@ -554,8 +741,12 @@ class LabelHubChangeDataService:
         layer_parent = int(filters.get("layer_change_parent") or 0)
         layer_bucket = str(filters.get("layer_change_bucket") or "")
         layer_period = str(filters.get("layer_change_period") or "all")
+        reason_parent = layer_parent or int(filters.get("parent_label_id") or 0)
         layer_transition_from = str(filters.get("layer_transition_from") or "")
         layer_transition_to = str(filters.get("layer_transition_to") or "")
+        layer_transition_parent = int(filters.get("layer_transition_parent") or 0)
+        layer_transition_previous = str(filters.get("layer_transition_previous") or "")
+        layer_transition_current = str(filters.get("layer_transition_current") or "")
         if layer_parent and layer_bucket:
             # Keep every other selected label/local/problem condition in scope.  The
             # canonical bucket is only the clicked layer's membership, not a
@@ -614,7 +805,26 @@ class LabelHubChangeDataService:
         changed = {unit for unit in kept if current_signatures.get(unit, {}) != previous_signatures.get(unit, {})}
         all_units = current_set | previous_set
         evidence = self._fetch_evidence(comparison["current_date"], comparison["previous_date"], transition_period)
-        reason_by_unit, reason_distribution = self._sales_role_reasons(changed | added | removed, previous_grouped, current_grouped, evidence, comparison["previous_date"], comparison["current_date"])
+        reason_period = layer_period if layer_parent else transition_period
+        reason_units = (added | removed) if layer_parent and layer_bucket else (changed | added | removed)
+        remote_evidence = self._fetch_remote_evidence(
+            comparison["current_date"],
+            comparison["previous_date"],
+            reason_parent,
+            reason_period,
+            reason_units,
+        )
+        if reason_parent == 1:
+            reason_by_unit, reason_distribution = self._sales_role_reasons(
+                reason_units,
+                previous_grouped,
+                current_grouped,
+                evidence,
+                comparison["previous_date"],
+                comparison["current_date"],
+            )
+        else:
+            reason_by_unit, reason_distribution = {}, []
 
         def label_for(mapping: dict[BusinessUnitKey, int], unit: BusinessUnitKey) -> str:
             return child_labels.get(mapping.get(unit), "未命中")
@@ -704,7 +914,89 @@ class LabelHubChangeDataService:
                 "data_status": "本地指标可用" if measured else "暂无经营数据",
             }
 
+        def evidence_snapshot(value: dict[str, Any]) -> dict[str, Any]:
+            if not value:
+                return {}
+            return {
+                "daily_sales": round(float(value.get("daily_sales") or 0), 4),
+                "margin_rate": round(float(value.get("tag_gross_margin") or 0), 4),
+                "sales_qty": round(float(value.get("sales_qty") or 0), 2),
+                "sales_amount": round(float(value.get("tag_sales_amount") or 0), 2),
+                "gross_profit": round(float(value.get("tag_gross_profit") or 0), 2),
+                "remote_sub_label_id": int(value.get("remote_sub_label_id") or 0),
+                "computed_sub_label_id": int(value.get("computed_sub_label_id") or 0),
+                "status": str(value.get("evidence_status") or "missing"),
+            }
+
+        def remote_evidence_snapshot(value: dict[str, Any]) -> dict[str, Any]:
+            payload = value.get("evidence") if value else {}
+            if not isinstance(payload, dict):
+                return {}
+            metrics = payload.get("metrics") or {}
+            matched_rule = payload.get("matched_rule") or {}
+            if not isinstance(metrics, dict):
+                metrics = {}
+            if not isinstance(matched_rule, dict):
+                matched_rule = {}
+            rule_metrics = []
+            for key, raw_value in metrics.items():
+                if raw_value is None:
+                    continue
+                label, value_type = RULE_METRIC_DEFINITIONS.get(
+                    str(key),
+                    (str(key).replace("_", " "), "number"),
+                )
+                rule_metrics.append({
+                    "key": str(key),
+                    "label": label,
+                    "value": raw_value,
+                    "value_type": value_type,
+                    "matched_rule": str(matched_rule.get(key) or ""),
+                })
+            return {
+                "rule_metrics": rule_metrics,
+                "rule_version": str(payload.get("rule_version") or ""),
+                "schema_version": str(payload.get("schema_version") or ""),
+                "label_period": str(value.get("label_period") or ""),
+                "status": "matched" if rule_metrics else "missing",
+            }
+
+        def rule_metric_changes(previous_value: dict[str, Any], current_value: dict[str, Any]) -> list[dict[str, Any]]:
+            previous_by_key = {
+                item["key"]: item for item in previous_value.get("rule_metrics", [])
+            }
+            current_by_key = {
+                item["key"]: item for item in current_value.get("rule_metrics", [])
+            }
+            result = []
+            for metric_key in list(current_by_key) + [key for key in previous_by_key if key not in current_by_key]:
+                old = previous_by_key.get(metric_key, {})
+                new = current_by_key.get(metric_key, {})
+                result.append({
+                    "key": metric_key,
+                    "label": new.get("label") or old.get("label") or metric_key,
+                    "previous": old.get("value"),
+                    "current": new.get("value"),
+                    "value_type": new.get("value_type") or old.get("value_type") or "number",
+                    "previous_rule": old.get("matched_rule") or "",
+                    "current_rule": new.get("matched_rule") or "",
+                })
+            return result
+
+        def evidence_state(previous_value: dict[str, Any], current_value: dict[str, Any]) -> str:
+            if not previous_value or not current_value:
+                return "pending"
+            if reason_parent != 1:
+                return "confirmed"
+            statuses = {str(previous_value.get("evidence_status") or "missing"), str(current_value.get("evidence_status") or "missing")}
+            if statuses == {"matched"}:
+                return "confirmed"
+            if "mismatch" in statuses:
+                return "mismatch"
+            return "pending"
+
         rows = []
+        generic_reason_counts: Counter[str] = Counter()
         for unit in all_units:
             country_category, store, msku = unit
             relation = "added" if unit in added else ("removed" if unit in removed else ("changed" if unit in changed else "unchanged"))
@@ -718,7 +1010,72 @@ class LabelHubChangeDataService:
             else:
                 fact_status = "标签事实可比"
             reason = reason_by_unit.get(unit, {"code": "", "summary": ""})
+            previous_evidence_raw = evidence.get((comparison["previous_date"], country_category, store, msku), {})
+            current_evidence_raw = evidence.get((comparison["current_date"], country_category, store, msku), {})
+            previous_remote_raw = self._select_remote_evidence(
+                remote_evidence,
+                comparison["previous_date"],
+                unit,
+                previous_signatures.get(unit, {}).get(reason_parent),
+                reason_period,
+            )
+            current_remote_raw = self._select_remote_evidence(
+                remote_evidence,
+                comparison["current_date"],
+                unit,
+                current_signatures.get(unit, {}).get(reason_parent),
+                reason_period,
+            )
+            evidence_state_previous = previous_evidence_raw
+            evidence_state_current = current_evidence_raw
+            if reason_parent == 1 and previous_remote_raw and current_remote_raw:
+                remote_reason_previous = self._remote_reason_evidence(previous_remote_raw)
+                remote_reason_current = self._remote_reason_evidence(current_remote_raw)
+                evidence_state_previous = remote_reason_previous
+                evidence_state_current = remote_reason_current
+                reason_code, reason_summary = self._reason_for_pair(
+                    remote_reason_previous,
+                    remote_reason_current,
+                )
+                reason = {"code": reason_code, "summary": reason_summary}
+            if reason_parent == 1 and (not previous_remote_raw or not current_remote_raw):
+                previous_rule_evidence = evidence_snapshot(previous_evidence_raw)
+                current_rule_evidence = evidence_snapshot(current_evidence_raw)
+            else:
+                previous_rule_evidence = remote_evidence_snapshot(previous_remote_raw)
+                current_rule_evidence = remote_evidence_snapshot(current_remote_raw)
+            metric_changes = rule_metric_changes(previous_rule_evidence, current_rule_evidence)
+            if reason_parent != 1:
+                if metric_changes:
+                    primary_metric = metric_changes[0]
+                    reason = {
+                        "code": "rule_metric_change",
+                        "summary": f"{primary_metric['label']}发生变化",
+                    }
+                    generic_reason_counts[str(primary_metric["label"])] += 1
+                elif not previous_remote_raw or not current_remote_raw:
+                    reason = {
+                        "code": "evidence_missing",
+                        "summary": "规则证据缺失，暂时只能确认标签事实变化",
+                    }
+                    generic_reason_counts["规则证据缺失"] += 1
             current_metrics = metric_snapshot(current_rows_for_unit)
+            previous_metrics = metric_snapshot(previous_rows_for_unit)
+            label_changes = [
+                {
+                    "parent_id": trigger_parent_id,
+                    "dimension": parent_labels.get(trigger_parent_id, str(trigger_parent_id)),
+                    "previous_label": child_labels.get(
+                        previous_signatures.get(unit, {}).get(trigger_parent_id),
+                        "未命中",
+                    ),
+                    "current_label": child_labels.get(
+                        current_signatures.get(unit, {}).get(trigger_parent_id),
+                        "未命中",
+                    ),
+                }
+                for trigger_parent_id in trigger_parent_ids
+            ]
             rows.append({
                 "business_unit_key": "|".join(unit),
                 "country_category": country_category,
@@ -733,29 +1090,132 @@ class LabelHubChangeDataService:
                 "change_type": relation,
                 "change_type_label": {"added": "新增", "removed": "减少", "changed": "标签变化", "unchanged": "保持"}[relation],
                 "trigger_dimensions": [parent_labels.get(item, str(item)) for item in trigger_parent_ids],
+                "label_changes": label_changes,
                 "previous_matched": unit in previous_set,
                 "current_matched": unit in current_set,
                 "business_unit_count": 1,
                 "previous_unit_scope": unit_scope(previous_rows_for_unit),
                 "current_unit_scope": unit_scope(current_rows_for_unit),
                 "fact_status": fact_status,
+                "previous_metric_profile": previous_metrics,
                 "metric_profile": current_metrics,
                 "sales_role_reason_code": reason["code"],
                 "sales_role_reason": reason["summary"],
+                "previous_evidence": previous_rule_evidence,
+                "current_evidence": current_rule_evidence,
+                "rule_metric_changes": metric_changes,
+                "evidence_state": evidence_state(
+                    evidence_state_previous if reason_parent == 1 else previous_remote_raw,
+                    evidence_state_current if reason_parent == 1 else current_remote_raw,
+                ),
             })
+
+        if reason_parent == 1:
+            refreshed_reason_counts = Counter(
+                str(row.get("sales_role_reason_code") or "")
+                for row in rows
+                if row.get("sales_role_reason_code")
+            )
+            reason_distribution = [
+                {"key": code, "label": label, "count": refreshed_reason_counts.get(code, 0)}
+                for code, label in REASON_LABELS.items()
+            ]
+        else:
+            reason_distribution = [
+                {
+                    "key": "evidence_missing" if label == "规则证据缺失" else "rule_metric_change",
+                    "label": label if label == "规则证据缺失" else f"{label}变化",
+                    "count": count,
+                }
+                for label, count in generic_reason_counts.most_common()
+            ]
 
         layer_transitions = {"entered": [], "left": []}
         if layer_parent and layer_bucket:
-            def transition_rows(relation: str) -> list[dict[str, Any]]:
-                counts = Counter(
-                    (row["previous_layer_label"], row["current_layer_label"])
-                    for row in rows
-                    if row["change_type"] == relation
-                )
-                return [
-                    {"previous_label": previous_label, "current_label": current_label, "count": count}
-                    for (previous_label, current_label), count in counts.most_common()
+            def display_change(row: dict[str, Any], relation: str) -> tuple[int, str, str, str]:
+                if row["previous_layer_label"] != row["current_layer_label"]:
+                    return (
+                        layer_parent_id,
+                        parent_labels.get(layer_parent_id, str(layer_parent_id)),
+                        row["previous_layer_label"],
+                        row["current_layer_label"],
+                    )
+                candidates = [
+                    item for item in row.get("label_changes", [])
+                    if int(item.get("parent_id") or 0) != layer_parent_id
                 ]
+                candidates.sort(
+                    key=lambda item: (
+                        0 if int(item.get("parent_id") or 0) in condition_map else 1,
+                        int(item.get("parent_id") or 0),
+                    )
+                )
+                if candidates:
+                    item = candidates[0]
+                    return (
+                        int(item.get("parent_id") or 0),
+                        str(item.get("dimension") or "其他标签"),
+                        str(item.get("previous_label") or "未命中"),
+                        str(item.get("current_label") or "未命中"),
+                    )
+                return (
+                    0,
+                    "其他筛选条件",
+                    "上次不满足" if relation == "added" else "上次满足",
+                    "今日满足" if relation == "added" else "今日不满足",
+                )
+
+            def transition_rows(relation: str) -> list[dict[str, Any]]:
+                grouped: dict[tuple[str, str, int, str, str, str], list[dict[str, Any]]] = defaultdict(list)
+                for row in rows:
+                    if row["change_type"] == relation:
+                        changed_parent, changed_dimension, changed_previous, changed_current = display_change(row, relation)
+                        grouped[
+                            (
+                                row["previous_layer_label"],
+                                row["current_layer_label"],
+                                changed_parent,
+                                changed_dimension,
+                                changed_previous,
+                                changed_current,
+                            )
+                        ].append(row)
+                result_rows = []
+                for (
+                    previous_label,
+                    current_label,
+                    changed_parent,
+                    changed_dimension,
+                    changed_previous,
+                    changed_current,
+                ), transition_items in grouped.items():
+                    reasons = (
+                        Counter(item.get("sales_role_reason_code") or "evidence_missing" for item in transition_items)
+                        if layer_parent == 1
+                        else Counter({"fact_only": len(transition_items)})
+                    )
+                    evidence_states = Counter(item.get("evidence_state") or "fact_only" for item in transition_items)
+                    sales_amount = sum(float(item.get("metric_profile", {}).get("sales_amount") or 0) for item in transition_items)
+                    gross_profit = sum(float(item.get("metric_profile", {}).get("order_gross_profit") or 0) for item in transition_items)
+                    main_reason_code = reasons.most_common(1)[0][0] if reasons else "fact_only"
+                    main_reason_label = REASON_LABELS.get(main_reason_code, "仅记录标签事实")
+                    result_rows.append({
+                        "previous_label": previous_label,
+                        "current_label": current_label,
+                        "changed_parent_id": changed_parent,
+                        "changed_dimension": changed_dimension,
+                        "changed_previous_label": changed_previous,
+                        "changed_current_label": changed_current,
+                        "count": len(transition_items),
+                        "main_reason_code": main_reason_code,
+                        "main_reason": main_reason_label,
+                        "reason_counts": dict(reasons),
+                        "evidence_counts": dict(evidence_states),
+                        "sales_amount": round(sales_amount, 2),
+                        "order_gross_profit": round(gross_profit, 2),
+                    })
+                result_rows.sort(key=lambda item: (-int(item["count"]), item["previous_label"], item["current_label"]))
+                return result_rows
 
             layer_transitions = {
                 "entered": transition_rows("added"),
@@ -799,6 +1259,36 @@ class LabelHubChangeDataService:
                 if (not layer_transition_from or row["previous_layer_label"] == layer_transition_from)
                 and (not layer_transition_to or row["current_layer_label"] == layer_transition_to)
             ]
+        if layer_transition_parent or layer_transition_previous or layer_transition_current:
+            if layer_parent and layer_bucket:
+                # Route cards are grouped with display_change(), which uses the
+                # normalized primary label for the selected period.  Filtering
+                # the detail rows against raw label_changes here can disagree
+                # for multi-period labels and produce an empty table even when
+                # the selected route has records.  Reuse the exact route
+                # identity that produced the card so card totals and details
+                # always reconcile.
+                rows = [
+                    row for row in rows
+                    if (
+                        (route := display_change(row, row["change_type"]))[0] == layer_transition_parent
+                        and (not layer_transition_previous or route[2] == layer_transition_previous)
+                        and (not layer_transition_current or route[3] == layer_transition_current)
+                    )
+                ]
+            else:
+                rows = [
+                    row for row in rows
+                    if (
+                        layer_transition_parent == 0
+                        and not row.get("label_changes")
+                    ) or any(
+                        int(item.get("parent_id") or 0) == layer_transition_parent
+                        and (not layer_transition_previous or item.get("previous_label") == layer_transition_previous)
+                        and (not layer_transition_current or item.get("current_label") == layer_transition_current)
+                        for item in row.get("label_changes", [])
+                    )
+                ]
         sort_field = str(filters.get("sort_field") or "change_type")
         sort_field = sort_field if sort_field in CHANGE_SORT_FIELDS else "change_type"
         sort_dir = str(filters.get("sort_dir") or "asc").lower()
@@ -820,6 +1310,9 @@ class LabelHubChangeDataService:
                 "combination_mode": bool(layer_parent and layer_bucket),
                 "layer_transition_from": layer_transition_from,
                 "layer_transition_to": layer_transition_to,
+                "layer_transition_parent": layer_transition_parent,
+                "layer_transition_previous": layer_transition_previous,
+                "layer_transition_current": layer_transition_current,
             },
             "summary": {
                 "current": len(current_set), "previous": len(previous_set),

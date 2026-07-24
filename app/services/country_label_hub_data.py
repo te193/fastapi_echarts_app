@@ -128,6 +128,17 @@ class CountryLabelHubDataService:
         self._country_detail_raw_metrics_cache: OrderedDict[tuple[Any, ...], tuple[datetime, dict[str, Any]]] = OrderedDict()
         self._country_detail_count_cache: OrderedDict[tuple[Any, ...], tuple[datetime, dict[str, int]]] = OrderedDict()
         self._country_detail_metric_provider: Callable[..., dict[str, Any]] = self._country_detail_metrics_with_fallback
+        register_callback = getattr(self._shared, "register_source_invalidation_callback", None)
+        if callable(register_callback):
+            register_callback(self._clear_remote_label_caches)
+
+    def _clear_remote_label_caches(self) -> None:
+        self._meta_cache = None
+        self._facts_cache.clear()
+        self._profile_facts_cache.clear()
+        with self._base_rows_lock:
+            self._base_rows_cache.clear()
+        self._country_detail_count_cache.clear()
 
     def get_meta(self) -> dict[str, Any]:
         if self._meta_cache and (datetime.now() - self._meta_cache[0]).total_seconds() < CACHE_SECONDS:

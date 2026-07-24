@@ -88,7 +88,7 @@ def test_country_detail_exposes_ranking_filter_state_and_column():
 
 def test_detail_filters_match_compact_reference_visual_language():
     styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
-    base = (ROOT / "app" / "templates" / "base.html").read_text(encoding="utf-8")
+    template = (ROOT / "app" / "templates" / "label_hub.html").read_text(encoding="utf-8")
 
     assert ".label-hub-detail-toolbar" in styles
     assert ".label-hub-detail-advanced" in styles
@@ -97,7 +97,7 @@ def test_detail_filters_match_compact_reference_visual_language():
     assert ".label-hub-detail-filter-control .ss-main:has(.ss-value)" in styles
     assert ".ss-value .ss-value-text" in styles
     assert "color: #155ba6;" in styles
-    assert "styles.css') }}?v=20260723replcopy1" in base
+    assert "styles.css') }}?v=20260724rulemetrics1" in template
     assert ".label-hub-detail-workbench select[multiple] { min-height: 64px" not in styles
 
 
@@ -262,6 +262,13 @@ def test_label_hub_copy_releases_mouse_focus_after_click():
     assert "copyButton.blur();" in copy_click
 
 
+def test_msku_profile_does_not_show_average_inventory_metric():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+
+    assert '["平均库存", metric.avg_inventory_qty]' not in script
+    assert '["期末可售库存", metric.ending_inventory_qty]' in script
+
+
 def test_label_hub_country_profile_uses_compact_full_height_table():
     script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
     styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
@@ -295,21 +302,30 @@ def test_label_hub_country_profile_uses_replenishment_detail_header():
     assert ".label-hub-country-profile-detail-head" in styles
 
 
-def test_layer_change_drawer_uses_reconciled_ledger_and_same_dimension_labels():
+def test_layer_change_drawer_prioritizes_conclusion_attention_and_on_demand_details():
     script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
     styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
 
     assert "function renderLayerChangeLedger(payload, context)" in script
-    assert "上次命中组合 + 本期进入 − 本期离开 = 今日命中组合" in script
-    assert '["added", "查看进入"' in script
-    assert '["removed", "查看离开"' in script
+    assert "本层变化结论" in script
+    assert "从哪里进入，离开后去了哪里" in script
+    assert "哪些规则指标跨过了阈值" in script
+    assert "label-hub-change-reconcile" in script
+    assert "选择上方一项变化查看 MSKU" in script
+    assert "label-hub-route-ledger" in script
+    assert "changed_dimension" in script
+    assert "changed_previous_label" in script
+    assert "changed_current_label" in script
+    assert "data-layer-transition-parent" in script
+    assert "同维度标签未变，其他条件变化" not in script
     assert 'row.previous_layer_label' in script
     assert 'row.current_layer_label' in script
     assert 'row.fact_status' in script
     assert "layerChangeCombinationLabels" in script
-    assert "当前组合变化账" in script
-    assert 'row.current_unit_scope' in script
     assert 'metric_profile' in script
+    assert ".label-hub-route-summary" in styles
+    assert ".label-hub-attribution-grid" in styles
+    assert ".label-hub-change-detail-placeholder" in styles
 
 
 def test_change_drawer_identifies_each_country_store_msku_business_unit():
@@ -318,13 +334,12 @@ def test_change_drawer_identifies_each_country_store_msku_business_unit():
 
     assert 'row.country_category' in script
     assert 'row.store' in script
-    assert '<th>国家类别</th><th>店铺</th><th>MSKU</th>' in script
+    assert '<th>MSKU</th><th>同维度标签</th><th>变化原因</th><th>规则指标（上次→今日）</th><th>经营影响</th><th>证据状态</th>' in script
     assert '条记录' in script
     assert '变化记录' in script
-    assert '今日经营分层' in script
-    assert '上次组合条件' in script
-    assert 'previous_combination_conditions' in script
-    assert '今日经营表现' in script
+    assert '对应产品与经营表现' in script
+    assert 'metric.order_gross_profit' in script
+    assert 'metric.sales_amount' in script
     assert "renderLayerRoutePanel" not in script
     assert ".label-hub-layer-ledger" in styles
 
@@ -466,7 +481,7 @@ def test_remote_breakdown_nodes_have_enough_distinct_colors_for_long_status_list
     assert len(colors) >= 12
     assert len(set(colors)) == len(colors)
     assert "remoteBucketColor(panel, bucket)" in script
-    assert "?v=20260723copyblur1" in template
+    assert "?v=20260724speed1" in template
 
 
 def test_label_hub_issue_overview_shows_selected_group_problem_counts():
@@ -626,7 +641,7 @@ def test_current_category_detail_uses_period_scoped_distribution():
     assert "distributionById" in script
     assert 'cache: "no-store"' in common
     assert "js/common.js') }}?v=20260715cache2" in base
-    assert "js/label_hub.js') }}?v=20260723copyblur1" in template
+    assert "js/label_hub.js') }}?v=20260724speed1" in template
 
 
 def test_country_detail_overview_matches_label_hub_information_structure():
@@ -663,6 +678,13 @@ def test_country_detail_profile_keeps_comparison_and_prioritizes_clicked_country
     assert "prioritizeCountryProfileCountries(profile.countries || [], row.country)" in script
     assert '" is-current-country"' in script
     assert ".label-hub-country-profile-table tbody tr.is-current-country td" in styles
+
+
+def test_main_dashboard_renders_before_change_tracking_request():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+    render_block = script[script.index("  function render() {"):script.index("  function buildChangeParams() {")]
+
+    assert render_block.index("lastPayload = payload;") < render_block.index("loadChanges();")
 
 
 def test_sales_role_has_label_hub_return_link():

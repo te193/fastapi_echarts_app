@@ -272,6 +272,9 @@
         activeLayerChangeContext.change_type = transitionButton.dataset.layerTransitionType || "all";
         activeLayerChangeContext.transition_from = transitionButton.dataset.layerTransitionFrom || "";
         activeLayerChangeContext.transition_to = transitionButton.dataset.layerTransitionTo || "";
+        activeLayerChangeContext.transition_parent = Number(transitionButton.dataset.layerTransitionParent || 0);
+        activeLayerChangeContext.transition_previous = transitionButton.dataset.layerTransitionPrevious || "";
+        activeLayerChangeContext.transition_current = transitionButton.dataset.layerTransitionCurrent || "";
         changePage = 1;
         loadLayerChangeDetails(activeLayerChangeContext);
         return;
@@ -280,6 +283,9 @@
         activeLayerChangeContext.change_type = layerTypeButton.dataset.layerChangeType || "all";
         activeLayerChangeContext.transition_from = "";
         activeLayerChangeContext.transition_to = "";
+        activeLayerChangeContext.transition_parent = 0;
+        activeLayerChangeContext.transition_previous = "";
+        activeLayerChangeContext.transition_current = "";
         changePage = 1;
         loadLayerChangeDetails(activeLayerChangeContext);
       }
@@ -782,6 +788,8 @@
   function render() {
     var token = ++requestToken;
     setLoading(true);
+    lastPayload = null;
+    lastHighlights = null;
     detailState.page = 1;
     renderDetails();
     app.writeQueryState(state);
@@ -1216,36 +1224,90 @@
   function renderLayerChangeLedger(payload, context) {
     var summary = payload.summary || {};
     var net = Number(summary.net || 0);
+    var layerLabel = changeLayerLabel(context);
+    var transitions = payload.layer_transitions || {};
+    var routes = (transitions.entered || []).concat(transitions.left || []).slice().sort(function (a, b) {
+      return Number(b.count || 0) - Number(a.count || 0);
+    });
+    var mainRoute = routes[0];
+    var evidenceTotal = routes.reduce(function (sum, item) {
+      var evidenceCounts = item.evidence_counts || {};
+      return sum + Object.keys(evidenceCounts).reduce(function (inner, key) { return inner + Number(evidenceCounts[key] || 0); }, 0);
+    }, 0);
+    var confirmed = routes.reduce(function (sum, item) {
+      return sum + Number((item.evidence_counts || {}).confirmed || 0);
+    }, 0);
     var netText = net > 0 ? "净增加 " + formatNumber(net) : (net < 0 ? "净减少 " + formatNumber(Math.abs(net)) : "数量持平");
-    var labels = (context.combination_labels || [changeLayerLabel(context)]).map(function (label) {
-      return '<b>' + app.escapeHtml(label) + '</b>';
-    }).join('<i>+</i>');
-    return '<section class="label-hub-layer-ledger">' +
-      '<header><div><span>当前组合变化账</span><h3>本次组合命中变化</h3></div><p>上次命中组合 + 本期进入 − 本期离开 = 今日命中组合</p></header>' +
-      '<div class="label-hub-change-combination"><span>当前组合</span><div>' + labels + '</div></div>' +
-      '<div class="label-hub-layer-ledger-row">' +
-        '<div><span>上次命中组合</span><strong>' + formatNumber(summary.previous) + '</strong></div><i>+</i>' +
-        '<div><span>本期进入</span><strong>' + formatNumber(summary.added) + '</strong></div><i>−</i>' +
-        '<div><span>本期离开</span><strong>' + formatNumber(summary.removed) + '</strong></div><i>=</i>' +
-        '<div class="is-current"><span>今日命中组合</span><strong>' + formatNumber(summary.current) + '</strong></div>' +
-        '<b class="is-' + (net > 0 ? "up" : (net < 0 ? "down" : "flat")) + '">' + netText + '</b>' +
-      '</div></section>';
+    var routeText = mainRoute
+      ? (mainRoute.previous_label === mainRoute.current_label
+        ? "主要变化来自其他联动条件进出，同维度标签仍为“" + (mainRoute.current_label || "无标签事实") + "”，共 " + formatNumber(mainRoute.count) + " 个。"
+        : "主要流向：“" + (mainRoute.previous_label || "无标签事实") + "”→“" + (mainRoute.current_label || "无标签事实") + "”，共 " + formatNumber(mainRoute.count) + " 个。")
+      : "本期没有 MSKU 进入或离开该层。";
+    return '<section class="label-hub-layer-ledger label-hub-change-result">' +
+      '<div class="label-hub-change-result-main"><span>本层变化结论</span><h3>' + app.escapeHtml(layerLabel) + '今日 ' + formatNumber(summary.current) + ' 个，较上次' + netText + '</h3><p>' + app.escapeHtml(routeText) + '</p></div>' +
+      '<div class="label-hub-change-reconcile" aria-label="变化数量对账">' +
+        '<span><small>上次</small><b>' + formatNumber(summary.previous) + '</b></span><i>+</i>' +
+        '<span><small>进入</small><b>' + formatNumber(summary.added) + '</b></span><i>−</i>' +
+        '<span><small>离开</small><b>' + formatNumber(summary.removed) + '</b></span><i>=</i>' +
+        '<span class="is-current"><small>今日</small><b>' + formatNumber(summary.current) + '</b></span>' +
+        '<strong class="is-' + (net > 0 ? "up" : (net < 0 ? "down" : "flat")) + '">' + netText + '</strong>' +
+      '</div>' +
+      '<div class="label-hub-change-proof"><span>口径：当前完整组合，两期独立重算</span><span>' + (evidenceTotal ? "规则证据已确认 " + formatNumber(confirmed) + " / " + formatNumber(evidenceTotal) : "当前仅有标签事实流转") + '</span></div>' +
+      '</section>';
   }
 
-  function renderLayerTransitionSummary(payload) {
+  function layerLabelNeedsAttention(label) {
+    return /(问题|负毛利|亏损|高库存|断货|停售|清仓|异常|风险|严重退货|高度依赖|日销\s*0|低毛利)/.test(String(label || ""));
+  }
+
+  function renderLayerTransitionSummary(payload, context) {
     var transitions = payload.layer_transitions || {};
-    function renderSide(items, direction, title) {
-      var allRows = items || [];
-      var rows = allRows;
-      if (!rows.length) return '<section class="label-hub-layer-transition-side"><header><span>' + title + '</span><small>本期无记录</small></header><p>本期没有记录发生这类变化。</p></section>';
-      var total = allRows.reduce(function (sum, item) { return sum + Number(item.count || 0); }, 0);
-      return '<section class="label-hub-layer-transition-side"><header><span>' + title + '</span><small>共 ' + formatNumber(total) + ' 条记录</small></header><div>' + rows.map(function (item) {
-        return '<button type="button" data-layer-transition-type="' + direction + '" data-layer-transition-from="' + app.escapeHtml(item.previous_label || "无标签事实") + '" data-layer-transition-to="' + app.escapeHtml(item.current_label || "无标签事实") + '"><span>' + app.escapeHtml(item.previous_label || "无标签事实") + '</span><i>→</i><strong>' + app.escapeHtml(item.current_label || "无标签事实") + '</strong><b>' + formatNumber(item.count) + '</b></button>';
-      }).join('') + '</div></section>';
+    function renderRoute(item, direction) {
+      var active = context &&
+        context.change_type === direction &&
+        context.transition_from === String(item.previous_label || "无标签事实") &&
+        context.transition_to === String(item.current_label || "无标签事实") &&
+        Number(context.transition_parent || 0) === Number(item.changed_parent_id || 0) &&
+        context.transition_previous === String(item.changed_previous_label || "") &&
+        context.transition_current === String(item.changed_current_label || "");
+      var unchangedLabel = item.previous_label === item.current_label;
+      var changedDimension = item.changed_dimension || (unchangedLabel ? "其他筛选条件" : context.title);
+      var changedPrevious = item.changed_previous_label || item.previous_label || "未命中";
+      var changedCurrent = item.changed_current_label || item.current_label || "未命中";
+      var routeNote = unchangedLabel && (changedPrevious !== item.previous_label || changedCurrent !== item.current_label)
+        ? changedDimension + "：" + changedPrevious + " → " + changedCurrent
+        : changedDimension + "发生变化";
+      var evidenceCounts = item.evidence_counts || {};
+      var proof = Number(evidenceCounts.confirmed || 0);
+      var impact = "销售额 " + app.formatCompactCurrency(item.sales_amount || 0) + " · 毛利润 " + app.formatCompactCurrency(item.order_gross_profit || 0);
+      return '<button type="button" class="label-hub-route-ledger' + (active ? ' is-active' : '') + '" data-layer-transition-type="' + direction + '" data-layer-transition-from="' + app.escapeHtml(item.previous_label || "无标签事实") + '" data-layer-transition-to="' + app.escapeHtml(item.current_label || "无标签事实") + '" data-layer-transition-parent="' + Number(item.changed_parent_id || 0) + '" data-layer-transition-previous="' + app.escapeHtml(changedPrevious) + '" data-layer-transition-current="' + app.escapeHtml(changedCurrent) + '">' +
+        '<span class="label-hub-route-path"><b>' + app.escapeHtml(item.previous_label || "未命中") + '</b><i>→</i><b>' + app.escapeHtml(item.current_label || "未命中") + '</b><em>' + formatNumber(item.count) + ' 个</em></span>' +
+        '<span class="label-hub-route-cause">' + app.escapeHtml(routeNote) + '</span>' +
+        '<small>' + app.escapeHtml(impact) + (proof ? ' · 已确认 ' + formatNumber(proof) : '') + '</small>' +
+      '</button>';
     }
-    return '<section class="label-hub-layer-transition-summary"><header><div><span>本层标签变化汇总</span><h3>从哪里进入，去了哪里</h3></div><small>仅统计当前组合中本期进入或离开的记录；点击一行查看对应明细。</small></header><div class="label-hub-layer-transition-grid">' +
-      renderSide(transitions.entered, "added", "进入来源") + renderSide(transitions.left, "removed", "离开去向") +
-      '</div></section>';
+
+    function routeColumn(title, subtitle, items, direction) {
+      var total = (items || []).reduce(function (sum, item) { return sum + Number(item.count || 0); }, 0);
+      return '<article class="label-hub-route-column"><header><div><span>' + app.escapeHtml(subtitle) + '</span><h3>' + app.escapeHtml(title) + '</h3></div><b>' + formatNumber(total) + ' 个</b></header><div>' +
+        ((items || []).map(function (item) { return renderRoute(item, direction); }).join("") || '<div class="label-hub-route-empty">本期没有' + app.escapeHtml(title) + '</div>') +
+      '</div></article>';
+    }
+
+    var reasons = (payload.sales_role_reasons || []).filter(function (item) { return Number(item.count || 0) > 0; });
+    var reasonHtml = reasons.length
+      ? '<div class="label-hub-attribution-grid">' + reasons.map(function (item) {
+        var tone = ["evidence_missing", "evidence_mismatch"].indexOf(item.key) >= 0 ? "pending" : "confirmed";
+        return '<span class="is-' + tone + '"><small>' + app.escapeHtml(item.label) + '</small><b>' + formatNumber(item.count) + '</b></span>';
+      }).join("") + '</div>'
+      : '<div class="label-hub-route-empty">当前标签仅能确认事实流转，暂无可核对的规则指标。</div>';
+    return '<section class="label-hub-layer-transition-summary label-hub-route-summary"><header><div><span>本层进出路径</span><h3>从哪里进入，离开后去了哪里</h3></div><small>点击任一路径查看对应 MSKU、指标前后值与证据状态。</small></header>' +
+      '<div class="label-hub-route-columns">' +
+        routeColumn("进入当前层", "本期新增成员", transitions.entered || [], "added") +
+        routeColumn("离开当前层", "本期退出成员", transitions.left || [], "removed") +
+      '</div>' +
+      '<div class="label-hub-attribution-summary"><header><div><span>指标归因</span><h3>哪些规则指标跨过了阈值</h3></div><small>仅证据一致时作为确定原因，其余标记待核对。</small></header>' + reasonHtml + '</div>' +
+    '</section>';
   }
 
   function renderLayerChangeFilters(payload, selectedType) {
@@ -1283,17 +1345,52 @@
       var triggerLabel = (row.trigger_dimensions || []).join(" / ");
       if (isLayerDetail) {
         var metric = row.metric_profile || {};
+        var previousMetric = row.previous_metric_profile || {};
+        var previousEvidence = row.previous_evidence || {};
+        var currentEvidence = row.current_evidence || {};
         var profitClass = Number(metric.order_gross_profit || 0) < 0 ? ' is-negative' : '';
-        var metricProfile = '<div class="label-hub-change-metric-stack"><span>' + app.escapeHtml(metric.sales_trend || "暂无数据") + ' · ' + app.escapeHtml(metric.daily_sales_band || "暂无数据") + '</span><span>' + app.escapeHtml(metric.margin_band || "暂无数据") + '</span></div>';
-        var performance = '<div class="label-hub-change-metric-stack"><strong>' + app.formatCompactCurrency(metric.sales_amount || 0) + '</strong><span class="' + profitClass + '">毛利 ' + app.formatCompactCurrency(metric.order_gross_profit || 0) + ' · ' + formatPercent(metric.order_gross_margin || 0) + '</span></div>';
-        var scope = '<div class="label-hub-change-scope"><span title="' + app.escapeHtml(row.previous_unit_scope || "无标签事实") + '">上 ' + app.escapeHtml(row.previous_unit_scope || "无标签事实") + '</span><span title="' + app.escapeHtml(row.current_unit_scope || "无标签事实") + '">今 ' + app.escapeHtml(row.current_unit_scope || "无标签事实") + '</span></div>';
-        return '<tr><td>' + app.escapeHtml(row.country_category || "-") + '</td><td>' + app.escapeHtml(row.store || "-") + '</td><td><button type="button" class="text-button label-hub-change-msku" data-change-msku="' + app.escapeHtml(row.msku) + '">' + app.escapeHtml(row.msku) + '</button></td><td>' + conditionStateHtml(row.previous_combination_conditions) + '</td><td>' + conditionStateHtml(row.current_combination_conditions) + '</td><td>' + app.escapeHtml(row.previous_layer_label || "未命中") + '</td><td>' + app.escapeHtml(row.current_layer_label || "未命中") + '</td><td>' + scope + '</td><td>' + metricProfile + '</td><td>' + performance + '</td><td><span class="label-hub-change-status">' + app.escapeHtml(metric.data_status || "暂无经营数据") + '</span></td><td>' + app.escapeHtml(row.fact_status || "标签事实可比") + '</td></tr>';
+        var identity = '<button type="button" class="text-button label-hub-change-msku" data-change-msku="' + app.escapeHtml(row.msku) + '">' + app.escapeHtml(row.msku) + '</button><small>' + app.escapeHtml(row.country_category || "-") + ' · ' + app.escapeHtml(row.store || "-") + '</small>';
+        var labelChange = '<span class="label-hub-change-label-pair"><b>' + app.escapeHtml(row.previous_layer_label || "未命中") + '</b><i>→</i><b>' + app.escapeHtml(row.current_layer_label || "未命中") + '</b></span>';
+        var reasonCodeLabel = {
+          daily_cross: "日销跨线",
+          margin_cross: "毛利率跨线",
+          both_cross: "日销与毛利率同时跨线",
+          rule_metric_change: "规则指标发生变化",
+          business_unit_added: "新增记录",
+          business_unit_removed: "记录消失",
+          evidence_missing: "规则证据缺失",
+          evidence_mismatch: "本地重算不一致"
+        }[row.sales_role_reason_code] || "仅标签事实";
+        var reason = '<div class="label-hub-change-reason-cell"><strong>' + app.escapeHtml(reasonCodeLabel) + '</strong><small title="' + app.escapeHtml(row.sales_role_reason || "") + '">' + app.escapeHtml(row.sales_role_reason || "暂不能确认具体规则原因") + '</small></div>';
+        var daily = previousEvidence.daily_sales === undefined || currentEvidence.daily_sales === undefined
+          ? '<span class="is-missing">--</span>'
+          : '<span><b>' + formatNumber(previousEvidence.daily_sales) + '</b><i>→</i><b>' + formatNumber(currentEvidence.daily_sales) + '</b></span>';
+        var margin = previousEvidence.margin_rate === undefined || currentEvidence.margin_rate === undefined
+          ? '<span class="is-missing">--</span>'
+          : '<span><b>' + formatPercent(previousEvidence.margin_rate) + '</b><i>→</i><b>' + formatPercent(currentEvidence.margin_rate) + '</b></span>';
+        var ruleMetricRows = (row.rule_metric_changes || []).map(function (item) {
+          function formatRuleMetric(value) {
+            if (value === undefined || value === null || value === "") return "--";
+            if (item.value_type === "percent_value") return formatNumber(value) + "%";
+            if (item.value_type === "days") return formatNumber(value) + " 天";
+            if (item.value_type === "money") return app.formatCompactCurrency(value);
+            return formatNumber(value);
+          }
+          return '<div class="label-hub-rule-metric-row"><small>' + app.escapeHtml(item.label || item.key || "规则指标") + '</small><span><b>' + app.escapeHtml(formatRuleMetric(item.previous)) + '</b><i>→</i><b>' + app.escapeHtml(formatRuleMetric(item.current)) + '</b></span></div>';
+        }).join("");
+        var ruleMetricShift = ruleMetricRows
+          ? '<div class="label-hub-change-metric-shift is-dynamic">' + ruleMetricRows + '</div>'
+          : '<div class="label-hub-change-metric-shift"><small>日销</small>' + daily + '<small>毛利率</small>' + margin + '</div>';
+        var proofLabel = { confirmed: "已确认", mismatch: "重算不一致", pending: "待核对", fact_only: "仅标签事实" }[row.evidence_state] || "仅标签事实";
+        var evidence = '<div class="label-hub-change-evidence is-' + app.escapeHtml(row.evidence_state || "fact_only") + '"><span>' + app.escapeHtml(proofLabel) + '</span><small>' + app.escapeHtml(row.fact_status || "标签事实可比") + '</small></div>';
+        var impact = '<div class="label-hub-change-impact"><span>销售额 <b>' + app.formatCompactCurrency(metric.sales_amount || 0) + '</b></span><span>毛利润 <b class="' + profitClass + '">' + app.formatCompactCurrency(metric.order_gross_profit || 0) + '</b></span><small>上次 ' + app.formatCompactCurrency(previousMetric.sales_amount || 0) + ' / ' + app.formatCompactCurrency(previousMetric.order_gross_profit || 0) + '</small></div>';
+        return '<tr><td><div class="label-hub-change-identity">' + identity + '</div></td><td>' + labelChange + '</td><td>' + reason + '</td><td>' + ruleMetricShift + '</td><td>' + impact + '</td><td>' + evidence + '</td></tr>';
       }
       return '<tr><td>' + app.escapeHtml(row.country_category || "-") + '</td><td>' + app.escapeHtml(row.store || "-") + '</td><td><button type="button" class="text-button label-hub-change-msku" data-change-msku="' + app.escapeHtml(row.msku) + '">' + app.escapeHtml(row.msku) + '</button></td><td>' + app.escapeHtml(previousValue) + '</td><td>' + app.escapeHtml(currentValue) + '</td><td><div class="label-hub-change-direction"><span class="label-hub-change-type is-' + app.escapeHtml(row.change_type) + '">' + app.escapeHtml(typeLabel) + '</span>' + (triggerLabel ? '<small>变化维度：' + app.escapeHtml(triggerLabel) + '</small>' : '') + '</div></td></tr>';
     }).join("");
     var pagination = '<div class="label-hub-change-pagination"><span>第 ' + payload.page + " / " + payload.total_pages + ' 页，共 ' + formatNumber(payload.total) + ' 条记录</span><div><button type="button" data-change-page="' + (payload.page - 1) + '"' + (payload.page <= 1 ? " disabled" : "") + '>上一页</button><button type="button" data-change-page="' + (payload.page + 1) + '"' + (payload.page >= payload.total_pages ? " disabled" : "") + '>下一页</button></div></div>';
     if (isLayerDetail) {
-      return '<div class="label-hub-change-table-wrap"><table><thead><tr><th>国家类别</th><th>店铺</th><th>MSKU</th><th>上次组合条件</th><th>今日组合条件</th><th>上次同维度标签</th><th>今日同维度标签</th><th>经营范围（上 / 今）</th><th>今日经营分层</th><th>今日经营表现</th><th>本地指标</th><th>标签事实状态</th></tr></thead><tbody>' + (rows || '<tr><td colspan="12"><div class="empty-state compact">当前组合下没有变化的记录。</div></td></tr>') + '</tbody></table></div>' + pagination;
+      return '<div class="label-hub-change-table-wrap label-hub-attention-table"><table><thead><tr><th>MSKU</th><th>同维度标签</th><th>变化原因</th><th>规则指标（上次→今日）</th><th>经营影响</th><th>证据状态</th></tr></thead><tbody>' + (rows || '<tr><td colspan="6"><div class="empty-state compact">当前变化项下没有 MSKU 记录。</div></td></tr>') + '</tbody></table></div>' + pagination;
     }
     return '<div class="label-hub-change-table-wrap"><table><thead><tr><th>国家类别</th><th>店铺</th><th>MSKU</th><th>当前大类上次标签</th><th>当前大类今日标签</th><th>实际变化</th></tr></thead><tbody>' + (rows || '<tr><td colspan="6"><div class="empty-state compact">当前筛选下没有变化的记录。</div></td></tr>') + '</tbody></table></div>' + pagination;
   }
@@ -1309,9 +1406,16 @@
 
   function changeContentHtml(payload, context) {
     if (!payload.available) return '<div class="empty-state compact">暂无可比较的上次标签数据。</div>';
-    return (context ? renderLayerChangeLedger(payload, context) + renderLayerTransitionSummary(payload) : renderChangeConclusion(payload, context)) +
-      '<article class="label-hub-change-detail"><header><div><span>变化记录</span><h3>' + (context ? '仅查看进入或离开当前组合的记录' : '仅查看发生标签变化的记录') + '</h3></div><small>点击 MSKU 查看两日标签画像</small></header>' +
-      (context ? renderLayerChangeFilters(payload, context.change_type || "all") : "") + renderChangeList(payload, context) + '</article>';
+    if (context) {
+      var routeSelected = Boolean(context.transition_from || context.transition_to);
+      return renderLayerChangeLedger(payload, context) + renderLayerTransitionSummary(payload, context) +
+        (routeSelected
+          ? '<article class="label-hub-change-detail label-hub-attention-detail"><header><div><span>变化 MSKU</span><h3>对应产品与经营表现</h3></div><small>点击 MSKU 查看两日标签画像</small></header>' + renderChangeList(payload, context) + '</article>'
+          : '<div class="label-hub-change-detail-placeholder"><strong>选择上方一项变化查看 MSKU</strong><span>明细仅在需要时展开，避免把正常变化和问题记录混在一起。</span></div>');
+    }
+    return renderChangeConclusion(payload, context) +
+      '<article class="label-hub-change-detail"><header><div><span>变化记录</span><h3>仅查看发生标签变化的记录</h3></div><small>点击 MSKU 查看两日标签画像</small></header>' +
+      renderChangeList(payload, context) + '</article>';
   }
 
   function renderChanges(payload) {
@@ -1939,7 +2043,7 @@
       var tagProfile = profile.tag_profile || {};
       var analysisTags = renderProfileTags(tagProfile.analysis_labels || tagProfile.labels || [], "暂无 MSKU 口径标签");
       var metric = profile.metric_profile || {};
-      var metricItems = [["销量", metric.sales_qty], ["日均销量", metric.daily_sales], ["销售额", metric.sales_amount, "currency"], ["未税销售额", metric.sales_amount_ex_tax, "currency"], ["订单毛利润", metric.order_gross_profit, "currency"], ["订单毛利率", metric.order_gross_margin, "percent"], ["结算毛利润", metric.settlement_gross_profit, "currency"], ["广告花费", metric.ad_spend, "currency"], ["广告销售额", metric.ad_sales, "currency"], ["ACOS", metric.acos, "percent"], ["TACOS", metric.tacos, "percent"], ["退货数量", metric.return_count], ["退货金额", metric.return_amount, "currency"], ["净销售额", metric.net_amount, "currency"], ["期末库存", metric.ending_inventory_qty], ["平均库存", metric.avg_inventory_qty]];
+      var metricItems = [["销量", metric.sales_qty], ["日均销量", metric.daily_sales], ["销售额", metric.sales_amount, "currency"], ["未税销售额", metric.sales_amount_ex_tax, "currency"], ["订单毛利润", metric.order_gross_profit, "currency"], ["订单毛利率", metric.order_gross_margin, "percent"], ["结算毛利润", metric.settlement_gross_profit, "currency"], ["广告花费", metric.ad_spend, "currency"], ["广告销售额", metric.ad_sales, "currency"], ["ACOS", metric.acos, "percent"], ["TACOS", metric.tacos, "percent"], ["退货数量", metric.return_count], ["退货金额", metric.return_amount, "currency"], ["净销售额", metric.net_amount, "currency"], ["期末可售库存", metric.ending_inventory_qty]];
       var metricsHtml = metricItems.map(function (item) { var value = item[1]; if (value === null || value === undefined) value = "暂无数据"; else if (item[2] === "currency") value = app.formatCompactCurrency(value); else if (item[2] === "percent") value = app.formatPercent(value); else value = formatNumber(value); return '<div><span>' + item[0] + '</span><strong>' + value + "</strong></div>"; }).join("");
       var identity = profile.identity || {};
       var status = profile.data_status || {};
@@ -2280,6 +2384,9 @@
     params.change_type = context.change_type || "all";
     if (context.transition_from) params.layer_transition_from = context.transition_from;
     if (context.transition_to) params.layer_transition_to = context.transition_to;
+    if (context.transition_parent !== undefined) params.layer_transition_parent = context.transition_parent;
+    if (context.transition_previous) params.layer_transition_previous = context.transition_previous;
+    if (context.transition_current) params.layer_transition_current = context.transition_current;
     if (context.source === "remote_label") {
       var parentId = Number(context.parent || 0);
       var conditions = parsedConditions();
@@ -2326,6 +2433,9 @@
       change_type: "added",
       transition_from: "",
       transition_to: "",
+      transition_parent: 0,
+      transition_previous: "",
+      transition_current: "",
       title: dataset.layerChangeTitle || "当前层"
     };
     context.combination_labels = layerChangeCombinationLabels(context);
