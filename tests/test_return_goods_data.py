@@ -112,6 +112,34 @@ class ReturnGoodsServiceSqlTests(unittest.TestCase):
         self.assertEqual("2026-06-10", item["return_start_date"])
         self.assertIsNone(item["exit_date"])
 
+    def test_serialize_item_only_exposes_return_to_snapshot_sales_for_active_event(self):
+        service = ReturnGoodsDataService()
+
+        active = service._serialize_item(
+            {
+                "exit_date": None,
+                "post_recovery_sales_qty": 70,
+                "post_cumulative_sales_qty": 134,
+            }
+        )
+        active_before_d21 = service._serialize_item(
+            {
+                "exit_date": None,
+                "post_recovery_sales_qty": 16,
+                "post_cumulative_sales_qty": None,
+            }
+        )
+        exited = service._serialize_item(
+            {
+                "exit_date": date(2026, 7, 20),
+                "post_recovery_sales_qty": 153,
+            }
+        )
+
+        self.assertEqual(134, active["return_to_snapshot_sales_qty"])
+        self.assertEqual(16, active_before_d21["return_to_snapshot_sales_qty"])
+        self.assertIsNone(exited["return_to_snapshot_sales_qty"])
+
     def test_serialize_item_includes_continuous_recovery_fields(self):
         service = ReturnGoodsDataService()
 

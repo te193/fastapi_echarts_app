@@ -671,6 +671,7 @@
         numberColumn("恢复统计天数", "recovery_statistics_days", 118, 0),
         numberColumn("断货前对比销量", "pre_recovery_sales_qty", 136, 0),
         numberColumn("返场后对比销量", "post_recovery_sales_qty", 136, 0),
+        nullableNumberColumn("返场至统计日累计销量", "return_to_snapshot_sales_qty", 168),
         { headerName: "销量恢复率", field: "sales_recovery_rate_text", width: 112, type: "numericColumn", cellRenderer: function (params) { return '<span class="ag-number-strong">' + escapeHtml(params.value || "-") + '</span>'; } },
         { headerName: "当前累计恢复率", field: "cumulative_avg_recovery_rate_text", width: 132, type: "numericColumn", cellRenderer: function (params) { return '<span class="ag-number-strong">' + escapeHtml(params.value || "-") + '</span>'; } },
         { headerName: "近期趋势", field: "recovery_followup_status", width: 132, cellRenderer: function (params) { return statusPill(recoveryTrendText(params.data || {})); } },
@@ -1019,6 +1020,21 @@
       type: "numericColumn",
       cellRenderer: function (params) {
         var value = digits ? formatDecimal(params.value) : formatNumber(params.value);
+        return '<span class="ag-number-strong">' + escapeHtml(value) + '</span>';
+      }
+    };
+  }
+
+  function nullableNumberColumn(headerName, field, width) {
+    return {
+      headerName: headerName,
+      field: field,
+      width: width,
+      type: "numericColumn",
+      cellRenderer: function (params) {
+        var value = params.value === null || params.value === undefined || params.value === ""
+          ? "-"
+          : formatNumber(params.value);
         return '<span class="ag-number-strong">' + escapeHtml(value) + '</span>';
       }
     };

@@ -60,3 +60,10 @@ def test_daily_detail_always_shows_return_day_without_daily_recovery_rate():
     assert "<th>返场日</th>" in script
     assert "row.return_day_label" in script
     assert "<th>单日恢复率</th>" not in script
+
+
+def test_latest_status_grid_shows_return_to_snapshot_cumulative_sales():
+    script = (ROOT / "app" / "static" / "js" / "return_goods.js").read_text(encoding="utf-8")
+
+    assert 'nullableNumberColumn("返场至统计日累计销量", "return_to_snapshot_sales_qty"' in script
+    assert "function nullableNumberColumn" in script
