@@ -1938,11 +1938,17 @@ class ReturnGoodsDataService:
             "items": items,
         }
     def _serialize_item(self, row: dict[str, Any]) -> dict[str, Any]:
+        return_to_snapshot_sales_qty = number_value(row.get("post_cumulative_sales_qty"))
+        if return_to_snapshot_sales_qty is None:
+            return_to_snapshot_sales_qty = number_value(row.get("post_recovery_sales_qty"))
         item = {
             **{key: number_value(value) for key, value in row.items()},
             "stockout_date": format_day(row.get("stockout_date")),
             "return_start_date": format_day(row.get("return_start_date")),
             "exit_date": format_day(row.get("exit_date")),
+            "return_to_snapshot_sales_qty": (
+                None if row.get("exit_date") else return_to_snapshot_sales_qty
+            ),
             "stable_recovery_start_date": format_day(row.get("stable_recovery_start_date")),
             "sales_recovery_rate_text": self._rate_text(row.get("sales_recovery_rate")),
             "d21_recovery_rate_text": self._rate_text(row.get("d21_recovery_rate")),
