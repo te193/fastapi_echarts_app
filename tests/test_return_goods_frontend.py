@@ -49,7 +49,7 @@ def test_return_goods_overview_cards_use_weighted_uniform_layout():
     assert "minmax(250px, 1.08fr)" in stylesheet
     assert "minmax(270px, 1.12fr)" in stylesheet
     assert "height: 344px;" in stylesheet
-    assert "return_goods.css') }}?v=20260727inventorystatus2" in template
+    assert "return_goods.css') }}?v=20260728overviewheight1" in template
     assert ".return-goods-command-card > .return-goods-followup-all" in stylesheet
     assert "@media (max-width: 1750px)" in stylesheet
 
