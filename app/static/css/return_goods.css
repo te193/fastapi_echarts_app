@@ -50,8 +50,8 @@
 
 .return-goods-command-main,
 .return-goods-command-card {
-  height: 316px;
-  min-height: 316px;
+  height: 344px;
+  min-height: 344px;
 }
 
 .return-goods-command-card > .return-goods-ratio-bar,
