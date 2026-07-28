@@ -121,8 +121,8 @@
         <select id="summaryBatchSelect">
           <option value="7">最近7天新增补货</option>
           <option value="14">最近14天新增补货</option>
-          <option value="30" selected>最近30天新增补货</option>
-          <option value="90">最近90天新增补货</option>
+          <option value="30">最近30天新增补货</option>
+          <option value="90" selected>最近90天新增补货</option>
           <option value="0">全部历史补货</option>
         </select>
       </label>
@@ -248,5 +248,5 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', path='js/replenishment.js') }}?v=20260723replcopyblur1"></script>
-<script src="{{ url_for('static', path='js/replenishment_tracking_summary.js') }}?v=20260720linkedfilters5"></script>
+<script src="{{ url_for('static', path='js/replenishment_tracking_summary.js') }}?v=20260727stagefilters1"></script>
 {% endblock %}

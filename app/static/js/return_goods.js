@@ -1,6 +1,6 @@
 ﻿(function () {
   var app = window.kanbanApp;
-  var state = { page: 1, page_size: 20, snapshot_date: "", available_dates: [], calendar_month: "", quick_filter: "all", return_day: 0 };
+  var state = { page: 1, page_size: 20, snapshot_date: "", available_dates: [], calendar_month: "", quick_filter: "all", inventory_status_filter: "all", return_day: 0 };
   var el = {};
   var gridRenderSeq = 0;
   var scrollToTableAfterRender = false;
@@ -11,7 +11,7 @@
     [
       "snapshotDateButton", "snapshotDateValue", "snapshotCalendarPanel", "countrySelect", "storeSelect",
       "keywordInput", "clearFiltersBtn", "summaryGrid", "periodHint", "stageBusinessCompare", "stageChart", "warningList",
-      "tableWrap", "paginationInfo", "pageSizeSelect", "prevPageBtn", "nextPageBtn",
+      "inventoryStatusFilters", "tableWrap", "paginationInfo", "pageSizeSelect", "prevPageBtn", "nextPageBtn",
       "returnGoodsDetailMask", "returnGoodsDetailDrawer", "returnGoodsDetailClose", "returnGoodsDetailTitle", "returnGoodsDetailSubtitle", "returnGoodsDetailBody"
     ].forEach(function (id) {
       el[id] = document.getElementById(id);
@@ -70,6 +70,14 @@
     });
     el.stageChart.addEventListener("click", handleQuickFilterClick);
     el.warningList.addEventListener("click", handleQuickFilterClick);
+    el.inventoryStatusFilters.addEventListener("click", function (event) {
+      var button = event.target.closest("[data-inventory-status-filter]");
+      if (!button) return;
+      state.inventory_status_filter = button.getAttribute("data-inventory-status-filter") || "all";
+      state.page = 1;
+      syncInventoryStatusFilters();
+      render();
+    });
     function handleQuickFilterClick(event) {
       if (event.target.closest(".return-goods-help-anchor")) return;
       var node = event.target.closest("[data-return-filter]");
@@ -84,6 +92,7 @@
       el.storeSelect.value = "all";
       el.keywordInput.value = "";
       state.quick_filter = "all";
+      state.inventory_status_filter = "all";
       state.return_day = 0;
       state.page = 1;
       render();
@@ -119,6 +128,7 @@
   }
 
   function render() {
+    syncInventoryStatusFilters();
     el.tableWrap.innerHTML = '<div class="empty-state">加载中...</div>';
     app.apiGet("/api/return-goods", buildParams())
       .then(function (payload) {
@@ -143,7 +153,7 @@
   }
 
   function clearQuickFilterOnBlankClick(event) {
-    if ((state.quick_filter || "all") === "all" && !state.return_day) return;
+    if ((state.quick_filter || "all") === "all" && (state.inventory_status_filter || "all") === "all" && !state.return_day) return;
     if (event.target.closest([
       "button",
       "a",
@@ -161,6 +171,7 @@
       "[data-stage-return-day]"
     ].join(","))) return;
     state.quick_filter = "all";
+    state.inventory_status_filter = "all";
     state.return_day = 0;
     state.page = 1;
     render();
@@ -176,10 +187,20 @@
       stage: "all",
       warning_type: "all",
       quick_filter: state.quick_filter || "all",
+      inventory_status_filter: state.inventory_status_filter || "all",
       return_day: state.return_day || 0,
       page: state.page,
       page_size: state.page_size
     };
+  }
+
+  function syncInventoryStatusFilters() {
+    if (!el.inventoryStatusFilters) return;
+    el.inventoryStatusFilters.querySelectorAll("[data-inventory-status-filter]").forEach(function (button) {
+      var active = button.getAttribute("data-inventory-status-filter") === (state.inventory_status_filter || "all");
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+    });
   }
 
   function syncMeta(payload) {
@@ -668,6 +689,7 @@
         { headerName: "断货前角色", field: "pre_stockout_sales_role", width: 118, cellRenderer: function (params) { return statusPill(params.value || "-"); } },
         numberColumn("FBA可售", "current_fba_sellable", 104, 0),
         numberColumn("FBA在途", "current_fba_inbound", 104, 0),
+        { headerName: "返场后库存状态", field: "post_return_inventory_status", width: 150, cellRenderer: function (params) { return statusPill(params.value || "-"); } },
         numberColumn("恢复统计天数", "recovery_statistics_days", 118, 0),
         numberColumn("断货前对比销量", "pre_recovery_sales_qty", 136, 0),
         numberColumn("返场后对比销量", "post_recovery_sales_qty", 136, 0),
@@ -855,6 +877,7 @@
       detailMetric("断货前角色", event.pre_stockout_sales_role),
       detailMetric("FBA可售", formatNumber(event.current_fba_sellable)),
       detailMetric("FBA在途", formatNumber(event.current_fba_inbound)),
+      detailMetric("返场后库存状态", event.post_return_inventory_status || "-"),
       detailMetric("恢复统计天数", formatNumber(event.recovery_statistics_days)),
       detailMetric("断货前对比销量", formatDecimal(event.pre_recovery_sales_qty)),
       detailMetric("返场后对比销量", formatDecimal(event.post_recovery_sales_qty)),
@@ -1058,6 +1081,7 @@
       cell(item.stage),
       cell(formatNumber(item.current_fba_sellable)),
       cell(formatNumber(item.current_fba_inbound)),
+      cell(item.post_return_inventory_status || "-"),
       cell(formatNumber(item.recovery_statistics_days)),
       cell(formatDecimal(item.pre_recovery_sales_qty)),
       cell(formatDecimal(item.post_recovery_sales_qty)),

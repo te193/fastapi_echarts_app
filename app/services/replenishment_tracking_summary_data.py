@@ -216,7 +216,7 @@ class ReplenishmentTrackingSummaryService:
     def get_payload(
         self,
         cutoff_date: str = "",
-        entry_batch_days: int | str | None = 30,
+        entry_batch_days: int | str | None = 90,
         level: str = "all",
         purchase_status: str = "all",
         fba_status: str = "all",
@@ -891,9 +891,9 @@ class ReplenishmentTrackingSummaryService:
         clauses = ["s.cutoff_date = %(cutoff_date)s"]
         params: dict[str, Any] = {"cutoff_date": cutoff_date}
         try:
-            batch_days = int(entry_batch_days or 30)
+            batch_days = 90 if entry_batch_days in (None, "") else int(entry_batch_days)
         except (TypeError, ValueError):
-            batch_days = 30
+            batch_days = 90
         if batch_days > 0:
             clauses.append("s.first_replenishment_date >= date_sub(%(cutoff_date)s, interval %(batch_days)s day)")
             params["batch_days"] = batch_days - 1
@@ -994,6 +994,7 @@ class ReplenishmentTrackingSummaryService:
             "local_received_completed": "s.local_received_flag = 1",
             "qc_passed_completed": "s.qc_passed_flag = 1",
             "no_fba_plan": "s.qc_passed_flag = 1 and s.fba_plan_flag = 0",
+            "fba_plan_not_created": "s.fba_plan_flag = 0",
             "fba_plan_completed": "s.fba_plan_flag = 1",
             "fba_not_shipped": "s.fba_plan_flag = 1 and s.fba_shipped_flag = 0",
             "fba_shipped_completed": "s.fba_shipped_flag = 1",

@@ -65,3 +65,26 @@ def test_latest_status_grid_shows_return_to_snapshot_cumulative_sales():
 
     assert 'nullableNumberColumn("返场至统计日累计销量", "return_to_snapshot_sales_qty"' in script
     assert "function nullableNumberColumn" in script
+
+
+def test_latest_status_grid_and_detail_show_post_return_inventory_status():
+    script = (ROOT / "app" / "static" / "js" / "return_goods.js").read_text(encoding="utf-8")
+
+    assert 'headerName: "返场后库存状态", field: "post_return_inventory_status"' in script
+    assert 'detailMetric("返场后库存状态", event.post_return_inventory_status || "-")' in script
+
+
+def test_latest_status_section_has_inventory_quick_filters():
+    template = (ROOT / "app" / "templates" / "return_goods.html").read_text(encoding="utf-8")
+    script = (ROOT / "app" / "static" / "js" / "return_goods.js").read_text(encoding="utf-8")
+
+    for filter_key in (
+        "all",
+        "post_stockout_inbound",
+        "post_stockout_no_inbound",
+        "post_low_stock_inbound",
+        "post_low_stock_no_inbound",
+    ):
+        assert f'data-inventory-status-filter="{filter_key}"' in template
+    assert "inventory_status_filter: state.inventory_status_filter || \"all\"" in script
+    assert 'el.inventoryStatusFilters.addEventListener("click"' in script

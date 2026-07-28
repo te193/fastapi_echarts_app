@@ -9,6 +9,45 @@
   gap: 12px;
 }
 
+.return-goods-inventory-filters {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.return-goods-inventory-filters button {
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid #d5e2f2;
+  border-radius: 6px;
+  background: #f8fbff;
+  color: #526983;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.return-goods-inventory-filters button:hover {
+  border-color: #8bb5ef;
+  color: #1d5ca8;
+}
+
+.return-goods-inventory-filters button.active {
+  border-color: #2563eb;
+  background: #eaf2ff;
+  color: #174f9c;
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.18);
+}
+
+@media (max-width: 1100px) {
+  .return-goods-inventory-filters {
+    justify-content: flex-start;
+  }
+}
+
 .return-goods-command-main,
 .return-goods-command-card {
   height: 316px;
@@ -28,6 +67,37 @@
 .return-goods-command-card-danger .return-goods-help-popover {
   right: 0;
   left: auto;
+}
+
+.return-goods-inventory-filter-help {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-right: 2px;
+  color: #526a87;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.return-goods-inventory-filter-help .return-goods-help-button {
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  padding: 0;
+  border-color: rgba(23, 105, 224, 0.34);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #1769e0;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.return-goods-inventory-filter-help .return-goods-help-popover {
+  right: 0;
+  left: auto;
+  width: min(560px, calc(100vw - 48px));
+  white-space: normal;
 }
 
 .return-goods-mini-grid.three-items > :last-child {

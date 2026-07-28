@@ -140,6 +140,25 @@ class ReturnGoodsServiceSqlTests(unittest.TestCase):
         self.assertEqual(16, active_before_d21["return_to_snapshot_sales_qty"])
         self.assertIsNone(exited["return_to_snapshot_sales_qty"])
 
+    def test_serialize_item_marks_post_return_inventory_without_overwriting_warning(self):
+        service = ReturnGoodsDataService()
+
+        stockout = service._serialize_item(
+            {"current_fba_sellable": 0, "warning_type": "持续干预严重低恢复"}
+        )
+        low_stock = service._serialize_item(
+            {"current_fba_sellable": 5, "warning_type": "干预期未恢复"}
+        )
+        healthy = service._serialize_item(
+            {"current_fba_sellable": 6, "warning_type": None}
+        )
+
+        self.assertEqual("返场后再次断货", stockout["post_return_inventory_status"])
+        self.assertEqual("持续干预严重低恢复", stockout["warning_type"])
+        self.assertEqual("返场后库存不足", low_stock["post_return_inventory_status"])
+        self.assertEqual("干预期未恢复", low_stock["warning_type"])
+        self.assertIsNone(healthy["post_return_inventory_status"])
+
     def test_serialize_item_includes_continuous_recovery_fields(self):
         service = ReturnGoodsDataService()
 
@@ -330,6 +349,38 @@ class ReturnGoodsServiceSqlTests(unittest.TestCase):
 
         self.assertIn("return_days = %(return_day)s", where_sql)
         self.assertEqual(6, params["return_day"])
+
+    def test_detail_inventory_status_filters_split_sellable_and_inbound(self):
+        service = ReturnGoodsDataService()
+        base_where = "snapshot_date = %(snapshot_date)s"
+
+        cases = {
+            "post_stockout_inbound": [
+                "exit_date is null or exit_date > %(end_date)s",
+                "coalesce(current_fba_sellable, 0) = 0",
+                "coalesce(current_fba_inbound, 0) > 0",
+            ],
+            "post_stockout_no_inbound": [
+                "coalesce(current_fba_sellable, 0) = 0",
+                "coalesce(current_fba_inbound, 0) = 0",
+            ],
+            "post_low_stock_inbound": [
+                "coalesce(current_fba_sellable, 0) > 0",
+                "coalesce(current_fba_sellable, 0) <= 5",
+                "coalesce(current_fba_inbound, 0) > 0",
+            ],
+            "post_low_stock_no_inbound": [
+                "coalesce(current_fba_sellable, 0) > 0",
+                "coalesce(current_fba_sellable, 0) <= 5",
+                "coalesce(current_fba_inbound, 0) = 0",
+            ],
+        }
+
+        for filter_key, fragments in cases.items():
+            with self.subTest(filter_key=filter_key):
+                detail_where = service._detail_where(base_where, filter_key)
+                for fragment in fragments:
+                    self.assertIn(fragment, detail_where)
 
     def test_latest_event_filter_uses_item_key_latest_round(self):
         service = ReturnGoodsDataService()

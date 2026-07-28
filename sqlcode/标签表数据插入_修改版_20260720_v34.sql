@@ -273,7 +273,8 @@ BEGIN
             ADD INDEX idx_tmp_perf_scoped_date_key (stat_date, country_category, perf_store, perf_msku),
             ADD INDEX idx_tmp_perf_scoped_key_date (country_category, perf_store, perf_msku, stat_date);
         -- 返厂品识别所需的站点级库存日表：按国家类别+店铺+MSKU+日期聚合。
-        -- 同一站点不同国家库存共享时，站点级有效 FBA 可售库存取 MAX(FBA 可售库存)，供最近180天断货历史及库存恢复日判断使用。
+        -- 同一站点不同国家库存共享时，站点级有效 FBA 可售库存取 MAX(FBA 可售库存)。
+        -- 读取380天是为了保留跨越180天识别边界的完整断货段；最终返厂事件和销量池仍只统计最近180天。
         -- 当前“断货中”不使用本表，而是单独按业务日期当天产品表现 FBA 可售库存=0 且 Listing 当前停售判断。
         SET v_stage = 'tmp_oos_perf_daily';
         DROP TEMPORARY TABLE IF EXISTS tmp_oos_perf_daily;
@@ -285,7 +286,7 @@ BEGIN
                MAX(COALESCE(afn_fulfillable_quantity, 0)) AS site_fba_available,
                SUM(COALESCE(volume, 0)) AS site_sales_volume
         FROM tmp_perf_scoped
-        WHERE stat_date BETWEEN v_180d AND v_data_date
+        WHERE stat_date BETWEEN DATE_SUB(v_data_date, INTERVAL 380 DAY) AND v_data_date
         GROUP BY country_category, perf_store, perf_msku, stat_date;
         ALTER TABLE tmp_oos_perf_daily
             ADD INDEX idx_tmp_oos_perf_daily (country_category, store, MSKU, stat_date);
@@ -500,66 +501,116 @@ BEGIN
         GROUP BY country_category, country, store, MSKU;
 
         -- 返厂品/返场事件：复用上方站点级日库存临时表；同一站点不同国家库存共享，库存取 MAX(FBA 可售库存)。
-        -- 逻辑：最近180天内（不含打标日）站点级有效FBA可售库存=0；最后断货日后首次库存恢复到>5，以该首次到货日为起点，仅21天内打返厂品标签。
+        -- 与返场页保持一致：依次识别“首次库存=0 -> 后续首次库存>5”的完整返场事件，
+        -- 再取最近一次已经完成恢复的事件。末尾再次断货但尚未恢复时，仍保留上一轮已完成事件。
         SET v_stage = 'tmp_return_perf_daily';
         DROP TEMPORARY TABLE IF EXISTS tmp_return_perf_daily;
         CREATE TEMPORARY TABLE tmp_return_perf_daily AS
         SELECT country_category, store, MSKU, stat_date, site_fba_available, site_sales_volume
         FROM tmp_oos_perf_daily
-        WHERE stat_date BETWEEN v_180d AND v_data_date;
+        WHERE stat_date BETWEEN DATE_SUB(v_data_date, INTERVAL 380 DAY) AND v_data_date;
 
         ALTER TABLE tmp_return_perf_daily
             ADD INDEX idx_tmp_return_perf_daily (country_category, store, MSKU, stat_date);
 
-        SET v_stage = 'tmp_last_oos';
+        -- 标记每个日期之前最近一次库存>5的日期，以及之前最近一次库存=0的日期。
+        -- 当前日期库存>5，且最近一次库存=0晚于此前库存>5，说明当前日期是一次新返场的首次恢复日。
+        SET v_stage = 'tmp_return_daily_seq';
+        DROP TEMPORARY TABLE IF EXISTS tmp_return_daily_seq;
+        CREATE TEMPORARY TABLE tmp_return_daily_seq AS
+        SELECT country_category,
+               store,
+               MSKU,
+               stat_date,
+               site_fba_available,
+               site_sales_volume,
+               MAX(CASE WHEN site_fba_available > 5 THEN stat_date END)
+                   OVER (
+                       PARTITION BY country_category, store, MSKU
+                       ORDER BY stat_date
+                       ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                   ) AS previous_gt5_date,
+               MAX(CASE WHEN site_fba_available = 0 THEN stat_date END)
+                   OVER (
+                       PARTITION BY country_category, store, MSKU
+                       ORDER BY stat_date
+                       ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                   ) AS previous_zero_date
+        FROM tmp_return_perf_daily;
+        ALTER TABLE tmp_return_daily_seq
+            ADD INDEX idx_tmp_return_daily_seq (country_category, store, MSKU, stat_date);
 
-        DROP TEMPORARY TABLE IF EXISTS tmp_last_oos;
+        -- 每个首次恢复日匹配本轮断货段的第一个库存=0日期，口径与返场页事件生成逻辑一致。
+        SET v_stage = 'tmp_return_event_candidates';
+        DROP TEMPORARY TABLE IF EXISTS tmp_return_event_candidates;
+        CREATE TEMPORARY TABLE tmp_return_event_candidates AS
+        SELECT d.country_category,
+               d.store,
+               d.MSKU,
+               MIN(z.stat_date) AS last_oos_date,
+               d.stat_date AS first_restock_date
+        FROM tmp_return_daily_seq d
+                 JOIN tmp_return_perf_daily z
+                      ON d.country_category = z.country_category
+                     AND d.store = z.store
+                     AND d.MSKU = z.MSKU
+                     AND z.site_fba_available = 0
+                     AND z.stat_date < d.stat_date
+                     AND (d.previous_gt5_date IS NULL OR z.stat_date > d.previous_gt5_date)
+        WHERE d.site_fba_available > 5
+          AND d.previous_zero_date IS NOT NULL
+          AND (d.previous_gt5_date IS NULL OR d.previous_zero_date > d.previous_gt5_date)
+        GROUP BY d.country_category, d.store, d.MSKU, d.stat_date;
+        ALTER TABLE tmp_return_event_candidates
+            ADD INDEX idx_tmp_return_event_candidates (country_category, store, MSKU, first_restock_date);
 
-        CREATE TEMPORARY TABLE tmp_last_oos AS
+        -- 同一MSKU可能多轮返场；页面仅展示最近一次已完成恢复的返场事件。
+        SET v_stage = 'tmp_return_event_ranked';
+        DROP TEMPORARY TABLE IF EXISTS tmp_return_event_ranked;
+        CREATE TEMPORARY TABLE tmp_return_event_ranked AS
+        SELECT e.*,
+               ROW_NUMBER() OVER (
+                   PARTITION BY e.country_category, e.store, e.MSKU
+                   ORDER BY e.first_restock_date DESC, e.last_oos_date DESC
+               ) AS event_rank
+        FROM tmp_return_event_candidates e
+        WHERE e.first_restock_date BETWEEN DATE_SUB(v_data_date, INTERVAL 179 DAY) AND v_data_date;
+        ALTER TABLE tmp_return_event_ranked
+            ADD INDEX idx_tmp_return_event_ranked (country_category, store, MSKU, event_rank);
 
-        SELECT country_category, store, MSKU, MAX(stat_date) last_oos_date
-
+        -- 返场页的基础数据池：最近180天出现过断货，且周期总销量>0。
+        SET v_stage = 'tmp_return_stockout_pool';
+        DROP TEMPORARY TABLE IF EXISTS tmp_return_stockout_pool;
+        CREATE TEMPORARY TABLE tmp_return_stockout_pool AS
+        SELECT country_category,
+               store,
+               MSKU,
+               SUM(CASE WHEN site_fba_available = 0 THEN 1 ELSE 0 END) AS stockout_days,
+               SUM(COALESCE(site_sales_volume, 0)) AS period_sales_volume
         FROM tmp_return_perf_daily
+        WHERE stat_date BETWEEN DATE_SUB(v_data_date, INTERVAL 179 DAY) AND v_data_date
+        GROUP BY country_category, store, MSKU
+        HAVING stockout_days > 0
+           AND period_sales_volume > 0;
+        ALTER TABLE tmp_return_stockout_pool
+            ADD INDEX idx_tmp_return_stockout_pool (country_category, store, MSKU);
 
-        WHERE stat_date BETWEEN v_180d AND DATE_SUB(v_data_date, INTERVAL 1 DAY)
-
-          AND site_fba_available = 0
-
-        GROUP BY country_category, store, MSKU;
-
-
-        -- 先单独落地“最后断货后首次库存恢复到>5”的结果，避免同一条查询重复打开 tmp_return_perf_daily 临时表。
-        SET v_stage = 'tmp_first_restock';
-        DROP TEMPORARY TABLE IF EXISTS tmp_first_restock;
-        CREATE TEMPORARY TABLE tmp_first_restock AS
-        SELECT o.country_category,
-               o.store,
-               o.MSKU,
-               o.last_oos_date,
-               MIN(d.stat_date) AS first_restock_date
-        FROM tmp_last_oos o
-                 JOIN tmp_return_perf_daily d
-                      ON o.country_category = d.country_category
-                     AND o.store = d.store
-                     AND o.MSKU = d.MSKU
-        WHERE d.stat_date > o.last_oos_date
-          AND d.stat_date <= v_data_date
-          AND d.site_fba_available > 5
-        GROUP BY o.country_category, o.store, o.MSKU, o.last_oos_date;
-        ALTER TABLE tmp_first_restock
-            ADD INDEX idx_tmp_first_restock (country_category, store, MSKU, first_restock_date);
-
-        -- 返场品21天窗口以最后断货后首次库存恢复到>5的日期为起点；保留 first_resume_sale_date 字段名，避免影响后续标签写入语句。
+        -- 保留最近一轮事件，并沿用 first_resume_sale_date 字段名，避免影响后续返厂标签写入。
         SET v_stage = 'tmp_return';
         DROP TEMPORARY TABLE IF EXISTS tmp_return;
         CREATE TEMPORARY TABLE tmp_return AS
-        SELECT r.country_category,
-               r.store,
-               r.MSKU,
-               r.last_oos_date,
-               r.first_restock_date,
-               r.first_restock_date AS first_resume_sale_date
-        FROM tmp_first_restock r;
+        SELECT e.country_category,
+               e.store,
+               e.MSKU,
+               e.last_oos_date,
+               e.first_restock_date,
+               e.first_restock_date AS first_resume_sale_date
+        FROM tmp_return_event_ranked e
+                 JOIN tmp_return_stockout_pool p
+                      ON e.country_category = p.country_category
+                     AND e.store = p.store
+                     AND e.MSKU = p.MSKU
+        WHERE e.event_rank = 1;
 
 
         -- 客户体验：复用产品表现标准化临时表；仍仅取德国站、最新业务日期的 avg_star。
@@ -1044,7 +1095,7 @@ BEGIN
                    ELSE 0 END AS is_stopped,
                CASE
                    WHEN r.first_resume_sale_date IS NOT NULL
-                        AND DATEDIFF(v_data_date, r.first_resume_sale_date) BETWEEN 0 AND 21 THEN 1
+                        AND DATEDIFF(v_data_date, r.first_resume_sale_date) BETWEEN 0 AND 20 THEN 1
                    ELSE 0 END AS is_return_event
         FROM tmp_listing_keys k
                  LEFT JOIN tmp_op_fba f
@@ -1057,7 +1108,9 @@ BEGIN
                              ON k.country_category = r.country_category AND k.store = r.store AND k.MSKU = r.MSKU;
 
         -- 运营状态必须互斥：每个国家类别+店铺+MSKU仅保留一个状态。
-        -- 优先级：断货中 > 停售 > 返厂品 > 测款扶持 > 正常在售。
+        -- 优先级：返厂品 > 断货中 > 停售 > 测款扶持 > 正常在售。
+        -- 返厂品取最近一轮已经恢复至 FBA 可售 > 5 的事件；即使之后再次断货但尚未恢复，
+        -- 仍保留最近一次完整返厂事件，与返场品页面“最新一轮事件”口径一致。
         INSERT INTO tmp_hits
         SELECT country_category,
                NULL AS country,
@@ -1065,16 +1118,16 @@ BEGIN
                MSKU,
                '运营状态' AS label_name,
                CASE
+                   WHEN is_return_event = 1 THEN '返厂品'
                    WHEN is_out_of_stock = 1 THEN '断货中'
                    WHEN is_stopped = 1 THEN '停售'
-                   WHEN is_return_event = 1 THEN '返厂品'
                    WHEN is_test_support = 1 THEN '测款扶持'
                    WHEN fba_available > 0 THEN '正常在售'
                END AS child_label_name,
                CASE
+                   WHEN is_return_event = 1 THEN 'current'
                    WHEN is_out_of_stock = 1 THEN 'current'
                    WHEN is_stopped = 1 THEN 'current'
-                   WHEN is_return_event = 1 THEN 'current'
                    WHEN is_test_support = 1 THEN '30d'
                    WHEN fba_available > 0 THEN 'current'
                END AS label_period
@@ -1087,7 +1140,7 @@ BEGIN
 
         -- 返厂品阶段下钻：按国家类别+店铺+MSKU统计；以首次库存恢复到>5的日期为起点，首次到货后21天内输出，国家字段置NULL。
         -- 返厂品阶段下钻：最近180天最后一次站点级FBA=0后，首次恢复至>5的日期为首次到货/库存恢复日。
-        -- 0~7天为观察期，8~21天为干预期，超过21天为退出阶段。
+        -- 按自然日计数：D1~D7 为观察期（日期差 0~6），D8~D21 为干预期（日期差 7~20），D22 起为退出阶段。
         INSERT INTO tmp_hits
         SELECT r.country_category,
                NULL,
@@ -1095,9 +1148,9 @@ BEGIN
                r.MSKU,
                '返厂品阶段下钻',
                CASE
-                   WHEN DATEDIFF(v_data_date, r.first_resume_sale_date) BETWEEN 0 AND 7 THEN '观察期'
-                   WHEN DATEDIFF(v_data_date, r.first_resume_sale_date) BETWEEN 8 AND 21 THEN '干预期'
-                   WHEN DATEDIFF(v_data_date, r.first_resume_sale_date) > 21 THEN '退出阶段'
+                   WHEN DATEDIFF(v_data_date, r.first_resume_sale_date) BETWEEN 0 AND 6 THEN '观察期'
+                   WHEN DATEDIFF(v_data_date, r.first_resume_sale_date) BETWEEN 7 AND 20 THEN '干预期'
+                   WHEN DATEDIFF(v_data_date, r.first_resume_sale_date) > 20 THEN '退出阶段'
                END AS child_label_name,
                'current' AS label_period
         FROM tmp_return r
