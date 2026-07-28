@@ -252,6 +252,7 @@ class ReturnGoodsServiceSqlTests(unittest.TestCase):
                 "operating_low_recovery_msku_count": 5,
                 "operating_recovery_insufficient_msku_count": 2,
                 "operating_data_insufficient_msku_count": 0,
+                "active_stockout_or_stopped_msku_count": 6,
                 "exited_msku_count": 6,
                 "success_exit_msku_count": 3,
                 "failed_exit_msku_count": 1,
@@ -295,6 +296,7 @@ class ReturnGoodsServiceSqlTests(unittest.TestCase):
         self.assertEqual(5, overview["operating_low_recovery_msku_count"])
         self.assertEqual(2, overview["operating_recovery_insufficient_msku_count"])
         self.assertEqual(0, overview["operating_data_insufficient_msku_count"])
+        self.assertEqual(6, overview["active_stockout_or_stopped_msku_count"])
         self.assertEqual(6, overview["exited_msku_count"])
         self.assertEqual(2, overview["recovery_insufficient_msku_count"])
         self.assertEqual(11, overview["no_recovery_21d_msku_count"])
@@ -340,6 +342,20 @@ class ReturnGoodsServiceSqlTests(unittest.TestCase):
         self.assertIn("latest_rank = 1", where_sql)
         self.assertIn("dashboard_return_goods_stockout_pool", where_sql)
         self.assertIn("return_start_date <= %(end_date)s", where_sql)
+        self.assertIn("exit_date is null or exit_date > %(end_date)s", where_sql)
+
+    def test_active_stockout_or_stopped_quick_filter_matches_all_active_return_stages(self):
+        service = ReturnGoodsDataService()
+
+        where_sql, _ = service._build_where(
+            snapshot_date=date(2026, 6, 30),
+            quick_filter="overview_active_stockout_or_stopped",
+        )
+
+        self.assertIn("latest_rank = 1", where_sql)
+        self.assertIn("stage in ('观察期', '运营干预期', '持续干预期')", where_sql)
+        self.assertNotIn("return_days between 1 and 21", where_sql)
+        self.assertIn("coalesce(current_fba_sellable, 0) = 0", where_sql)
         self.assertIn("exit_date is null or exit_date > %(end_date)s", where_sql)
 
     def test_build_where_supports_return_day_filter(self):

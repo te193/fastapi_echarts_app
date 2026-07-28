@@ -433,7 +433,12 @@
       '</div>',
       '<button type="button" class="return-goods-followup-all' + quickFilterClass("overview_current_severe_low_recovery") + '" data-return-filter="overview_current_severe_low_recovery"><span>查看全部严重恢复不足 MSKU</span><strong>' + formatNumber(overview.current_severe_low_recovery_msku_count) + '个</strong><i>›</i></button>',
       '</article>',
-      '</section>'
+      '</section>',
+      '<button type="button" class="return-goods-restockout-summary' + quickFilterClass("overview_active_stockout_or_stopped") + '" data-return-filter="overview_active_stockout_or_stopped">',
+      '<span><b>返场后再次断货/停售</b><small>观察期、运营干预期或持续干预期内，当前FBA可售库存=0；仅用于状态归因，不影响返场阶段和退出判断</small></span>',
+      '<strong>' + formatNumber(overview.active_stockout_or_stopped_msku_count) + '个</strong>',
+      '<i>查看明细 ›</i>',
+      '</button>'
     ].join("");
   }
 
