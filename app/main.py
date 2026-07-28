@@ -1319,7 +1319,7 @@ def api_replenishment_tracking_detail(
 @app.get("/api/replenishment-tracking-summary")
 def api_replenishment_tracking_summary(
     cutoff_date: str = Query(default=""),
-    entry_batch_days: int = Query(default=30),
+    entry_batch_days: int = Query(default=90),
     level: str = Query(default="all"),
     purchase_status: str = Query(default="all"),
     fba_status: str = Query(default="all"),
@@ -1382,6 +1382,7 @@ def api_return_goods(
     stage: str = Query(default="all"),
     warning_type: str = Query(default="all"),
     quick_filter: str = Query(default="all"),
+    inventory_status_filter: str = Query(default="all"),
     return_day: int = Query(default=0, ge=0, le=21),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=10, le=100),
@@ -1396,6 +1397,7 @@ def api_return_goods(
         "stage": stage,
         "warning_type": warning_type,
         "quick_filter": quick_filter,
+        "inventory_status_filter": inventory_status_filter,
         "page": page,
         "page_size": page_size,
     }

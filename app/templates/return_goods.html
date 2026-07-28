@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block extra_head %}
-<link rel="stylesheet" href="{{ url_for('static', path='css/return_goods.css') }}?v=20260716followupsummary6">
+<link rel="stylesheet" href="{{ url_for('static', path='css/return_goods.css') }}?v=20260727inventorystatus2">
 {% endblock %}
 
 {% block content %}
@@ -119,6 +119,26 @@
         <p class="section-kicker">明细</p>
         <h3>返场 MSKU 最新状态</h3>
       </div>
+      <div id="inventoryStatusFilters" class="return-goods-inventory-filters" aria-label="返场后库存状态筛选">
+        <span class="return-goods-inventory-filter-help return-goods-help-anchor">
+          库存状态
+          <button class="return-goods-help-button" type="button" aria-label="查看返场后库存状态说明">?</button>
+          <span class="return-goods-help-popover" role="tooltip">
+            <strong>返场后库存状态说明</strong>
+            <span class="return-goods-help-list">
+              <span><b>再次断货·有在途</b><small>统计日当前 FBA 可售库存 = 0，且 FBA 在途库存 &gt; 0。表示返场后再次无货，但已有货物在途。</small></span>
+              <span><b>再次断货·无在途</b><small>统计日当前 FBA 可售库存 = 0，且 FBA 在途库存 = 0。表示返场后再次无货，同时没有在途库存补充。</small></span>
+              <span><b>库存不足·有在途</b><small>统计日当前 FBA 可售库存 &gt; 0 且 &lt;= 5，同时 FBA 在途库存 &gt; 0。表示仍有少量可售库存，且已有货物在途。</small></span>
+              <span><b>库存不足·无在途</b><small>统计日当前 FBA 可售库存 &gt; 0 且 &lt;= 5，同时 FBA 在途库存 = 0。表示可售库存不足，且没有在途库存补充。</small></span>
+            </span>
+          </span>
+        </span>
+        <button class="active" type="button" data-inventory-status-filter="all">全部</button>
+        <button type="button" data-inventory-status-filter="post_stockout_inbound">再次断货·有在途</button>
+        <button type="button" data-inventory-status-filter="post_stockout_no_inbound">再次断货·无在途</button>
+        <button type="button" data-inventory-status-filter="post_low_stock_inbound">库存不足·有在途</button>
+        <button type="button" data-inventory-status-filter="post_low_stock_no_inbound">库存不足·无在途</button>
+      </div>
     </div>
     <div id="tableWrap" class="alert-table-wrap"></div>
   </div>
@@ -157,5 +177,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', path='js/return_goods.js') }}?v=20260727returnsales1"></script>
+<script src="{{ url_for('static', path='js/return_goods.js') }}?v=20260727inventorystatus1"></script>
 {% endblock %}

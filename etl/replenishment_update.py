@@ -61,6 +61,7 @@ REPLENISHMENT_WORK_TABLES = {
     "tmp_pur_plan_support_layer_all": "etl_datasync.dashboard_replenishment_work_support_layer_all_v3",
     "tmp_pur_plan_replenish_calc": "etl_datasync.dashboard_replenishment_work_replenish_calc_v3",
     "tmp_asin_merge_groups": "etl_datasync.dashboard_replenishment_work_asin_merge_groups_v3",
+    "tmp_asin_merge_latest_performance": "etl_datasync.dashboard_replenishment_work_asin_latest_performance_v1",
     "tmp_asin_merge_targets": "etl_datasync.dashboard_replenishment_work_asin_merge_targets_v3",
     "tmp_asin_merge_assignments": "etl_datasync.dashboard_replenishment_work_asin_merge_assignments_v3",
     "tmp_asin_merge_purchase_fields": "etl_datasync.dashboard_replenishment_work_asin_merge_purchase_fields_v3",
@@ -622,8 +623,10 @@ from (
             substring_index(raw.seller_name, '-', 1) as seller_name_ue,
             substring_index(raw.seller_name, '-', 1) as seller_name_new,
             case
-                when upper(raw.marketplace) in ('US', 'CA', 'MX') then '北美站'
-                when upper(raw.marketplace) in ('UK', 'GB') then '英国站'
+                when upper(raw.marketplace) in ('US', 'CA', 'MX', 'BR')
+                  or raw.marketplace in ('美国', '加拿大', '巴西', '墨西哥') then '北美站'
+                when upper(raw.marketplace) in ('UK', 'GB')
+                  or raw.marketplace = '英国' then '英国站'
                 else '欧洲站'
             end as country_category,
             null as principal,
@@ -2015,6 +2018,27 @@ group by country_category, max_asin
 having link_count > 1
    and has_follow_link > 0;
 
+drop temporary table if exists tmp_asin_merge_latest_performance;
+create temporary table tmp_asin_merge_latest_performance as
+select
+    calc.country_category,
+    calc.seller_name_new,
+    calc.seller_sku_adj,
+    max(perf.dt_date) as max_perf_date
+from tmp_pur_plan_replenish_calc calc
+left join etl_datasync.dashboard_product_performance_daily perf
+       on calc.country_category = perf.country_category
+      and calc.seller_name_new = perf.seller_name_new
+      and calc.seller_sku_adj = perf.seller_sku_adj
+      and perf.dt_date <= %(biz_date)s
+inner join tmp_asin_merge_groups grp
+        on calc.country_category = grp.country_category
+       and calc.max_asin = grp.max_asin
+group by
+    calc.country_category,
+    calc.seller_name_new,
+    calc.seller_sku_adj;
+
 drop temporary table if exists tmp_asin_merge_targets;
 create temporary table tmp_asin_merge_targets as
 select
@@ -2030,6 +2054,7 @@ from (
         calc.seller_name_new,
         calc.seller_sku_adj,
         row_number() over (partition by calc.country_category, calc.max_asin order by
+            coalesce(perf.max_perf_date, date('1900-01-01')) desc,
             case when coalesce(calc.followed_flag, 0) = 0 then 0 else 1 end,
             case when calc.sales_status <> '停售中' then 0 else 1 end,
             case
@@ -2047,6 +2072,10 @@ from (
     inner join tmp_asin_merge_groups grp
             on calc.country_category = grp.country_category
            and calc.max_asin = grp.max_asin
+    left join tmp_asin_merge_latest_performance perf
+           on calc.country_category = perf.country_category
+          and calc.seller_name_new = perf.seller_name_new
+          and calc.seller_sku_adj = perf.seller_sku_adj
     where coalesce(calc.fllow_flag, 1) = 0
       and grp.eligible_target_link_count > 0
 ) ranked
@@ -2516,7 +2545,7 @@ select
     seller_sku,
     max(price) as price
 from etl_datasync.dashboard_listing_price_daily_snapshot
-where snapshot_date = %(biz_date)s
+where snapshot_date = %(snapshot_date)s
 group by country_category, seller_name_new, country, seller_sku
 """
 

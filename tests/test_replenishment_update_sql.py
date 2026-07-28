@@ -180,6 +180,15 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("upper(substring_index(store_name, '-', -1)) = 'DE'", sql)
         self.assertIn("else coalesce(max(inventory_seller_name_copy), concat(max(seller_name_ue), '-DE'))", sql)
 
+    def test_listing_basic_sync_classifies_chinese_marketplace_names(self):
+        sql = replenishment_update.SELECT_LISTING_BASIC_SYNC_SQL
+
+        self.assertIn(
+            "raw.marketplace in ('美国', '加拿大', '巴西', '墨西哥')",
+            sql,
+        )
+        self.assertIn("raw.marketplace = '英国'", sql)
+
     def test_listing_basic_sync_derives_sales_status(self):
         sql = replenishment_update.SELECT_LISTING_BASIC_SYNC_SQL
 
@@ -524,6 +533,22 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertNotIn("同ASIN已合并补货", sql)
         self.assertIn("产品组补货目标链接", sql)
 
+    def test_asin_merge_target_prefers_latest_product_performance_date(self):
+        sql = " ".join(replenishment_update.REPLENISHMENT_RESULT_SQL.split())
+        target_sql = sql.split(
+            "create temporary table tmp_asin_merge_targets as", 1
+        )[1].split(
+            "drop temporary table if exists tmp_asin_merge_assignments", 1
+        )[0]
+
+        latest_date_expr = "coalesce(perf.max_perf_date, date('1900-01-01')) desc"
+        followed_rank = "case when coalesce(calc.followed_flag, 0) = 0 then 0 else 1 end"
+
+        self.assertIn("tmp_asin_merge_latest_performance", sql)
+        self.assertIn("max(perf.dt_date) as max_perf_date", sql)
+        self.assertIn(latest_date_expr, target_sql)
+        self.assertLess(target_sql.index(latest_date_expr), target_sql.index(followed_rank))
+
     def test_replenishment_need_qty_does_not_subtract_purchase_plan_twice(self):
         sql = replenishment_update.REPLENISHMENT_RESULT_SQL
 
@@ -625,7 +650,7 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertNotIn("group by\n    p.country_category,\n    p.country,\n    p.seller_name_new,\n    p.seller_sku_adj,\n    coalesce(nullif(p.local_sku", sql)
         self.assertIn("country_metrics", replenishment_update.DEFAULT_STEP_ORDER)
         self.assertIn("dashboard_listing_price_daily_snapshot", replenishment_update.INSERT_COUNTRY_LISTING_PRICE_SQL)
-        self.assertIn("where snapshot_date = %(biz_date)s", replenishment_update.INSERT_COUNTRY_LISTING_PRICE_SQL)
+        self.assertIn("where snapshot_date = %(snapshot_date)s", replenishment_update.INSERT_COUNTRY_LISTING_PRICE_SQL)
         self.assertIn("tmp_replenishment_country_listing_price", replenishment_update.UPDATE_COUNTRY_METRICS_LISTING_PRICE_SQL)
         self.assertIn("set m.listing_price = lp.price", replenishment_update.UPDATE_COUNTRY_METRICS_LISTING_PRICE_SQL)
 

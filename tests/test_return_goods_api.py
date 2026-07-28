@@ -39,6 +39,7 @@ class ReturnGoodsApiTests(unittest.TestCase):
                 stage="运营干预期",
                 warning_type="干预期未恢复",
                 quick_filter="receiving",
+                inventory_status_filter="post_stockout_inbound",
                 page=2,
                 page_size=30,
             )
@@ -54,6 +55,7 @@ class ReturnGoodsApiTests(unittest.TestCase):
                 "stage": "运营干预期",
                 "warning_type": "干预期未恢复",
                 "quick_filter": "receiving",
+                "inventory_status_filter": "post_stockout_inbound",
                 "page": 2,
                 "page_size": 30,
             },

@@ -1,4 +1,5 @@
 import sys
+import inspect
 from datetime import date
 from pathlib import Path
 
@@ -10,6 +11,35 @@ from app.services.replenishment_tracking_summary_data import (
     purchase_status_label,
 )
 from etl import replenishment_tracking_summary_update
+
+
+def test_summary_defaults_to_recent_90_day_batch():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "app/templates/replenishment.html").read_text(encoding="utf-8")
+    script = (root / "app/static/js/replenishment_tracking_summary.js").read_text(encoding="utf-8")
+    service_default = inspect.signature(
+        ReplenishmentTrackingSummaryService.get_payload
+    ).parameters["entry_batch_days"].default
+
+    assert '<option value="90" selected>' in template
+    assert 'valueOf("summaryBatchSelect", "90")' in script
+    assert service_default == 90
+
+    _, params = ReplenishmentTrackingSummaryService()._where(
+        "2026-07-27",
+        None,
+        "all",
+        "all",
+        "all",
+        "all",
+        "all",
+        "all",
+        "all",
+        "all",
+        "",
+        "product_category_30d",
+    )
+    assert params["batch_days"] == 89
 
 
 def test_summary_etl_dry_run_exits_before_database_setup(monkeypatch, capsys):
@@ -462,6 +492,28 @@ def test_summary_stage_filters_match_level_cards():
         assert expected in filters
 
 
+def test_summary_all_history_batch_does_not_apply_date_window():
+    service = ReplenishmentTrackingSummaryService()
+
+    filters, params = service._where(
+        "2026-07-21",
+        0,
+        "all",
+        "all",
+        "all",
+        "all",
+        "all",
+        "all",
+        "all",
+        "all",
+        "",
+        "product_category_30d",
+    )
+
+    assert "s.first_replenishment_date >=" not in filters
+    assert "batch_days" not in params
+
+
 def test_summary_keyword_filters_keep_object_and_order_keywords_separate():
     service = ReplenishmentTrackingSummaryService()
 
@@ -732,6 +784,26 @@ def test_summary_detail_hides_received_and_labels_purchase_qty():
     assert "已收" not in js[js.index("function renderDetailTable"):js.index("function renderStageDetailTable")]
 
 
+def test_summary_detail_drawer_shows_fba_receiving_and_completion_nodes():
+    js = Path("app/static/js/replenishment_tracking_summary.js").read_text(encoding="utf-8")
+    milestone_start = js.index("function renderDetailMilestoneStrip")
+    milestone_end = js.index("function renderDetailFocusPanel", milestone_start)
+    milestone_block = js[milestone_start:milestone_end]
+    grouping_start = js.index("function groupDetailRows")
+    grouping_end = js.index("function finalizeFbaPlanLines", grouping_start)
+    grouping_block = js[grouping_start:grouping_end]
+
+    assert 'label: "FBA接收"' in milestone_block
+    assert 'label: "FBA完成"' in milestone_block
+    assert "stats.fbaReceivingCount" in milestone_block
+    assert "stats.fbaClosedCount" in milestone_block
+    assert "received_quantity" in grouping_block
+    assert "fba_shipment_count" in grouping_block
+    assert "fba_closed_count" in grouping_block
+    assert "renderFbaReceivingEvidenceCard(batch)" in js
+    assert "renderFbaCompletionEvidenceCard(batch)" in js
+
+
 def test_summary_detail_dedupes_orders_from_multiple_history_levels():
     service = ReplenishmentTrackingSummaryService()
     js = Path("app/static/js/replenishment_tracking_summary.js").read_text(encoding="utf-8")
@@ -893,6 +965,29 @@ def test_completed_card_filters_use_the_matching_history_node_condition():
 
     assert "s.purchase_plan_flag = 1" in filters
     assert "detail_h.purchase_plan_flag = 1" not in filters
+
+
+def test_fba_missing_detail_filter_matches_the_layer_card_denominator():
+    service = ReplenishmentTrackingSummaryService()
+
+    filters, _ = service._where(
+        date(2026, 7, 20),
+        30,
+        "all",
+        "all",
+        "all",
+        "all",
+        "紧急补货",
+        "all",
+        "all",
+        "all",
+        "",
+        "product_category",
+        "",
+        "fba_plan_not_created",
+    )
+
+    assert "s.fba_plan_flag = 0" in filters
 
 
 def test_level_flow_uses_cutoff_day_status_for_every_chain_node():

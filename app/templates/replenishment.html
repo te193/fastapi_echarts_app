@@ -57,6 +57,16 @@
       <span>&#21333;&#21495;&#31579;&#36873;</span>
       <input id="orderKeywordInput" type="search" placeholder="&#25628;&#32034; PP / PO / CR / QC / R / FBA / SP">
     </label>
+    <label class="filter-control">
+      <span>&#38144;&#21806;&#35282;&#33394;</span>
+      <select id="salesRoleSelect">
+        <option value="all">&#20840;&#37096;&#38144;&#21806;&#35282;&#33394;</option>
+        <option value="&#26126;&#26143;&#20135;&#21697;">&#26126;&#26143;&#20135;&#21697;</option>
+        <option value="&#28508;&#21147;&#20135;&#21697;">&#28508;&#21147;&#20135;&#21697;</option>
+        <option value="&#30246;&#29399;&#20135;&#21697;">&#30246;&#29399;&#20135;&#21697;</option>
+        <option value="&#38382;&#39064;&#20135;&#21697;">&#38382;&#39064;&#20135;&#21697;</option>
+      </select>
+    </label>
   </div>
 </section>
 
@@ -121,8 +131,8 @@
         <select id="summaryBatchSelect">
           <option value="7">最近7天新增补货</option>
           <option value="14">最近14天新增补货</option>
-          <option value="30" selected>最近30天新增补货</option>
-          <option value="90">最近90天新增补货</option>
+          <option value="30">最近30天新增补货</option>
+          <option value="90" selected>最近90天新增补货</option>
           <option value="0">全部历史补货</option>
         </select>
       </label>
@@ -247,6 +257,6 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', path='js/replenishment.js') }}?v=20260723replcopyblur1"></script>
-<script src="{{ url_for('static', path='js/replenishment_tracking_summary.js') }}?v=20260720linkedfilters5"></script>
+<script src="{{ url_for('static', path='js/replenishment.js') }}?v=20260727salesrole1"></script>
+<script src="{{ url_for('static', path='js/replenishment_tracking_summary.js') }}?v=20260727stagefilters1"></script>
 {% endblock %}

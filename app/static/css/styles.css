@@ -8539,7 +8539,7 @@ body.is-data-loading .country-label-hub-page section { opacity: 0.72; }
 
 .summary-detail-rail {
   display: grid;
-  grid-template-columns: repeat(6, minmax(118px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
   gap: 10px;
 }
 
@@ -8780,6 +8780,35 @@ body.is-data-loading .country-label-hub-page section { opacity: 0.72; }
 .summary-detail-evidence-card.stage-shipment_plan {
   border-color: #ffc1c1;
   background: #fff7f7;
+}
+
+.summary-detail-evidence-card.stage-fba_receiving {
+  border-color: #8ddfd2;
+  background: #f0fffb;
+}
+
+.summary-detail-evidence-card.stage-fba_closed {
+  border-color: #9ebcf8;
+  background: #f3f7ff;
+}
+
+.summary-detail-progress-card {
+  position: relative;
+}
+
+.summary-detail-progress-card::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+  border-radius: 8px 0 0 8px;
+  background: #16b8a7;
+  content: "";
+}
+
+.summary-detail-progress-card.stage-fba_closed::before {
+  background: #3975e8;
 }
 
 .summary-detail-evidence-card span {

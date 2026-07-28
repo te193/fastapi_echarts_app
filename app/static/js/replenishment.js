@@ -196,7 +196,7 @@
 
   function init() {
     [
-      "datePickerBtn", "datePickerValue", "datePickerPanel", "levelSelect", "categoryPeriodSelect", "siteSelect", "storeSelect", "keywordInput", "orderKeywordInput", "clearFiltersBtn",
+      "datePickerBtn", "datePickerValue", "datePickerPanel", "levelSelect", "categoryPeriodSelect", "siteSelect", "storeSelect", "keywordInput", "orderKeywordInput", "salesRoleSelect", "clearFiltersBtn",
       "periodHint", "summaryGrid", "layerVizGrid", "levelTabs", "tableWrap", "paginationInfo", "paginationNumbers", "pageSizeSelect",
       "prevPageBtn", "nextPageBtn", "sortQtyBtn", "sortSupportBtn", "openTrackingBtn", "exportReplenishmentBtn",
       "countryDrawerMask", "countryDrawer", "countryDrawerTitle", "countryDrawerSubtitle", "countryDrawerCloseBtn",
@@ -215,7 +215,8 @@
       ["levelSelect", "level"],
       ["categoryPeriodSelect", "category_period_days"],
       ["siteSelect", "site"],
-      ["storeSelect", "store"]
+      ["storeSelect", "store"],
+      ["salesRoleSelect", "category"]
     ].forEach(function (pair) {
       elements[pair[0]].addEventListener("change", function () {
         state[pair[1]] = pair[1] === "category_period_days" ? Number(this.value || 30) : this.value;
@@ -378,6 +379,7 @@
     elements.datePickerValue.textContent = state.snapshot_date || "--";
     elements.levelSelect.value = state.level || "all";
     elements.categoryPeriodSelect.value = String(state.category_period_days || 30);
+    elements.salesRoleSelect.value = state.category || "all";
     elements.siteSelect.value = state.site || "all";
     elements.storeSelect.value = state.store || "all";
     elements.keywordInput.value = state.keyword || "";

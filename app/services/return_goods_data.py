@@ -100,6 +100,7 @@ class ReturnGoodsDataService:
         stage: str = "all",
         warning_type: str = "all",
         quick_filter: str = "all",
+        inventory_status_filter: str = "all",
         return_day: int | str = 0,
         page: int = 1,
         page_size: int = 20,
@@ -157,10 +158,11 @@ class ReturnGoodsDataService:
             workbench_rows = self._workbench_rows(conn, filters, params)
             stage_distribution = self._stage_distribution(conn, filters, params)
             warnings = self._warnings(conn, filters, params)
-            total = self._total(conn, filters, params)
+            detail_filters = self._detail_where(filters, inventory_status_filter)
+            total = self._total(conn, detail_filters, params)
             total_pages = max(1, math.ceil(total / safe_page_size))
             safe_page = min(safe_page, total_pages)
-            items = self._items(conn, filters, params, safe_page, safe_page_size)
+            items = self._items(conn, detail_filters, params, safe_page, safe_page_size)
             self._attach_listing_previews(conn, snapshot_day, items)
             meta = self._meta(conn)
         return {
@@ -466,6 +468,33 @@ class ReturnGoodsDataService:
         if quick_filter in quick_filters:
             clauses.append(quick_filters[quick_filter])
         return " and ".join(clauses), params
+
+    def _detail_where(self, filters: str, inventory_status_filter: str = "all") -> str:
+        active_condition = "return_start_date <= %(end_date)s and (exit_date is null or exit_date > %(end_date)s)"
+        inventory_conditions = {
+            "post_stockout_inbound": (
+                "coalesce(current_fba_sellable, 0) = 0 "
+                "and coalesce(current_fba_inbound, 0) > 0"
+            ),
+            "post_stockout_no_inbound": (
+                "coalesce(current_fba_sellable, 0) = 0 "
+                "and coalesce(current_fba_inbound, 0) = 0"
+            ),
+            "post_low_stock_inbound": (
+                "coalesce(current_fba_sellable, 0) > 0 "
+                "and coalesce(current_fba_sellable, 0) <= 5 "
+                "and coalesce(current_fba_inbound, 0) > 0"
+            ),
+            "post_low_stock_no_inbound": (
+                "coalesce(current_fba_sellable, 0) > 0 "
+                "and coalesce(current_fba_sellable, 0) <= 5 "
+                "and coalesce(current_fba_inbound, 0) = 0"
+            ),
+        }
+        condition = inventory_conditions.get(inventory_status_filter)
+        if not condition:
+            return filters
+        return f"({filters}) and ({active_condition}) and ({condition})"
 
     def _summary(self, conn, filters: str, params: dict[str, Any]) -> dict[str, Any]:
         with conn.cursor() as cursor:
@@ -1941,11 +1970,18 @@ class ReturnGoodsDataService:
         return_to_snapshot_sales_qty = number_value(row.get("post_cumulative_sales_qty"))
         if return_to_snapshot_sales_qty is None:
             return_to_snapshot_sales_qty = number_value(row.get("post_recovery_sales_qty"))
+        current_fba_sellable = number_value(row.get("current_fba_sellable"))
+        post_return_inventory_status = None
+        if current_fba_sellable == 0:
+            post_return_inventory_status = "返场后再次断货"
+        elif current_fba_sellable is not None and current_fba_sellable <= 5:
+            post_return_inventory_status = "返场后库存不足"
         item = {
             **{key: number_value(value) for key, value in row.items()},
             "stockout_date": format_day(row.get("stockout_date")),
             "return_start_date": format_day(row.get("return_start_date")),
             "exit_date": format_day(row.get("exit_date")),
+            "post_return_inventory_status": post_return_inventory_status,
             "return_to_snapshot_sales_qty": (
                 None if row.get("exit_date") else return_to_snapshot_sales_qty
             ),
