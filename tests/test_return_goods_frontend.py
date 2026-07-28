@@ -32,6 +32,18 @@ def test_return_goods_main_overview_includes_d21_followup_status():
     assert ".return-goods-main-metrics > :first-child" in stylesheet
 
 
+def test_return_goods_overview_shows_active_stockout_or_stopped_as_separate_summary():
+    script = (ROOT / "app" / "static" / "js" / "return_goods.js").read_text(encoding="utf-8")
+
+    assert 'class="return-goods-restockout-summary' in script
+    assert "返场后再次断货/停售" in script
+    assert "观察期、运营干预期或持续干预期" in script
+    assert "仅用于状态归因，不影响返场阶段和退出判断" in script
+    assert "overview.active_stockout_or_stopped_msku_count" in script
+    assert '"overview_active_stockout_or_stopped"' in script
+    assert 'miniMetric("返场后再次断货/停售"' not in script
+
+
 def test_severe_recovery_card_explains_recent_trend_rules():
     script = (ROOT / "app" / "static" / "js" / "return_goods.js").read_text(encoding="utf-8")
 
@@ -49,7 +61,7 @@ def test_return_goods_overview_cards_use_weighted_uniform_layout():
     assert "minmax(250px, 1.08fr)" in stylesheet
     assert "minmax(270px, 1.12fr)" in stylesheet
     assert "height: 344px;" in stylesheet
-    assert "return_goods.css') }}?v=20260728overviewheight1" in template
+    assert "return_goods.css') }}?v=20260728restockout3" in template
     assert ".return-goods-command-card > .return-goods-followup-all" in stylesheet
     assert "@media (max-width: 1750px)" in stylesheet
 

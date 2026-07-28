@@ -417,6 +417,15 @@ class ReturnGoodsDataService:
             "overview_returned_msku": latest_event_filter + " and " + in_stockout_pool_filter + " and return_start_date <= %(end_date)s",
             "overview_observe": latest_event_filter + " and " + in_stockout_pool_filter + " and " + active_condition + " and stage = '观察期'",
             "overview_operating": latest_event_filter + " and " + in_stockout_pool_filter + " and " + active_condition + " and stage = '运营干预期'",
+            "overview_active_stockout_or_stopped": (
+                latest_event_filter
+                + " and "
+                + in_stockout_pool_filter
+                + " and "
+                + active_condition
+                + " and stage in ('观察期', '运营干预期', '持续干预期')"
+                + " and coalesce(current_fba_sellable, 0) = 0"
+            ),
             "overview_exited": latest_event_filter + " and " + in_stockout_pool_filter + " and exit_date is not null and exit_date <= %(end_date)s",
             "overview_manual": latest_event_filter + " and " + in_stockout_pool_filter + " and exit_date is not null and exit_date <= %(end_date)s and exit_reason = '待人工判断'",
             "overview_secondary": latest_event_filter + " and " + in_stockout_pool_filter + " and exit_date is not null and exit_date <= %(end_date)s and exit_reason = '二次断货'",
@@ -545,6 +554,7 @@ class ReturnGoodsDataService:
                     count(distinct case when {active_condition} and stage = '运营干预期' and sales_recovery_rate is not null and sales_recovery_rate < 0.5 then item_key end) as operating_low_recovery_msku_count,
                     count(distinct case when {active_condition} and stage = '运营干预期' and sales_recovery_rate >= 0.5 and sales_recovery_rate < 0.7 then item_key end) as operating_recovery_insufficient_msku_count,
                     count(distinct case when {active_condition} and stage = '运营干预期' and sales_recovery_rate is null then item_key end) as operating_data_insufficient_msku_count,
+                    count(distinct case when {active_condition} and stage in ('观察期', '运营干预期', '持续干预期') and coalesce(current_fba_sellable, 0) = 0 then item_key end) as active_stockout_or_stopped_msku_count,
                     count(distinct case when exit_date is not null and exit_date <= %(end_date)s then item_key end) as exited_msku_count,
                     count(distinct case when exit_date is not null and exit_date <= %(end_date)s and exit_reason = '达标退出' then item_key end) as success_exit_msku_count,
                     count(distinct case when exit_date is not null and exit_date <= %(end_date)s and exit_reason = '未达标退出' then item_key end) as failed_exit_msku_count,
@@ -679,6 +689,7 @@ class ReturnGoodsDataService:
             "operating_low_recovery_msku_count": int(row.get("operating_low_recovery_msku_count") or 0),
             "operating_recovery_insufficient_msku_count": int(row.get("operating_recovery_insufficient_msku_count") or 0),
             "operating_data_insufficient_msku_count": int(row.get("operating_data_insufficient_msku_count") or 0),
+            "active_stockout_or_stopped_msku_count": int(row.get("active_stockout_or_stopped_msku_count") or 0),
             "exited_msku_count": int(row.get("exited_msku_count") or 0),
             "success_exit_msku_count": int(row.get("success_exit_msku_count") or 0),
             "failed_exit_msku_count": int(row.get("failed_exit_msku_count") or 0),
