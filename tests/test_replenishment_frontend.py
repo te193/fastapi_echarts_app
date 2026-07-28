@@ -20,8 +20,31 @@ def test_margin_price_assets_use_cache_busting_versions():
     replenishment_template = (ROOT / "app" / "templates" / "replenishment.html").read_text(encoding="utf-8")
 
     assert "styles.css') }}?v=20260723replcopy1" in base_template
-    assert "replenishment.js') }}?v=20260723replcopyblur1" in replenishment_template
+    assert "replenishment.js') }}?v=20260727salesrole1" in replenishment_template
     assert "replenishment_tracking_summary.js') }}?v=20260727stagefilters1" in replenishment_template
+
+
+def test_replenishment_has_sales_role_filter_with_existing_role_values():
+    template = (ROOT / "app" / "templates" / "replenishment.html").read_text(encoding="utf-8")
+
+    assert '<select id="salesRoleSelect">' in template
+    assert '<option value="all">&#20840;&#37096;&#38144;&#21806;&#35282;&#33394;</option>' in template
+    assert '<option value="&#26126;&#26143;&#20135;&#21697;">&#26126;&#26143;&#20135;&#21697;</option>' in template
+    assert '<option value="&#28508;&#21147;&#20135;&#21697;">&#28508;&#21147;&#20135;&#21697;</option>' in template
+    assert '<option value="&#30246;&#29399;&#20135;&#21697;">&#30246;&#29399;&#20135;&#21697;</option>' in template
+    assert '<option value="&#38382;&#39064;&#20135;&#21697;">&#38382;&#39064;&#20135;&#21697;</option>' in template
+
+
+def test_replenishment_sales_role_filter_reuses_category_state_and_period_linkage():
+    script = (ROOT / "app" / "static" / "js" / "replenishment.js").read_text(encoding="utf-8")
+
+    assert '"salesRoleSelect"' in script
+    assert '["salesRoleSelect", "category"]' in script
+    assert 'elements.salesRoleSelect.value = state.category || "all";' in script
+    assert 'state.category = "all";' in script
+    assert 'if (pair[1] === "category_period_days") state.category = "all";' not in script
+    assert "category: state.category" in script
+    assert '"snapshot_date", "level", "category", "category_period_days"' in script
 
 
 def test_replenishment_tracking_summary_entry_is_visible():

@@ -32,8 +32,8 @@ DEFAULT_STEP_ORDER = [
     "listing_basic_sync",
     "self_asin_sync",
     "fba_shipment_sync",
-    "supplier_moq_sync",
     "order_profit_source_sync",
+    "supplier_moq_sync",
     "check_daily_snapshots",
     "salable_days_stat",
     "replenishment_result",
@@ -61,6 +61,7 @@ REPLENISHMENT_WORK_TABLES = {
     "tmp_pur_plan_support_layer_all": "etl_datasync.dashboard_replenishment_work_support_layer_all_v3",
     "tmp_pur_plan_replenish_calc": "etl_datasync.dashboard_replenishment_work_replenish_calc_v3",
     "tmp_asin_merge_groups": "etl_datasync.dashboard_replenishment_work_asin_merge_groups_v3",
+    "tmp_asin_merge_latest_performance": "etl_datasync.dashboard_replenishment_work_asin_latest_performance_v1",
     "tmp_asin_merge_targets": "etl_datasync.dashboard_replenishment_work_asin_merge_targets_v3",
     "tmp_asin_merge_assignments": "etl_datasync.dashboard_replenishment_work_asin_merge_assignments_v3",
     "tmp_asin_merge_purchase_fields": "etl_datasync.dashboard_replenishment_work_asin_merge_purchase_fields_v3",
@@ -248,17 +249,6 @@ create table if not exists etl_datasync.dashboard_replenishment_fba_shipment_syn
 ) engine=InnoDB default charset=utf8mb4;
 """
 
-CREATE_SUPPLIER_MOQ_SYNC_SQL = """
-create table if not exists etl_datasync.dashboard_replenishment_supplier_moq_sync (
-    snapshot_date date not null,
-    sku varchar(500) not null,
-    supplier_moq decimal(18,4) null,
-    synced_at datetime not null default current_timestamp,
-    primary key (snapshot_date, sku),
-    key idx_repl_supplier_moq_sku (sku, snapshot_date)
-) engine=InnoDB default charset=utf8mb4;
-"""
-
 CREATE_ORDER_PROFIT_SOURCE_SYNC_SQL = """
 create table if not exists etl_datasync.dashboard_replenishment_order_profit_source (
     seller_name_new varchar(100) not null,
@@ -270,6 +260,17 @@ create table if not exists etl_datasync.dashboard_replenishment_order_profit_sou
     synced_at datetime not null default current_timestamp,
     primary key (seller_name_new, seller_sku_adj, country_category),
     key idx_repl_order_profit_country (country_category, best_country)
+) engine=InnoDB default charset=utf8mb4;
+"""
+
+CREATE_SUPPLIER_MOQ_SYNC_SQL = """
+create table if not exists etl_datasync.dashboard_replenishment_supplier_moq_sync (
+    snapshot_date date not null,
+    sku varchar(500) not null,
+    supplier_moq decimal(18,4) null,
+    synced_at datetime not null default current_timestamp,
+    primary key (snapshot_date, sku),
+    key idx_repl_supplier_moq_sku (sku, snapshot_date)
 ) engine=InnoDB default charset=utf8mb4;
 """
 
@@ -466,8 +467,8 @@ DDL_STATEMENTS = (
     CREATE_SELF_ASIN_SYNC_SQL,
     CREATE_LISTING_BASIC_SYNC_SQL,
     CREATE_FBA_SHIPMENT_SYNC_SQL,
-    CREATE_SUPPLIER_MOQ_SYNC_SQL,
     CREATE_ORDER_PROFIT_SOURCE_SYNC_SQL,
+    CREATE_SUPPLIER_MOQ_SYNC_SQL,
     CREATE_REPLENISHMENT_RESULT_SQL,
     CREATE_COUNTRY_METRICS_SQL,
 )
@@ -622,8 +623,10 @@ from (
             substring_index(raw.seller_name, '-', 1) as seller_name_ue,
             substring_index(raw.seller_name, '-', 1) as seller_name_new,
             case
-                when upper(raw.marketplace) in ('US', 'CA', 'MX') then '北美站'
-                when upper(raw.marketplace) in ('UK', 'GB') then '英国站'
+                when upper(raw.marketplace) in ('US', 'CA', 'MX', 'BR')
+                  or raw.marketplace in ('美国', '加拿大', '巴西', '墨西哥') then '北美站'
+                when upper(raw.marketplace) in ('UK', 'GB')
+                  or raw.marketplace = '英国' then '英国站'
                 else '欧洲站'
             end as country_category,
             null as principal,
@@ -1690,6 +1693,10 @@ from (
         coalesce(ks.r_14d_salable_days, 0) as r_14d_salable_days,
         coalesce(ks.r_7d_salable_days, 0) as r_7d_salable_days,
         coalesce(ks.r_3d_salable_days, 0) as r_3d_salable_days,
+        greatest(coalesce(ks.r_30d_salable_days, 0), coalesce(fm.origin_r_30d_salable_days, 0)) as result_r_30d_salable_days,
+        greatest(coalesce(ks.r_14d_salable_days, 0), coalesce(fm.origin_r_14d_salable_days, 0)) as result_r_14d_salable_days,
+        greatest(coalesce(ks.r_7d_salable_days, 0), coalesce(fm.origin_r_7d_salable_days, 0)) as result_r_7d_salable_days,
+        greatest(coalesce(ks.r_3d_salable_days, 0), coalesce(fm.origin_r_3d_salable_days, 0)) as result_r_3d_salable_days,
         coalesce(ks.r_90d_salable_days, 0) as hist_90d_instock_days,
         coalesce(m.sales_90, 0) as hist_90d_instock_sales,
         case
@@ -2011,6 +2018,27 @@ group by country_category, max_asin
 having link_count > 1
    and has_follow_link > 0;
 
+drop temporary table if exists tmp_asin_merge_latest_performance;
+create temporary table tmp_asin_merge_latest_performance as
+select
+    calc.country_category,
+    calc.seller_name_new,
+    calc.seller_sku_adj,
+    max(perf.dt_date) as max_perf_date
+from tmp_pur_plan_replenish_calc calc
+left join etl_datasync.dashboard_product_performance_daily perf
+       on calc.country_category = perf.country_category
+      and calc.seller_name_new = perf.seller_name_new
+      and calc.seller_sku_adj = perf.seller_sku_adj
+      and perf.dt_date <= %(biz_date)s
+inner join tmp_asin_merge_groups grp
+        on calc.country_category = grp.country_category
+       and calc.max_asin = grp.max_asin
+group by
+    calc.country_category,
+    calc.seller_name_new,
+    calc.seller_sku_adj;
+
 drop temporary table if exists tmp_asin_merge_targets;
 create temporary table tmp_asin_merge_targets as
 select
@@ -2026,6 +2054,7 @@ from (
         calc.seller_name_new,
         calc.seller_sku_adj,
         row_number() over (partition by calc.country_category, calc.max_asin order by
+            coalesce(perf.max_perf_date, date('1900-01-01')) desc,
             case when coalesce(calc.followed_flag, 0) = 0 then 0 else 1 end,
             case when calc.sales_status <> '停售中' then 0 else 1 end,
             case
@@ -2043,6 +2072,10 @@ from (
     inner join tmp_asin_merge_groups grp
             on calc.country_category = grp.country_category
            and calc.max_asin = grp.max_asin
+    left join tmp_asin_merge_latest_performance perf
+           on calc.country_category = perf.country_category
+          and calc.seller_name_new = perf.seller_name_new
+          and calc.seller_sku_adj = perf.seller_sku_adj
     where coalesce(calc.fllow_flag, 1) = 0
       and grp.eligible_target_link_count > 0
 ) ranked
@@ -2223,10 +2256,10 @@ select
     local_quantity,
     r_180d_salable_days,
     r_90d_salable_days,
-    r_30d_salable_days,
-    r_14d_salable_days,
-    r_7d_salable_days,
-    r_3d_salable_days,
+    result_r_30d_salable_days as r_30d_salable_days,
+    result_r_14d_salable_days as r_14d_salable_days,
+    result_r_7d_salable_days as r_7d_salable_days,
+    result_r_3d_salable_days as r_3d_salable_days,
     sales_180 as sales_180d,
     sales_90 as sales_90d,
     final_sales_30 as final_sales_30d,
@@ -2430,18 +2463,24 @@ from (
         case
             when coalesce(r.history_recovery_flag, 0) = 1
              and coalesce(r.support_replenish_level_sort, 99) not in (1, 2, 3)
+             and coalesce(r.replenish_block_reason, '') <> '被跟卖点不补货'
+             and not (coalesce(r.asin_merge_flag, 0) = 1 and coalesce(r.replenish_qty, 0) = 0)
                 then case when coalesce(r.max_cg_box_pcs, 0) > 0 then r.max_cg_box_pcs else 50 end
             else coalesce(r.replenish_qty, 0)
         end as calculated_replenish_qty,
         case
             when coalesce(r.history_recovery_flag, 0) = 1
              and coalesce(r.support_replenish_level_sort, 99) not in (1, 2, 3)
+             and coalesce(r.replenish_block_reason, '') <> '被跟卖点不补货'
+             and not (coalesce(r.asin_merge_flag, 0) = 1 and coalesce(r.replenish_qty, 0) = 0)
                 then case when coalesce(r.max_cg_box_pcs, 0) > 0 then 1 else 0 end
             else coalesce(r.replenish_box_qty, 0)
         end as calculated_replenish_box_qty,
         case
             when coalesce(r.history_recovery_flag, 0) = 1
              and coalesce(r.support_replenish_level_sort, 99) not in (1, 2, 3)
+             and coalesce(r.replenish_block_reason, '') <> '被跟卖点不补货'
+             and not (coalesce(r.asin_merge_flag, 0) = 1 and coalesce(r.replenish_qty, 0) = 0)
                 then (case when coalesce(r.max_cg_box_pcs, 0) > 0 then r.max_cg_box_pcs else 50 end)
                    * (coalesce(r.max_cg_price, 0) + coalesce(r.max_cg_transport_costs, 0))
             else coalesce(r.replenish_cost, 0)
@@ -2506,7 +2545,7 @@ select
     seller_sku,
     max(price) as price
 from etl_datasync.dashboard_listing_price_daily_snapshot
-where snapshot_date = %(biz_date)s
+where snapshot_date = %(snapshot_date)s
 group by country_category, seller_name_new, country, seller_sku
 """
 
@@ -2634,19 +2673,19 @@ STEPS = {
         "etl_datasync.dashboard_replenishment_fba_shipment_sync",
         FBA_SHIPMENT_COLUMNS,
     ),
-    "supplier_moq_sync": SourceLoadStep(
-        "supplier_moq_sync",
-        DELETE_SUPPLIER_MOQ_SYNC_SQL,
-        SELECT_SUPPLIER_MOQ_SYNC_SQL,
-        "etl_datasync.dashboard_replenishment_supplier_moq_sync",
-        SUPPLIER_MOQ_COLUMNS,
-    ),
     "order_profit_source_sync": SourceLoadStep(
         "order_profit_source_sync",
         DELETE_ORDER_PROFIT_SOURCE_SYNC_SQL,
         SELECT_ORDER_PROFIT_SOURCE_SYNC_SQL,
         "etl_datasync.dashboard_replenishment_order_profit_source",
         ORDER_PROFIT_SOURCE_COLUMNS,
+    ),
+    "supplier_moq_sync": SourceLoadStep(
+        "supplier_moq_sync",
+        DELETE_SUPPLIER_MOQ_SYNC_SQL,
+        SELECT_SUPPLIER_MOQ_SYNC_SQL,
+        "etl_datasync.dashboard_replenishment_supplier_moq_sync",
+        SUPPLIER_MOQ_COLUMNS,
     ),
     "history_daily_sync": SourceLoadStep(
         "history_daily_sync",

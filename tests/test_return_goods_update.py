@@ -6,10 +6,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from etl.dashboard_daily_update import SchemaConfig
 from etl.return_goods_update import (
+    CREATE_RETURN_EVENTS_SQL,
+    INSERT_RETURN_EVENT_SQL,
     SELECT_PRODUCT_DAILY_SQL,
     avg_sales,
     build_events,
+    ensure_return_events_schema,
     salable_sales_qty,
     sales_role,
     source_history_start_date,
@@ -42,6 +46,33 @@ def product_row(
 
 
 class ReturnGoodsEventTests(unittest.TestCase):
+    def test_post_return_sales_qty_is_wired_through_schema_migration_and_insert(self):
+        class Cursor:
+            def __init__(self):
+                self.statements = []
+
+            def execute(self, sql, *_):
+                self.statements.append(sql)
+
+            def fetchone(self):
+                return None
+
+        schemas = SchemaConfig(
+            target_schema="etl_datasync_test",
+            etl_source_schema="etl_datasync_test",
+            dwd_source_schema="etl_datasync_test",
+            pricing_source_schema="etl_datasync_test",
+        )
+        cursor = Cursor()
+
+        ensure_return_events_schema(cursor, schemas)
+
+        self.assertIn("post_return_sales_qty decimal(18,4) null", CREATE_RETURN_EVENTS_SQL)
+        self.assertEqual(2, INSERT_RETURN_EVENT_SQL.count("post_return_sales_qty"))
+        self.assertTrue(
+            any("add column post_return_sales_qty" in statement for statement in cursor.statements)
+        )
+
     def test_source_history_covers_stockout_context_and_pre_21d_baseline(self):
         self.assertEqual(
             date(2025, 6, 29),
@@ -344,6 +375,17 @@ class ReturnGoodsEventTests(unittest.TestCase):
 
         self.assertIsNone(event["stable_recovery_start_date"])
         self.assertFalse(event["current_stable_recovery_flag"])
+
+    def test_tracks_sales_after_21_day_monitor_separately_from_recovery_sales(self):
+        rows = [product_row(date(2026, 1, 1) + timedelta(days=i), 10, 2) for i in range(7)]
+        rows.append(product_row(date(2026, 1, 8), 0, 0))
+        rows.extend(product_row(date(2026, 1, 9) + timedelta(days=i), 6, 0) for i in range(21))
+        rows.append(product_row(date(2026, 1, 30), 6, 2))
+
+        event = build_events(rows, date(2026, 1, 30))[0]
+
+        self.assertEqual(Decimal("0"), event["post_recovery_sales_qty"])
+        self.assertEqual(Decimal("2"), event["post_return_sales_qty"])
 
     def test_ignores_return_start_outside_180_day_recognition_window(self):
         rows = [product_row(date(2026, 1, 1) + timedelta(days=i), 10, 2) for i in range(7)]

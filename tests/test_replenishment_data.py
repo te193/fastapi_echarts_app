@@ -591,9 +591,11 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
         qty_expr = service._history_recovery_restore_qty_expr("r")
         cost_expr = service._display_replenish_cost_expr("r")
 
+        self.assertIn("r.max_cg_price is not null", cost_expr)
+        self.assertIn("r.max_cg_transport_costs is not null", cost_expr)
         self.assertIn(f"then {qty_expr} *", cost_expr)
-        self.assertIn("coalesce(r.max_cg_price, 0)", cost_expr)
-        self.assertIn("coalesce(r.max_cg_transport_costs, 0)", cost_expr)
+        self.assertIn("(r.max_cg_price + r.max_cg_transport_costs)", cost_expr)
+        self.assertIn("else 0 end", cost_expr)
 
     def test_normal_display_rows_preserve_stored_replenishment_cost(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)
@@ -602,6 +604,110 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
 
         self.assertIn("else coalesce(r.replenish_cost, 0) end", cost_expr)
         self.assertEqual(1, cost_expr.count("r.replenish_cost"))
+
+    def test_display_replenishment_prefers_moq_executable_fields_with_legacy_fallback(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+
+        qty_expr = service._display_replenish_qty_expr("r")
+        box_expr = service._display_replenish_box_qty_expr("r")
+        cost_expr = service._display_replenish_cost_expr("r")
+
+        self.assertIn("r.executable_replenish_qty", qty_expr)
+        self.assertIn("r.executable_replenish_box_qty", box_expr)
+        self.assertIn("r.executable_replenish_cost", cost_expr)
+        self.assertIn("r.moq_status is not null", qty_expr)
+        self.assertIn("history_recovery_flag", qty_expr)
+
+        calculated_expr = service._calculated_replenish_qty_expr("r")
+        self.assertIn("r.calculated_replenish_qty", calculated_expr)
+        self.assertIn("r.moq_status is not null", calculated_expr)
+        self.assertIn("history_recovery_flag", calculated_expr)
+
+    def test_detail_replenishment_uses_calculated_values_only_for_below_moq(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+
+        qty_expr = service._detail_replenish_qty_expr("r")
+        box_expr = service._detail_replenish_box_qty_expr("r")
+        cost_expr = service._detail_replenish_cost_expr("r")
+
+        self.assertIn("r.moq_status = 'below_minimum'", qty_expr)
+        self.assertIn("r.calculated_replenish_qty", qty_expr)
+        self.assertIn("r.calculated_replenish_box_qty", box_expr)
+        self.assertIn("r.calculated_replenish_cost", cost_expr)
+        self.assertIn("r.executable_replenish_qty", qty_expr)
+
+    def test_calculated_box_and_cost_fall_back_for_existing_snapshots(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+
+        box_expr = service._calculated_replenish_box_qty_expr("r")
+        cost_expr = service._calculated_replenish_cost_expr("r")
+
+        self.assertIn("r.calculated_replenish_box_qty", box_expr)
+        self.assertIn("r.replenish_box_qty", box_expr)
+        self.assertIn("r.calculated_replenish_cost", cost_expr)
+        self.assertIn("r.replenish_cost", cost_expr)
+        self.assertIn("history_recovery_flag", box_expr)
+
+    def test_summary_history_count_uses_mutually_exclusive_display_layer(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+        conn = RecordingConnection([{}])
+
+        service._summary(conn, "cur_date = %(snapshot_date)s", {"snapshot_date": "2026-07-21"})
+
+        sql = conn.queries[0]
+        self.assertIn(
+            f"sum(case when {service._display_level_expr()} = %(level_history_recovery)s then 1 else 0 end) as history_recovery_count",
+            sql,
+        )
+
+    def test_calculated_box_and_cost_have_export_labels(self):
+        self.assertEqual("计算补货箱数", REPLENISHMENT_COLUMN_LABELS["calculated_replenish_box_qty"])
+        self.assertEqual("计算补货货值", REPLENISHMENT_COLUMN_LABELS["calculated_replenish_cost"])
+
+    def test_items_query_uses_detail_values_without_changing_summary_values(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+
+        self.assertNotEqual(service._detail_replenish_qty_expr(), service._display_replenish_qty_expr())
+        self.assertIn("calculated_replenish_qty", service._detail_replenish_qty_expr())
+        self.assertNotIn("below_minimum", service._display_replenish_qty_expr())
+
+    def test_build_where_supports_moq_warning_filter(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+
+        filters, params = service._build_where(
+            snapshot_date="2026-07-21",
+            level="all",
+            category="all",
+            site="all",
+            store="all",
+            keyword="",
+            moq_status="below_minimum",
+        )
+
+        self.assertIn("moq_status = %(moq_status)s", filters)
+        self.assertEqual("below_minimum", params["moq_status"])
+
+    def test_serialize_item_exposes_moq_warning_details(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+
+        item = service._serialize_item(
+            {
+                "seller_sku_adj": "MSKU-1",
+                "calculated_replenish_qty": 80,
+                "replenish_qty": 0,
+                "replenish_box_qty": 0,
+                "replenish_cost": 0,
+                "supplier_moq": 100,
+                "moq_shortfall_qty": 20,
+                "moq_status": "below_minimum",
+            }
+        )
+
+        self.assertEqual(80, item["calculated_replenish_qty"])
+        self.assertEqual(100, item["supplier_moq"])
+        self.assertEqual(20, item["moq_shortfall_qty"])
+        self.assertEqual("below_minimum", item["moq_status"])
+        self.assertEqual(0, item["replenish_qty"])
 
     def test_calc_pool_condition_excludes_zero_qty_asin_merge_rows(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)

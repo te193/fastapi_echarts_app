@@ -80,3 +80,13 @@ def test_result_promotion_updates_only_moq_fields_and_preserves_legacy_calculati
     assert "test_schema" not in sql
     assert "r.replenish_qty =" not in sql
     assert "r.replenish_cost =" not in sql
+
+
+def test_result_promotion_history_recovery_respects_existing_replenishment_blocks():
+    sql = replenishment_test_db.build_result_moq_update_sql("prod_schema")
+
+    assert sql.count("coalesce(r.replenish_block_reason, '') <> '被跟卖点不补货'") >= 3
+    assert sql.count(
+        "not (coalesce(r.asin_merge_flag, 0) = 1 "
+        "and coalesce(r.replenish_qty, 0) = 0)"
+    ) >= 3

@@ -97,6 +97,8 @@ def build_result_moq_update_sql(production_schema: str) -> str:
         case
             when coalesce(r.history_recovery_flag, 0) = 1
              and coalesce(r.support_replenish_level_sort, 99) not in (1, 2, 3)
+             and coalesce(r.replenish_block_reason, '') <> '被跟卖点不补货'
+             and not (coalesce(r.asin_merge_flag, 0) = 1 and coalesce(r.replenish_qty, 0) = 0)
                 then case when coalesce(r.max_cg_box_pcs, 0) > 0 then r.max_cg_box_pcs else 50 end
             else coalesce(r.replenish_qty, 0)
         end
@@ -105,6 +107,8 @@ def build_result_moq_update_sql(production_schema: str) -> str:
         case
             when coalesce(r.history_recovery_flag, 0) = 1
              and coalesce(r.support_replenish_level_sort, 99) not in (1, 2, 3)
+             and coalesce(r.replenish_block_reason, '') <> '被跟卖点不补货'
+             and not (coalesce(r.asin_merge_flag, 0) = 1 and coalesce(r.replenish_qty, 0) = 0)
                 then case when coalesce(r.max_cg_box_pcs, 0) > 0 then 1 else 0 end
             else coalesce(r.replenish_box_qty, 0)
         end
@@ -113,6 +117,8 @@ def build_result_moq_update_sql(production_schema: str) -> str:
         case
             when coalesce(r.history_recovery_flag, 0) = 1
              and coalesce(r.support_replenish_level_sort, 99) not in (1, 2, 3)
+             and coalesce(r.replenish_block_reason, '') <> '被跟卖点不补货'
+             and not (coalesce(r.asin_merge_flag, 0) = 1 and coalesce(r.replenish_qty, 0) = 0)
                 then ({calculated_qty})
                    * (coalesce(r.max_cg_price, 0) + coalesce(r.max_cg_transport_costs, 0))
             else coalesce(r.replenish_cost, 0)
