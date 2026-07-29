@@ -172,10 +172,14 @@
     });
     function handleOverviewClick(event) {
       var ruleButton = event.target.closest("[data-view-rules]");
+      var returnAttribution = event.target.closest("[data-return-attribution]");
       var child = event.target.closest("[data-overview-child]");
       var parent = event.target.closest("[data-overview-parent]");
       if (ruleButton) {
         openRuleDrawer(Number(ruleButton.dataset.viewRules));
+      } else if (returnAttribution) {
+        applyReturnAttributionFilter(returnAttribution.dataset.operationChild);
+        document.querySelector(".label-hub-breakdown-section").scrollIntoView({ behavior: "smooth", block: "start" });
       } else if (child) {
         toggleCondition(child.dataset.parentId, child.dataset.overviewChild);
         document.querySelector(".label-hub-breakdown-section").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -738,6 +742,13 @@
     var children = values[parent] || [];
     values[parent] = children.indexOf(child) >= 0 ? children.filter(function (item) { return item !== child; }) : children.concat([child]);
     if (!values[parent].length) delete values[parent];
+    saveConditions(values);
+    resetPageAndRender();
+  }
+  function applyReturnAttributionFilter(operationChildId) {
+    var values = parsedConditions();
+    values["3"] = [String(operationChildId)];
+    values["5"] = ["501", "502", "503"];
     saveConditions(values);
     resetPageAndRender();
   }
@@ -1485,7 +1496,15 @@
     var children = (item.children || []).map(function (child) {
       var checked = (selected[String(item.id)] || []).indexOf(String(child.id)) >= 0;
       var scoped = distributionById[String(child.id)] || {};
-      return '<button type="button" class="label-hub-child' + (checked ? " selected" : "") + '" data-overview-child="' + child.id + '" data-parent-id="' + item.id + '" aria-pressed="' + checked + '" title="' + app.escapeHtml(child.rule || child.definition || child.label) + '"><span><b>' + app.escapeHtml(child.label) + '</b><small>' + formatPercent(scoped.share) + '</small></span><strong>' + formatNumber(scoped.count) + '<small> 条记录</small></strong></button>';
+      var attributionCopy = item.id === 3 ? {
+        "304": "返场期再次断货",
+        "306": "返场期被判停售"
+      }[String(child.id)] : "";
+      var attributionCount = Number(scoped.return_stage_count || 0);
+      var attribution = attributionCopy && attributionCount > 0
+        ? '<button type="button" class="label-hub-return-attribution" data-return-attribution data-operation-child="' + child.id + '" title="查看当前运营状态中仍处于观察期、运营干预期或持续干预期的 MSKU"><span>' + app.escapeHtml(attributionCopy) + '</span><strong>' + formatNumber(attributionCount) + '</strong></button>'
+        : "";
+      return '<article class="label-hub-child' + (checked ? " selected" : "") + '"><button type="button" class="label-hub-child-main" data-overview-child="' + child.id + '" data-parent-id="' + item.id + '" aria-pressed="' + checked + '" title="' + app.escapeHtml(child.rule || child.definition || child.label) + '"><span><b>' + app.escapeHtml(child.label) + '</b><small>' + formatPercent(scoped.share) + '</small></span><strong>' + formatNumber(scoped.count) + '<small> 条记录</small></strong></button>' + attribution + '</article>';
     }).join("");
     var periods = (item.periods || []).join(" / ") || "无周期";
     var note = item.mutual_exclusion ? "同周期互斥" : "允许标签共现";

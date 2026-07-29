@@ -25,6 +25,17 @@ def test_label_hub_uses_url_conditions_and_profile_drawer_contract():
     assert "panel.rules" in script
 
 
+def test_operation_cards_render_active_return_attribution_and_linked_filter():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+
+    assert 'data-return-attribution' in script
+    assert '"返场期再次断货"' in script
+    assert '"返场期被判停售"' in script
+    assert "applyReturnAttributionFilter" in script
+    assert ".label-hub-return-attribution" in styles
+
+
 def test_label_hub_detail_workbench_uses_independent_post_flow_and_dual_views():
     template = (ROOT / "app" / "templates" / "label_hub.html").read_text(encoding="utf-8")
     script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")

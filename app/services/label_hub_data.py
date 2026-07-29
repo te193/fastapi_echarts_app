@@ -27,6 +27,8 @@ SOURCE_INITIAL_CONTENT_CHECK_DELAY_SECONDS = 30
 EXCLUDED_ANALYSIS_PARENT_IDS = {4, 7, 13, 14}
 SALES_ROLE_PARENT_ID = 1
 PROBLEM_PRODUCT_CHILD_ID = 104
+RETURN_STAGE_PARENT_ID = 5
+ACTIVE_RETURN_STAGE_CHILD_IDS = frozenset({501, 502, 503})
 
 REMOTE_PARENT_CHILD_PRIORITY = {
     1: [101, 102, 103, 104],
@@ -866,10 +868,21 @@ class LabelHubDataService:
             result = []
             source_count = len(source_rows)
             preferred_children = preferred_remote_children(source_rows, parent_label_id)
+            active_return_units = {
+                _business_unit_key(row)
+                for row in source_rows
+                if row_parent_children(row, RETURN_STAGE_PARENT_ID).intersection(ACTIVE_RETURN_STAGE_CHILD_IDS)
+            }
             for child in category_by_id[parent_label_id]["children"]:
                 bucket_units = {unit for unit, child_id in preferred_children.items() if child_id == child["id"]}
                 stats = self._bucket_stats(source_rows, lambda row, units=bucket_units: _business_unit_key(row) in units, source_count)
-                result.append({"id": child["id"], "label": child["label"], "count": stats["msku_count"], **stats})
+                result.append({
+                    "id": child["id"],
+                    "label": child["label"],
+                    "count": stats["msku_count"],
+                    "return_stage_count": len(bucket_units.intersection(active_return_units)),
+                    **stats,
+                })
             return result
 
         parent_children = category_by_id[parent_label_id]["children"]
@@ -988,6 +1001,13 @@ class LabelHubDataService:
             "metric_msku_count": metric_count,
             "metric_coverage_rate": round(metric_count / self._unique_msku_count(rows), 4) if rows else 0,
         }
+        distribution = current_distribution(rows)
+        return_stage_active_count = len({
+            _business_unit_key(row)
+            for row in rows
+            if row_parent_children(row, RETURN_STAGE_PARENT_ID).intersection(ACTIVE_RETURN_STAGE_CHILD_IDS)
+        })
+        return_stage_reconciled_count = sum(item["return_stage_count"] for item in distribution)
         payload = {
             "data_date": data_date,
             "scope": scope,
@@ -1011,7 +1031,12 @@ class LabelHubDataService:
             "health": {"mutual_exclusion_conflict_count": issue_counts["conflict"]},
             "diagnosis": diagnosis,
             "breakdowns": breakdowns,
-            "distribution": current_distribution(rows),
+            "distribution": distribution,
+            "return_stage_attribution": {
+                "active_return_count": return_stage_active_count,
+                "reconciled_count": return_stage_reconciled_count,
+                "unmatched_count": max(0, return_stage_active_count - return_stage_reconciled_count),
+            },
             "matrix": {"rows": parent_children, "columns": compare_children, "cells": cells, "total": sum(cell["count"] for cell in cells)},
             "rules": category_by_id.get(parent_label_id, {}),
             "rows": page_rows,
