@@ -370,6 +370,97 @@ class LabelHubDataTests(unittest.TestCase):
         self.assertNotIn("Amazon.Found.B0", [row["msku"] for row in payload["rows"]])
         self.assertEqual(1, payload["matrix"]["total"])
 
+    def test_operation_distribution_counts_active_return_stage_intersections(self):
+        details = [
+            {
+                "label_id": 3,
+                "label_name": "运营状态",
+                "sub_label_id": child_id,
+                "sub_label_name": child_name,
+                "tag_rule": "",
+                "business_definition": "",
+                "business_owner": "运营",
+                "label_category": "经营",
+                "update_frequency": "日",
+                "mutual_exclusion": "互斥",
+                "status": "已启用",
+                "tagging_method": "auto_sql",
+            }
+            for child_id, child_name in (
+                (303, "返厂品"),
+                (304, "断货中"),
+                (306, "停售"),
+            )
+        ] + [
+            {
+                "label_id": 5,
+                "label_name": "返厂品阶段下钻",
+                "sub_label_id": child_id,
+                "sub_label_name": child_name,
+                "tag_rule": "",
+                "business_definition": "",
+                "business_owner": "运营",
+                "label_category": "经营",
+                "update_frequency": "日",
+                "mutual_exclusion": "互斥",
+                "status": "已启用",
+                "tagging_method": "auto_sql",
+            }
+            for child_id, child_name in (
+                (501, "观察期"),
+                (502, "运营干预期"),
+                (503, "持续干预期"),
+            )
+        ]
+        facts = []
+        for msku, operation_id, return_stage_id in (
+            ("RETURN", 303, 501),
+            ("STOCKOUT", 304, 502),
+            ("STOPPED", 306, 503),
+            ("PLAIN-STOCKOUT", 304, None),
+        ):
+            facts.append({
+                "data_date": "2026-07-28",
+                "country_category": "欧洲站",
+                "store": "StoreA",
+                "msku": msku,
+                "label_id": operation_id,
+                "label_period": "current",
+            })
+            if return_stage_id:
+                facts.append({
+                    "data_date": "2026-07-28",
+                    "country_category": "欧洲站",
+                    "store": "StoreA",
+                    "msku": msku,
+                    "label_id": return_stage_id,
+                    "label_period": "current",
+                })
+
+        payload = self.service.build_payload(
+            details=details,
+            facts=facts,
+            metrics={},
+            data_date="2026-07-28",
+            parent_label_id=3,
+            compare_parent_id=5,
+            conditions={},
+            label_period="all",
+            country_category="all",
+            store="all",
+            keyword="",
+            page=1,
+            page_size=20,
+            sort_field="sales_amount",
+            sort_dir="desc",
+        )
+
+        distribution = {item["id"]: item for item in payload["distribution"]}
+        self.assertEqual(1, distribution[304]["return_stage_count"])
+        self.assertEqual(1, distribution[306]["return_stage_count"])
+        self.assertEqual(3, payload["return_stage_attribution"]["active_return_count"])
+        self.assertEqual(3, payload["return_stage_attribution"]["reconciled_count"])
+
     def test_overview_and_six_breakdowns_return_unique_msku_metrics(self):
         payload = self.service.build_payload(
             details=DETAILS, facts=FACTS, metrics=METRICS, data_date="2026-07-13",
