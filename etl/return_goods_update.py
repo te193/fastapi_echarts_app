@@ -14,12 +14,13 @@ from etl.replenishment_update import apply_database_ini_env, parse_day
 DEFAULT_LOOKBACK_DAYS = 180
 RETURN_STOCK_THRESHOLD = Decimal("5")
 MONITOR_DAYS = 21
+RETURN_HISTORY_START_DATE = date(2026, 1, 1)
 
 
 def source_history_start_date(snapshot_date: date, lookback_days: int) -> date:
-    # Keep enough context to trace a stockout segment across the full
-    # identification window and still retain its preceding 21-day baseline.
-    return snapshot_date - timedelta(days=lookback_days * 2 + MONITOR_DAYS - 1)
+    # The deployed label procedure identifies complete stockout rounds from
+    # the available 2026 history, then applies the 180-day event window.
+    return min(RETURN_HISTORY_START_DATE, snapshot_date)
 
 CREATE_RETURN_EVENTS_SQL = """
 create table if not exists etl_datasync.dashboard_return_goods_events (
@@ -211,8 +212,7 @@ from (
     group by dt_date, seller_name_new, country_category, seller_sku_adj
 ) daily_msku_stock
 group by seller_name_new, country_category, seller_sku_adj
-having stockout_days > 0
-   and period_sales_qty > 0;
+having stockout_days > 0;
 """
 
 INSERT_STAGE_DAILY_SUMMARY_SQL = """
@@ -782,6 +782,7 @@ def build_events(
         return []
     latest_row = rows[-1]
     result = []
+    # The inclusive 180-day window starts 179 days before the snapshot date.
     min_return_start = snapshot_date - timedelta(days=lookback_days - 1)
     for event in events:
         start_day = event["return_start_date"]
