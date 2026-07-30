@@ -13,6 +13,8 @@ $PreflightStdoutLog = Join-Path $LogDir "etl_source_preflight_run_$RunStamp.log"
 $PreflightStderrLog = Join-Path $LogDir "etl_source_preflight_run_$RunStamp.err.log"
 $StdoutLog = Join-Path $LogDir "etl_daily_run_$RunStamp.log"
 $StderrLog = Join-Path $LogDir "etl_daily_run_$RunStamp.err.log"
+$ProductHistoryStdoutLog = Join-Path $LogDir "etl_product_history_run_$RunStamp.log"
+$ProductHistoryStderrLog = Join-Path $LogDir "etl_product_history_run_$RunStamp.err.log"
 $SalesRoleStdoutLog = Join-Path $LogDir "etl_sales_role_run_$RunStamp.log"
 $SalesRoleStderrLog = Join-Path $LogDir "etl_sales_role_run_$RunStamp.err.log"
 $LabelEvidenceStdoutLog = Join-Path $LogDir "etl_label_rule_evidence_run_$RunStamp.log"
@@ -122,6 +124,23 @@ if ($ExitCode -ne 0) {
 }
 
 Write-Host "Dashboard ETL finished at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+Write-Host "Product performance history sync started at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+Write-Host "Product history stdout log : $ProductHistoryStdoutLog"
+Write-Host "Product history stderr log : $ProductHistoryStderrLog"
+
+$PreviousErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+& $PythonExe -m etl.product_performance_history_sync @args > $ProductHistoryStdoutLog 2> $ProductHistoryStderrLog
+$ProductHistoryExitCode = $LASTEXITCODE
+$ErrorActionPreference = $PreviousErrorActionPreference
+
+if ($ProductHistoryExitCode -ne 0) {
+    Send-DashboardDingTalkNotification -Status "failed" -Stage "product_history" -ExitCode $ProductHistoryExitCode -ErrorMessage "Product performance history sync failed with exit code $ProductHistoryExitCode. See $ProductHistoryStdoutLog and $ProductHistoryStderrLog."
+    Write-Error "Product performance history sync failed with exit code $ProductHistoryExitCode. See $ProductHistoryStdoutLog and $ProductHistoryStderrLog."
+    exit $ProductHistoryExitCode
+}
+
+Write-Host "Product performance history sync finished at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 Write-Host "Sales role ETL started at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 Write-Host "Sales role stdout log : $SalesRoleStdoutLog"
 Write-Host "Sales role stderr log : $SalesRoleStderrLog"
