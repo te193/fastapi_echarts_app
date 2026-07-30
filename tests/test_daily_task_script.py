@@ -9,6 +9,7 @@ def test_daily_update_task_runs_tracking_summary_between_replenishment_and_retur
 
     assert "-m etl.dashboard_source_preflight" in script
     assert "-m etl.dashboard_daily_update" in script
+    assert "-m etl.product_performance_history_sync" in script
     assert "-m etl.sales_role_snapshot_update" in script
     assert "-m etl.replenishment_update" in script
     assert "-m etl.replenishment_tracking_summary_update" in script
@@ -17,6 +18,7 @@ def test_daily_update_task_runs_tracking_summary_between_replenishment_and_retur
     assert (
         script.index("-m etl.dashboard_source_preflight")
         < script.index("-m etl.dashboard_daily_update")
+        < script.index("-m etl.product_performance_history_sync")
         < script.index("-m etl.sales_role_snapshot_update")
         < script.index("-m etl.replenishment_update")
         < script.index("-m etl.replenishment_tracking_summary_update")

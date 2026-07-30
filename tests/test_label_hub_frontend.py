@@ -522,12 +522,13 @@ def test_label_hub_issue_overview_shows_selected_group_problem_counts():
     assert 'detailState.problem_mode = "any"' in diagnosis_handler.group(0)
 
 
-def test_label_hub_explains_primary_label_priority_for_aggregated_msku():
+def test_label_hub_does_not_show_obsolete_primary_label_priority():
     script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
 
-    assert "aggregation_priority_labels" in script
-    assert "同一国家类别 + 店铺 + MSKU 组合按业务优先级只保留一个主标签" in script
-    assert "主标签优先级" in script
+    assert "aggregation_priority_labels" not in script
+    assert "按业务优先级只保留一个主标签" not in script
+    assert "主标签优先级" not in script
+    assert "label-hub-rule-table-head" in script
 
 
 def test_label_hub_profile_does_not_render_site_scope_labels():
