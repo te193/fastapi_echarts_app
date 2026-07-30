@@ -24,6 +24,7 @@ class ReturnGoodsServiceSqlTests(unittest.TestCase):
 
         self.assertIn("snapshot_date = %(snapshot_date)s", where_sql)
         self.assertIn("seller_sku_adj not like %(excluded_msku_pattern)s", where_sql)
+        self.assertNotIn("dashboard_return_goods_stockout_pool", where_sql)
         self.assertIn("country_category = %(country_category)s", where_sql)
         self.assertIn("seller_name_new = %(seller_name_new)s", where_sql)
         self.assertIn("seller_sku_adj like %(keyword)s", where_sql)
@@ -340,9 +341,19 @@ class ReturnGoodsServiceSqlTests(unittest.TestCase):
         self.assertIn("row_number() over", where_sql)
         self.assertIn("partition by item_key", where_sql)
         self.assertIn("latest_rank = 1", where_sql)
-        self.assertIn("dashboard_return_goods_stockout_pool", where_sql)
+        self.assertNotIn("dashboard_return_goods_stockout_pool", where_sql)
         self.assertIn("return_start_date <= %(end_date)s", where_sql)
         self.assertIn("exit_date is null or exit_date > %(end_date)s", where_sql)
+
+    def test_stockout_overview_filter_still_uses_stockout_pool(self):
+        service = ReturnGoodsDataService()
+
+        where_sql, _ = service._build_where(
+            snapshot_date=date(2026, 6, 30),
+            quick_filter="overview_stockout_msku",
+        )
+
+        self.assertIn("dashboard_return_goods_stockout_pool", where_sql)
 
     def test_active_stockout_or_stopped_quick_filter_matches_all_active_return_stages(self):
         service = ReturnGoodsDataService()
@@ -511,7 +522,7 @@ class ReturnGoodsServiceSqlTests(unittest.TestCase):
 
         where_sql, _ = service._build_where(snapshot_date=date(2026, 6, 30), quick_filter="overview_recovery_insufficient")
 
-        self.assertIn("dashboard_return_goods_stockout_pool", where_sql)
+        self.assertNotIn("dashboard_return_goods_stockout_pool", where_sql)
         self.assertIn("sales_recovery_rate >= 0.5", where_sql)
         self.assertIn("sales_recovery_rate < 0.7", where_sql)
 
@@ -520,7 +531,7 @@ class ReturnGoodsServiceSqlTests(unittest.TestCase):
 
         where_sql, _ = service._build_where(snapshot_date=date(2026, 6, 30), quick_filter="overview_no_recovery_21d")
 
-        self.assertIn("dashboard_return_goods_stockout_pool", where_sql)
+        self.assertNotIn("dashboard_return_goods_stockout_pool", where_sql)
         self.assertIn("coalesce(post_return_sales_qty, 0) = 0", where_sql)
         self.assertNotIn("coalesce(post_recovery_sales_qty, 0) = 0", where_sql)
 
@@ -538,8 +549,45 @@ class ReturnGoodsServiceSqlTests(unittest.TestCase):
 
         where_sql, _ = service._build_where(snapshot_date=date(2026, 6, 30), quick_filter="overview_data_insufficient")
 
-        self.assertIn("dashboard_return_goods_stockout_pool", where_sql)
+        self.assertNotIn("dashboard_return_goods_stockout_pool", where_sql)
         self.assertIn("sales_recovery_rate is null", where_sql)
+
+    def test_overview_summary_uses_latest_events_without_stockout_pool_gate(self):
+        class Cursor:
+            def __init__(self):
+                self.sql = ""
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def execute(self, sql, params=None):
+                self.sql = " ".join(sql.lower().split())
+
+            def fetchone(self):
+                return {}
+
+        class Connection:
+            def __init__(self):
+                self.cursor_instance = Cursor()
+
+            def cursor(self):
+                return self.cursor_instance
+
+        service = ReturnGoodsDataService()
+        conn = Connection()
+
+        service._overview_summary(
+            conn,
+            "snapshot_date = %(snapshot_date)s",
+            {"snapshot_date": date(2026, 6, 30), "end_date": date(2026, 6, 30)},
+        )
+
+        self.assertIn("row_number() over", conn.cursor_instance.sql)
+        self.assertIn("where latest_rows.latest_rank = 1", conn.cursor_instance.sql)
+        self.assertNotIn("dashboard_return_goods_stockout_pool", conn.cursor_instance.sql)
 
     def test_stage_business_compare_uses_active_observe_and_operating_rows(self):
         service = ReturnGoodsDataService()

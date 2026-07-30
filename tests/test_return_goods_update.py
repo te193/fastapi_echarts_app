@@ -6,10 +6,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from etl.dashboard_daily_update import SchemaConfig
 from etl.return_goods_update import (
+    CREATE_RETURN_EVENTS_SQL,
+    INSERT_STOCKOUT_POOL_SQL,
+    INSERT_RETURN_EVENT_SQL,
     SELECT_PRODUCT_DAILY_SQL,
     avg_sales,
     build_events,
+    ensure_return_events_schema,
     salable_sales_qty,
     sales_role,
     source_history_start_date,
@@ -42,11 +47,97 @@ def product_row(
 
 
 class ReturnGoodsEventTests(unittest.TestCase):
-    def test_source_history_covers_stockout_context_and_pre_21d_baseline(self):
+    def test_post_return_sales_qty_is_wired_through_schema_migration_and_insert(self):
+        class Cursor:
+            def __init__(self):
+                self.statements = []
+
+            def execute(self, sql, *_):
+                self.statements.append(sql)
+
+            def fetchone(self):
+                return None
+
+        schemas = SchemaConfig(
+            target_schema="etl_datasync_test",
+            etl_source_schema="etl_datasync_test",
+            dwd_source_schema="etl_datasync_test",
+            pricing_source_schema="etl_datasync_test",
+        )
+        cursor = Cursor()
+
+        ensure_return_events_schema(cursor, schemas)
+
+        self.assertIn("post_return_sales_qty decimal(18,4) null", CREATE_RETURN_EVENTS_SQL)
+        self.assertEqual(2, INSERT_RETURN_EVENT_SQL.count("post_return_sales_qty"))
+        self.assertTrue(
+            any("add column post_return_sales_qty" in statement for statement in cursor.statements)
+        )
+
+    def test_source_history_matches_deployed_label_history(self):
         self.assertEqual(
-            date(2025, 6, 29),
+            date(2026, 1, 1),
             source_history_start_date(date(2026, 7, 14), lookback_days=180),
         )
+
+    def test_stockout_pool_does_not_require_positive_sales(self):
+        self.assertNotIn("period_sales_qty > 0", INSERT_STOCKOUT_POOL_SQL)
+
+    def test_event_with_old_stockout_is_retained_when_return_start_is_inside_window(self):
+        rows = [
+            product_row(date(2026, 1, 20), 0, 0),
+            product_row(date(2026, 1, 30), 6, 0),
+        ]
+
+        events = build_events(rows, date(2026, 7, 28), lookback_days=180)
+
+        self.assertEqual(1, len(events))
+        self.assertEqual(date(2026, 1, 20), events[0]["stockout_date"])
+        self.assertEqual(date(2026, 1, 30), events[0]["return_start_date"])
+
+    def test_stockout_on_inclusive_180_day_boundary_is_retained(self):
+        rows = [
+            product_row(date(2026, 1, 30), 0, 0),
+            product_row(date(2026, 7, 22), 6, 1),
+        ]
+
+        events = build_events(rows, date(2026, 7, 28), lookback_days=180)
+
+        self.assertEqual(1, len(events))
+        self.assertEqual(date(2026, 1, 30), events[0]["stockout_date"])
+        self.assertEqual(date(2026, 7, 22), events[0]["return_start_date"])
+
+    def test_stockout_before_boundary_is_retained_when_return_start_is_inside_window(self):
+        rows = [
+            product_row(date(2026, 1, 29), 0, 0),
+            product_row(date(2026, 7, 22), 6, 1),
+        ]
+
+        events = build_events(rows, date(2026, 7, 28), lookback_days=180)
+
+        self.assertEqual(1, len(events))
+
+    def test_return_start_before_inclusive_180_day_boundary_is_excluded(self):
+        rows = [
+            product_row(date(2026, 1, 10), 0, 0),
+            product_row(date(2026, 1, 29), 6, 1),
+        ]
+
+        events = build_events(rows, date(2026, 7, 28), lookback_days=180)
+
+        self.assertEqual([], events)
+
+    def test_zero_sales_event_inside_lookback_window_is_retained(self):
+        rows = [
+            product_row(date(2026, 2, 1), 0, 0),
+            product_row(date(2026, 2, 2), 6, 0),
+        ]
+
+        events = build_events(rows, date(2026, 7, 28), lookback_days=180)
+
+        self.assertEqual(1, len(events))
+        self.assertEqual(date(2026, 2, 1), events[0]["stockout_date"])
+        self.assertEqual(date(2026, 2, 2), events[0]["return_start_date"])
 
     def test_source_sql_groups_to_store_country_msku_grain(self):
         self.assertIn("concat_ws('|', seller_name_new, country_category, seller_sku_adj) as item_key", SELECT_PRODUCT_DAILY_SQL)

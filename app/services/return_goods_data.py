@@ -315,7 +315,6 @@ class ReturnGoodsDataService:
         clauses = [
             "snapshot_date = %(snapshot_date)s",
             "seller_sku_adj not like %(excluded_msku_pattern)s",
-            "item_key in (select item_key from dashboard_return_goods_stockout_pool where snapshot_date = %(snapshot_date)s)",
         ]
         params: dict[str, Any] = {"snapshot_date": snapshot_date, "excluded_msku_pattern": "amzn.gr.%"}
         if country_category and country_category != "all":
@@ -389,13 +388,17 @@ class ReturnGoodsDataService:
                 where latest_rank = 1
             )
         """
-        in_stockout_pool_filter = """
+        stockout_pool_filter = """
             item_key in (
                 select item_key
                 from dashboard_return_goods_stockout_pool
                 where snapshot_date = %(snapshot_date)s
             )
         """
+        # Return-event filters use the event result table directly. The stockout
+        # pool is a separate metric and must not gate events whose stockout began
+        # before the 180-day window but whose return started inside that window.
+        in_stockout_pool_filter = "1 = 1"
         quick_filters = {
             "current_pool": active_condition,
             "receiving": status_conditions["receiving"],
@@ -413,7 +416,7 @@ class ReturnGoodsDataService:
             "priority_valuable_low_recovery": "pre_stockout_sales_role in ('明星产品', '潜力产品') and " + status_conditions["operating"] + " and coalesce(sales_recovery_rate, 0) < 0.7",
             "priority_manual": "exit_reason = '待人工判断'",
             "priority_today_operating": "return_days = 8 and (exit_date is null or exit_date > %(end_date)s)",
-            "overview_stockout_msku": in_stockout_pool_filter,
+            "overview_stockout_msku": stockout_pool_filter,
             "overview_returned_msku": latest_event_filter + " and " + in_stockout_pool_filter + " and return_start_date <= %(end_date)s",
             "overview_observe": latest_event_filter + " and " + in_stockout_pool_filter + " and " + active_condition + " and stage = '观察期'",
             "overview_operating": latest_event_filter + " and " + in_stockout_pool_filter + " and " + active_condition + " and stage = '运营干预期'",
@@ -598,9 +601,6 @@ class ReturnGoodsDataService:
                         from dashboard_return_goods_events e
                         where {filters}
                     ) latest_rows
-                    inner join dashboard_return_goods_stockout_pool p
-                            on p.snapshot_date = latest_rows.snapshot_date
-                           and p.item_key = latest_rows.item_key
                     where latest_rows.latest_rank = 1
                 ) latest_events
                 """,
