@@ -48,9 +48,16 @@ def test_operating_stockout_rate_renders_quiet_footer_and_formula_popover():
     assert 'class="label-hub-operating-stockout-anchor"' in script
     assert 'class="label-hub-operating-stockout-details"' in script
     assert ".label-hub-operating-stockout-rate" in styles
+    footer_rule = re.search(
+        r"\.label-hub-operating-stockout-rate\s*\{(?P<body>[^}]*)\}",
+        styles,
+    )
+    assert footer_rule is not None
+    footer_styles = footer_rule.group("body")
     assert ".label-hub-operating-stockout-anchor::before" in styles
     assert "font-size: 20px;" in styles
-    assert "justify-content: space-between;" in styles
+    assert "justify-content: flex-end;" in footer_styles
+    assert "flex-wrap: wrap;" in footer_styles
     assert ".label-hub-operating-stockout-popover" in styles
 
 
