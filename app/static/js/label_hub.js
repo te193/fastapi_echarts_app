@@ -1982,9 +1982,11 @@
     var metric = payload.operating_stockout_rate;
     if (!metric || item.label !== "运营状态" || metric.rate === null || Number(metric.operating_count || 0) <= 0) return "";
     return '<footer class="label-hub-operating-stockout-rate">' +
-      '<div class="label-hub-operating-stockout-summary">' +
-      '<span><b>在营断货率</b> <strong>' + formatPercent(metric.rate) + '</strong></span>' +
-      '<i>·</i><span>有效断货 ' + formatNumber(metric.effective_stockout_count) + ' / 在营 ' + formatNumber(metric.operating_count) + '</span>' +
+      '<div class="label-hub-operating-stockout-anchor">' +
+      '<span>在营断货率</span><strong>' + formatPercent(metric.rate) + '</strong>' +
+      '</div>' +
+      '<div class="label-hub-operating-stockout-details">' +
+      '<span>有效断货 ' + formatNumber(metric.effective_stockout_count) + ' / 在营 ' + formatNumber(metric.operating_count) + '</span>' +
       '<i>·</i><span>返场再断货 ' + formatNumber(metric.return_restockout_count) + '</span>' +
       '<i>·</i><button type="button" data-operating-stockout-formula aria-expanded="false" aria-controls="labelHubOperatingStockoutPopover">查看口径</button>' +
       '</div>' +
