@@ -36,6 +36,19 @@ def test_operation_cards_render_active_return_attribution_and_linked_filter():
     assert ".label-hub-return-attribution" in styles
 
 
+def test_operating_stockout_rate_renders_quiet_footer_and_formula_popover():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+
+    assert "function renderOperatingStockoutRate" in script
+    assert "data-operating-stockout-formula" in script
+    for copy in ("在营断货率", "有效断货", "在营", "返场再断货", "查看口径"):
+        assert copy in script
+    assert "清仓中和停售不计入在营记录" in script
+    assert ".label-hub-operating-stockout-rate" in styles
+    assert ".label-hub-operating-stockout-popover" in styles
+
+
 def test_label_hub_detail_workbench_uses_independent_post_flow_and_dual_views():
     template = (ROOT / "app" / "templates" / "label_hub.html").read_text(encoding="utf-8")
     script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
