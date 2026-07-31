@@ -13525,6 +13525,86 @@ body[data-page="label_hub"] {
   font-variant-numeric: tabular-nums;
 }
 
+.label-hub-operating-stockout-rate {
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+  min-height: 24px;
+  padding-top: 9px;
+  position: relative;
+}
+
+.label-hub-operating-stockout-summary {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  justify-content: flex-end;
+}
+
+.label-hub-operating-stockout-summary b,
+.label-hub-operating-stockout-summary strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.label-hub-operating-stockout-summary i {
+  color: #b9c4d2;
+  font-style: normal;
+}
+
+.label-hub-operating-stockout-summary button {
+  background: transparent;
+  border: 0;
+  color: var(--brand);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 1px 0;
+}
+
+.label-hub-operating-stockout-summary button:hover {
+  text-decoration: underline;
+}
+
+.label-hub-operating-stockout-popover {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  bottom: 30px;
+  box-shadow: 0 10px 28px rgba(32, 64, 99, 0.14);
+  color: var(--muted);
+  display: grid;
+  gap: 6px;
+  max-width: min(390px, calc(100vw - 44px));
+  padding: 11px 13px;
+  position: absolute;
+  right: 0;
+  text-align: left;
+  width: max-content;
+  z-index: 8;
+}
+
+.label-hub-operating-stockout-popover[hidden] {
+  display: none;
+}
+
+.label-hub-operating-stockout-popover > strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.label-hub-operating-stockout-popover p,
+.label-hub-operating-stockout-popover small {
+  font-size: 11px;
+  line-height: 1.55;
+  margin: 0;
+}
+
+.label-hub-operating-stockout-popover p b {
+  color: var(--text);
+}
+
 .label-hub-rule-link {
   align-items: center;
   background: transparent;

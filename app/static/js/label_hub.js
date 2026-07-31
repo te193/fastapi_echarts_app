@@ -213,10 +213,13 @@
     });
     function handleOverviewClick(event) {
       var ruleButton = event.target.closest("[data-view-rules]");
+      var stockoutFormula = event.target.closest("[data-operating-stockout-formula]");
       var returnAttribution = event.target.closest("[data-return-attribution]");
       var child = event.target.closest("[data-overview-child]");
       var parent = event.target.closest("[data-overview-parent]");
-      if (ruleButton) {
+      if (stockoutFormula) {
+        toggleOperatingStockoutPopover(stockoutFormula);
+      } else if (ruleButton) {
         openRuleDrawer(Number(ruleButton.dataset.viewRules));
       } else if (returnAttribution) {
         applyReturnAttributionFilter(returnAttribution.dataset.operationChild);
@@ -413,10 +416,14 @@
       if (!elements.labelHubIdentifierPopover.hidden && !event.target.closest(".label-hub-detail-code-control")) {
         closeIdentifierPopover(false);
       }
+      if (!event.target.closest(".label-hub-operating-stockout-rate")) {
+        closeOperatingStockoutPopover();
+      }
     });
     document.addEventListener("keydown", function (event) {
       if (event.key === "Escape") {
         closeIdentifierPopover(true);
+        closeOperatingStockoutPopover();
         closeDrawer();
         closeRuleDrawer();
       }
@@ -1956,6 +1963,40 @@
     }).join("");
   }
 
+  function closeOperatingStockoutPopover() {
+    var popover = elements.labelHubCategoryDetail.querySelector("[data-operating-stockout-popover]");
+    var trigger = elements.labelHubCategoryDetail.querySelector("[data-operating-stockout-formula]");
+    if (popover) popover.hidden = true;
+    if (trigger) trigger.setAttribute("aria-expanded", "false");
+  }
+
+  function toggleOperatingStockoutPopover(trigger) {
+    var popover = elements.labelHubCategoryDetail.querySelector("[data-operating-stockout-popover]");
+    if (!popover) return;
+    var shouldOpen = popover.hidden;
+    popover.hidden = !shouldOpen;
+    trigger.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
+  }
+
+  function renderOperatingStockoutRate(payload, item) {
+    var metric = payload.operating_stockout_rate;
+    if (!metric || item.label !== "运营状态" || metric.rate === null || Number(metric.operating_count || 0) <= 0) return "";
+    return '<footer class="label-hub-operating-stockout-rate">' +
+      '<div class="label-hub-operating-stockout-summary">' +
+      '<span><b>在营断货率</b> <strong>' + formatPercent(metric.rate) + '</strong></span>' +
+      '<i>·</i><span>有效断货 ' + formatNumber(metric.effective_stockout_count) + ' / 在营 ' + formatNumber(metric.operating_count) + '</span>' +
+      '<i>·</i><span>返场再断货 ' + formatNumber(metric.return_restockout_count) + '</span>' +
+      '<i>·</i><button type="button" data-operating-stockout-formula aria-expanded="false" aria-controls="labelHubOperatingStockoutPopover">查看口径</button>' +
+      '</div>' +
+      '<aside id="labelHubOperatingStockoutPopover" class="label-hub-operating-stockout-popover" data-operating-stockout-popover role="note" hidden>' +
+      '<strong>在营断货率口径</strong>' +
+      '<p><b>有效断货</b> = 断货中 − 返场期再次断货</p>' +
+      '<p><b>在营记录</b> = 正常在售 + 测款扶持 + 返厂品 + 断货中</p>' +
+      '<small>清仓中和停售不计入在营记录；返场再断货保留在分母中，仅从断货分子扣除。</small>' +
+      '</aside>' +
+      '</footer>';
+  }
+
   function renderCategoryDetail(payload) {
     var selected = parsedConditions();
     var item = (payload.overview || []).find(function (category) { return Number(category.id) === Number(payload.parent_label_id); });
@@ -1982,7 +2023,7 @@
     }).join("");
     var periods = (item.periods || []).join(" / ") || "无周期";
     var note = item.mutual_exclusion ? "同周期互斥" : "允许标签共现";
-    elements.labelHubCategoryDetail.innerHTML = '<header><div><span class="section-kicker">当前分析标签</span><h3>' + app.escapeHtml(item.label) + '</h3></div><p>' + app.escapeHtml(periods) + " · " + app.escapeHtml(note) + '</p></header><div class="label-hub-children">' + children + "</div>";
+    elements.labelHubCategoryDetail.innerHTML = '<header><div><span class="section-kicker">当前分析标签</span><h3>' + app.escapeHtml(item.label) + '</h3></div><p>' + app.escapeHtml(periods) + " · " + app.escapeHtml(note) + '</p></header><div class="label-hub-children">' + children + "</div>" + renderOperatingStockoutRate(payload, item);
   }
 
   function renderIssueOverview(payload) {
