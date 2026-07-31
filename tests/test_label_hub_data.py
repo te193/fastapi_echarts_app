@@ -441,8 +441,11 @@ class LabelHubDataTests(unittest.TestCase):
                 "tagging_method": "auto_sql",
             }
             for child_id, child_name in (
+                (301, "正常在售"),
+                (302, "测款扶持"),
                 (303, "返厂品"),
                 (304, "断货中"),
+                (305, "清仓中"),
                 (306, "停售"),
             )
         ] + [
@@ -468,8 +471,11 @@ class LabelHubDataTests(unittest.TestCase):
         ]
         facts = []
         for msku, operation_id, return_stage_id in (
+            ("NORMAL", 301, None),
+            ("TESTING", 302, None),
             ("RETURN", 303, 501),
             ("STOCKOUT", 304, 502),
+            ("CLEARANCE", 305, None),
             ("STOPPED", 306, 503),
             ("PLAIN-STOCKOUT", 304, None),
         ):
@@ -514,6 +520,15 @@ class LabelHubDataTests(unittest.TestCase):
         self.assertEqual(1, distribution[306]["return_stage_count"])
         self.assertEqual(3, payload["return_stage_attribution"]["active_return_count"])
         self.assertEqual(3, payload["return_stage_attribution"]["reconciled_count"])
+        self.assertEqual(
+            {
+                "effective_stockout_count": 1,
+                "operating_count": 5,
+                "return_restockout_count": 1,
+                "rate": 0.2,
+            },
+            payload["operating_stockout_rate"],
+        )
 
     def test_overview_and_six_breakdowns_return_unique_msku_metrics(self):
         payload = self.service.build_payload(

@@ -1054,6 +1054,23 @@ class LabelHubDataService:
             "metric_coverage_rate": round(metric_count / self._unique_msku_count(rows), 4) if rows else 0,
         }
         distribution = current_distribution(rows)
+        operating_stockout_rate = None
+        if category_by_id[parent_label_id]["label"] == "运营状态":
+            distribution_by_label = {item["label"]: item for item in distribution}
+            stockout = distribution_by_label.get("断货中", {})
+            return_restockout_count = int(stockout.get("return_stage_count") or 0)
+            stockout_count = int(stockout.get("count") or 0)
+            operating_count = sum(
+                int((distribution_by_label.get(label) or {}).get("count") or 0)
+                for label in ("正常在售", "测款扶持", "返厂品", "返场品", "断货中")
+            )
+            effective_stockout_count = max(0, stockout_count - return_restockout_count)
+            operating_stockout_rate = {
+                "effective_stockout_count": effective_stockout_count,
+                "operating_count": operating_count,
+                "return_restockout_count": return_restockout_count,
+                "rate": round(effective_stockout_count / operating_count, 4) if operating_count else None,
+            }
         return_stage_active_count = len({
             _business_unit_key(row)
             for row in rows
@@ -1084,6 +1101,7 @@ class LabelHubDataService:
             "diagnosis": diagnosis,
             "breakdowns": breakdowns,
             "distribution": distribution,
+            "operating_stockout_rate": operating_stockout_rate,
             "return_stage_attribution": {
                 "active_return_count": return_stage_active_count,
                 "reconciled_count": return_stage_reconciled_count,
