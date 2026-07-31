@@ -44,7 +44,7 @@ def test_label_hub_detail_workbench_uses_independent_post_flow_and_dual_views():
         "labelHubDetailView", "labelHubDetailIdentifiers", "labelHubDetailLabels",
         "labelHubDetailCountries", "labelHubDetailCountryCategories", "labelHubDetailStores",
         "labelHubDetailProblems", "labelHubDetailProblemMode", "labelHubDetailSalesRoles",
-        "labelHubDetailSalesTrends", "labelHubDetailDailyBands", "labelHubDetailMarginBands",
+        "labelHubDetailRoleReasons", "labelHubDetailDailyBands", "labelHubDetailMarginBands",
         "labelHubDetailApply", "labelHubDetailClear", "labelHubIdentifierResolution",
     ):
         assert f'id="{element_id}"' in template
@@ -60,6 +60,48 @@ def test_label_hub_detail_workbench_uses_independent_post_flow_and_dual_views():
     assert "countryIdentityColumns" in script
     assert 'headerName: "国家"' in script
     assert 'headerName: "SKU"' in script
+
+
+def test_detail_apply_button_shows_loading_feedback_while_request_is_pending():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+
+    assert "function setDetailLoading(isLoading)" in script
+    assert 'elements.labelHubDetailApply.textContent = isLoading ? "筛选中…" : "应用筛选";' in script
+    assert 'elements.labelHubDetailApply.disabled = isLoading;' in script
+    assert "setDetailLoading(true);" in script
+    assert "setDetailLoading(false);" in script
+
+
+def test_detail_role_reason_filter_replaces_sales_trend_and_follows_detail_scope():
+    template = (ROOT / "app" / "templates" / "label_hub.html").read_text(encoding="utf-8")
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+
+    assert 'id="labelHubDetailRoleReasons"' in template
+    assert 'data-placeholder="全部角色原因"' in template
+    assert 'id="labelHubRoleReasonTrigger"' in template
+    assert 'id="labelHubRoleReasonPanel"' in template
+    assert 'id="labelHubRoleReasonGroups"' in template
+    assert 'id="labelHubDetailRoleReasons" multiple hidden' in template
+    assert 'id="labelHubDetailSalesTrends"' not in template
+    assert 'id="labelHubRoleReasonScope"' in template
+    assert "role_reason_ids: []" in script
+    assert "role_reason_ids: detailState.role_reason_ids" in script
+    assert "function roleReasonOptions()" in script
+    assert "function reconcileRoleReasonSelections()" in script
+    assert "function renderRoleReasonPanel()" in script
+    assert "data-role-reason-id" in script
+    assert '["role_reason_ids", "角色原因", elements.labelHubDetailRoleReasons]' in script
+    assert "detailState.role_reason_ids = [];" in script
+    assert ".label-hub-role-reason-scope" in styles
+    assert ".label-hub-role-reason-panel" in styles
+    assert ".label-hub-role-reason-section" in styles
+    assert ".label-hub-role-reason-options" in styles
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in styles
+    detail_selects = script.split("function detailFilterSelects()", 1)[1].split(
+        "function destroyDetailFilterSelects()", 1
+    )[0]
+    assert "labelHubDetailRoleReasons" not in detail_selects
 
 
 def test_detail_filters_use_compact_toolbar_and_collapsed_advanced_panel():
@@ -108,7 +150,7 @@ def test_detail_filters_match_compact_reference_visual_language():
     assert ".label-hub-detail-filter-control .ss-main:has(.ss-value)" in styles
     assert ".ss-value .ss-value-text" in styles
     assert "color: #155ba6;" in styles
-    assert "styles.css') }}?v=20260724rulemetrics1" in template
+    assert "styles.css') }}?v=20260731rolereason2" in template
     assert ".label-hub-detail-workbench select[multiple] { min-height: 64px" not in styles
 
 
@@ -159,7 +201,7 @@ def test_label_hub_reuses_sales_role_page_visual_structure():
 
     assert 'class="sales-role-page label-hub-page"' in template
     assert 'class="sales-role-topbar label-hub-topbar"' in template
-    assert template.count("sales-role-panel label-hub-section-panel") == 3
+    assert template.count("sales-role-panel label-hub-section-panel") == 4
     assert template.count("label-hub-secondary-panel") == 2
     assert 'body[data-page="label_hub"] .page-shell' in styles
     assert 'class="sales-role-filter-main label-hub-filter-primary"' in template
@@ -294,9 +336,80 @@ def test_label_hub_country_profile_uses_compact_full_height_table():
     assert "String(price.currency || \"\") + formatNumber(price.value)" not in script
     assert "var local = price.value === null || price.value === undefined ? \"--\" : formatNumber(price.value);" in script
     assert "#labelHubCountryProfileDrawer .label-hub-country-profile-table-wrap { max-height: min(78vh, 820px); overflow: auto; scrollbar-gutter: stable; }" in styles
+
+
+def test_sales_role_diagnostics_module_is_lazy_and_filterable():
+    template = (ROOT / "app" / "templates" / "label_hub.html").read_text(encoding="utf-8")
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+
+    for element_id in (
+        "labelHubDiagnosticsSection",
+        "labelHubDiagnosticsScope",
+        "labelHubDiagnosticsPeriod",
+        "labelHubDiagnosticsRoles",
+        "labelHubDiagnosticsContent",
+    ):
+        assert f'id="{element_id}"' in template
+    assert 'app.apiGet("/api/label-hub/sales-role-diagnostics"' in script
+    assert "diagnostic_scope" in script
+    assert "diagnostic_period" in script
+    assert "roleDiagnosticColumn" in script
+    assert "openRoleDiagnosticDrawer" in script
+    assert "selectedRoleDefinition.matcher.test" in script
     assert "#labelHubCountryProfileDrawer .label-hub-country-profile-table thead th { position: sticky; top: 0; z-index: 6; }" in styles
     assert ".label-hub-country-profile-table-wrap { overflow: visible;" in styles
     assert ".label-hub-country-profile-table tbody tr { height: 126px; }" not in styles
+
+
+def test_role_diagnostics_visibility_follows_the_active_parent_category():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+
+    start = script.index("function syncDiagnosticsVisibility()")
+    end = script.index("function syncDiagnosticControls()", start)
+    visibility_function = script[start:end]
+
+    assert "elements.labelHubDiagnosticsSection.open = Number(state.parent_label_id) === 1;" in visibility_function
+    assert "parsedConditions()" not in visibility_function
+    assert script.count("syncDiagnosticsVisibility();") >= 2
+
+
+def test_role_diagnostic_drawer_loads_evidence_and_supports_period_and_country_drilldown():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+
+    assert 'app.apiGet("/api/label-hub/msku-role-diagnostics"' in script
+    assert "function loadRoleDiagnosticDrawer()" in script
+    assert "function renderRoleDiagnosticDrawer(payload)" in script
+    assert "function roleDiagnosticMetricCard(metric)" in script
+    assert 'data-role-diagnostic-period="' in script
+    assert 'data-role-diagnostic-country="' in script
+    assert "全站判断" in script
+    assert "国家站点判断" in script
+    assert "未达标指标" in script
+    assert "还差多少" in script
+
+
+def test_role_diagnostic_table_cell_uses_a_clear_action_button():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+
+    assert 'tooltipField: "role_diagnostic_summary"' in script
+    assert '<span>查看诊断</span><i aria-hidden="true">›</i>' in script
+    assert ".label-hub-role-diagnostic-cell:hover" in styles
+    assert ".label-hub-role-diagnostic-cell:focus-visible" in styles
+
+
+def test_role_diagnostic_drawer_uses_structured_visual_hierarchy_and_responsive_layout():
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+
+    assert '#labelHubDrawer[data-drawer-mode="diagnostics"] .label-hub-drawer-card' in styles
+    assert ".label-hub-role-global" in styles
+    assert ".label-hub-role-upgrade" in styles
+    assert ".label-hub-role-blocker" in styles
+    assert ".label-hub-role-country.is-open" in styles
+    assert ".label-hub-role-country-table" in styles
+    assert "@media (max-width: 720px)" in styles
+    assert "@media (prefers-reduced-motion: reduce)" in styles
 
 
 def test_label_hub_country_profile_uses_replenishment_detail_header():
@@ -492,7 +605,7 @@ def test_remote_breakdown_nodes_have_enough_distinct_colors_for_long_status_list
     assert len(colors) >= 12
     assert len(set(colors)) == len(colors)
     assert "remoteBucketColor(panel, bucket)" in script
-    assert "?v=20260724speed1" in template
+    assert "?v=20260731rolereason2" in template
 
 
 def test_label_hub_issue_overview_shows_selected_group_problem_counts():
@@ -653,7 +766,7 @@ def test_current_category_detail_uses_period_scoped_distribution():
     assert "distributionById" in script
     assert 'cache: "no-store"' in common
     assert "js/common.js') }}?v=20260715cache2" in base
-    assert "js/label_hub.js') }}?v=20260724speed1" in template
+    assert "js/label_hub.js') }}?v=20260731rolereason2" in template
 
 
 def test_country_detail_overview_matches_label_hub_information_structure():
@@ -732,3 +845,31 @@ def test_identifier_input_has_expandable_batch_search_panel():
     assert "function closeIdentifierPopover(restoreFocus)" in script
     assert "elements.labelHubIdentifierBatchSearch.addEventListener" in script
     assert ".label-hub-identifier-popover" in styles
+
+
+def test_sales_role_defaults_to_30d_label_period():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+
+    assert 'function defaultLabelPeriod(parentId)' in script
+    assert 'return Number(parentId) === 1 ? "30d" : "all";' in script
+    assert 'var hasExplicitLabelPeriod = query.has("label_period");' in script
+    assert 'if (!hasExplicitLabelPeriod) state.label_period = defaultLabelPeriod(state.parent_label_id);' in script
+    assert 'state.label_period = defaultLabelPeriod(parentId);' in script
+
+
+def test_country_diagnostics_use_expandable_role_distribution_without_attention_rail():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+
+    assert "payload.country_role_distribution" in script
+    assert "data-diagnostic-country-role" in script
+    assert "data-diagnostic-country-detail" in script
+    assert "toggleCountryDiagnosticRole" in script
+    assert "label-hub-diagnostic-role-row" in styles
+    assert "label-hub-diagnostic-child-row" in styles
+    assert ".label-hub-diagnostic-role-row.expanded td:first-child::after" in styles
+    assert ".label-hub-diagnostic-child-row td:first-child::after" in styles
+    assert ".label-hub-diagnostic-child-row td:first-child::before" in styles
+    assert ".label-hub-diagnostic-child-row:has(+ .label-hub-diagnostic-role-row)" in styles
+    assert ".is-country-role-table td:nth-child(4) i" in styles
+    assert "label-hub-diagnostics-attention" not in script

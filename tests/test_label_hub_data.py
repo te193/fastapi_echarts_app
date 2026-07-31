@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.services.label_hub_data import (
     CACHE_SECONDS,
+    DIAGNOSTIC_PARENT_IDS,
     SOURCE_INITIAL_CONTENT_CHECK_DELAY_SECONDS,
     LabelHubDataService,
     _missing_metric_units,
@@ -118,6 +119,59 @@ METRICS = {
 
 
 class LabelHubDataTests(unittest.TestCase):
+    def test_diagnostic_parents_are_filterable_but_hidden_from_analysis_categories(self):
+        service = LabelHubDataService()
+        details = DETAILS + [
+            {
+                "label_id": 15,
+                "label_name": "全站点销售角色-产品问题标签",
+                "sub_label_id": 1502,
+                "sub_label_name": "潜力产品-低毛利",
+                "tag_rule": "低毛利",
+                "business_definition": "销售角色诊断",
+                "business_owner": "运营",
+                "label_category": "诊断",
+                "update_frequency": "每日",
+                "mutual_exclusion": "",
+                "status": "已启用",
+                "tagging_method": "auto_sql",
+            }
+        ]
+        facts = FACTS + [
+            {
+                "data_date": "2026-07-13",
+                "country_category": "欧洲站",
+                "country": "",
+                "store": "StoreA",
+                "msku": "A1",
+                "label_id": 1502,
+                "label_period": "30d",
+            }
+        ]
+
+        payload = service.build_payload(
+            details=details,
+            facts=facts,
+            metrics=METRICS,
+            data_date="2026-07-13",
+            parent_label_id=1,
+            compare_parent_id=2,
+            conditions={15: {1502}},
+            label_period="all",
+            country_category="all",
+            store="all",
+            keyword="",
+            page=1,
+            page_size=20,
+            sort_field="msku",
+            sort_dir="asc",
+        )
+
+        self.assertEqual({15, 16}, DIAGNOSTIC_PARENT_IDS)
+        self.assertNotIn(15, {item["id"] for item in payload["overview"]})
+        self.assertEqual(["A1"], [row["msku"] for row in payload["rows"]])
+        self.assertEqual("潜力产品-低毛利", payload["rows"][0]["role_diagnostic_summary"])
+
     def setUp(self):
         self.service = LabelHubDataService.__new__(LabelHubDataService)
 
@@ -918,6 +972,37 @@ class LabelHubDataTests(unittest.TestCase):
         self.assertEqual([101], [item["id"] for item in payload["rows"][0]["labels"]])
         self.assertTrue(payload["rows"][0]["label_summary"])
         self.assertIs(payload["rows"][0]["metric_present"], False)
+
+    def test_diagnostic_base_rows_cache_the_expensive_internal_payload(self):
+        service = LabelHubDataService()
+        service.get_meta = lambda: {"default_data_date": "2026-07-13"}
+        calls = []
+        expected_rows = [
+            {
+                "country_category": "欧洲站",
+                "store": "StoreA",
+                "msku": "MSKU-1",
+            }
+        ]
+
+        def get_payload(**filters):
+            calls.append(filters)
+            return {"_comparison_rows": list(expected_rows)}
+
+        service.get_payload = get_payload
+        filters = {
+            "data_date": "2026-07-13",
+            "metric_period": "30d",
+            "country_category": "all",
+            "store": "all",
+        }
+
+        first = service.get_diagnostic_base_rows(**filters)
+        second = service.get_diagnostic_base_rows(**filters)
+
+        self.assertEqual(expected_rows, first)
+        self.assertEqual(expected_rows, second)
+        self.assertEqual(1, len(calls))
 
     def test_fact_fetch_aggregates_remote_rows_before_expanding_them_locally(self):
         class Cursor:
