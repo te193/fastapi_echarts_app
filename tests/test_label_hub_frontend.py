@@ -45,7 +45,12 @@ def test_operating_stockout_rate_renders_quiet_footer_and_formula_popover():
     for copy in ("在营断货率", "有效断货", "在营", "返场再断货", "查看口径"):
         assert copy in script
     assert "清仓中和停售不计入在营记录" in script
+    assert 'class="label-hub-operating-stockout-anchor"' in script
+    assert 'class="label-hub-operating-stockout-details"' in script
     assert ".label-hub-operating-stockout-rate" in styles
+    assert ".label-hub-operating-stockout-anchor::before" in styles
+    assert "font-size: 20px;" in styles
+    assert "justify-content: space-between;" in styles
     assert ".label-hub-operating-stockout-popover" in styles
 
 

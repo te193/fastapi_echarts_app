@@ -13526,34 +13526,70 @@ body[data-page="label_hub"] {
 }
 
 .label-hub-operating-stockout-rate {
+  align-items: center;
   border-top: 1px solid var(--line);
   color: var(--muted);
+  display: flex;
   font-size: 11px;
+  gap: 18px;
+  justify-content: space-between;
   min-height: 24px;
   padding-top: 9px;
   position: relative;
 }
 
-.label-hub-operating-stockout-summary {
+.label-hub-operating-stockout-anchor {
+  align-items: center;
+  display: grid;
+  flex: 0 0 auto;
+  gap: 1px 9px;
+  grid-template-areas:
+    "bar label"
+    "bar value";
+  grid-template-columns: 3px auto;
+}
+
+.label-hub-operating-stockout-anchor::before {
+  align-self: stretch;
+  background: var(--brand);
+  border-radius: 2px;
+  content: "";
+  grid-area: bar;
+  min-height: 28px;
+  width: 3px;
+}
+
+.label-hub-operating-stockout-anchor span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  grid-area: label;
+  line-height: 1.1;
+}
+
+.label-hub-operating-stockout-anchor strong {
+  color: #075bb8;
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+  grid-area: value;
+  line-height: 1;
+}
+
+.label-hub-operating-stockout-details {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
   justify-content: flex-end;
+  text-align: right;
 }
 
-.label-hub-operating-stockout-summary b,
-.label-hub-operating-stockout-summary strong {
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-}
-
-.label-hub-operating-stockout-summary i {
+.label-hub-operating-stockout-details i {
   color: #b9c4d2;
   font-style: normal;
 }
 
-.label-hub-operating-stockout-summary button {
+.label-hub-operating-stockout-details button {
   background: transparent;
   border: 0;
   color: var(--brand);
@@ -13563,7 +13599,7 @@ body[data-page="label_hub"] {
   padding: 1px 0;
 }
 
-.label-hub-operating-stockout-summary button:hover {
+.label-hub-operating-stockout-details button:hover {
   text-decoration: underline;
 }
 
@@ -13603,6 +13639,19 @@ body[data-page="label_hub"] {
 
 .label-hub-operating-stockout-popover p b {
   color: var(--text);
+}
+
+@media (max-width: 720px) {
+  .label-hub-operating-stockout-rate {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .label-hub-operating-stockout-details {
+    justify-content: flex-start;
+    text-align: left;
+  }
 }
 
 .label-hub-rule-link {
