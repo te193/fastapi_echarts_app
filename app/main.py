@@ -20,6 +20,8 @@ from etl.dashboard_daily_update import COLUMN_COMMENTS
 from .services.dashboard_db import dashboard_service
 from .services.country_label_hub_data import country_label_hub_service
 from .services.label_hub_data import label_hub_service
+from .services.label_hub_diagnostics import label_hub_diagnostics_service
+from .services.label_hub_role_diagnostics import label_hub_role_diagnostic_service
 from .services.label_hub_detail_data import label_hub_detail_service
 from .services.label_hub_change_data import label_hub_change_service
 from .services.price_review_data import price_review_service
@@ -180,7 +182,7 @@ class LabelHubDetailRequest(BaseModel):
     stores: list[str] = Field(default_factory=list)
     countries: list[str] = Field(default_factory=list)
     sales_roles: list[str] = Field(default_factory=list)
-    sales_trends: list[str] = Field(default_factory=list)
+    role_reason_ids: list[int] = Field(default_factory=list)
     daily_sales_bands: list[str] = Field(default_factory=list)
     margin_bands: list[str] = Field(default_factory=list)
     ranking_bands: list[str] = Field(default_factory=list)
@@ -461,6 +463,76 @@ def api_label_hub_msku(data_date: str, country_category: str, store: str, msku: 
         return label_hub_service.get_msku_profile(data_date=data_date, country_category=country_category, store=store, msku=msku, metric_period=metric_period)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/label-hub/sales-role-diagnostics")
+def api_label_hub_sales_role_diagnostics(
+    data_date: str = "",
+    metric_period: str = "30d",
+    country_category: str = "all",
+    store: str = "all",
+    keyword: str = "",
+    parent_label_id: int = 1,
+    compare_parent_id: int = 2,
+    conditions: str = "",
+    label_period: str = "all",
+    analysis_parent_ids: str = "",
+    analysis_periods: str = "",
+    sales_roles: str = "",
+    sales_trends: str = "",
+    daily_sales_bands: str = "",
+    margin_bands: str = "",
+    problem: str = "all",
+    diagnostic_scope: str = "global",
+    diagnostic_period: str = "30d",
+) -> dict:
+    try:
+        return label_hub_diagnostics_service.get_payload(
+            data_date=data_date,
+            metric_period=metric_period,
+            country_category=country_category,
+            store=store,
+            keyword=keyword,
+            parent_label_id=parent_label_id,
+            compare_parent_id=compare_parent_id,
+            conditions=conditions,
+            label_period=label_period,
+            analysis_parent_ids=analysis_parent_ids,
+            analysis_periods=analysis_periods,
+            sales_roles=sales_roles,
+            sales_trends=sales_trends,
+            daily_sales_bands=daily_sales_bands,
+            margin_bands=margin_bands,
+            problem=problem,
+            diagnostic_scope=diagnostic_scope,
+            diagnostic_period=diagnostic_period,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="销售角色诊断暂不可用，请稍后重试") from exc
+
+
+@app.get("/api/label-hub/msku-role-diagnostics")
+def api_label_hub_msku_role_diagnostics(
+    data_date: str,
+    country_category: str,
+    store: str,
+    msku: str,
+    diagnostic_period: str = "30d",
+) -> dict:
+    try:
+        return label_hub_role_diagnostic_service.get_payload(
+            data_date=data_date,
+            country_category=country_category,
+            store=store,
+            msku=msku,
+            diagnostic_period=diagnostic_period,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="商品角色诊断暂不可用，请稍后重试") from exc
 
 
 @app.post("/api/label-hub/details")

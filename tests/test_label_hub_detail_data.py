@@ -17,7 +17,7 @@ ROWS = [
         "order_gross_profit": 20,
         "conflict": True,
         "_metric_present": True,
-        "labels": [{"parent_id": 1, "id": 101}],
+        "labels": [{"parent_id": 1, "id": 101}, {"parent_id": 15, "id": 1501}],
     },
     {
         "country_category": "Europe",
@@ -32,7 +32,7 @@ ROWS = [
         "order_gross_profit": -2,
         "conflict": False,
         "_metric_present": True,
-        "labels": [{"parent_id": 1, "id": 102}],
+        "labels": [{"parent_id": 1, "id": 102}, {"parent_id": 15, "id": 1508}],
     },
     {
         "country_category": "US",
@@ -47,7 +47,11 @@ ROWS = [
         "order_gross_profit": None,
         "conflict": False,
         "_metric_present": False,
-        "labels": [{"parent_id": 1, "id": 101}, {"parent_id": 2, "id": 201}],
+        "labels": [
+            {"parent_id": 1, "id": 101},
+            {"parent_id": 2, "id": 201},
+            {"parent_id": 15, "id": 1502},
+        ],
     },
 ]
 
@@ -103,6 +107,82 @@ class LabelHubDetailDataTests(unittest.TestCase):
 
         self.assertEqual({"MSKU-1", "MSKU-2"}, {row["msku"] for row in payload["rows"]})
         self.assertEqual({"StoreA"}, {row["store"] for row in payload["rows"]})
+
+    def test_business_role_reason_multiselect_is_or_and_combines_with_role(self):
+        service, _ = self.make_service()
+
+        payload = service.get_details(
+            sales_roles=["potential"],
+            role_reason_ids=[1502, 1503],
+        )
+
+        self.assertEqual(["MSKU-2"], [row["msku"] for row in payload["rows"]])
+        self.assertEqual([1502, 1503], payload["applied_filters"]["role_reason_ids"])
+
+    def test_business_role_reason_reads_separate_real_diagnostic_labels(self):
+        row = {
+            **ROWS[2],
+            "labels": [{"parent_id": 1, "id": 102}],
+            "role_diagnostics": [{"parent_id": 15, "id": 1502}],
+        }
+        service = LabelHubDetailDataService(
+            business_row_provider=lambda **kwargs: [row],
+        )
+
+        payload = service.get_details(role_reason_ids=[1502])
+
+        self.assertEqual(["MSKU-2"], [item["msku"] for item in payload["rows"]])
+
+    def test_role_reason_ids_are_limited_to_the_current_detail_view(self):
+        country_rows = [
+            {
+                "country": "DE",
+                "country_category": "Europe",
+                "store": "StoreA",
+                "msku": "MSKU-1",
+                "sku": "SKU-1",
+                "labels": [{"parent_id": 16, "id": 1602}],
+            }
+        ]
+        service = LabelHubDetailDataService(
+            business_row_provider=lambda **kwargs: ROWS,
+            country_row_provider=lambda **kwargs: {
+                "rows": country_rows,
+                "metric_status": "available",
+            },
+        )
+
+        with self.assertRaisesRegex(ValueError, "角色原因"):
+            service.get_details(detail_view="business_unit", role_reason_ids=[1602])
+        with self.assertRaisesRegex(ValueError, "角色原因"):
+            service.get_details(detail_view="country", role_reason_ids=[1502])
+
+    def test_country_role_reason_filters_parent_sixteen_labels(self):
+        country_rows = [
+            {
+                "country": country,
+                "country_category": "Europe",
+                "store": "StoreA",
+                "msku": "MSKU-1",
+                "sku": f"SKU-{country}",
+                "labels": [{"parent_id": 16, "id": reason_id}],
+            }
+            for country, reason_id in (("DE", 1602), ("FR", 1603))
+        ]
+        service = LabelHubDetailDataService(
+            business_row_provider=lambda **kwargs: [ROWS[0]],
+            country_row_provider=lambda **kwargs: {
+                "rows": country_rows,
+                "metric_status": "available",
+            },
+        )
+
+        payload = service.get_details(
+            detail_view="country",
+            role_reason_ids=[1603],
+        )
+
+        self.assertEqual(["FR"], [row["country"] for row in payload["rows"]])
 
     def test_problems_support_any_and_all(self):
         service, _ = self.make_service()

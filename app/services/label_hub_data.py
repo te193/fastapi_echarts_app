@@ -24,7 +24,9 @@ SOURCE_CONTENT_CHECK_SECONDS = 300
 # The deep fingerprint scans both retained label snapshots.  Do not start that
 # scan while the first dashboard and comparison requests are still warming.
 SOURCE_INITIAL_CONTENT_CHECK_DELAY_SECONDS = 30
-EXCLUDED_ANALYSIS_PARENT_IDS = {4, 7, 13, 14}
+COUNTRY_SCOPE_PARENT_IDS = {4, 7, 13, 14}
+DIAGNOSTIC_PARENT_IDS = {15, 16}
+EXCLUDED_ANALYSIS_PARENT_IDS = COUNTRY_SCOPE_PARENT_IDS | DIAGNOSTIC_PARENT_IDS
 SALES_ROLE_PARENT_ID = 1
 PROBLEM_PRODUCT_CHILD_ID = 104
 RETURN_STAGE_PARENT_ID = 5
@@ -144,6 +146,26 @@ def _missing_metric_units(rows: list[dict[str, Any]]) -> set[tuple[str, str, str
 
 
 def _public_business_row(row: dict[str, Any]) -> dict[str, Any]:
+    role_diagnostics = [
+        {
+            "parent_id": int(item["detail"]["label_id"]),
+            "parent_label": item["detail"].get("label_name") or "",
+            "id": int(item["label_id"]),
+            "label": item["detail"].get("sub_label_name") or "",
+            "period": item.get("label_period") or "",
+            "country": item.get("country") or "",
+            "evidence_available": bool(item.get("evidence_available")),
+        }
+        for item in sorted(
+            row.get("_label_facts") or [],
+            key=lambda item: (
+                int(item["detail"]["label_id"]),
+                int(item["label_id"]),
+                str(item.get("country") or ""),
+            ),
+        )
+        if int(item["detail"]["label_id"]) in DIAGNOSTIC_PARENT_IDS
+    ]
     labels = [
         {
             "parent_id": int(item["detail"]["label_id"]),
@@ -177,11 +199,15 @@ def _public_business_row(row: dict[str, Any]) -> dict[str, Any]:
     )
     public = {key: value for key, value in row.items() if not key.startswith("_")}
     metric_present = row.get("_metric_present", row.get("metric_present", True))
+    diagnostic_labels = list(dict.fromkeys(item["label"] for item in role_diagnostics))
     return {
         **public,
         "metric_present": bool(metric_present),
         "labels": labels,
         "label_summary": label_summary,
+        "role_diagnostics": role_diagnostics,
+        "role_diagnostic_summary": " / ".join(diagnostic_labels),
+        "role_diagnostic_count": len(role_diagnostics),
     }
 
 
@@ -195,8 +221,10 @@ class LabelHubDataService:
         self._meta_cache_at: datetime | None = None
         self._details_cache: tuple[datetime, list[dict[str, Any]]] | None = None
         self._facts_cache: dict[str, tuple[datetime, list[dict[str, Any]]]] = {}
+        self._diagnostic_facts_cache: dict[tuple[str, int], tuple[datetime, list[dict[str, Any]]]] = {}
         self._metrics_cache: dict[tuple[str, str], tuple[datetime, dict[str, Any]]] = {}
         self._payload_cache: dict[tuple[Any, ...], tuple[datetime, dict[str, Any]]] = {}
+        self._diagnostic_rows_cache: dict[tuple[Any, ...], tuple[datetime, list[dict[str, Any]]]] = {}
         self._payload_cache_lock = threading.Lock()
         self._comparison_dates: list[str] = []
         self._comparison_warm_lock = threading.Lock()
@@ -219,6 +247,15 @@ class LabelHubDataService:
             "analysis_parent_ids", "analysis_periods", "conditions", "label_period",
             "sales_roles", "sales_trends", "daily_sales_bands", "margin_bands", "problem",
             "page", "page_size", "sort_field", "sort_dir",
+        )
+        return (data_date, metric_period, *(str(filters.get(key) or "") for key in keys))
+
+    @staticmethod
+    def _diagnostic_rows_cache_key(data_date: str, metric_period: str, filters: dict[str, Any]) -> tuple[Any, ...]:
+        keys = (
+            "country_category", "store", "keyword", "parent_label_id", "compare_parent_id",
+            "analysis_parent_ids", "analysis_periods", "conditions", "label_period",
+            "sales_roles", "sales_trends", "daily_sales_bands", "margin_bands", "problem",
         )
         return (data_date, metric_period, *(str(filters.get(key) or "") for key in keys))
 
@@ -247,9 +284,11 @@ class LabelHubDataService:
         self._meta_cache_at = None
         self._details_cache = None
         self._facts_cache.clear()
+        self._diagnostic_facts_cache.clear()
         self._comparison_dates = []
         with self._payload_cache_lock:
             self._payload_cache.clear()
+            self._diagnostic_rows_cache.clear()
         with self._source_state_lock:
             self._source_generation += 1
         for callback in tuple(self._source_invalidation_callbacks):
@@ -416,6 +455,13 @@ class LabelHubDataService:
             if category["id"] not in EXCLUDED_ANALYSIS_PARENT_IDS
         ]
 
+    def _filterable_categories(self, details: list[dict[str, Any]], fact_stats: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:
+        return [
+            category
+            for category in self.build_categories(details, fact_stats)
+            if category["id"] not in COUNTRY_SCOPE_PARENT_IDS
+        ]
+
     @staticmethod
     def _unique_msku_count(rows: list[dict[str, Any]], predicate: Callable[[dict[str, Any]], bool] | None = None) -> int:
         return len({row["msku"] for row in rows if predicate is None or predicate(row)})
@@ -475,7 +521,9 @@ class LabelHubDataService:
         local_metrics_available = metric_scope.get("status") == "available"
         detail_by_id = {int(item["sub_label_id"]): item for item in details}
         categories = self._analysis_categories(details, {})
+        filterable_categories = self._filterable_categories(details, {})
         category_by_id = {item["id"]: item for item in categories}
+        filterable_category_by_id = {item["id"]: item for item in filterable_categories}
         if not categories:
             return {
                 "scope": metric_scope,
@@ -493,9 +541,13 @@ class LabelHubDataService:
         if compare_parent_id not in category_by_id or compare_parent_id == parent_label_id:
             compare_parent_id = 2 if 2 in category_by_id and parent_label_id != 2 else next((item["id"] for item in categories if item["id"] != parent_label_id), 0)
 
-        child_parent = {child["id"]: category["id"] for category in categories for child in category["children"]}
+        child_parent = {
+            child["id"]: category["id"]
+            for category in filterable_categories
+            for child in category["children"]
+        }
         for parent, children in conditions.items():
-            if parent not in category_by_id or any(child_parent.get(child) != parent for child in children):
+            if parent not in filterable_category_by_id or any(child_parent.get(child) != parent for child in children):
                 raise ValueError("conditions 包含不存在或归属错误的标签")
 
         requested_ids = [int(item) for item in (analysis_parent_ids or []) if int(item) in category_by_id]
@@ -532,7 +584,7 @@ class LabelHubDataService:
             detail = detail_by_id.get(int(fact.get("label_id") or 0))
             if not detail:
                 continue
-            if int(detail["label_id"]) in EXCLUDED_ANALYSIS_PARENT_IDS:
+            if int(detail["label_id"]) in COUNTRY_SCOPE_PARENT_IDS:
                 continue
             key = (str(fact.get("country_category") or ""), str(fact.get("store") or ""), msku)
             if country_category != "all" and key[0] != country_category:
@@ -1113,9 +1165,28 @@ class LabelHubDataService:
     def _cached_facts(self, data_date: str) -> list[dict[str, Any]]:
         cached = self._facts_cache.get(data_date)
         if cached and (datetime.now() - cached[0]).total_seconds() < SOURCE_CACHE_SECONDS:
-            return cached[1]
+            facts = cached[1]
+            present_parents = {
+                int(fact.get("label_id") or 0) // 100
+                for fact in facts
+                if int(fact.get("label_id") or 0) >= 100
+            }
+            for parent_id in sorted(DIAGNOSTIC_PARENT_IDS - present_parents):
+                facts.extend(self._cached_diagnostic_facts(data_date, parent_id))
+            return facts
         facts = self._fetch_facts(data_date, excluded_parent_ids=EXCLUDED_ANALYSIS_PARENT_IDS)
+        for parent_id in sorted(DIAGNOSTIC_PARENT_IDS):
+            facts.extend(self._cached_diagnostic_facts(data_date, parent_id))
         self._facts_cache[data_date] = (datetime.now(), facts)
+        return facts
+
+    def _cached_diagnostic_facts(self, data_date: str, parent_id: int) -> list[dict[str, Any]]:
+        cache_key = (data_date, parent_id)
+        cached = self._diagnostic_facts_cache.get(cache_key)
+        if cached and (datetime.now() - cached[0]).total_seconds() < SOURCE_CACHE_SECONDS:
+            return cached[1]
+        facts = self._fetch_diagnostic_facts(data_date, parent_id)
+        self._diagnostic_facts_cache[cache_key] = (datetime.now(), facts)
         return facts
 
     def _cached_details(self) -> list[dict[str, Any]]:
@@ -1220,12 +1291,32 @@ class LabelHubDataService:
             page_size=int(filters.get("page_size") or 20),
             sort_field=str(filters.get("sort_field") or "problem_priority"),
             sort_dir=str(filters.get("sort_dir") or "desc"),
-            include_internal=bool(filters.get("_include_internal")),
+            include_internal=cacheable or bool(filters.get("_include_internal")),
         )
         if cacheable:
+            base_rows = payload.pop("_comparison_rows", [])
+            payload.pop("_baseline_rows", None)
+            diagnostic_key = self._diagnostic_rows_cache_key(data_date, metric_period, filters)
+            with self._payload_cache_lock:
+                self._diagnostic_rows_cache[diagnostic_key] = (datetime.now(), base_rows)
             self._cache_payload(cache_key, payload)
         self._start_comparison_warmup(metric_period)
         return payload
+
+    def get_diagnostic_base_rows(self, **filters: Any) -> list[dict[str, Any]]:
+        meta = self.get_meta()
+        data_date = str(filters.get("data_date") or meta["default_data_date"])
+        metric_period = str(filters.get("metric_period") or "30d").lower()
+        cache_key = self._diagnostic_rows_cache_key(data_date, metric_period, filters)
+        with self._payload_cache_lock:
+            cached = self._diagnostic_rows_cache.get(cache_key)
+            if cached and (datetime.now() - cached[0]).total_seconds() < CACHE_SECONDS:
+                return cached[1]
+        payload = self.get_payload(**filters, _include_internal=True)
+        rows = payload.pop("_comparison_rows", [])
+        with self._payload_cache_lock:
+            self._diagnostic_rows_cache[cache_key] = (datetime.now(), rows)
+        return rows
 
     def get_business_detail_base_rows(self, **filters: Any) -> dict[str, Any]:
         """Return globally scoped business rows for the dedicated detail service."""
@@ -1547,11 +1638,116 @@ class LabelHubDataService:
         facts = []
         for row in compact_rows:
             for token in str(row.get("fact_tokens") or "").split("|"):
-                label_text, separator, period = token.partition("@")
-                if not separator or not label_text.isdigit():
+                token_parts = token.split("@", 2)
+                if len(token_parts) < 2 or not token_parts[0].isdigit():
                     continue
-                facts.append({"data_date": row.get("data_date"), "country": row.get("country"), "country_category": row.get("country_category"), "store": row.get("store"), "msku": row.get("msku"), "label_id": int(label_text), "label_period": period})
+                facts.append({
+                    "data_date": row.get("data_date"),
+                    "country": row.get("country"),
+                    "country_category": row.get("country_category"),
+                    "store": row.get("store"),
+                    "msku": row.get("msku"),
+                    "label_id": int(token_parts[0]),
+                    "label_period": token_parts[1],
+                })
         return facts
+
+    def _fetch_diagnostic_facts(self, data_date: str, parent_id: int) -> list[dict[str, Any]]:
+        child_ids = [
+            int(item["sub_label_id"])
+            for item in self._cached_details()
+            if int(item["label_id"]) == parent_id
+        ]
+        if not child_ids:
+            return []
+        with self._source_connection() as conn, conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                select data_date, country, country_category, store, msku,
+                       group_concat(
+                         distinct concat(
+                           label_id, '@', coalesce(label_period, ''), '@',
+                           case when evidence_json is null or evidence_json = '' then '0' else '1' end
+                         )
+                         order by label_id separator '|'
+                       ) as fact_tokens
+                from {LABEL_FACT_TABLE}
+                where data_date = %(data_date)s
+                  and msku not like %(refund_prefix)s
+                  and label_id in ({','.join(str(item) for item in sorted(child_ids))})
+                group by data_date, country, country_category, store, msku
+                """,
+                {
+                    "data_date": data_date,
+                    "refund_prefix": f"{REFUND_MSKU_PREFIX}%",
+                },
+            )
+            compact_rows = cursor.fetchall()
+        facts = []
+        for row in compact_rows:
+            for token in str(row.get("fact_tokens") or "").split("|"):
+                token_parts = token.split("@", 2)
+                if len(token_parts) < 2 or not token_parts[0].isdigit():
+                    continue
+                facts.append({
+                    "data_date": row.get("data_date"),
+                    "country": row.get("country"),
+                    "country_category": row.get("country_category"),
+                    "store": row.get("store"),
+                    "msku": row.get("msku"),
+                    "label_id": int(token_parts[0]),
+                    "label_period": token_parts[1],
+                    "evidence_available": len(token_parts) == 3 and token_parts[2] == "1",
+                })
+        return facts
+
+    def get_diagnostic_facts(
+        self,
+        *,
+        data_date: str,
+        parent_id: int,
+        country_category: str = "all",
+        store: str = "all",
+        keyword: str = "",
+        label_period: str = "all",
+        cached_only: bool = False,
+    ) -> list[dict[str, Any]]:
+        child_details = {
+            int(item["sub_label_id"]): item
+            for item in self._cached_details()
+            if int(item["label_id"]) == parent_id
+        }
+        if not child_details:
+            return []
+        cached = self._diagnostic_facts_cache.get((data_date, parent_id))
+        if cached_only and (
+            not cached
+            or (datetime.now() - cached[0]).total_seconds() >= SOURCE_CACHE_SECONDS
+        ):
+            return []
+        keyword_text = str(keyword or "").strip().lower()
+        return [
+            {
+                **fact,
+                "sub_label_name": child_details[int(fact["label_id"])].get("sub_label_name") or "",
+            }
+            for fact in self._cached_diagnostic_facts(data_date, parent_id)
+            if int(fact.get("label_id") or 0) in child_details
+            and (label_period == "all" or str(fact.get("label_period") or "") == label_period)
+            and (country_category == "all" or str(fact.get("country_category") or "") == country_category)
+            and (store == "all" or str(fact.get("store") or "") == store)
+            and (
+                not keyword_text
+                or keyword_text in f"{fact.get('msku') or ''} {fact.get('store') or ''}".lower()
+            )
+        ]
+
+    def has_cached_diagnostic_facts(self, data_date: str, parent_id: int) -> bool:
+        cached = self._diagnostic_facts_cache.get((data_date, parent_id))
+        return bool(
+            cached
+            and (datetime.now() - cached[0]).total_seconds() < SOURCE_CACHE_SECONDS
+        )
 
 
 label_hub_service = LabelHubDataService()

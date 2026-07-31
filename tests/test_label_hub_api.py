@@ -33,6 +33,24 @@ class FakeLabelHubDetailService:
         return {"rows": [], "total": 0}
 
 
+class FakeLabelHubDiagnosticsService:
+    def __init__(self):
+        self.calls = []
+
+    def get_payload(self, **kwargs):
+        self.calls.append(kwargs)
+        return {"scope": {}, "buckets": []}
+
+
+class FakeRoleDiagnosticService:
+    def __init__(self):
+        self.calls = []
+
+    def get_payload(self, **kwargs):
+        self.calls.append(kwargs)
+        return {"period": kwargs["diagnostic_period"], "country_diagnostics": []}
+
+
 class FakeLabelHubChangeService:
     def __init__(self):
         self.calls = []
@@ -52,6 +70,51 @@ class FakeCountryProfileService:
 
 
 class LabelHubApiTests(unittest.TestCase):
+    def test_msku_role_diagnostics_forwards_exact_identity_and_period(self):
+        service = FakeRoleDiagnosticService()
+        with patch("app.main.label_hub_role_diagnostic_service", service):
+            payload = main.api_label_hub_msku_role_diagnostics(
+                data_date="2026-07-29",
+                country_category="欧洲站",
+                store="HUAWTONG",
+                msku="HW065a",
+                diagnostic_period="30d",
+            )
+
+        self.assertEqual("30d", payload["period"])
+        self.assertEqual(
+            {
+                "data_date": "2026-07-29",
+                "country_category": "欧洲站",
+                "store": "HUAWTONG",
+                "msku": "HW065a",
+                "diagnostic_period": "30d",
+            },
+            service.calls[0],
+        )
+
+    def test_sales_role_diagnostics_forwards_scope_period_and_common_filters(self):
+        service = FakeLabelHubDiagnosticsService()
+        with patch("app.main.label_hub_diagnostics_service", service):
+            payload = main.api_label_hub_sales_role_diagnostics(
+                data_date="2026-07-30",
+                metric_period="30d",
+                country_category="欧洲站",
+                store="StoreA",
+                keyword="A1",
+                parent_label_id=1,
+                conditions="1:102;16:1604",
+                sales_roles="potential",
+                diagnostic_scope="country",
+                diagnostic_period="30d",
+            )
+
+        self.assertEqual([], payload["buckets"])
+        self.assertEqual("country", service.calls[0]["diagnostic_scope"])
+        self.assertEqual("30d", service.calls[0]["diagnostic_period"])
+        self.assertEqual("1:102;16:1604", service.calls[0]["conditions"])
+        self.assertEqual("StoreA", service.calls[0]["store"])
+
     def test_detail_payload_forwards_post_request_contract(self):
         service = FakeLabelHubDetailService()
         request = main.LabelHubDetailRequest(
@@ -72,7 +135,7 @@ class LabelHubApiTests(unittest.TestCase):
             stores=["StoreA"],
             countries=["DE"],
             sales_roles=["star"],
-            sales_trends=["growing"],
+            role_reason_ids=[1502, 1503],
             daily_sales_bands=["gt5"],
             margin_bands=["gt25"],
             ranking_bands=["11_20"],
@@ -92,6 +155,7 @@ class LabelHubApiTests(unittest.TestCase):
         self.assertEqual(["MSKU-1"], service.calls[0]["identifiers"])
         self.assertEqual([2, 8], service.calls[0]["analysis_parent_ids"])
         self.assertEqual("2:201", service.calls[0]["detail_conditions"])
+        self.assertEqual([1502, 1503], service.calls[0]["role_reason_ids"])
         self.assertEqual(["11_20"], service.calls[0]["ranking_bands"])
         self.assertEqual(50, service.calls[0]["page_size"])
 

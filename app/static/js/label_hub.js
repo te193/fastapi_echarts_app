@@ -3,6 +3,7 @@
 
   var app = window.kanbanApp;
   var query = new URLSearchParams(window.location.search);
+  var hasExplicitLabelPeriod = query.has("label_period");
   var state = {
     data_date: query.get("data_date") || "",
     metric_period: query.get("metric_period") || "30d",
@@ -15,6 +16,8 @@
     analysis_periods: query.get("analysis_periods") || "",
     conditions: query.get("conditions") || "",
     label_period: query.get("label_period") || "all",
+    diagnostic_scope: query.get("diagnostic_scope") || "global",
+    diagnostic_period: query.get("diagnostic_period") || query.get("metric_period") || "30d",
     sales_trends: query.get("sales_trends") || "",
     daily_sales_bands: query.get("daily_sales_bands") || "",
     margin_bands: query.get("margin_bands") || "",
@@ -32,7 +35,7 @@
   var detailState = {
     detail_view: storedDetailView === "country" ? "country" : "business_unit",
     identifiers: [], country_categories: [], stores: [], countries: [], detail_conditions: "",
-    sales_roles: [], sales_trends: [], daily_sales_bands: [], margin_bands: [], ranking_bands: [], problems: [],
+    sales_roles: [], role_reason_ids: [], daily_sales_bands: [], margin_bands: [], ranking_bands: [], problems: [],
     problem_mode: "any", page: 1, page_size: state.page_size,
     sort_field: "sales_amount", sort_dir: "desc"
   };
@@ -43,6 +46,16 @@
   var requestToken = 0;
   var detailRequestToken = 0;
   var changeRequestToken = 0;
+  var diagnosticRequestToken = 0;
+  var diagnosticRequestKey = "";
+  var diagnosticLoading = false;
+  var roleDiagnosticState = {
+    row: null,
+    period: "30d",
+    payload: null,
+    openCountry: null,
+    requestToken: 0
+  };
   var changePage = 1;
   var lastChanges = null;
   var lastHighlights = null;
@@ -70,15 +83,19 @@
       "labelHubDetailView", "labelHubDetailIdentifiers", "labelHubIdentifierExpand", "labelHubIdentifierPopover", "labelHubIdentifierBatchInput",
       "labelHubIdentifierBatchClear", "labelHubIdentifierBatchClose", "labelHubIdentifierBatchSearch",
       "labelHubDetailLabels", "labelHubDetailCountries", "labelHubDetailCountryCategories",
-      "labelHubDetailStores", "labelHubDetailProblems", "labelHubDetailProblemMode", "labelHubDetailSalesRoles", "labelHubDetailSalesTrends",
+      "labelHubDetailStores", "labelHubDetailProblems", "labelHubDetailProblemMode", "labelHubDetailSalesRoles", "labelHubDetailRoleReasons",
       "labelHubDetailDailyBands", "labelHubDetailMarginBands", "labelHubDetailRankingBands", "labelHubDetailApply", "labelHubDetailClear", "labelHubIdentifierResolution",
       "labelHubDetailCountriesField", "labelHubCountryFilterHint", "labelHubDetailRankingField", "labelHubRankingFilterHint", "labelHubDetailToolbar", "labelHubDetailAdvanced",
-      "labelHubDetailMore", "labelHubDetailMoreCount", "labelHubDetailActiveFilters", "labelHubDetailActiveFilterList",
+      "labelHubDetailMore", "labelHubDetailMoreCount", "labelHubDetailActiveFilters", "labelHubDetailActiveFilterList", "labelHubRoleReasonScope",
+      "labelHubRoleReasonTrigger", "labelHubRoleReasonSummary", "labelHubRoleReasonPanel", "labelHubRoleReasonGroups",
       "labelHubDrawerClose", "labelHubDrawerContent", "labelHubRuleDrawer", "labelHubRuleDrawerClose",
       "labelHubRuleDrawerTitle", "labelHubRuleDrawerContent"
       , "labelHubCountryProfileDrawer", "labelHubCountryProfileClose", "labelHubCountryProfileContent"
       , "labelHubChangeScope", "labelHubTransitionPeriod", "labelHubChangeType", "labelHubChangeContent",
-      "labelHubChangeBrief", "labelHubOpenChanges", "labelHubChangeSubtitle", "labelHubSectionNav"
+      "labelHubChangeBrief", "labelHubOpenChanges", "labelHubChangeSubtitle", "labelHubSectionNav",
+      "labelHubDiagnosticsSection", "labelHubDiagnosticsScope", "labelHubDiagnosticsPeriod",
+      "labelHubDiagnosticsRoles", "labelHubDiagnosticsContent", "labelHubDiagnosticsCondition",
+      "labelHubDiagnosticsSubtitle"
     ].forEach(function (id) { elements[id] = document.getElementById(id); });
     setLoading(true);
     bindEvents();
@@ -87,10 +104,12 @@
       normalizeStateFromMeta();
       state.metric_period = state.metric_period || meta.default_metric_period || "30d";
       state.parent_label_id = state.parent_label_id || firstAvailableCategory();
+      if (!hasExplicitLabelPeriod) state.label_period = defaultLabelPeriod(state.parent_label_id);
       state.compare_parent_id = state.compare_parent_id || defaultCompareCategory();
       state.analysis_parent_ids = state.analysis_parent_ids || (meta.default_analysis_parent_ids || []).join("|");
       normalizeAnalysisPeriods();
       populateControls();
+      syncDiagnosticsVisibility();
       render();
     }).catch(function (error) { setLoading(false); showError(error); });
   }
@@ -127,10 +146,32 @@
     });
     elements.labelHubDetailView.addEventListener("change", function () {
       detailState.detail_view = this.value === "country" ? "country" : "business_unit";
+      detailState.role_reason_ids = [];
       detailState.page = 1;
       try { localStorage.setItem("labelHubDetailView", detailState.detail_view); } catch (ignore) {}
-      syncDetailViewControls();
+      populateControls();
       renderDetails();
+    });
+    elements.labelHubDetailSalesRoles.addEventListener("change", refreshRoleReasonControl);
+    elements.labelHubRoleReasonTrigger.addEventListener("click", function (event) {
+      event.stopPropagation();
+      toggleRoleReasonPanel();
+    });
+    elements.labelHubRoleReasonGroups.addEventListener("change", function (event) {
+      var checkbox = event.target.closest("[data-role-reason-id]");
+      if (!checkbox) return;
+      var option = Array.from(elements.labelHubDetailRoleReasons.options).find(function (item) {
+        return String(item.value) === String(checkbox.dataset.roleReasonId);
+      });
+      if (option) option.selected = checkbox.checked;
+      detailState.role_reason_ids = selectedValues(elements.labelHubDetailRoleReasons).map(Number);
+      updateRoleReasonTrigger();
+    });
+    document.addEventListener("click", function (event) {
+      if (!event.target.closest(".label-hub-role-reason-control")) closeRoleReasonPanel();
+    });
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") closeRoleReasonPanel();
     });
     elements.labelHubDetailApply.addEventListener("click", function () { collectDetailFilters(); detailState.page = 1; renderDetailActiveFilters(); renderDetails(); });
     elements.labelHubDetailClear.addEventListener("click", clearDetailFilters);
@@ -235,6 +276,51 @@
       detailState.problem_mode = "any";
       resetPageAndRender();
     });
+    elements.labelHubDiagnosticsSection.addEventListener("toggle", function () {
+      if (this.open && lastPayload) loadDiagnostics();
+    });
+    elements.labelHubDiagnosticsScope.addEventListener("click", function (event) {
+      var button = event.target.closest("[data-diagnostic-scope]");
+      if (!button) return;
+      state.diagnostic_scope = button.dataset.diagnosticScope || "global";
+      app.writeQueryState(state);
+      loadDiagnostics();
+    });
+    elements.labelHubDiagnosticsPeriod.addEventListener("change", function () {
+      state.diagnostic_period = this.value || "30d";
+      app.writeQueryState(state);
+      loadDiagnostics();
+    });
+    elements.labelHubDiagnosticsRoles.addEventListener("click", function (event) {
+      var button = event.target.closest("[data-diagnostic-role]");
+      if (!button) return;
+      var values = parsedConditions();
+      var role = button.dataset.diagnosticRole || "";
+      if (role) values["1"] = [role];
+      else delete values["1"];
+      saveConditions(values);
+      resetPageAndRender();
+    });
+    elements.labelHubDiagnosticsContent.addEventListener("click", function (event) {
+      var button = event.target.closest("[data-diagnostic-child]");
+      var roleRow = event.target.closest("[data-diagnostic-role-summary]");
+      var countryRoleRow = event.target.closest("[data-diagnostic-country-role]");
+      var detailButton = event.target.closest("[data-diagnostic-open-details]");
+      if (countryRoleRow) {
+        toggleCountryDiagnosticRole(countryRoleRow);
+        return;
+      }
+      if (button) toggleCondition(button.dataset.diagnosticParent, button.dataset.diagnosticChild);
+      if (roleRow) {
+        var values = parsedConditions();
+        values["1"] = [roleRow.dataset.diagnosticRoleSummary];
+        saveConditions(values);
+        resetPageAndRender();
+      }
+      if (detailButton) {
+        document.getElementById("labelHubDetailSection").scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    });
     elements.labelHubMatrix.addEventListener("click", function (event) {
       var button = event.target.closest("[data-matrix-row]");
       if (!button) return;
@@ -267,6 +353,20 @@
       var traceButton = event.target.closest("[data-change-msku]");
       var layerTypeButton = event.target.closest("[data-layer-change-type]");
       var transitionButton = event.target.closest("[data-layer-transition-type]");
+      var diagnosticPeriodButton = event.target.closest("[data-role-diagnostic-period]");
+      var diagnosticCountryButton = event.target.closest("[data-role-diagnostic-country]");
+      if (diagnosticPeriodButton) {
+        roleDiagnosticState.period = diagnosticPeriodButton.dataset.roleDiagnosticPeriod || "30d";
+        roleDiagnosticState.openCountry = null;
+        loadRoleDiagnosticDrawer();
+        return;
+      }
+      if (diagnosticCountryButton && roleDiagnosticState.payload) {
+        var country = diagnosticCountryButton.dataset.roleDiagnosticCountry || "";
+        roleDiagnosticState.openCountry = roleDiagnosticState.openCountry === country ? "" : country;
+        renderRoleDiagnosticDrawer(roleDiagnosticState.payload);
+        return;
+      }
       if (pageButton && !pageButton.disabled) {
         changePage = Number(pageButton.dataset.changePage);
         if (activeLayerChangeContext) loadLayerChangeDetails(activeLayerChangeContext);
@@ -378,6 +478,132 @@
     }).reduce(function (all, items) { return all.concat(items); }, []);
   }
 
+  var ROLE_REASON_GROUPS = [
+    { code: "star", label: "明星产品", matcher: /^(明星产品|已达到站点明星产品标准)/ },
+    { code: "potential", label: "潜力产品", matcher: /^潜力产品/ },
+    { code: "incubation", label: "瘦狗产品", matcher: /^瘦狗产品/ },
+    { code: "eliminate", label: "问题产品", matcher: /^问题产品/ },
+    { code: "missing", label: "数据异常", matcher: /^数据异常/ }
+  ];
+
+  function roleReasonCategory() {
+    var parentId = detailState.detail_view === "country" ? 16 : 15;
+    return (meta.categories || []).concat(meta.excluded_categories || []).find(function (category) {
+      return Number(category.id) === parentId;
+    }) || null;
+  }
+
+  function roleReasonDefinition(label) {
+    return ROLE_REASON_GROUPS.find(function (definition) {
+      return definition.matcher.test(String(label || ""));
+    }) || null;
+  }
+
+  function roleReasonShortLabel(label) {
+    if (String(label || "") === "已达到站点明星产品标准") return "已达标";
+    return String(label || "").replace(/^(明星产品|潜力产品|瘦狗产品|问题产品)(\(站点\))?-/, "");
+  }
+
+  function roleReasonOptions() {
+    var category = roleReasonCategory();
+    var selectedRoles = {};
+    detailState.sales_roles.forEach(function (role) { selectedRoles[role] = true; });
+    return ((category && category.children) || []).map(function (child) {
+      var definition = roleReasonDefinition(child.label);
+      if (!definition || (detailState.sales_roles.length && !selectedRoles[definition.code])) return null;
+      return {
+        id: Number(child.id),
+        label: roleReasonShortLabel(child.label),
+        fullLabel: child.label,
+        roleCode: definition.code,
+        roleLabel: definition.label
+      };
+    }).filter(Boolean);
+  }
+
+  function reconcileRoleReasonSelections() {
+    var allowed = {};
+    roleReasonOptions().forEach(function (item) { allowed[String(item.id)] = true; });
+    detailState.role_reason_ids = detailState.role_reason_ids.map(Number).filter(function (id) {
+      return !!allowed[String(id)];
+    });
+  }
+
+  function roleReasonOptionList() {
+    var options = roleReasonOptions();
+    var html = [];
+    ROLE_REASON_GROUPS.forEach(function (group) {
+      var children = options.filter(function (item) { return item.roleCode === group.code; });
+      if (!children.length) return;
+      html.push('<optgroup class="label-hub-role-reason-group" label="' + app.escapeHtml(group.label) + '">');
+      children.forEach(function (item) {
+        html.push('<option value="' + item.id + '" data-full-label="' + app.escapeHtml(item.fullLabel) + '">' + app.escapeHtml(item.label) + "</option>");
+      });
+      html.push("</optgroup>");
+    });
+    return html.join("");
+  }
+
+  function updateRoleReasonTrigger() {
+    var selected = selectedValues(elements.labelHubDetailRoleReasons);
+    var label = "全部角色原因";
+    if (selected.length === 1) label = selectedOptionLabel(elements.labelHubDetailRoleReasons, selected[0]);
+    if (selected.length > 1) label = "已选 " + selected.length + " 项";
+    elements.labelHubRoleReasonSummary.textContent = label;
+    elements.labelHubRoleReasonTrigger.classList.toggle("has-value", selected.length > 0);
+  }
+
+  function renderRoleReasonPanel() {
+    var options = roleReasonOptions();
+    var selected = {};
+    detailState.role_reason_ids.forEach(function (id) { selected[String(id)] = true; });
+    var html = [];
+    ROLE_REASON_GROUPS.forEach(function (group) {
+      var children = options.filter(function (item) { return item.roleCode === group.code; });
+      if (!children.length) return;
+      html.push('<section class="label-hub-role-reason-section">');
+      html.push('<h4>' + app.escapeHtml(group.label) + "</h4>");
+      html.push('<div class="label-hub-role-reason-options">');
+      children.forEach(function (item) {
+        var checked = selected[String(item.id)] ? " checked" : "";
+        html.push('<label class="label-hub-role-reason-option">');
+        html.push('<input type="checkbox" data-role-reason-id="' + item.id + '"' + checked + ">");
+        html.push("<span>" + app.escapeHtml(item.label) + "</span>");
+        html.push("</label>");
+      });
+      html.push("</div></section>");
+    });
+    if (!html.length) html.push('<p class="label-hub-role-reason-empty">当前角色暂无诊断原因</p>');
+    elements.labelHubRoleReasonGroups.innerHTML = html.join("");
+    updateRoleReasonTrigger();
+  }
+
+  function closeRoleReasonPanel() {
+    if (!elements.labelHubRoleReasonPanel || elements.labelHubRoleReasonPanel.hidden) return;
+    elements.labelHubRoleReasonPanel.hidden = true;
+    elements.labelHubRoleReasonTrigger.classList.remove("is-open");
+    elements.labelHubRoleReasonTrigger.setAttribute("aria-expanded", "false");
+  }
+
+  function toggleRoleReasonPanel() {
+    var willOpen = elements.labelHubRoleReasonPanel.hidden;
+    if (!willOpen) {
+      closeRoleReasonPanel();
+      return;
+    }
+    elements.labelHubRoleReasonPanel.hidden = false;
+    elements.labelHubRoleReasonTrigger.classList.add("is-open");
+    elements.labelHubRoleReasonTrigger.setAttribute("aria-expanded", "true");
+  }
+
+  function refreshRoleReasonControl() {
+    detailState.sales_roles = selectedValues(elements.labelHubDetailSalesRoles);
+    reconcileRoleReasonSelections();
+    elements.labelHubDetailRoleReasons.innerHTML = roleReasonOptionList();
+    syncDetailNativeSelections();
+    renderRoleReasonPanel();
+  }
+
   function populateControls() {
     if (!meta) return;
     destroyDetailFilterSelects();
@@ -393,12 +619,17 @@
     elements.labelHubDetailCountryCategories.innerHTML = multiOptionList(meta.country_categories || [], detailState.country_categories);
     elements.labelHubDetailStores.innerHTML = multiOptionList(meta.stores || [], detailState.stores);
     elements.labelHubDetailLabels.innerHTML = multiOptionList(detailLabelOptions(), detailConditionValues());
+    reconcileRoleReasonSelections();
+    elements.labelHubDetailRoleReasons.innerHTML = roleReasonOptionList();
     syncDetailNativeSelections();
     initDetailFilterSelects();
     syncDetailViewControls();
+    renderRoleReasonPanel();
     renderDetailActiveFilters();
     elements.labelHubTransitionPeriod.innerHTML = optionList(meta.metric_periods || [], state.transition_period, "");
     elements.labelHubChangeType.value = state.change_type;
+    elements.labelHubDiagnosticsPeriod.value = state.diagnostic_period;
+    syncDiagnosticControls();
     var category = categoryById(state.parent_label_id) || { children: [] };
     var periods = unique([].concat.apply([], (category.children || []).map(function (child) { return child.periods || []; })));
     elements.labelHubPeriodField.hidden = periods.length < 2;
@@ -406,10 +637,15 @@
     renderMeasureTabs();
   }
 
+  function defaultLabelPeriod(parentId) {
+    return Number(parentId) === 1 ? "30d" : "all";
+  }
+
   function selectParent(parentId) {
     state.parent_label_id = parentId;
+    syncDiagnosticsVisibility();
     state.compare_parent_id = defaultCompareCategory();
-    state.label_period = "all";
+    state.label_period = defaultLabelPeriod(parentId);
     state.page = 1;
     populateControls();
     render();
@@ -437,6 +673,212 @@
       sort_field: state.sort_field,
       sort_dir: state.sort_dir
     };
+  }
+
+  function syncDiagnosticsVisibility() {
+    if (!elements.labelHubDiagnosticsSection) return;
+    elements.labelHubDiagnosticsSection.open = Number(state.parent_label_id) === 1;
+  }
+
+  function syncDiagnosticControls() {
+    if (!elements.labelHubDiagnosticsScope) return;
+    elements.labelHubDiagnosticsScope.querySelectorAll("[data-diagnostic-scope]").forEach(function (button) {
+      button.classList.toggle("active", button.dataset.diagnosticScope === state.diagnostic_scope);
+    });
+    var conditionMap = parsedConditions();
+    var selectedRoles = conditionMap["1"] || [];
+    var role = selectedRoles.length === 1 ? selectedRoles[0] : "";
+    elements.labelHubDiagnosticsRoles.querySelectorAll("[data-diagnostic-role]").forEach(function (button) {
+      button.classList.toggle("active", button.dataset.diagnosticRole === role);
+    });
+    var roleLabels = { "101": "明星产品", "102": "潜力产品", "103": "瘦狗产品", "104": "问题产品" };
+    var conditionLabels = [];
+    if (role) conditionLabels.push("销售角色：" + (roleLabels[role] || role));
+    if (state.country_category !== "all") conditionLabels.push("国家类别：" + state.country_category);
+    if (state.store !== "all") conditionLabels.push("店铺：" + state.store);
+    var conditionCount = Object.keys(conditionMap).reduce(function (total, parent) {
+      return total + (conditionMap[parent] || []).length;
+    }, 0);
+    if (conditionCount > (role ? 1 : 0)) conditionLabels.push("其他标签条件 " + (conditionCount - (role ? 1 : 0)) + " 项");
+    elements.labelHubDiagnosticsCondition.textContent = conditionLabels.join(" · ") || "当前未选择诊断条件";
+    elements.labelHubDiagnosticsSubtitle.textContent = role
+      ? "当前查看" + (roleLabels[role] || role) + "的诊断原因。"
+      : "当前查看全部销售角色诊断。";
+  }
+
+  function diagnosticParams() {
+    var params = buildParams();
+    params.diagnostic_scope = state.diagnostic_scope;
+    params.diagnostic_period = state.diagnostic_period;
+    return params;
+  }
+
+  function loadDiagnostics() {
+    if (!elements.labelHubDiagnosticsSection.open) return;
+    var params = diagnosticParams();
+    var requestKey = JSON.stringify(params);
+    if (diagnosticLoading && diagnosticRequestKey === requestKey) return;
+    var token = ++diagnosticRequestToken;
+    diagnosticRequestKey = requestKey;
+    diagnosticLoading = true;
+    syncDiagnosticControls();
+    elements.labelHubDiagnosticsContent.innerHTML = '<div class="empty-state compact">正在加载销售角色诊断…</div>';
+    app.apiGet("/api/label-hub/sales-role-diagnostics", params).then(function (payload) {
+      if (token !== diagnosticRequestToken) return;
+      renderDiagnostics(payload);
+    }).catch(function (error) {
+      if (token !== diagnosticRequestToken) return;
+      elements.labelHubDiagnosticsContent.innerHTML = '<div class="empty-state compact">诊断加载失败：' + app.escapeHtml((error && error.message) || "请稍后重试") + "</div>";
+    }).then(function () {
+      if (token === diagnosticRequestToken) diagnosticLoading = false;
+    });
+  }
+
+  function diagnosticDeltaMarkup(item) {
+    if (item.delta === null || item.delta === undefined) return "<mark>--</mark>";
+    var delta = Number(item.delta || 0);
+    return '<mark class="' + (delta > 0 ? "is-up" : (delta < 0 ? "is-down" : "")) + '">' +
+      (delta > 0 ? "+" : "") + formatNumber(delta) + "</mark>";
+  }
+
+  function diagnosticEvidenceMarkup(item) {
+    return Number(item.country_record_count || item.business_unit_count || 0)
+      ? '<span class="label-hub-diagnostic-proof">' + formatPercent(item.evidence_coverage || 0) + "</span>"
+      : '<span class="label-hub-diagnostic-muted">--</span>';
+  }
+
+  function toggleCountryDiagnosticRole(row) {
+    var role = row.dataset.diagnosticCountryRole || "";
+    var expanded = row.getAttribute("aria-expanded") !== "true";
+    elements.labelHubDiagnosticsContent.querySelectorAll("[data-diagnostic-country-role]").forEach(function (item) {
+      var active = item === row && expanded;
+      item.setAttribute("aria-expanded", active ? "true" : "false");
+      item.classList.toggle("expanded", active);
+    });
+    elements.labelHubDiagnosticsContent.querySelectorAll("[data-diagnostic-country-detail]").forEach(function (item) {
+      item.hidden = !(expanded && item.dataset.diagnosticCountryDetail === role);
+    });
+  }
+
+  function renderCountryRoleDistribution(payload, selected, selectedRole, roleDefinitions) {
+    var groups = payload.country_role_distribution || [];
+    var selectedRoleDefinition = roleDefinitions.find(function (item) { return item.id === selectedRole; }) || {};
+    var scopeLabel = selectedRole
+      ? app.escapeHtml(selectedRoleDefinition.label || "当前角色") + " · 国家站点角色分布"
+      : "全部销售角色 · 国家站点角色分布";
+    var rows = groups.map(function (group) {
+      var childRows = (group.children || []).map(function (item) {
+        var active = (selected[String(item.parent_id)] || []).indexOf(String(item.child_id)) >= 0;
+        var ratio = Number(group.country_record_count || 0)
+          ? Number(item.country_record_count || 0) / Number(group.country_record_count)
+          : 0;
+        return '<tr hidden class="label-hub-diagnostic-child-row ' + (active ? "selected" : "") + '"' +
+          ' data-diagnostic-country-detail="' + app.escapeHtml(group.role_id || "") + '"' +
+          ' data-diagnostic-parent="' + Number(item.parent_id || 16) + '"' +
+          ' data-diagnostic-child="' + Number(item.child_id || 0) + '" tabindex="0">' +
+          '<td><strong>' + app.escapeHtml(item.label || "") + '</strong><small>点击筛选此诊断原因</small></td>' +
+          '<td><b>' + formatNumber(item.country_record_count || 0) + '</b></td>' +
+          '<td>' + formatNumber(item.business_unit_count || 0) + '</td>' +
+          '<td><span>' + formatPercent(ratio) + '</span><i><em style="width:' + Math.max(2, Math.min(100, ratio * 100)) + '%"></em></i></td>' +
+          '<td>' + diagnosticDeltaMarkup(item) + '</td>' +
+          '<td>' + app.formatCompactCurrency(item.order_gross_profit || 0) + '</td>' +
+          '<td>' + diagnosticEvidenceMarkup(item) + '</td></tr>';
+      }).join("");
+      return '<tr class="label-hub-diagnostic-role-row" data-diagnostic-country-role="' +
+        app.escapeHtml(group.role_id || "") + '" aria-expanded="false" tabindex="0">' +
+        '<td><strong><i aria-hidden="true">›</i>' + app.escapeHtml(group.label || "") +
+        '</strong><small>' + ((group.children || []).length ? "点击展开诊断原因" : "当前没有诊断记录") + '</small></td>' +
+        '<td><b>' + formatNumber(group.country_record_count || 0) + '</b></td>' +
+        '<td>' + formatNumber(group.business_unit_count || 0) + '</td>' +
+        '<td><span>' + formatPercent(group.ratio || 0) + '</span><i><em style="width:' +
+        Math.max(2, Math.min(100, Number(group.ratio || 0) * 100)) + '%"></em></i></td>' +
+        '<td>' + diagnosticDeltaMarkup(group) + '</td>' +
+        '<td>' + app.formatCompactCurrency(group.order_gross_profit || 0) + '</td>' +
+        '<td>' + diagnosticEvidenceMarkup(group) + '</td></tr>' + childRows;
+    }).join("");
+    var emptyRow = '<tr><td colspan="7"><div class="empty-state compact">当前范围和周期没有国家站点诊断事实。</div></td></tr>';
+    elements.labelHubDiagnosticsContent.innerHTML =
+      '<div class="label-hub-diagnostics-grid"><section class="label-hub-diagnostic-ledger"><header><strong>' +
+      scopeLabel + '</strong><span>全站 ' + formatNumber(payload.business_unit_count || 0) +
+      ' 个店铺商品 → ' + formatNumber(payload.country_record_count || 0) +
+      ' 条国家记录</span></header><div class="label-hub-diagnostic-table-wrap"><table class="is-country-role-table">' +
+      '<thead><tr><th>国家站点角色 / 诊断原因</th><th>国家记录</th><th>涉及 MSKU</th><th>国家记录占比</th><th>较上期</th><th>毛利润</th><th>证据</th></tr></thead><tbody>' +
+      (rows || emptyRow) + '</tbody></table></div></section></div>' +
+      '<footer class="label-hub-diagnostics-foot"><span>同一商品可在不同国家落入不同角色；点击站点角色展开具体原因。</span>' +
+      '<button type="button" data-diagnostic-open-details>查看诊断明细与规则证据 ›</button></footer>';
+  }
+
+  function renderDiagnostics(payload) {
+    var selected = parsedConditions();
+    var buckets = payload.buckets || [];
+    var roleDefinitions = [
+      { id: "101", label: "明星产品", matcher: /明星/ },
+      { id: "102", label: "潜力产品", matcher: /潜力/ },
+      { id: "103", label: "瘦狗产品", matcher: /瘦狗/ },
+      { id: "104", label: "问题产品", matcher: /问题/ }
+    ];
+    var selectedRoles = selected["1"] || [];
+    var selectedRole = selectedRoles.length === 1 ? selectedRoles[0] : "";
+    if (state.diagnostic_scope === "country") {
+      renderCountryRoleDistribution(payload, selected, selectedRole, roleDefinitions);
+      return;
+    }
+    var displayRows = buckets;
+    if (!selectedRole) {
+      displayRows = roleDefinitions.map(function (role) {
+        var items = buckets.filter(function (item) { return role.matcher.test(String(item.label || "")); });
+        if (!items.length) return null;
+        var primary = items.slice().sort(function (a, b) {
+          return Number(b.business_unit_count || 0) - Number(a.business_unit_count || 0);
+        })[0];
+        var businessCount = items.reduce(function (sum, item) { return sum + Number(item.business_unit_count || 0); }, 0);
+        var evidenceBase = items.reduce(function (sum, item) { return sum + Number(item.business_unit_count || 0); }, 0);
+        var deltasAvailable = items.every(function (item) { return item.delta !== null && item.delta !== undefined; });
+        var reason = String(primary.label || "").replace(role.label, "").replace(/^[\s·-]+/, "") || "已达标";
+        return {
+          role_id: role.id,
+          label: role.label + " · " + reason + "为主",
+          business_unit_count: businessCount,
+          ratio: items.reduce(function (sum, item) { return sum + Number(item.ratio || 0); }, 0),
+          delta: deltasAvailable ? items.reduce(function (sum, item) { return sum + Number(item.delta || 0); }, 0) : null,
+          order_gross_profit: items.reduce(function (sum, item) { return sum + Number(item.order_gross_profit || 0); }, 0),
+          evidence_coverage: evidenceBase ? items.reduce(function (sum, item) {
+            return sum + Number(item.evidence_coverage || 0) * Number(item.business_unit_count || 0);
+          }, 0) / evidenceBase : 0
+        };
+      }).filter(Boolean);
+    } else {
+      var selectedRoleDefinition = roleDefinitions.find(function (role) { return role.id === selectedRole; });
+      displayRows = selectedRoleDefinition
+        ? buckets.filter(function (item) { return selectedRoleDefinition.matcher.test(String(item.label || "")); })
+        : [];
+    }
+    var denominator = displayRows.reduce(function (sum, item) { return sum + Number(item.business_unit_count || 0); }, 0);
+    var rows = displayRows.map(function (item) {
+      var active = (selected[String(item.parent_id)] || []).indexOf(String(item.child_id)) >= 0;
+      var rowAttributes = item.role_id
+        ? ' data-diagnostic-role-summary="' + item.role_id + '"'
+        : ' data-diagnostic-parent="' + item.parent_id + '" data-diagnostic-child="' + item.child_id + '"';
+      var ratio = selectedRole ? Number(item.ratio || 0) : (denominator ? Number(item.business_unit_count || 0) / denominator : 0);
+      return '<tr class="' + (active ? "selected" : "") + '"' + rowAttributes + ' tabindex="0">' +
+        '<td><strong>' + app.escapeHtml(item.label || "") + '</strong><small>点击筛选该诊断群体</small></td>' +
+        '<td><b>' + formatNumber(item.business_unit_count || 0) + '</b></td>' +
+        '<td><span>' + formatPercent(ratio) + '</span><i><em style="width:' + Math.max(2, Math.min(100, ratio * 100)) + '%"></em></i></td>' +
+        '<td>' + diagnosticDeltaMarkup(item) + '</td>' +
+        '<td>' + app.formatCompactCurrency(item.order_gross_profit || 0) + '</td>' +
+        '<td>' + diagnosticEvidenceMarkup(item) + '</td></tr>';
+    }).join("");
+    var role = roleDefinitions.find(function (item) { return item.id === selectedRole; }) || {};
+    var scopeLabel = selectedRole ? app.escapeHtml(role.label || "当前角色") + " · 全站点问题构成" : "全部角色 · 全站点问题摘要";
+    var totalRecords = displayRows.reduce(function (sum, item) { return sum + Number(item.business_unit_count || 0); }, 0);
+    var emptyRow = '<tr><td colspan="6"><div class="empty-state compact">当前范围和周期没有诊断标签事实。</div></td></tr>';
+    elements.labelHubDiagnosticsContent.innerHTML =
+      '<div class="label-hub-diagnostics-grid"><section class="label-hub-diagnostic-ledger"><header><strong>' + scopeLabel +
+      '</strong><span>共 ' + formatNumber(totalRecords) +
+      ' 条店铺商品记录</span></header><div class="label-hub-diagnostic-table-wrap"><table><thead><tr><th>销售角色 / 问题</th><th>记录数</th><th>群体内占比</th><th>较上期</th><th>毛利润</th><th>证据</th></tr></thead><tbody>' +
+      (rows || emptyRow) + '</tbody></table></div></section></div>' +
+      '<footer class="label-hub-diagnostics-foot"><span>诊断结果跟随当前页面的全部公共筛选与联动条件。</span>' +
+      '<button type="button" data-diagnostic-open-details>查看诊断明细与规则证据 ›</button></footer>';
   }
 
   function serializeConditions(value) { return String(value || ""); }
@@ -479,7 +921,7 @@
       countries: detailState.countries,
       detail_conditions: detailState.detail_conditions,
       sales_roles: detailState.sales_roles,
-      sales_trends: detailState.sales_trends,
+      role_reason_ids: detailState.role_reason_ids,
       daily_sales_bands: detailState.daily_sales_bands,
       margin_bands: detailState.margin_bands,
       ranking_bands: detailState.ranking_bands,
@@ -492,8 +934,15 @@
     };
   }
 
+  function setDetailLoading(isLoading) {
+    elements.labelHubDetailApply.disabled = isLoading;
+    elements.labelHubDetailApply.setAttribute("aria-busy", String(isLoading));
+    elements.labelHubDetailApply.textContent = isLoading ? "筛选中…" : "应用筛选";
+  }
+
   function renderDetails() {
     var token = ++detailRequestToken;
+    setDetailLoading(true);
     elements.labelHubTable.setAttribute("aria-busy", "true");
     elements.labelHubTableSummary.textContent = "正在加载明细…";
     fetch("/api/label-hub/details", {
@@ -518,7 +967,10 @@
       elements.labelHubTable.innerHTML = '<div class="empty-state">明细加载失败：' + app.escapeHtml((error && error.message) || "请稍后重试") + "</div>";
       elements.labelHubTableSummary.textContent = "明细暂不可用";
     }).then(function () {
-      if (token === detailRequestToken) elements.labelHubTable.setAttribute("aria-busy", "false");
+      if (token === detailRequestToken) {
+        elements.labelHubTable.setAttribute("aria-busy", "false");
+        setDetailLoading(false);
+      }
     });
   }
 
@@ -558,7 +1010,8 @@
     detailState.problems = selectedValues(elements.labelHubDetailProblems);
     detailState.problem_mode = elements.labelHubDetailProblemMode.value || "any";
     detailState.sales_roles = selectedValues(elements.labelHubDetailSalesRoles);
-    detailState.sales_trends = selectedValues(elements.labelHubDetailSalesTrends);
+    detailState.role_reason_ids = selectedValues(elements.labelHubDetailRoleReasons).map(Number);
+    reconcileRoleReasonSelections();
     detailState.daily_sales_bands = selectedValues(elements.labelHubDetailDailyBands);
     detailState.margin_bands = selectedValues(elements.labelHubDetailMarginBands);
     detailState.ranking_bands = selectedValues(elements.labelHubDetailRankingBands);
@@ -580,24 +1033,27 @@
   function clearDetailFilters() {
     detailState.identifiers = []; detailState.country_categories = []; detailState.stores = []; detailState.countries = [];
     detailState.detail_conditions = ""; detailState.problems = []; detailState.problem_mode = "any";
-    detailState.sales_roles = []; detailState.sales_trends = []; detailState.daily_sales_bands = []; detailState.margin_bands = []; detailState.ranking_bands = [];
+    detailState.sales_roles = []; detailState.role_reason_ids = []; detailState.daily_sales_bands = []; detailState.margin_bands = []; detailState.ranking_bands = [];
     detailState.page = 1;
     elements.labelHubDetailIdentifiers.value = "";
     elements.labelHubIdentifierBatchInput.value = "";
     closeIdentifierPopover(false);
     [elements.labelHubDetailLabels, elements.labelHubDetailCountryCategories, elements.labelHubDetailStores, elements.labelHubDetailCountries,
-      elements.labelHubDetailProblems, elements.labelHubDetailSalesRoles, elements.labelHubDetailSalesTrends,
+      elements.labelHubDetailProblems, elements.labelHubDetailSalesRoles, elements.labelHubDetailRoleReasons,
       elements.labelHubDetailDailyBands, elements.labelHubDetailMarginBands, elements.labelHubDetailRankingBands].forEach(function (select) {
         Array.from(select.options).forEach(function (option) { option.selected = false; });
       });
     elements.labelHubDetailProblemMode.value = "any";
     destroyDetailFilterSelects();
     initDetailFilterSelects();
+    renderRoleReasonPanel();
+    closeRoleReasonPanel();
     renderDetailActiveFilters();
     renderDetails();
   }
   function syncDetailViewControls() {
     var countryActive = detailState.detail_view === "country";
+    elements.labelHubRoleReasonScope.textContent = countryActive ? "国家明细 · 国家站点诊断" : "MSKU维度 · 全站诊断";
     elements.labelHubDetailCountriesField.classList.toggle("is-retained", !countryActive && detailState.countries.length > 0);
     elements.labelHubCountryFilterHint.textContent = countryActive ? "当前已生效" : (detailState.countries.length ? "已保留，当前未生效" : "仅国家明细视图生效");
     elements.labelHubDetailRankingField.classList.toggle("is-retained", !countryActive && detailState.ranking_bands.length > 0);
@@ -609,7 +1065,7 @@
     return [
       elements.labelHubDetailLabels, elements.labelHubDetailCountryCategories, elements.labelHubDetailStores,
       elements.labelHubDetailCountries, elements.labelHubDetailSalesRoles,
-      elements.labelHubDetailSalesTrends, elements.labelHubDetailDailyBands, elements.labelHubDetailMarginBands,
+      elements.labelHubDetailDailyBands, elements.labelHubDetailMarginBands,
       elements.labelHubDetailRankingBands
     ].filter(Boolean);
   }
@@ -655,7 +1111,7 @@
     setNativeSelections(elements.labelHubDetailCountries, detailState.countries);
     setNativeSelections(elements.labelHubDetailProblems, detailState.problems);
     setNativeSelections(elements.labelHubDetailSalesRoles, detailState.sales_roles);
-    setNativeSelections(elements.labelHubDetailSalesTrends, detailState.sales_trends);
+    setNativeSelections(elements.labelHubDetailRoleReasons, detailState.role_reason_ids);
     setNativeSelections(elements.labelHubDetailDailyBands, detailState.daily_sales_bands);
     setNativeSelections(elements.labelHubDetailMarginBands, detailState.margin_bands);
     setNativeSelections(elements.labelHubDetailRankingBands, detailState.ranking_bands);
@@ -664,6 +1120,7 @@
 
   function toggleDetailAdvancedFilters() {
     detailAdvancedOpen = !detailAdvancedOpen;
+    if (!detailAdvancedOpen) closeRoleReasonPanel();
     elements.labelHubDetailAdvanced.hidden = !detailAdvancedOpen;
     elements.labelHubDetailMore.classList.toggle("is-open", detailAdvancedOpen);
     elements.labelHubDetailMore.setAttribute("aria-expanded", String(detailAdvancedOpen));
@@ -671,7 +1128,7 @@
 
   function selectedOptionLabel(select, value) {
     var option = Array.from((select && select.options) || []).find(function (item) { return String(item.value) === String(value); });
-    return option ? option.textContent.trim() : String(value);
+    return option ? (option.dataset.fullLabel || option.textContent.trim()) : String(value);
   }
 
   function detailFilterChip(field, value, label) {
@@ -689,7 +1146,7 @@
       ["countries", detailState.detail_view === "country" ? "国家" : "国家（已保留）", elements.labelHubDetailCountries],
       ["detail_conditions", "标签", elements.labelHubDetailLabels],
       ["sales_roles", "销售角色", elements.labelHubDetailSalesRoles],
-      ["sales_trends", "销售趋势", elements.labelHubDetailSalesTrends],
+      ["role_reason_ids", "角色原因", elements.labelHubDetailRoleReasons],
       ["daily_sales_bands", "日销段", elements.labelHubDetailDailyBands],
       ["margin_bands", "毛利段", elements.labelHubDetailMarginBands],
       ["ranking_bands", detailState.detail_view === "country" ? "排名" : "排名（已保留）", elements.labelHubDetailRankingBands]
@@ -698,7 +1155,7 @@
       values.forEach(function (value) { chips.push(detailFilterChip(config[0], value, config[1] + "：" + selectedOptionLabel(config[2], value))); });
     });
     elements.labelHubDetailActiveFilterList.innerHTML = chips.join("") || '<span class="label-hub-detail-empty-filter">暂无明细筛选</span>';
-    var advancedCount = detailConditionValues().length + detailState.sales_roles.length + detailState.sales_trends.length + detailState.daily_sales_bands.length + detailState.margin_bands.length + detailState.ranking_bands.length;
+    var advancedCount = detailConditionValues().length + detailState.sales_roles.length + detailState.role_reason_ids.length + detailState.daily_sales_bands.length + detailState.margin_bands.length + detailState.ranking_bands.length;
     elements.labelHubDetailMoreCount.textContent = String(advancedCount);
     elements.labelHubDetailMoreCount.hidden = advancedCount === 0;
   }
@@ -726,6 +1183,22 @@
     return result;
   }
   function saveConditions(value) {
+    var roles = value["1"] || [];
+    if (roles.length === 1) {
+      var allowedDiagnostics = {
+        "101": { "15": ["1501"], "16": ["1601"] },
+        "102": { "15": ["1502", "1503"], "16": ["1602", "1603", "1604", "1605", "1606"] },
+        "103": { "15": ["1504", "1505", "1506"], "16": ["1607", "1608", "1609", "1610", "1611", "1612", "1613"] },
+        "104": { "15": ["1507", "1508"], "16": ["1614", "1615", "1616", "1617", "1618"] }
+      }[roles[0]] || {};
+      ["15", "16"].forEach(function (parent) {
+        if (!value[parent]) return;
+        value[parent] = value[parent].filter(function (child) {
+          return (allowedDiagnostics[parent] || []).indexOf(String(child)) >= 0;
+        });
+        if (!value[parent].length) delete value[parent];
+      });
+    }
     state.conditions = Object.keys(value).sort(function (a, b) { return Number(a) - Number(b); }).map(function (parent) {
       return parent + ":" + unique(value[parent]).sort(function (a, b) { return Number(a) - Number(b); }).join("|");
     }).join(";");
@@ -817,6 +1290,7 @@
       renderConditions();
       renderBreakdowns(payload);
       renderMatrix(payload);
+      if (elements.labelHubDiagnosticsSection.open) loadDiagnostics();
       elements.labelHubHint.textContent = "当前大类：" + ((payload.rules || {}).label || "-");
       loadChanges();
     }).catch(showError).then(function () { if (token === requestToken) setLoading(false); });
@@ -1888,6 +2362,7 @@
         }
         if (!event.data || !event.colDef) return;
         if (event.colDef.field === "label_summary") openDrawer(event.data);
+        if (event.colDef.field === "role_diagnostic_summary") openRoleDiagnosticDrawer(event.data);
         if (event.colDef.field === "country_profile") openCountryProfileDrawer(event.data);
       }
     });
@@ -1924,6 +2399,22 @@
     return { headerName: "当前标签", field: "current_label", width: 150, tooltipField: "current_label", cellClass: "label-text-cell" };
   }
 
+  function roleDiagnosticColumn() {
+    return {
+      headerName: "角色诊断",
+      field: "role_diagnostic_summary",
+      width: 120,
+      tooltipField: "role_diagnostic_summary",
+      cellClass: "label-summary-cell",
+      cellRenderer: function (params) {
+        var value = params.value || "";
+        return value
+          ? '<button type="button" class="label-hub-role-diagnostic-cell"><span>查看诊断</span><i aria-hidden="true">›</i></button>'
+          : '<span class="ag-empty-copy">暂无诊断</span>';
+      }
+    };
+  }
+
   function labelProfileColumn() {
     return { headerName: "标签画像", field: "label_summary", width: 165, tooltipField: "label_summary", cellClass: "label-summary-cell", cellRenderer: renderLabelSummaryCell };
   }
@@ -1951,6 +2442,7 @@
   function overviewColumns() {
     return identityColumns().concat([
       currentLabelColumn(),
+      roleDiagnosticColumn(),
       labelProfileColumn(),
       countryProfileColumn(),
       { headerName: "问题提示", field: "issue_labels", width: 190, sortable: false, filter: false, tooltipValueGetter: function (params) { return (params.value || []).join(" / ") || "当前未命中问题条件"; }, cellRenderer: renderIssueCell },
@@ -1973,6 +2465,7 @@
     ] : [];
     return identityColumns().concat([
       currentLabelColumn(),
+      roleDiagnosticColumn(),
       labelProfileColumn(),
       countryProfileColumn(),
     ]).concat(countryLabels).concat([
@@ -2071,6 +2564,133 @@
         : (status.local_metrics_status === "available" ? "该 MSKU 暂无本地经营指标" : (status.local_metrics_status === "no_snapshot" ? "当前日期无本地经营快照" : "本地经营指标暂不可用"));
       elements.labelHubDrawerContent.innerHTML = '<div class="label-hub-drawer-head"><p class="section-kicker">MSKU 画像</p><h2 id="labelHubDrawerTitle">' + app.escapeHtml(identity.msku || row.msku) + '</h2><p>' + app.escapeHtml(identity.country_category || "") + " · " + app.escapeHtml(identity.store || "") + '</p></div><section><h3>MSKU 口径标签</h3><div class="label-hub-profile-tags">' + analysisTags + '</div></section><section><div class="label-hub-profile-section-head"><h3>本地经营画像</h3><span class="label-hub-profile-period">' + app.escapeHtml(metricWindowText) + '</span></div><p class="summary-hint">' + app.escapeHtml(metricStatusText) + '</p><div class="label-hub-profile-metrics">' + metricsHtml + '</div></section><div class="label-hub-profile-links"><a href="' + app.escapeHtml(links.sales_role || "#") + '">查看销售角色</a><a href="' + app.escapeHtml(links.lifecycle || "#") + '">查看生命周期</a></div>';
     }).catch(function (error) { elements.labelHubDrawerContent.innerHTML = '<div class="empty-state compact">画像加载失败：' + app.escapeHtml((error && error.message) || "请稍后重试") + "</div>"; });
+  }
+
+  function openRoleDiagnosticDrawer(row) {
+    setDrawerMode("diagnostics");
+    elements.labelHubDrawer.hidden = false;
+    var supported = ["7d", "14d", "30d", "90d"];
+    var linkedPeriod = supported.indexOf(state.label_period) >= 0
+      ? state.label_period
+      : (supported.indexOf(state.diagnostic_period) >= 0 ? state.diagnostic_period : "30d");
+    roleDiagnosticState.row = row;
+    roleDiagnosticState.period = linkedPeriod;
+    roleDiagnosticState.payload = null;
+    roleDiagnosticState.openCountry = null;
+    loadRoleDiagnosticDrawer();
+  }
+
+  function loadRoleDiagnosticDrawer() {
+    var row = roleDiagnosticState.row;
+    if (!row) return;
+    var token = ++roleDiagnosticState.requestToken;
+    elements.labelHubDrawerContent.innerHTML = '<div class="label-hub-role-diagnostic-loading"><span></span><strong>正在读取规则证据</strong><small>计算当前指标、目标阈值和升级差距…</small></div>';
+    app.apiGet("/api/label-hub/msku-role-diagnostics", {
+      data_date: state.data_date,
+      country_category: row.country_category || state.country_category,
+      store: row.store || state.store,
+      msku: row.msku,
+      diagnostic_period: roleDiagnosticState.period
+    }).then(function (payload) {
+      if (token !== roleDiagnosticState.requestToken) return;
+      roleDiagnosticState.payload = payload;
+      renderRoleDiagnosticDrawer(payload);
+    }).catch(function (error) {
+      if (token !== roleDiagnosticState.requestToken) return;
+      elements.labelHubDrawerContent.innerHTML = '<div class="label-hub-role-diagnostic-error"><strong>诊断加载失败</strong><p>' +
+        app.escapeHtml((error && error.message) || "请稍后重试") +
+        '</p><button type="button" data-role-diagnostic-period="' + app.escapeHtml(roleDiagnosticState.period) + '">重新加载</button></div>';
+    });
+  }
+
+  function roleDiagnosticTone(role) {
+    if (/问题/.test(role || "")) return "risk";
+    if (/瘦狗/.test(role || "")) return "warning";
+    if (/潜力/.test(role || "")) return "potential";
+    if (/明星/.test(role || "")) return "success";
+    return "neutral";
+  }
+
+  function roleDiagnosticMetricCard(metric) {
+    var statusLabel = metric.status === "met" ? "已达标" : (metric.status === "missing" ? "待判断" : "未达标");
+    return '<article class="label-hub-role-metric is-' + app.escapeHtml(metric.status || "missing") + '">' +
+      '<div><span>' + app.escapeHtml(metric.label || "") + '</span><em>' + app.escapeHtml(statusLabel) + '</em></div>' +
+      '<strong>' + app.escapeHtml(metric.current_display || "--") + '</strong>' +
+      '<p>目标 <b>' + app.escapeHtml(metric.target_display || "--") + '</b></p>' +
+      '<div class="label-hub-role-metric-progress"><i style="width:' + Number(metric.progress || 0) + '%"></i></div>' +
+      '<small>' + app.escapeHtml(metric.gap_display || "") + '</small></article>';
+  }
+
+  function roleDiagnosticMetricTable(metrics) {
+    var rows = (metrics || []).map(function (metric) {
+      var statusLabel = metric.status === "met" ? "已达标" : (metric.status === "missing" ? "待判断" : "未达标");
+      return '<tr class="is-' + app.escapeHtml(metric.status || "missing") + '"><td><span class="label-hub-role-status-dot"></span>' +
+        app.escapeHtml(metric.label || "") + '</td><td>' + app.escapeHtml(metric.current_display || "--") +
+        '</td><td>' + app.escapeHtml(metric.target_display || "--") + '</td><td><b>' +
+        app.escapeHtml(metric.gap_display || statusLabel) + '</b></td></tr>';
+    }).join("");
+    return '<div class="label-hub-role-country-table"><table><thead><tr><th>指标</th><th>当前值</th><th>达标规则</th><th>还差多少</th></tr></thead><tbody>' +
+      rows + '</tbody></table></div>';
+  }
+
+  function renderRoleDiagnosticDrawer(payload) {
+    var identity = payload.identity || {};
+    var globalDiagnostic = payload.global_diagnostic;
+    var countries = payload.country_diagnostics || [];
+    if (roleDiagnosticState.openCountry === null && countries.length) {
+      roleDiagnosticState.openCountry = countries[0].country || "";
+    }
+    var periods = ["7d", "14d", "30d", "90d"].map(function (period) {
+      return '<button type="button" data-role-diagnostic-period="' + period + '" class="' +
+        (roleDiagnosticState.period === period ? "active" : "") + '">' + period + "</button>";
+    }).join("");
+    var header = '<header class="label-hub-role-diagnostic-head"><div><p class="section-kicker">销售角色诊断</p>' +
+      '<h2 id="labelHubDrawerTitle">' + app.escapeHtml(identity.msku || (roleDiagnosticState.row || {}).msku || "--") +
+      '</h2><p>' + app.escapeHtml([identity.country_category, identity.store].filter(Boolean).join(" · ")) +
+      '</p></div><div class="label-hub-role-periods" aria-label="诊断周期">' + periods + '</div></header>';
+
+    var globalHtml = '<section class="label-hub-role-global"><div class="label-hub-role-section-title"><div><span>全站判断</span><h3>全站点销售角色</h3></div><small>证据周期 ' +
+      app.escapeHtml(payload.period || roleDiagnosticState.period) + '</small></div>';
+    if (globalDiagnostic) {
+      var globalTone = roleDiagnosticTone(globalDiagnostic.current_role);
+      globalHtml += '<div class="label-hub-role-upgrade"><div><small>当前角色</small><strong class="is-' + globalTone + '">' +
+        app.escapeHtml(globalDiagnostic.current_role || "--") + '</strong></div><i>→</i><div><small>上一层目标</small><strong>' +
+        app.escapeHtml(globalDiagnostic.target_role || "--") + '</strong></div></div>' +
+        '<div class="label-hub-role-blocker"><span>未达标指标</span><strong>' +
+        app.escapeHtml(globalDiagnostic.main_blocker || "--") + '</strong><p>' +
+        app.escapeHtml(globalDiagnostic.rule_branch_text || "") + '</p></div>' +
+        '<div class="label-hub-role-metrics">' + (globalDiagnostic.metrics || []).map(roleDiagnosticMetricCard).join("") + '</div>';
+    } else {
+      globalHtml += '<div class="empty-state compact">当前周期没有全站销售角色证据。</div>';
+    }
+    globalHtml += "</section>";
+
+    var countryRows = countries.map(function (item) {
+      var expanded = roleDiagnosticState.openCountry === item.country;
+      var tone = roleDiagnosticTone(item.current_role);
+      var details = expanded
+        ? '<div class="label-hub-role-country-detail"><div class="label-hub-role-country-rule"><span>本次命中问题</span><strong>' +
+          app.escapeHtml(item.issue_label || "--") + '</strong><p>' + app.escapeHtml(item.rule_branch_text || "") +
+          '</p></div>' + roleDiagnosticMetricTable(item.metrics) +
+          (item.tag_rule ? '<details class="label-hub-role-rule-source"><summary>查看原始分类规则</summary><p>' + app.escapeHtml(item.tag_rule) + '</p></details>' : "") +
+          '</div>'
+        : "";
+      return '<article class="label-hub-role-country is-' + tone + (expanded ? " is-open" : "") + '">' +
+        '<button type="button" data-role-diagnostic-country="' + app.escapeHtml(item.country || "") + '" aria-expanded="' + expanded + '">' +
+        '<span class="label-hub-role-country-chevron">›</span><span class="label-hub-role-country-name"><b>' +
+        app.escapeHtml(item.country || "未配置国家") + '</b><small>' + app.escapeHtml(item.issue_label || "") + '</small></span>' +
+        '<span class="label-hub-role-country-path"><em class="is-' + tone + '">' + app.escapeHtml(item.current_role || "--") +
+        '</em><i>→</i><em>' + app.escapeHtml(item.target_role || "--") + '</em></span>' +
+        '<span class="label-hub-role-country-gap"><small>' + Number(item.unmet_count || 0) + ' 项待提升</small><b>' +
+        app.escapeHtml(item.summary || "当前指标均已达标") + '</b></span></button>' + details + '</article>';
+    }).join("");
+    var countryHtml = '<section class="label-hub-role-countries"><div class="label-hub-role-section-title"><div><span>国家站点判断</span>' +
+      '<h3>各国家子标签与问题情况</h3></div><small>按问题优先级排列 · ' + countries.length +
+      ' 个国家</small></div><div class="label-hub-role-country-list">' +
+      (countryRows || '<div class="empty-state compact">当前周期没有国家站点角色证据。</div>') + '</div></section>';
+
+    elements.labelHubDrawerContent.innerHTML = '<div class="label-hub-role-diagnostic">' + header + globalHtml + countryHtml +
+      '<footer>判断来自标签证据 JSON；切换周期只读取对应周期证据，不改变页面筛选和分类规则。</footer></div>';
   }
 
   function countryProfileCompactTag(title, item, emptyText) {

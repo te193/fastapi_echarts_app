@@ -29,6 +29,11 @@ COUNTRY_SORT_FIELDS = BUSINESS_SORT_FIELDS | {
 METRIC_FILTER_FIELDS = {"sales_roles", "sales_trends", "daily_sales_bands", "margin_bands", "ranking_bands"}
 METRIC_PROBLEMS = {"missing_metrics", "zero_sales", "negative_profit", "low_margin"}
 RANKING_BANDS = {"top10", "11_20", "21_50", "51_100", "gt100", "missing"}
+ROLE_REASON_PARENT_BY_VIEW = {"business_unit": 15, "country": 16}
+ROLE_REASON_IDS_BY_VIEW = {
+    "business_unit": set(range(1501, 1509)),
+    "country": set(range(1601, 1619)),
+}
 DETAIL_CACHE_SECONDS = 300
 
 
@@ -194,6 +199,16 @@ class LabelHubDetailDataService:
         if not ranking_bands.issubset(RANKING_BANDS):
             raise ValueError("排名筛选包含无效档位")
 
+        try:
+            role_reason_ids = list(dict.fromkeys(
+                int(item) for item in filters.get("role_reason_ids") or []
+            ))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("角色原因筛选包含无效标签") from exc
+        if not set(role_reason_ids).issubset(ROLE_REASON_IDS_BY_VIEW[detail_view]):
+            raise ValueError("角色原因筛选与当前明细维度不匹配")
+        role_reason_parent = ROLE_REASON_PARENT_BY_VIEW[detail_view]
+
         requested, normalized = _normalize_identifiers(filters.get("identifiers"))
         aliases, provider_country_count = self._alias_payload(normalized)
         alias_targets: dict[str, set[str]] = {}
@@ -229,6 +244,7 @@ class LabelHubDetailDataService:
             normalized
             or filters.get("country_categories") or filters.get("stores")
             or filters.get("detail_conditions") or filters.get("sales_roles")
+            or role_reason_ids
             or filters.get("sales_trends") or filters.get("daily_sales_bands")
             or filters.get("margin_bands") or filters.get("problems")
             or (detail_view == "country" and ranking_bands)
@@ -357,14 +373,18 @@ class LabelHubDetailDataService:
                 return False
             if any(selected and row.get(field) not in selected for field, selected in selections):
                 return False
-            if conditions:
+            if conditions or role_reason_ids:
                 labels_by_parent = {
                     int(parent): {int(child) for child in children}
                     for parent, children in (row.get("_by_parent") or {}).items()
                 }
                 for label in row.get("labels") or []:
                     labels_by_parent.setdefault(int(label["parent_id"]), set()).add(int(label["id"]))
+                for diagnostic in row.get("role_diagnostics") or []:
+                    labels_by_parent.setdefault(int(diagnostic["parent_id"]), set()).add(int(diagnostic["id"]))
                 if any(not labels_by_parent.get(parent, set()).intersection(children) for parent, children in conditions.items()):
+                    return False
+                if role_reason_ids and not labels_by_parent.get(role_reason_parent, set()).intersection(role_reason_ids):
                     return False
             row_issues = _issues(row, metric_status)
             if problems and mode == "any" and not row_issues.intersection(problems):
@@ -430,10 +450,12 @@ class LabelHubDetailDataService:
         applied = {key: filters.get(key, default) for key, default in (
             ("country_categories", []), ("stores", []), ("countries", []), ("sales_roles", []),
             ("sales_trends", []), ("daily_sales_bands", []), ("margin_bands", []), ("ranking_bands", []), ("problems", []),
+            ("role_reason_ids", []),
             ("detail_conditions", ""), ("problem_mode", "any"),
         )}
         applied.update({
             "detail_view": detail_view,
+            "role_reason_ids": role_reason_ids,
             "identifiers": requested,
             "data_date": filters.get("data_date", ""),
             "metric_period": filters.get("metric_period", "30d"),

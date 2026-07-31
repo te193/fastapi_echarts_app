@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block extra_head %}
-<link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}?v=20260724rulemetrics1">
+<link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}?v=20260731rolereason2">
 <link rel="stylesheet" href="{{ url_for('static', path='vendor/slim-select/slimselect.css') }}?v=4.0.5">
 {% endblock %}
 
@@ -40,6 +40,7 @@
 
   <nav id="labelHubSectionNav" class="label-hub-section-nav" aria-label="页面内容导航">
     <a class="active" href="#labelHubCoverageSection" data-section-link="labelHubCoverageSection">标签覆盖</a>
+    <a href="#labelHubDiagnosticsSection" data-section-link="labelHubDiagnosticsSection">角色诊断</a>
     <a href="#labelHubIssueSection" data-section-link="labelHubIssueSection">问题概览</a>
     <a href="#labelHubLinkageSection" data-section-link="labelHubLinkageSection">多维联动</a>
     <a href="#labelHubRelationSection" data-section-link="labelHubRelationSection">标签关系</a>
@@ -60,6 +61,28 @@
     <div id="labelHubCategories" class="label-hub-categories"></div>
     <div id="labelHubCategoryDetail" class="label-hub-category-detail" aria-live="polite"></div>
   </section>
+
+  <details id="labelHubDiagnosticsSection" class="sales-role-panel label-hub-section-panel label-hub-diagnostics-panel label-hub-anchor-section">
+    <summary>
+      <span><strong>当前条件</strong><small id="labelHubDiagnosticsCondition">尚未叠加分析条件</small></span>
+    </summary>
+    <div class="label-hub-diagnostics-head">
+      <div>
+        <small class="section-kicker">销售角色扩展分析</small>
+        <h2>为什么处于这个销售角色</h2>
+        <p id="labelHubDiagnosticsSubtitle">当前查看全部销售角色诊断。</p>
+      </div>
+      <div class="label-hub-diagnostics-toolbar">
+        <label class="sales-role-field compact"><select id="labelHubDiagnosticsPeriod" aria-label="诊断周期"><option value="30d">30d</option><option value="7d">7d</option><option value="14d">14d</option><option value="90d">90d</option></select></label>
+        <div id="labelHubDiagnosticsScope" class="label-hub-diagnostics-tabs" role="group" aria-label="诊断范围">
+          <button type="button" data-diagnostic-scope="global">全站点诊断</button>
+          <button type="button" data-diagnostic-scope="country">国家站点诊断</button>
+        </div>
+      </div>
+    </div>
+    <div id="labelHubDiagnosticsRoles" hidden aria-hidden="true"></div>
+    <div id="labelHubDiagnosticsContent" class="label-hub-diagnostics-content" aria-live="polite"></div>
+  </details>
 
   <section id="labelHubIssueSection" class="sales-role-panel label-hub-section-panel label-hub-cohort label-hub-diagnosis-panel label-hub-anchor-section">
     <div class="sales-role-section-head">
@@ -151,8 +174,21 @@
         <button id="labelHubDetailClear" class="text-button label-hub-detail-clear" type="button">重置</button>
       </div>
       <div id="labelHubDetailAdvanced" class="label-hub-detail-advanced" hidden>
-        <label class="label-hub-detail-filter-control"><span>销售角色</span><select id="labelHubDetailSalesRoles" multiple data-placeholder="全部角色"><option value="star">明星产品</option><option value="potential">潜力产品</option><option value="incubation">孵化产品</option><option value="eliminate">问题产品</option><option value="missing">暂无数据</option></select></label>
-        <label class="label-hub-detail-filter-control"><span>销售趋势</span><select id="labelHubDetailSalesTrends" multiple data-placeholder="全部趋势"><option value="accelerating">明显增长</option><option value="growing">增长</option><option value="stable">稳定</option><option value="slowing">放缓</option><option value="declining">下滑</option><option value="stopped">停销</option><option value="missing">暂无数据</option></select></label>
+        <label class="label-hub-detail-filter-control"><span>销售角色</span><select id="labelHubDetailSalesRoles" multiple data-placeholder="全部角色"><option value="star">明星产品</option><option value="potential">潜力产品</option><option value="incubation">瘦狗产品</option><option value="eliminate">问题产品</option><option value="missing">暂无数据</option></select></label>
+        <div class="label-hub-detail-filter-control label-hub-role-reason-control">
+          <span>角色原因</span>
+          <button id="labelHubRoleReasonTrigger" class="label-hub-role-reason-trigger" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="labelHubRoleReasonPanel">
+            <span id="labelHubRoleReasonSummary">全部角色原因</span><i aria-hidden="true"></i>
+          </button>
+          <div id="labelHubRoleReasonPanel" class="label-hub-role-reason-panel" hidden>
+            <div class="label-hub-role-reason-panel-head">
+              <strong id="labelHubRoleReasonScope" class="label-hub-role-reason-scope">MSKU维度 · 全站诊断</strong>
+              <span>选择角色后仅显示对应原因</span>
+            </div>
+            <div id="labelHubRoleReasonGroups" class="label-hub-role-reason-groups"></div>
+          </div>
+          <select id="labelHubDetailRoleReasons" multiple hidden data-placeholder="全部角色原因" aria-label="销售角色诊断原因"></select>
+        </div>
         <label class="label-hub-detail-filter-control"><span>日销段</span><select id="labelHubDetailDailyBands" multiple data-placeholder="全部日销段"><option value="zero">0</option><option value="lt1">小于 1</option><option value="1_5">1–5</option><option value="gt5">大于 5</option><option value="missing">暂无数据</option></select></label>
         <label class="label-hub-detail-filter-control"><span>毛利段</span><select id="labelHubDetailMarginBands" multiple data-placeholder="全部毛利段"><option value="lt5">小于 5%</option><option value="5_10">5%–10%</option><option value="10_15">10%–15%</option><option value="15_25">15%–25%</option><option value="gt25">大于 25%</option><option value="missing">暂无数据</option></select></label>
         <label id="labelHubDetailRankingField" class="label-hub-detail-filter-control"><span>排名</span><select id="labelHubDetailRankingBands" multiple data-placeholder="全部排名"><option value="top10">前10</option><option value="11_20">11–20</option><option value="21_50">21–50</option><option value="51_100">51–100</option><option value="gt100">100名后</option><option value="missing">暂无排名</option></select><small id="labelHubRankingFilterHint" hidden>仅国家明细视图生效</small></label>
@@ -199,5 +235,5 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', path='vendor/slim-select/slimselect.js') }}?v=4.0.5"></script>
-<script src="{{ url_for('static', path='js/label_hub.js') }}?v=20260724speed1"></script>
+<script src="{{ url_for('static', path='js/label_hub.js') }}?v=20260731rolereason2"></script>
 {% endblock %}
