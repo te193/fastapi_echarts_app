@@ -197,6 +197,17 @@ REPLENISHMENT_COLUMN_LABELS.update({
     "executable_replenish_box_qty": "\u53ef\u6267\u884c\u8865\u8d27\u7bb1\u6570",
     "executable_replenish_cost": "\u53ef\u6267\u884c\u8865\u8d27\u8d27\u503c",
     "moq_shortfall_qty": "\u8d77\u8ba2\u5dee\u989d",
+    "purchase_lead_days_raw": "\u91c7\u8d2d\u4ea4\u671f\u539f\u59cb\u5929\u6570",
+    "effective_purchase_lead_days": "\u6709\u6548\u91c7\u8d2d\u4ea4\u671f\u5929\u6570",
+    "purchase_lead_status": "\u91c7\u8d2d\u4ea4\u671f\u72b6\u6001",
+    "arrival_inventory_support_days": "\u5230\u8d27\u65f6\u5e93\u5b58\u53ef\u652f\u6491\u5929\u6570",
+    "arrival_inventory_qty": "\u5230\u8d27\u65f6\u9884\u8ba1\u5e93\u5b58",
+    "lead_time_demand_qty": "\u91c7\u8d2d\u4ea4\u671f\u9700\u6c42\u91cf",
+    "base_replenish_need_qty": "\u539f\u8865\u8d27\u9700\u6c42\u91cf",
+    "lead_adjusted_replenish_need_qty": "\u4ea4\u671f\u8c03\u6574\u540e\u8865\u8d27\u9700\u6c42\u91cf",
+    "lead_time_stockout_flag": "\u4ea4\u671f\u5185\u65ad\u8d27\u6807\u8bb0",
+    "lead_time_stockout_days": "\u4ea4\u671f\u5185\u9884\u8ba1\u65ad\u8d27\u5929\u6570",
+    "lead_time_lost_sales_qty": "\u4ea4\u671f\u5185\u9884\u8ba1\u635f\u5931\u9500\u91cf",
 })
 
 REPLENISHMENT_EXPORT_LABEL_OVERRIDES = {
