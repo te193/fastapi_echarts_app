@@ -185,6 +185,7 @@
     sort_dir: ""
   };
   var marginPricePopover = null;
+  var leadTimePopover = null;
   var flowDrawer = {
     open: false,
     level: "all",
@@ -336,9 +337,22 @@
       toggleMarginPricePopover(button, button.dataset.marginPriceKey || "");
     }, true);
     document.addEventListener("click", function (event) {
+      var button = event.target.closest("[data-lead-time-key]");
+      if (!button) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      toggleLeadTimePopover(button, button.dataset.leadTimeKey || "");
+    }, true);
+    document.addEventListener("click", function (event) {
       if (!marginPricePopover) return;
       if (event.target.closest(".margin-price-popover") || event.target.closest("[data-margin-price-key]")) return;
       closeMarginPricePopover();
+    });
+    document.addEventListener("click", function (event) {
+      if (!leadTimePopover) return;
+      if (event.target.closest(".lead-time-popover") || event.target.closest("[data-lead-time-key]")) return;
+      closeLeadTimePopover();
     });
   }
 
@@ -864,12 +878,61 @@
       app.escapeHtml(sku || "-") + '</span>' + renderReplenishmentCopyButton("sku", sku) + '</span></span>';
   }
 
+  function formatLeadTimeMetric(value, digits, suffix) {
+    if (value === null || value === undefined || value === "") return "-";
+    return formatNumber(value, digits) + (suffix || "");
+  }
+
+  function leadTimeStatusLabel(value) {
+    if (value === "configured") return "已配置";
+    if (value === "unconfigured") return "未配置（0天）";
+    return value || "-";
+  }
+
+  function renderLeadTimeCell(params) {
+    var row = params.data || {};
+    var supportDays = row.support_days;
+    var leadDays = row.effective_purchase_lead_days;
+    var arrivalDays = row.arrival_inventory_support_days;
+    var unconfigured = row.purchase_lead_status === "unconfigured";
+    var calculable = Number(row.daily_sales || 0) > 0 &&
+      supportDays !== null && supportDays !== undefined &&
+      arrivalDays !== null && arrivalDays !== undefined;
+    var riskClass = !calculable || unconfigured
+      ? "neutral"
+      : Number(row.lead_time_stockout_flag || 0) === 1 ? "danger" : "safe";
+    var riskText = !calculable
+      ? "无法计算"
+      : unconfigured
+        ? "未配置"
+        : riskClass === "danger"
+          ? "预计断货" + formatLeadTimeMetric(row.lead_time_stockout_days, 2, "天")
+          : "安全";
+    var leadText = unconfigured
+      ? "未配置（0天）"
+      : "交期" + formatLeadTimeMetric(leadDays, 0, "天");
+    var arrivalText = formatLeadTimeMetric(arrivalDays, 2, "天");
+    return [
+      '<button type="button" class="replenishment-lead-time-cell" data-lead-time-key="' + app.escapeHtml(row._lead_time_key || "") + '" aria-label="查看交期影响明细">',
+      '<span class="lead-time-primary"><strong>' + (calculable ? formatLeadTimeMetric(supportDays, 2, "天") : "-") + '</strong>',
+      '<i class="lead-time-risk ' + riskClass + '">' + app.escapeHtml(riskText) + '</i></span>',
+      '<small>' + app.escapeHtml(leadText) + ' → 到货<span class="' + (Number(arrivalDays) < 0 ? "is-negative" : "") + '">' + app.escapeHtml(arrivalText) + '</span></small>',
+      '</button>'
+    ].join("");
+  }
+
   function renderTable(payload) {
     var rows = payload.items || [];
+    closeLeadTimePopover();
+    window.replenishmentLeadTimeRowMap = {};
     if (!rows.length) {
       elements.tableWrap.innerHTML = '<div class="empty-state compact">' + text.noRows + '</div>';
       return;
     }
+    rows.forEach(function (row, index) {
+      row._lead_time_key = "lead-time-" + index;
+      window.replenishmentLeadTimeRowMap[row._lead_time_key] = row;
+    });
     var categoryPeriod = Number(payload.category_period_days || state.category_period_days || 30);
     window.replenishmentCountryRowMap = rows.reduce(function (map, row) {
       map[countryRowKey(row)] = row;
@@ -879,7 +942,7 @@
     window.kanbanGrid.makeGrid("replenishmentAgGrid", {
       rowData: rows,
       domLayout: "normal",
-      rowHeight: 58,
+      rowHeight: 62,
       overlayNoRowsTemplate: '<span class="ag-empty-copy">' + app.escapeHtml(text.noRows) + '</span>',
       onFilterChanged: handleGridFilterChanged,
       columnDefs: [
@@ -893,7 +956,16 @@
         numberColumn(categoryPeriod + text.periodSalableDailySales, "category_daily_sales_30d", 132, 2),
         { headerName: categoryPeriod + text.periodProfitRate, field: "profit_rate_30d", width: 120, type: "numericColumn", sort: colSort("profit_rate_30d"), cellRenderer: function (params) { return window.kanbanGrid.percent(params.value, 2); } },
         { headerName: text.category, field: "category", width: 118, sort: colSort("category") },
-        numberColumn(text.supportDays, "support_days", 118, 2),
+        {
+          headerName: "库存 / 交期",
+          field: "support_days",
+          width: 176,
+          minWidth: 166,
+          maxWidth: 196,
+          type: "numericColumn",
+          sort: colSort("support_days"),
+          cellRenderer: renderLeadTimeCell
+        },
         numberColumn(text.available, "available_total", 104, 0),
         numberColumn(text.inTransit, "stock_up_num", 104, 0),
         numberColumn(text.local, "local_quantity", 104, 0),
@@ -1156,6 +1228,51 @@
     if (!marginPricePopover) return;
     marginPricePopover.remove();
     marginPricePopover = null;
+  }
+
+  function toggleLeadTimePopover(button, key) {
+    if (leadTimePopover && leadTimePopover.dataset.key === key) {
+      closeLeadTimePopover();
+      return;
+    }
+    var row = window.replenishmentLeadTimeRowMap ? window.replenishmentLeadTimeRowMap[key] : null;
+    closeLeadTimePopover();
+    if (!row) return;
+    leadTimePopover = document.createElement("div");
+    leadTimePopover.className = "lead-time-popover";
+    leadTimePopover.dataset.key = key;
+    leadTimePopover.innerHTML = [
+      '<div class="lead-time-popover-head"><b>交期影响明细</b><span>' + app.escapeHtml(row.msku || "-") + '</span></div>',
+      '<dl>',
+      '<div><dt>采购交期</dt><dd>' + app.escapeHtml(formatLeadTimeMetric(row.effective_purchase_lead_days, 0, "天")) + '</dd></div>',
+      '<div><dt>到货时支撑</dt><dd class="' + (Number(row.arrival_inventory_support_days) < 0 ? "is-negative" : "") + '">' + app.escapeHtml(formatLeadTimeMetric(row.arrival_inventory_support_days, 2, "天")) + '</dd></div>',
+      '<div><dt>交期预计消耗</dt><dd>' + app.escapeHtml(formatLeadTimeMetric(row.lead_time_demand_qty, 2, "件")) + '</dd></div>',
+      '<div><dt>到货预计库存</dt><dd class="' + (Number(row.arrival_inventory_qty) < 0 ? "is-negative" : "") + '">' + app.escapeHtml(formatLeadTimeMetric(row.arrival_inventory_qty, 2, "件")) + '</dd></div>',
+      '<div><dt>预计断货天数</dt><dd>' + app.escapeHtml(formatLeadTimeMetric(row.lead_time_stockout_days, 2, "天")) + '</dd></div>',
+      '<div><dt>交期状态</dt><dd>' + app.escapeHtml(leadTimeStatusLabel(row.purchase_lead_status)) + '</dd></div>',
+      '</dl>'
+    ].join("");
+    document.body.appendChild(leadTimePopover);
+    positionLeadTimePopover(button);
+  }
+
+  function positionLeadTimePopover(button) {
+    if (!leadTimePopover) return;
+    var rect = button.getBoundingClientRect();
+    var width = leadTimePopover.offsetWidth || 280;
+    var left = Math.min(Math.max(12, rect.left), window.innerWidth - width - 12);
+    var top = rect.bottom + 8;
+    if (top + leadTimePopover.offsetHeight > window.innerHeight - 12) {
+      top = Math.max(12, rect.top - leadTimePopover.offsetHeight - 8);
+    }
+    leadTimePopover.style.left = left + "px";
+    leadTimePopover.style.top = top + "px";
+  }
+
+  function closeLeadTimePopover() {
+    if (!leadTimePopover) return;
+    leadTimePopover.remove();
+    leadTimePopover = null;
   }
 
   function numberColumn(label, field, width, digits) {

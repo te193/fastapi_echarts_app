@@ -14,7 +14,7 @@
 - 表格只保留一个“库存 / 交期”列，不增加五个独立交期列。
 - 到货支撑天数、到货预计库存等负值必须原样展示，不截断为 0。
 - 日销小于或等于 0 时显示“无法计算”，不标记为安全或断货。
-- 未配置交期时展示 ETL 已生效的默认 10 天，并保留 `purchase_lead_status`。
+- 未配置交期时展示“未配置（0天）”，按 0 天参与现有计算，并保留 `purchase_lead_status`。
 - 导出不增加“库存 / 交期”组合列；现有原始交期字段继续使用当前导出机制。
 - 只修改补货页面，不调整补货追踪等其他页面。
 
@@ -80,7 +80,7 @@ def test_serialize_item_exposes_purchase_lead_time_details_and_keeps_negative_va
         "daily_avg_sales": 6.6,
         "inventory_support_days": 7.4,
         "effective_purchase_lead_days": 10,
-        "purchase_lead_status": "defaulted",
+        "purchase_lead_status": "configured",
         "arrival_inventory_support_days": -2.6,
         "arrival_inventory_qty": -17.16,
         "lead_time_demand_qty": 66,
@@ -94,7 +94,7 @@ def test_serialize_item_exposes_purchase_lead_time_details_and_keeps_negative_va
     self.assertEqual(66, item["lead_time_demand_qty"])
     self.assertEqual(1, item["lead_time_stockout_flag"])
     self.assertEqual(2.6, item["lead_time_stockout_days"])
-    self.assertEqual("defaulted", item["purchase_lead_status"])
+    self.assertEqual("configured", item["purchase_lead_status"])
 ```
 
 - [ ] **Step 2: 运行测试并确认因字段缺失而失败**

@@ -594,7 +594,7 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
                 "daily_avg_sales": 6.6,
                 "inventory_support_days": 7.4,
                 "effective_purchase_lead_days": 10,
-                "purchase_lead_status": "defaulted",
+                "purchase_lead_status": "configured",
                 "arrival_inventory_support_days": -2.6,
                 "arrival_inventory_qty": -17.16,
                 "lead_time_demand_qty": 66,
@@ -609,7 +609,7 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
         self.assertEqual(66, item["lead_time_demand_qty"])
         self.assertEqual(1, item["lead_time_stockout_flag"])
         self.assertEqual(2.6, item["lead_time_stockout_days"])
-        self.assertEqual("defaulted", item["purchase_lead_status"])
+        self.assertEqual("configured", item["purchase_lead_status"])
 
     def test_serialize_item_keeps_missing_support_and_lead_time_values_nullable(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)
