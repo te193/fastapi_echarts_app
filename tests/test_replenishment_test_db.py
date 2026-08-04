@@ -20,6 +20,8 @@ def test_copy_plan_limits_replenishment_tables_to_recent_windows():
 def test_copy_plan_includes_replenishment_rule_dependencies():
     plan = {item.table: item for item in replenishment_test_db.COPY_TABLES}
 
+    assert plan["dashboard_replenishment_fba_shipment_sync"].where_sql == "1 = 1"
+    assert plan["dashboard_replenishment_order_profit_source"].where_sql == "1 = 1"
     assert plan["dashboard_replenishment_history_daily_sync"].where_sql == (
         "dt_date between %(history_start_date)s and %(history_end_date)s"
     )
