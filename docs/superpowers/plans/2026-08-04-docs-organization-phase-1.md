@@ -234,7 +234,9 @@ $contentFiles = @(Get-ChildItem -LiteralPath $docsRoot -File -Recurse |
     $_.FullName -notmatch '[\\/]superpowers[\\/]' -and
     $_.Name -ne 'README.md'
   })
-$linkedContent = @($targets | Where-Object {
+$linkedContent = @($targets |
+  Where-Object { $_ -notmatch '^superpowers[\\/]' } |
+  Where-Object {
   $resolved = Join-Path $docsRoot $_
   Test-Path -LiteralPath $resolved -PathType Leaf
 } | ForEach-Object { (Resolve-Path -LiteralPath (Join-Path $docsRoot $_)).Path } |
