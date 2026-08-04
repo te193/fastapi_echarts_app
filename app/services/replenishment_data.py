@@ -230,6 +230,18 @@ REPLENISHMENT_EXPORT_EXCLUDED_COLUMNS = {
     "gprofit_ratio_3d",
     "pre_1m_predict_abcd_category",
     "pre_1q_predict_abcd_category",
+    "calculated_replenish_qty",
+    "calculated_replenish_box_qty",
+    "calculated_replenish_cost",
+    "executable_replenish_qty",
+    "executable_replenish_box_qty",
+    "executable_replenish_cost",
+    "replenish_dur_calc_stocko_qty",
+    "replenish_need_qty",
+    "replenish_trigger_qty",
+    "base_replenish_need_qty",
+    "lead_adjusted_replenish_need_qty",
+    "lead_time_lost_sales_qty",
 }
 
 
