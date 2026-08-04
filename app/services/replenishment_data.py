@@ -1112,6 +1112,15 @@ class ReplenishmentDataService:
             f"else {prefix}asin_merge_reason end"
         )
 
+    def _display_support_days_expr(self, alias: str = "") -> str:
+        prefix = f"{alias}." if alias else ""
+        return (
+            f"case when {prefix}arrival_inventory_support_days is not null "
+            f"and {prefix}effective_purchase_lead_days is not null "
+            f"then {prefix}arrival_inventory_support_days + {prefix}effective_purchase_lead_days "
+            f"else {prefix}inventory_support_days end"
+        )
+
     def _display_product_daily_sales_expr(self, period_metrics: dict[str, str], alias: str = "") -> str:
         prefix = f"{alias}." if alias else ""
         daily_sales_expr = self._qualify_product_category_expr(period_metrics["daily_sales_expr"], alias) if alias else period_metrics["daily_sales_expr"]
@@ -1574,6 +1583,7 @@ class ReplenishmentDataService:
         display_product_daily_sales_expr = self._display_product_daily_sales_expr(period_metrics, "r")
         display_block_reason_expr = self._display_block_reason_expr("r")
         display_asin_merge_reason_expr = self._display_asin_merge_reason_expr("r")
+        display_support_days_expr = self._display_support_days_expr("r")
         sort_map = {
             "level": display_level_sort_expr,
             "country": "country_category",
@@ -1581,7 +1591,7 @@ class ReplenishmentDataService:
             "store": "seller_name_new",
             "msku": "seller_sku_adj",
             "sku": "max_sku",
-            "support_days": "inventory_support_days",
+            "support_days": display_support_days_expr,
             "daily_sales": "daily_avg_sales",
             "category_daily_sales_30d": display_product_daily_sales_expr,
             "profit_rate_30d": period_metrics["margin_col"],
@@ -1630,7 +1640,7 @@ class ReplenishmentDataService:
                     daily_avg_sales,
                     {display_product_daily_sales_expr} as category_daily_sales_30d,
                     {period_metrics["margin_col"]} as pprofit_ratio_30d,
-                    inventory_support_days,
+                    {display_support_days_expr} as inventory_support_days,
                     effective_purchase_lead_days,
                     purchase_lead_status,
                     arrival_inventory_support_days,
