@@ -47,6 +47,8 @@ COPY_TABLES = (
     CopyTable("dashboard_pur_plan_replenish_data", "cur_date in (%(snapshot_date)s, %(previous_snapshot_date)s)"),
     CopyTable("dashboard_replenishment_country_metrics", "snapshot_date in (%(snapshot_date)s, %(previous_snapshot_date)s)"),
     CopyTable("pur_plan_prod_perf_salable_days_stat", "sta_dt in (%(biz_date)s, %(previous_biz_date)s)"),
+    CopyTable("dashboard_replenishment_fba_shipment_sync", "1 = 1"),
+    CopyTable("dashboard_replenishment_order_profit_source", "1 = 1"),
     CopyTable(
         "dashboard_replenishment_history_daily_sync",
         "dt_date between %(history_start_date)s and %(history_end_date)s",
