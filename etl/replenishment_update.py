@@ -2396,7 +2396,7 @@ select
     final_effective_purchase_lead_days as effective_purchase_lead_days,
     final_purchase_lead_status as purchase_lead_status,
     case
-        when inventory_support_days > 60 then '不会缺货'
+        when final_inventory_support_days > 60 then '不会缺货'
         when stock_up_num = 0 and local_quantity = 0 then '缺货未补货'
         else '缺货已补货'
     end as stockout_status,
@@ -2409,7 +2409,7 @@ select
     history_recovery_need_qty,
     history_recovery_flag,
     support_inventory_qty,
-    inventory_support_days,
+    final_inventory_support_days as inventory_support_days,
     final_arrival_inventory_support_days as arrival_inventory_support_days,
     final_arrival_inventory_qty as arrival_inventory_qty,
     final_lead_time_demand_qty as lead_time_demand_qty,
@@ -2418,8 +2418,8 @@ select
     final_lead_time_stockout_flag as lead_time_stockout_flag,
     final_lead_time_stockout_days as lead_time_stockout_days,
     final_lead_time_lost_sales_qty as lead_time_lost_sales_qty,
-    support_replenish_level,
-    support_replenish_level_sort,
+    final_support_replenish_level as support_replenish_level,
+    final_support_replenish_level_sort as support_replenish_level_sort,
     case
         when adjusted_daily_sales_30d >= 5 and pprofit_ratio_30 >= 0.15 then '明星产品'
         when adjusted_daily_sales_30d >= 1 and adjusted_daily_sales_30d < 5 and pprofit_ratio_30 >= 0.25 then '明星产品'
@@ -2617,6 +2617,11 @@ from (
         assign.group_lead_time_lost_sales_qty,
         assign.group_support_replenish_level_sort,
         case
+            when coalesce(assign.asin_merge_flag, 0) = 1
+                then assign.group_inventory_support_days
+            else calc.inventory_support_days
+        end as final_inventory_support_days,
+        case
             when coalesce(assign.asin_merge_target_flag, 0) = 1
                 then coalesce(purchase.effective_max_cg_box_pcs, max_cg_box_pcs)
             else max_cg_box_pcs
@@ -2632,60 +2637,81 @@ from (
             else max_cg_transport_costs
         end as effective_max_cg_transport_costs,
         case
-            when coalesce(assign.asin_merge_target_flag, 0) = 1
+            when coalesce(assign.asin_merge_flag, 0) = 1
                 then coalesce(purchase.purchase_lead_days_raw, calc.purchase_lead_days_raw)
             else calc.purchase_lead_days_raw
         end as final_purchase_lead_days_raw,
         case
-            when coalesce(assign.asin_merge_target_flag, 0) = 1
-                then coalesce(purchase.effective_purchase_lead_days, calc.effective_purchase_lead_days)
+            when coalesce(assign.asin_merge_flag, 0) = 1
+                then coalesce(
+                    purchase.effective_purchase_lead_days,
+                    assign.group_effective_purchase_lead_days,
+                    calc.effective_purchase_lead_days
+                )
             else calc.effective_purchase_lead_days
         end as final_effective_purchase_lead_days,
         case
-            when coalesce(assign.asin_merge_target_flag, 0) = 1
+            when coalesce(assign.asin_merge_flag, 0) = 1
                 then coalesce(purchase.purchase_lead_status, calc.purchase_lead_status)
             else calc.purchase_lead_status
         end as final_purchase_lead_status,
         case
-            when coalesce(assign.asin_merge_target_flag, 0) = 1
+            when coalesce(assign.asin_merge_flag, 0) = 1
                 then assign.group_arrival_inventory_support_days
             else calc.arrival_inventory_support_days
         end as final_arrival_inventory_support_days,
         case
-            when coalesce(assign.asin_merge_target_flag, 0) = 1
+            when coalesce(assign.asin_merge_flag, 0) = 1
                 then assign.group_arrival_inventory_qty
             else calc.arrival_inventory_qty
         end as final_arrival_inventory_qty,
         case
-            when coalesce(assign.asin_merge_target_flag, 0) = 1
+            when coalesce(assign.asin_merge_flag, 0) = 1
                 then assign.group_lead_time_demand_qty
             else calc.lead_time_demand_qty
         end as final_lead_time_demand_qty,
         case
-            when coalesce(assign.asin_merge_target_flag, 0) = 1
+            when coalesce(assign.asin_merge_flag, 0) = 1
                 then assign.group_base_replenish_need_qty
             else calc.base_replenish_need_qty
         end as final_base_replenish_need_qty,
         case
-            when coalesce(assign.asin_merge_target_flag, 0) = 1
+            when coalesce(assign.asin_merge_flag, 0) = 1
                 then assign.group_lead_adjusted_replenish_need_qty
             else calc.lead_adjusted_replenish_need_qty
         end as final_lead_adjusted_replenish_need_qty,
         case
-            when coalesce(assign.asin_merge_target_flag, 0) = 1
+            when coalesce(assign.asin_merge_flag, 0) = 1
                 then assign.group_lead_time_stockout_flag
             else calc.lead_time_stockout_flag
         end as final_lead_time_stockout_flag,
         case
-            when coalesce(assign.asin_merge_target_flag, 0) = 1
+            when coalesce(assign.asin_merge_flag, 0) = 1
                 then assign.group_lead_time_stockout_days
             else calc.lead_time_stockout_days
         end as final_lead_time_stockout_days,
         case
-            when coalesce(assign.asin_merge_target_flag, 0) = 1
+            when coalesce(assign.asin_merge_flag, 0) = 1
                 then assign.group_lead_time_lost_sales_qty
             else calc.lead_time_lost_sales_qty
-        end as final_lead_time_lost_sales_qty
+        end as final_lead_time_lost_sales_qty,
+        case
+            when coalesce(assign.asin_merge_flag, 0) = 1 then
+                case assign.group_support_replenish_level_sort
+                    when 1 then '紧急补货'
+                    when 2 then '建议补货'
+                    when 3 then '计划补货'
+                    when 4 then '库存充足'
+                    when 5 then '日销为0'
+                    else calc.support_replenish_level
+                end
+            else calc.support_replenish_level
+        end as final_support_replenish_level,
+        case
+            when coalesce(assign.asin_merge_flag, 0) = 1
+                then coalesce(assign.group_support_replenish_level_sort, calc.support_replenish_level_sort)
+            else calc.support_replenish_level_sort
+        end as final_support_replenish_level_sort
     from tmp_pur_plan_replenish_calc calc
     left join tmp_asin_merge_assignments assign
            on calc.country_category = assign.country_category

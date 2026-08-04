@@ -392,21 +392,16 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
         self.assertNotIn("then %(level_followed_block)s", level_expr)
         self.assertNotIn("replenish_block_reason = %(level_followed_block)s then 7", sort_expr)
 
-    def test_asin_merge_zero_qty_displays_as_sufficient_layer(self):
+    def test_asin_merge_rows_keep_group_layer_when_replenishment_qty_is_zero(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)
 
-        condition = service._asin_merge_zero_qty_display_condition()
         level_expr = service._display_level_expr()
         sort_expr = service._display_level_sort_expr()
 
-        self.assertIn("asin_merge_flag", condition)
-        self.assertIn("replenish_qty", condition)
-        self.assertIn(
-            "not (coalesce(replenish_block_reason, '') = %(level_followed_block)s)",
-            condition,
-        )
-        self.assertIn("then %(level_sufficient)s", level_expr)
-        self.assertIn("then 4", sort_expr)
+        self.assertNotIn("then %(level_sufficient)s", level_expr)
+        self.assertNotIn("then 4 when", sort_expr)
+        self.assertIn("else support_replenish_level end", level_expr)
+        self.assertIn("else support_replenish_level_sort end", sort_expr)
         self.assertEqual(
             {
                 "level_below_moq": LEVEL_BELOW_MOQ,
@@ -485,8 +480,9 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
 
         sql = captured["sql"]
         self.assertIn("case when p.seller_sku_adj is null then null else case when", sql)
-        self.assertIn("when coalesce(c.asin_merge_flag, 0) = 1", sql)
-        self.assertIn("when coalesce(p.asin_merge_flag, 0) = 1", sql)
+        self.assertNotIn("then %(level_sufficient)s", sql)
+        self.assertIn("else c.support_replenish_level end as cur_level", sql)
+        self.assertIn("else p.support_replenish_level end as prev_level", sql)
         self.assertNotIn("p.support_replenish_level as prev_level", sql)
         self.assertNotIn("c.support_replenish_level as cur_level", sql)
         self.assertNotIn("p.support_replenish_level_sort as prev_level_sort", sql)

@@ -957,14 +957,6 @@ class ReplenishmentDataService:
             f"and coalesce({prefix}replenish_qty, 0) = 0)"
         )
 
-    def _asin_merge_zero_qty_display_condition(self, alias: str = "") -> str:
-        prefix = f"{alias}." if alias else ""
-        return (
-            f"coalesce({prefix}asin_merge_flag, 0) = 1 "
-            f"and coalesce({prefix}replenish_qty, 0) = 0 "
-            f"and not ({self._followed_block_display_condition(alias)})"
-        )
-
     def _followed_block_display_condition(self, alias: str = "") -> str:
         prefix = f"{alias}." if alias else ""
         return f"coalesce({prefix}replenish_block_reason, '') = %(level_followed_block)s"
@@ -973,8 +965,7 @@ class ReplenishmentDataService:
         prefix = f"{alias}." if alias else ""
         return (
             f"case when {prefix}moq_status = 'below_minimum' then %(level_below_moq)s "
-            f"when {self._asin_merge_zero_qty_display_condition(alias)} "
-            f"then %(level_sufficient)s when {self._history_recovery_display_condition(alias)} "
+            f"when {self._history_recovery_display_condition(alias)} "
             f"then %(level_history_recovery)s else {prefix}support_replenish_level end"
         )
 
@@ -982,8 +973,7 @@ class ReplenishmentDataService:
         prefix = f"{alias}." if alias else ""
         return (
             f"case when {prefix}moq_status = 'below_minimum' then 7 "
-            f"when {self._asin_merge_zero_qty_display_condition(alias)} "
-            f"then 4 when {self._history_recovery_display_condition(alias)} "
+            f"when {self._history_recovery_display_condition(alias)} "
             f"then 6 else {prefix}support_replenish_level_sort end"
         )
 
