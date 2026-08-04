@@ -596,6 +596,42 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertNotIn("同ASIN已合并补货", sql)
         self.assertIn("产品组补货目标链接", sql)
 
+    def test_all_asin_links_use_group_support_metrics_and_layer(self):
+        sql = " ".join(replenishment_update.REPLENISHMENT_RESULT_SQL.split())
+        insert_sql, merged_sql = sql.split("from ( select calc.*", 1)
+        merged_sql = merged_sql.split("from tmp_pur_plan_replenish_calc calc", 1)[0]
+
+        self.assertIn(
+            "when coalesce(assign.asin_merge_flag, 0) = 1 "
+            "then assign.group_inventory_support_days",
+            merged_sql,
+        )
+        self.assertIn("end as final_inventory_support_days", merged_sql)
+        self.assertIn(
+            "when coalesce(assign.asin_merge_flag, 0) = 1 "
+            "then assign.group_arrival_inventory_support_days",
+            merged_sql,
+        )
+        self.assertIn("end as final_support_replenish_level", merged_sql)
+        self.assertIn("end as final_support_replenish_level_sort", merged_sql)
+        self.assertNotIn(
+            "when coalesce(assign.asin_merge_target_flag, 0) = 1 "
+            "then assign.group_arrival_inventory_support_days",
+            merged_sql,
+        )
+        self.assertIn(
+            "final_inventory_support_days as inventory_support_days",
+            insert_sql,
+        )
+        self.assertIn(
+            "final_support_replenish_level as support_replenish_level",
+            insert_sql,
+        )
+        self.assertIn(
+            "final_support_replenish_level_sort as support_replenish_level_sort",
+            insert_sql,
+        )
+
     def test_asin_merge_target_prefers_latest_product_performance_date(self):
         sql = " ".join(replenishment_update.REPLENISHMENT_RESULT_SQL.split())
         target_sql = sql.split(
