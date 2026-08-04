@@ -561,6 +561,24 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
         self.assertEqual("计算补货箱数", REPLENISHMENT_COLUMN_LABELS["calculated_replenish_box_qty"])
         self.assertEqual("计算补货货值", REPLENISHMENT_COLUMN_LABELS["calculated_replenish_cost"])
 
+    def test_purchase_lead_time_fields_have_export_labels(self):
+        expected_labels = {
+            "purchase_lead_days_raw": "采购交期原始天数",
+            "effective_purchase_lead_days": "有效采购交期天数",
+            "purchase_lead_status": "采购交期状态",
+            "arrival_inventory_support_days": "到货时库存可支撑天数",
+            "arrival_inventory_qty": "到货时预计库存",
+            "lead_time_demand_qty": "采购交期需求量",
+            "base_replenish_need_qty": "原补货需求量",
+            "lead_adjusted_replenish_need_qty": "交期调整后补货需求量",
+            "lead_time_stockout_flag": "交期内断货标记",
+            "lead_time_stockout_days": "交期内预计断货天数",
+            "lead_time_lost_sales_qty": "交期内预计损失销量",
+        }
+
+        for field, label in expected_labels.items():
+            self.assertEqual(label, REPLENISHMENT_COLUMN_LABELS[field])
+
     def test_items_query_uses_detail_values_without_changing_summary_values(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)
 
