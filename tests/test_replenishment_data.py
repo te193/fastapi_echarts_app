@@ -636,6 +636,30 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
         ):
             self.assertIn(field, sql)
 
+    def test_items_query_displays_and_sorts_support_days_using_arrival_scope(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+        conn = RecordingConnection([])
+
+        service._items(
+            conn,
+            filters="cur_date = %(snapshot_date)s",
+            params={"snapshot_date": "2026-08-03"},
+            sort_field="support_days",
+            sort_dir="asc",
+            page=1,
+            page_size=20,
+        )
+
+        sql = " ".join(conn.queries[1].split())
+        display_support_days = (
+            "case when r.arrival_inventory_support_days is not null "
+            "and r.effective_purchase_lead_days is not null "
+            "then r.arrival_inventory_support_days + r.effective_purchase_lead_days "
+            "else r.inventory_support_days end"
+        )
+        self.assertIn(f"{display_support_days} as inventory_support_days", sql)
+        self.assertIn(f"order by {display_support_days} asc", sql)
+
     def test_serialize_item_exposes_purchase_lead_time_details_and_keeps_negative_values(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)
 
