@@ -59,6 +59,15 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertEqual(("snapshot_date", "sku", "supplier_moq"), step.target_columns)
         self.assertIn("supplier_moq_sync", replenishment_update.DEFAULT_STEP_ORDER)
 
+    def test_listing_basic_sync_carries_purchase_lead_days_from_local_product_info(self):
+        sql = " ".join(replenishment_update.SELECT_LISTING_BASIC_SYNC_SQL.split())
+
+        self.assertIn("dwd_datasync.lx_product_local_product_info", sql)
+        self.assertIn("lead_info.cg_delivery", sql)
+        self.assertIn("as max_cg_delivery", sql)
+        self.assertIn("max_cg_delivery", replenishment_update.LISTING_BASIC_COLUMNS)
+        self.assertIn("max_cg_delivery", replenishment_update.CREATE_LISTING_BASIC_SYNC_SQL)
+
     def test_moq_gating_preserves_calculated_qty_and_zeros_only_below_minimum(self):
         sql = "\n".join(replenishment_update.STEPS["moq_gating"].statements)
 
@@ -307,6 +316,59 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertNotIn("0 as max_cg_transport_costs", sql)
         self.assertNotIn("0 as replenish_cost", sql)
 
+    def test_replenishment_result_sql_exposes_purchase_lead_explanation_fields(self):
+        ddl = replenishment_update.CREATE_REPLENISHMENT_RESULT_SQL
+        sql = replenishment_update.REPLENISHMENT_RESULT_SQL
+        required_fields = {
+            "purchase_lead_days_raw",
+            "effective_purchase_lead_days",
+            "purchase_lead_status",
+            "arrival_inventory_support_days",
+            "arrival_inventory_qty",
+            "lead_time_demand_qty",
+            "base_replenish_need_qty",
+            "lead_adjusted_replenish_need_qty",
+            "lead_time_stockout_flag",
+            "lead_time_stockout_days",
+            "lead_time_lost_sales_qty",
+        }
+
+        for field in required_fields:
+            self.assertIn(field, ddl)
+            self.assertIn(field, sql)
+
+    def test_replenishment_result_sql_layers_by_arrival_support_and_floors_stock_at_zero(self):
+        sql = " ".join(replenishment_update.REPLENISHMENT_RESULT_SQL.split())
+
+        self.assertIn(
+            "base.support_inventory_qty - base.effective_purchase_lead_days * base.daily_avg_sales",
+            sql,
+        )
+        self.assertIn("as arrival_inventory_qty", sql)
+        self.assertIn(
+            "base.support_inventory_qty / base.daily_avg_sales - base.effective_purchase_lead_days",
+            sql,
+        )
+        self.assertIn(
+            "greatest(120 * support.daily_avg_sales - support.arrival_inventory_qty, 0) as normal_replenish_need_qty",
+            sql,
+        )
+        self.assertIn(
+            "base.effective_purchase_lead_days - base.support_inventory_qty / base.daily_avg_sales",
+            sql,
+        )
+        self.assertIn("* base.daily_avg_sales", sql)
+        self.assertIn("as lead_time_lost_sales_qty", sql)
+
+    def test_replenishment_result_sql_keeps_asin_lead_with_inherited_purchase_fields(self):
+        sql = replenishment_update.REPLENISHMENT_RESULT_SQL
+
+        self.assertIn("effective_purchase_lead_days", sql)
+        self.assertIn("purchase.effective_purchase_lead_days", sql)
+        self.assertIn("group_effective_purchase_lead_days", sql)
+        self.assertIn("group_arrival_inventory_qty", sql)
+        self.assertIn("group_lead_adjusted_replenish_need_qty", sql)
+
     def test_replenishment_result_sql_inherits_purchase_fields_for_merged_asin_target(self):
         sql = replenishment_update.REPLENISHMENT_RESULT_SQL
 
@@ -451,7 +513,10 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("coalesce(fm.sales_30, m.sales_30, 0) as final_sales_30", sql)
         self.assertIn("as final_adjusted_daily_sales_30d", sql)
         self.assertIn("end as daily_avg_sales", sql)
-        self.assertIn("pre_replenish_comp_months * 30 * coalesce(daily_avg_sales, 0)", sql)
+        self.assertIn(
+            "greatest(120 * support.daily_avg_sales - support.arrival_inventory_qty, 0)",
+            sql,
+        )
         self.assertIn("base.support_inventory_qty / base.daily_avg_sales", sql)
         self.assertNotIn("base.support_inventory_qty / base.pre_daily_avg_sales", sql)
         self.assertNotIn("left join tmp_prod_perf_sku_follow_metrics m", sql)
@@ -494,7 +559,7 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("tmp_asin_merge_groups", sql)
         self.assertIn("tmp_asin_merge_targets", sql)
         self.assertIn("tmp_asin_merge_assignments", sql)
-        self.assertIn("group by country_category, max_asin", sql)
+        self.assertIn("group by group_base.country_category, group_base.max_asin", sql)
         self.assertIn("having link_count > 1", sql)
         self.assertIn("and has_follow_link > 0", sql)
         self.assertNotIn("has_follow_link > 0 or has_followed_origin > 0", sql)
@@ -509,10 +574,8 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
             f"else {group_inventory_expr} / max(coalesce(daily_avg_sales, 0))",
             normalized_sql,
         )
-        self.assertIn(
-            f"- {group_inventory_expr} as group_replenish_need_qty",
-            normalized_sql,
-        )
+        self.assertIn("as group_arrival_inventory_qty", normalized_sql)
+        self.assertIn("as group_lead_adjusted_replenish_need_qty", normalized_sql)
         self.assertIn("group_replenish_need_qty", sql)
         self.assertIn("row_number() over (partition by calc.country_category, calc.max_asin", sql)
         self.assertIn("eligible_target_link_count", sql)
@@ -555,7 +618,8 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("coalesce(r.sc_quantity_purchase_plan, 0) as sc_quantity_purchase_plan", sql)
         self.assertIn("- local_quantity as pre_normal_replenish_need_qty", sql)
         self.assertIn("- local_quantity as history_recovery_need_qty", sql)
-        self.assertIn("- local_quantity as normal_replenish_need_qty", sql)
+        self.assertIn("support.arrival_inventory_qty", sql)
+        self.assertIn("as normal_replenish_need_qty", sql)
         self.assertNotIn("- sc_quantity_purchase_plan as pre_normal_replenish_need_qty", sql)
         self.assertNotIn("- sc_quantity_purchase_plan as history_recovery_need_qty", sql)
         self.assertNotIn("- sc_quantity_purchase_plan as normal_replenish_need_qty", sql)
