@@ -1619,6 +1619,13 @@ class ReplenishmentDataService:
                     {display_product_daily_sales_expr} as category_daily_sales_30d,
                     {period_metrics["margin_col"]} as pprofit_ratio_30d,
                     inventory_support_days,
+                    effective_purchase_lead_days,
+                    purchase_lead_status,
+                    arrival_inventory_support_days,
+                    arrival_inventory_qty,
+                    lead_time_demand_qty,
+                    lead_time_stockout_flag,
+                    lead_time_stockout_days,
                     support_inventory_qty,
                     available_total,
                     stock_up_num,
@@ -1951,7 +1958,38 @@ class ReplenishmentDataService:
             "daily_sales": round(to_float(row.get("daily_avg_sales")), 4),
             "category_daily_sales_30d": round(to_float(row.get("category_daily_sales_30d")), 4),
             "profit_rate_30d": round(to_float(row.get("pprofit_ratio_30d")), 6),
-            "support_days": round(to_float(row.get("inventory_support_days")), 2),
+            "support_days": (
+                round(to_float(row.get("inventory_support_days")), 2)
+                if row.get("inventory_support_days") is not None
+                else None
+            ),
+            "effective_purchase_lead_days": (
+                round(to_float(row.get("effective_purchase_lead_days")), 2)
+                if row.get("effective_purchase_lead_days") is not None
+                else None
+            ),
+            "purchase_lead_status": row.get("purchase_lead_status") or "",
+            "arrival_inventory_support_days": (
+                round(to_float(row.get("arrival_inventory_support_days")), 2)
+                if row.get("arrival_inventory_support_days") is not None
+                else None
+            ),
+            "arrival_inventory_qty": (
+                round(to_float(row.get("arrival_inventory_qty")), 2)
+                if row.get("arrival_inventory_qty") is not None
+                else None
+            ),
+            "lead_time_demand_qty": (
+                round(to_float(row.get("lead_time_demand_qty")), 2)
+                if row.get("lead_time_demand_qty") is not None
+                else None
+            ),
+            "lead_time_stockout_flag": to_int(row.get("lead_time_stockout_flag")),
+            "lead_time_stockout_days": (
+                round(to_float(row.get("lead_time_stockout_days")), 2)
+                if row.get("lead_time_stockout_days") is not None
+                else None
+            ),
             "support_inventory_qty": round(to_float(row.get("support_inventory_qty")), 2),
             "available_total": round(to_float(row.get("available_total")), 2),
             "stock_up_num": round(to_float(row.get("stock_up_num")), 2),
