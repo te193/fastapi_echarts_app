@@ -1,0 +1,269 @@
+# Docs 第一阶段整理 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** 在不移动、重命名或删除任何现有业务文档的前提下，把 `docs/README.md` 改造成覆盖全部文档的分类总入口。
+
+**Architecture:** 第一阶段只建立逻辑信息架构，不创建 Git 无法跟踪的空目录。总索引按业务模块分节、在每个模块内按文档类型分组，并通过相对链接继续指向当前文件位置；第二阶段再依据设计文档逐模块迁移。
+
+**Tech Stack:** Markdown、Git、PowerShell
+
+## Global Constraints
+
+- 一级按业务模块分类，二级按文档类型分类。
+- 第一阶段不移动、重命名、删除、合并或归档任何现有内容文件。
+- 第一阶段不创建空目录或占位文件。
+- 现有文件名保持不变。
+- `docs/superpowers/specs/` 与 `docs/superpowers/plans/` 保持现有职责和结构。
+- 只有文件名明确标注为讨论稿的文档标记为 `讨论中`；方案、规划、交接和排查类材料标记为 `历史过程`；稳定规则、口径、部署与协作说明标记为 `当前有效`。
+
+---
+
+### Task 1: 将 docs README 改造成完整分类索引
+
+**Files:**
+- Modify: `docs/README.md`
+- Reference: `docs/superpowers/specs/2026-08-04-docs-organization-design.md`
+- Test: PowerShell 内联链接校验脚本
+
+**Interfaces:**
+- Consumes: 当前 `docs/` 文件清单，以及设计文档定义的业务模块、文档类型和状态规则。
+- Produces: 一个包含 24 个现有业务内容文件链接的 `docs/README.md`；第二阶段迁移只需修改对应链接目标，不需要重新设计导航。
+
+- [ ] **Step 1: 记录现有索引尚未覆盖全部内容文件**
+
+Run:
+
+```powershell
+$contentFiles = Get-ChildItem -LiteralPath '.\docs' -File -Recurse |
+  Where-Object {
+    $_.FullName -notmatch '[\\/]superpowers[\\/]' -and
+    $_.Name -ne 'README.md'
+  }
+$readme = Get-Content -LiteralPath '.\docs\README.md' -Encoding UTF8 -Raw
+$linkedFiles = [regex]::Matches($readme, '\[[^\]]+\]\(([^)]+)\)') |
+  ForEach-Object { [uri]::UnescapeDataString($_.Groups[1].Value) } |
+  Where-Object { $_ -notmatch '^(https?:|#)' }
+"content=$($contentFiles.Count) linked=$($linkedFiles.Count)"
+if ($linkedFiles.Count -ge $contentFiles.Count) { throw '预期旧索引未覆盖全部文档，但检测结果不符' }
+```
+
+Expected: 输出 `content=24 linked=12`，命令成功结束，证明旧索引只覆盖一半业务内容文件。
+
+- [ ] **Step 2: 重写完整索引**
+
+将 `docs/README.md` 重写为以下结构和内容要求：
+
+```markdown
+# 文档中心
+
+本目录保存项目业务口径、方案规划、排查记录、数据源说明和项目运维资料。当前文件仍位于原位置；目标目录结构和分阶段迁移方法见《docs 文档分阶段整理设计》中的说明。
+
+## 使用说明
+
+- `当前有效`：可作为当前规则、口径或操作方式的参考。
+- `讨论中`：内容尚未定稿，不能作为唯一执行依据。
+- `历史过程`：用于追溯方案、排查或实施背景，不代表当前最终口径。
+- 查找时先按业务模块定位，再在模块内按文档类型选择。
+
+## 补货
+
+### 规则与口径
+
+| 文档 | 用途 | 状态 | 更新日期 |
+| --- | --- | --- | --- |
+| [当前跟卖补货规则](current_follow_replenishment_rules.md) | 当前跟卖商品的补货判定规则 | 当前有效 | 2026-07-08 |
+| [FBA 补货判定规则](是否补货规则新方案v2.md) | 补货建议规则和计算说明 | 当前有效 | 2026-07-10 |
+| [补货追踪链路新版梳理](补货追踪链路新版梳理.md) | 补货链路规则的详细梳理 | 当前有效 | 2026-07-10 |
+| [补货追踪业务流程与页面说明](补货追踪页面完整流程与链路口径.md) | 面向业务的节点定义、页面说明和常见问题 | 当前有效 | 2026-07-10 |
+| [补货追踪业务流程与页面说明（HTML）](补货追踪页面完整流程与链路口径.html) | 业务流程与页面说明的浏览版 | 当前有效 | 2026-07-20 |
+| [补货追踪页面状态判断口径](补货追踪页面状态判断口径.md) | 页面状态、筛选和指标口径 | 当前有效 | 2026-07-10 |
+
+### 方案与规划
+
+| 文档 | 用途 | 状态 | 更新日期 |
+| --- | --- | --- | --- |
+| [补货分层采购发货追踪规划](补货分层采购发货追踪规划.md) | 汇总追踪页面的功能规划 | 历史过程 | 2026-06-26 |
+| [低销量 SKU 支持天数波动优化方案](低销量SKU支持天数波动优化方案.md) | 低销量商品支持天数的优化思路 | 历史过程 | 2026-07-07 |
+| [低销量 SKU 单日大跳变拦截详细规划](方案8-低销量SKU单日大跳变拦截详细规划.md) | 单日大跳变拦截方案的详细规划 | 历史过程 | 2026-07-07 |
+
+### 排查与差异
+
+| 文档 | 用途 | 状态 | 更新日期 |
+| --- | --- | --- | --- |
+| [紧急补货大量退出排查记录](2026-07-07-紧急补货大量退出排查记录.md) | 记录异常退出问题的排查过程和结论 | 历史过程 | 2026-07-07 |
+| [补货看板与原 SQL 历史兜底差异说明](补货看板与原SQL历史兜底差异说明.md) | 说明新旧补货口径的差异 | 历史过程 | 2026-06-24 |
+
+## 标签看板
+
+### 规则与口径
+
+| 文档 | 用途 | 状态 | 更新日期 |
+| --- | --- | --- | --- |
+| [标签打标证据字段规范](标签打标证据字段规范.md) | 定义标签判定证据字段及展示口径 | 当前有效 | 2026-07-23 |
+
+### 方案与交接
+
+| 文档 | 用途 | 状态 | 更新日期 |
+| --- | --- | --- | --- |
+| [标签看板销售角色诊断扩展设计与实施交接](标签看板销售角色诊断扩展_设计与实施交接.md) | 记录销售角色诊断扩展的设计和交接信息 | 历史过程 | 2026-07-31 |
+
+### 部署说明
+
+| 文档 | 用途 | 状态 | 更新日期 |
+| --- | --- | --- | --- |
+| [标签看板返场规则对齐部署说明](标签看板返场规则对齐部署说明_20260728.md) | 记录返场规则对齐的部署内容 | 历史过程 | 2026-07-28 |
+
+## 返场品
+
+### 规则与口径
+
+| 文档 | 用途 | 状态 | 更新日期 |
+| --- | --- | --- | --- |
+| [返场品看板指标字典](返场品看板指标字典.md) | 定义返场品相关指标 | 当前有效 | 2026-07-27 |
+| [返场品识别与恢复判定规则](返场品识别与恢复判定规则_讨论稿.md) | 讨论返场品识别和恢复条件 | 讨论中 | 2026-07-28 |
+
+### 方案与规划
+
+| 文档 | 用途 | 状态 | 更新日期 |
+| --- | --- | --- | --- |
+| [返场品第一版规划](返场品第一版规划.md) | 记录返场品页面第一版规划 | 历史过程 | 2026-07-10 |
+
+## 产品分层看板
+
+### 指标与口径
+
+| 文档 | 用途 | 状态 | 更新日期 |
+| --- | --- | --- | --- |
+| [产品分层看板指标口径与 SQL](指标口径与SQL占位文档.md) | 说明通用指标和数据口径 | 当前有效 | 2026-05-21 |
+
+### 任务与运维
+
+| 文档 | 用途 | 状态 | 更新日期 |
+| --- | --- | --- | --- |
+| [产品分层看板每日更新任务设计](每日更新任务设计方案.md) | 记录日常数据刷新任务设计 | 历史过程 | 2026-05-21 |
+| [看板功能与数据更新说明](看板功能与数据更新说明.md) | 说明看板功能和数据更新方式 | 当前有效 | 2026-05-30 |
+
+## 数据源
+
+### ODS
+
+| 文档 | 用途 | 状态 | 更新日期 |
+| --- | --- | --- | --- |
+| [库存数据源 ODS 层整理](远端关于ods层的关系/库存数据源整理_ODS层.md) | 梳理库存数据源和 ODS 层关系 | 当前有效 | 2026-06-23 |
+
+### 导入方案
+
+| 文档 | 用途 | 状态 | 更新日期 |
+| --- | --- | --- | --- |
+| [店铺品牌对应表更新规划](store_brand_relation_import_plan.md) | 记录店铺品牌关系数据的导入规划 | 历史过程 | 2026-07-08 |
+
+## 项目运维
+
+### 部署
+
+| 文档 | 用途 | 状态 | 更新日期 |
+| --- | --- | --- | --- |
+| [Windows 部署说明](windows_deploy.md) | 说明本地与 Windows 环境的部署方式 | 当前有效 | 2026-06-04 |
+
+### 协作规范
+
+| 文档 | 用途 | 状态 | 更新日期 |
+| --- | --- | --- | --- |
+| [应用版与测试版版本控制流程](version_control_workflow.md) | 说明 Git 分支、版本和发布约定 | 当前有效 | 2026-06-04 |
+
+## 研发过程记录
+
+`superpowers/specs/` 保存已确认的设计文档，`superpowers/plans/` 保存对应实施计划。这些内容用于研发追溯，不作为当前业务口径的唯一依据。
+
+## 目标结构与迁移
+
+完整结构与迁移清单见 [docs 文档分阶段整理设计](superpowers/specs/2026-08-04-docs-organization-design.md)。
+
+- 第一阶段：整理总索引，不移动文件。
+- 第二阶段：按业务模块逐批迁移并修复链接。
+- 第三阶段：确认文档有效性后再归档。
+```
+
+每个实际文档条目统一使用四列表格：`文档 | 用途 | 状态 | 更新日期`。使用以下已经从 Git 历史取得的日期，不以执行当天日期代替：
+
+```text
+2026-07-07-紧急补货大量退出排查记录.md = 2026-07-07
+current_follow_replenishment_rules.md = 2026-07-08
+store_brand_relation_import_plan.md = 2026-07-08
+version_control_workflow.md = 2026-06-04
+windows_deploy.md = 2026-06-04
+标签打标证据字段规范.md = 2026-07-23
+标签看板返场规则对齐部署说明_20260728.md = 2026-07-28
+标签看板销售角色诊断扩展_设计与实施交接.md = 2026-07-31
+补货分层采购发货追踪规划.md = 2026-06-26
+补货看板与原SQL历史兜底差异说明.md = 2026-06-24
+补货追踪链路新版梳理.md = 2026-07-10
+补货追踪页面完整流程与链路口径.html = 2026-07-20
+补货追踪页面完整流程与链路口径.md = 2026-07-10
+补货追踪页面状态判断口径.md = 2026-07-10
+低销量SKU支持天数波动优化方案.md = 2026-07-07
+返场品第一版规划.md = 2026-07-10
+返场品看板指标字典.md = 2026-07-27
+返场品识别与恢复判定规则_讨论稿.md = 2026-07-28
+方案8-低销量SKU单日大跳变拦截详细规划.md = 2026-07-07
+看板功能与数据更新说明.md = 2026-05-30
+每日更新任务设计方案.md = 2026-05-21
+是否补货规则新方案v2.md = 2026-07-10
+指标口径与SQL占位文档.md = 2026-05-21
+远端关于ods层的关系/库存数据源整理_ODS层.md = 2026-06-23
+```
+
+- [ ] **Step 3: 校验全部本地链接存在且业务内容文件均被索引**
+
+Run:
+
+```powershell
+$docsRoot = (Resolve-Path -LiteralPath '.\docs').Path
+$readmePath = Join-Path $docsRoot 'README.md'
+$readme = Get-Content -LiteralPath $readmePath -Encoding UTF8 -Raw
+$targets = [regex]::Matches($readme, '\[[^\]]+\]\(([^)]+)\)') |
+  ForEach-Object { [uri]::UnescapeDataString($_.Groups[1].Value) } |
+  Where-Object { $_ -notmatch '^(https?:|#)' }
+$missing = @($targets | Where-Object {
+  -not (Test-Path -LiteralPath (Join-Path $docsRoot $_))
+})
+if ($missing.Count -gt 0) { throw "无效链接: $($missing -join ', ')" }
+$contentFiles = @(Get-ChildItem -LiteralPath $docsRoot -File -Recurse |
+  Where-Object {
+    $_.FullName -notmatch '[\\/]superpowers[\\/]' -and
+    $_.Name -ne 'README.md'
+  })
+$linkedContent = @($targets | Where-Object {
+  $resolved = Join-Path $docsRoot $_
+  Test-Path -LiteralPath $resolved -PathType Leaf
+} | ForEach-Object { (Resolve-Path -LiteralPath (Join-Path $docsRoot $_)).Path } |
+  Sort-Object -Unique)
+$unindexed = @($contentFiles.FullName | Where-Object { $_ -notin $linkedContent })
+if ($unindexed.Count -gt 0) { throw "未被索引: $($unindexed -join ', ')" }
+"validated_links=$($targets.Count) indexed_content=$($linkedContent.Count)"
+```
+
+Expected: 输出至少 `validated_links=25 indexed_content=24`，没有无效链接或未索引内容。
+
+- [ ] **Step 4: 校验第一阶段没有移动或删除文件**
+
+Run:
+
+```powershell
+$changes = git diff --name-status
+$unexpected = @($changes | Where-Object { $_ -notmatch '^M\s+docs/README\.md$' })
+if ($unexpected.Count -gt 0) { throw "第一阶段出现范围外变更: $($unexpected -join '; ')" }
+git diff --check
+```
+
+Expected: 只有 `M docs/README.md`，且 `git diff --check` 无输出。
+
+- [ ] **Step 5: 提交第一阶段索引整理**
+
+```powershell
+git add -- 'docs/README.md'
+git commit -m '完善文档分类索引和状态说明'
+```
+
+Expected: 提交只包含 `docs/README.md`。
