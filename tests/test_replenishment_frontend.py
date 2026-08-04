@@ -19,8 +19,8 @@ def test_margin_price_assets_use_cache_busting_versions():
     base_template = (ROOT / "app" / "templates" / "base.html").read_text(encoding="utf-8")
     replenishment_template = (ROOT / "app" / "templates" / "replenishment.html").read_text(encoding="utf-8")
 
-    assert "styles.css') }}?v=20260723replcopy1" in base_template
-    assert "replenishment.js') }}?v=20260727salesrole1" in replenishment_template
+    assert "styles.css') }}?v=20260804leadtime1" in base_template
+    assert "replenishment.js') }}?v=20260804leadtime1" in replenishment_template
     assert "replenishment_tracking_summary.js') }}?v=20260727stagefilters1" in replenishment_template
 
 
@@ -137,6 +137,38 @@ def test_replenishment_grid_shows_followed_origin_columns():
     assert 'field: "asin_merge_status"' in script
     assert 'field: "asin_merge_target"' in script
     assert 'field: "asin_merge_reason"' in script
+
+
+def test_replenishment_grid_compacts_lead_time_metrics_into_one_column():
+    script = (ROOT / "app" / "static" / "js" / "replenishment.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+    table_block = script[script.index("function renderTable"):script.index("function renderLinkSummaryCell")]
+
+    assert "function renderLeadTimeCell(params)" in script
+    assert 'headerName: "库存 / 交期"' in table_block
+    assert 'field: "support_days"' in table_block
+    assert "cellRenderer: renderLeadTimeCell" in table_block
+    assert 'numberColumn(text.supportDays, "support_days"' not in table_block
+    assert 'field: "effective_purchase_lead_days"' not in table_block
+    assert 'field: "arrival_inventory_support_days"' not in table_block
+    assert "lead_time_demand_qty" in script
+    assert "arrival_inventory_qty" in script
+    assert "lead_time_stockout_days" in script
+    assert "purchase_lead_status" in script
+    assert ".replenishment-lead-time-cell" in styles
+    assert ".lead-time-risk.safe" in styles
+    assert ".lead-time-risk.danger" in styles
+    assert ".lead-time-risk.neutral" in styles
+
+
+def test_replenishment_lead_time_cell_opens_document_level_detail_popover():
+    script = (ROOT / "app" / "static" / "js" / "replenishment.js").read_text(encoding="utf-8")
+
+    assert 'event.target.closest("[data-lead-time-key]")' in script
+    assert "toggleLeadTimePopover" in script
+    assert "replenishmentLeadTimeRowMap" in script
+    assert "lead-time-popover" in script
+    assert "closeLeadTimePopover" in script
 
 
 def test_below_moq_is_an_independent_display_layer_without_duplicate_pool_card():
