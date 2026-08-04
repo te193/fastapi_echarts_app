@@ -197,6 +197,17 @@ REPLENISHMENT_COLUMN_LABELS.update({
     "executable_replenish_box_qty": "\u53ef\u6267\u884c\u8865\u8d27\u7bb1\u6570",
     "executable_replenish_cost": "\u53ef\u6267\u884c\u8865\u8d27\u8d27\u503c",
     "moq_shortfall_qty": "\u8d77\u8ba2\u5dee\u989d",
+    "purchase_lead_days_raw": "\u91c7\u8d2d\u4ea4\u671f\u539f\u59cb\u5929\u6570",
+    "effective_purchase_lead_days": "\u6709\u6548\u91c7\u8d2d\u4ea4\u671f\u5929\u6570",
+    "purchase_lead_status": "\u91c7\u8d2d\u4ea4\u671f\u72b6\u6001",
+    "arrival_inventory_support_days": "\u5230\u8d27\u65f6\u5e93\u5b58\u53ef\u652f\u6491\u5929\u6570",
+    "arrival_inventory_qty": "\u5230\u8d27\u65f6\u9884\u8ba1\u5e93\u5b58",
+    "lead_time_demand_qty": "\u91c7\u8d2d\u4ea4\u671f\u9700\u6c42\u91cf",
+    "base_replenish_need_qty": "\u539f\u8865\u8d27\u9700\u6c42\u91cf",
+    "lead_adjusted_replenish_need_qty": "\u4ea4\u671f\u8c03\u6574\u540e\u8865\u8d27\u9700\u6c42\u91cf",
+    "lead_time_stockout_flag": "\u4ea4\u671f\u5185\u65ad\u8d27\u6807\u8bb0",
+    "lead_time_stockout_days": "\u4ea4\u671f\u5185\u9884\u8ba1\u65ad\u8d27\u5929\u6570",
+    "lead_time_lost_sales_qty": "\u4ea4\u671f\u5185\u9884\u8ba1\u635f\u5931\u9500\u91cf",
 })
 
 REPLENISHMENT_EXPORT_LABEL_OVERRIDES = {
@@ -219,6 +230,18 @@ REPLENISHMENT_EXPORT_EXCLUDED_COLUMNS = {
     "gprofit_ratio_3d",
     "pre_1m_predict_abcd_category",
     "pre_1q_predict_abcd_category",
+    "calculated_replenish_qty",
+    "calculated_replenish_box_qty",
+    "calculated_replenish_cost",
+    "executable_replenish_qty",
+    "executable_replenish_box_qty",
+    "executable_replenish_cost",
+    "replenish_dur_calc_stocko_qty",
+    "replenish_need_qty",
+    "replenish_trigger_qty",
+    "base_replenish_need_qty",
+    "lead_adjusted_replenish_need_qty",
+    "lead_time_lost_sales_qty",
 }
 
 
@@ -934,14 +957,6 @@ class ReplenishmentDataService:
             f"and coalesce({prefix}replenish_qty, 0) = 0)"
         )
 
-    def _asin_merge_zero_qty_display_condition(self, alias: str = "") -> str:
-        prefix = f"{alias}." if alias else ""
-        return (
-            f"coalesce({prefix}asin_merge_flag, 0) = 1 "
-            f"and coalesce({prefix}replenish_qty, 0) = 0 "
-            f"and not ({self._followed_block_display_condition(alias)})"
-        )
-
     def _followed_block_display_condition(self, alias: str = "") -> str:
         prefix = f"{alias}." if alias else ""
         return f"coalesce({prefix}replenish_block_reason, '') = %(level_followed_block)s"
@@ -950,8 +965,7 @@ class ReplenishmentDataService:
         prefix = f"{alias}." if alias else ""
         return (
             f"case when {prefix}moq_status = 'below_minimum' then %(level_below_moq)s "
-            f"when {self._asin_merge_zero_qty_display_condition(alias)} "
-            f"then %(level_sufficient)s when {self._history_recovery_display_condition(alias)} "
+            f"when {self._history_recovery_display_condition(alias)} "
             f"then %(level_history_recovery)s else {prefix}support_replenish_level end"
         )
 
@@ -959,8 +973,7 @@ class ReplenishmentDataService:
         prefix = f"{alias}." if alias else ""
         return (
             f"case when {prefix}moq_status = 'below_minimum' then 7 "
-            f"when {self._asin_merge_zero_qty_display_condition(alias)} "
-            f"then 4 when {self._history_recovery_display_condition(alias)} "
+            f"when {self._history_recovery_display_condition(alias)} "
             f"then 6 else {prefix}support_replenish_level_sort end"
         )
 
@@ -1087,6 +1100,15 @@ class ReplenishmentDataService:
             f"when coalesce({prefix}asin_merge_flag, 0) = 1 "
             f"and coalesce({prefix}replenish_qty, 0) = 0 then %(asin_merge_sufficient_block)s "
             f"else {prefix}asin_merge_reason end"
+        )
+
+    def _display_support_days_expr(self, alias: str = "") -> str:
+        prefix = f"{alias}." if alias else ""
+        return (
+            f"case when {prefix}arrival_inventory_support_days is not null "
+            f"and {prefix}effective_purchase_lead_days is not null "
+            f"then {prefix}arrival_inventory_support_days + {prefix}effective_purchase_lead_days "
+            f"else {prefix}inventory_support_days end"
         )
 
     def _display_product_daily_sales_expr(self, period_metrics: dict[str, str], alias: str = "") -> str:
@@ -1551,6 +1573,7 @@ class ReplenishmentDataService:
         display_product_daily_sales_expr = self._display_product_daily_sales_expr(period_metrics, "r")
         display_block_reason_expr = self._display_block_reason_expr("r")
         display_asin_merge_reason_expr = self._display_asin_merge_reason_expr("r")
+        display_support_days_expr = self._display_support_days_expr("r")
         sort_map = {
             "level": display_level_sort_expr,
             "country": "country_category",
@@ -1558,7 +1581,7 @@ class ReplenishmentDataService:
             "store": "seller_name_new",
             "msku": "seller_sku_adj",
             "sku": "max_sku",
-            "support_days": "inventory_support_days",
+            "support_days": display_support_days_expr,
             "daily_sales": "daily_avg_sales",
             "category_daily_sales_30d": display_product_daily_sales_expr,
             "profit_rate_30d": period_metrics["margin_col"],
@@ -1607,7 +1630,14 @@ class ReplenishmentDataService:
                     daily_avg_sales,
                     {display_product_daily_sales_expr} as category_daily_sales_30d,
                     {period_metrics["margin_col"]} as pprofit_ratio_30d,
-                    inventory_support_days,
+                    {display_support_days_expr} as inventory_support_days,
+                    effective_purchase_lead_days,
+                    purchase_lead_status,
+                    arrival_inventory_support_days,
+                    arrival_inventory_qty,
+                    lead_time_demand_qty,
+                    lead_time_stockout_flag,
+                    lead_time_stockout_days,
                     support_inventory_qty,
                     available_total,
                     stock_up_num,
@@ -1940,7 +1970,38 @@ class ReplenishmentDataService:
             "daily_sales": round(to_float(row.get("daily_avg_sales")), 4),
             "category_daily_sales_30d": round(to_float(row.get("category_daily_sales_30d")), 4),
             "profit_rate_30d": round(to_float(row.get("pprofit_ratio_30d")), 6),
-            "support_days": round(to_float(row.get("inventory_support_days")), 2),
+            "support_days": (
+                round(to_float(row.get("inventory_support_days")), 2)
+                if row.get("inventory_support_days") is not None
+                else None
+            ),
+            "effective_purchase_lead_days": (
+                round(to_float(row.get("effective_purchase_lead_days")), 2)
+                if row.get("effective_purchase_lead_days") is not None
+                else None
+            ),
+            "purchase_lead_status": row.get("purchase_lead_status") or "",
+            "arrival_inventory_support_days": (
+                round(to_float(row.get("arrival_inventory_support_days")), 2)
+                if row.get("arrival_inventory_support_days") is not None
+                else None
+            ),
+            "arrival_inventory_qty": (
+                round(to_float(row.get("arrival_inventory_qty")), 2)
+                if row.get("arrival_inventory_qty") is not None
+                else None
+            ),
+            "lead_time_demand_qty": (
+                round(to_float(row.get("lead_time_demand_qty")), 2)
+                if row.get("lead_time_demand_qty") is not None
+                else None
+            ),
+            "lead_time_stockout_flag": to_int(row.get("lead_time_stockout_flag")),
+            "lead_time_stockout_days": (
+                round(to_float(row.get("lead_time_stockout_days")), 2)
+                if row.get("lead_time_stockout_days") is not None
+                else None
+            ),
             "support_inventory_qty": round(to_float(row.get("support_inventory_qty")), 2),
             "available_total": round(to_float(row.get("available_total")), 2),
             "stock_up_num": round(to_float(row.get("stock_up_num")), 2),

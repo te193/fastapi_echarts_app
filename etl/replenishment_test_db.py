@@ -47,6 +47,14 @@ COPY_TABLES = (
     CopyTable("dashboard_pur_plan_replenish_data", "cur_date in (%(snapshot_date)s, %(previous_snapshot_date)s)"),
     CopyTable("dashboard_replenishment_country_metrics", "snapshot_date in (%(snapshot_date)s, %(previous_snapshot_date)s)"),
     CopyTable("pur_plan_prod_perf_salable_days_stat", "sta_dt in (%(biz_date)s, %(previous_biz_date)s)"),
+    CopyTable("dashboard_replenishment_fba_shipment_sync", "1 = 1"),
+    CopyTable("dashboard_replenishment_order_profit_source", "1 = 1"),
+    CopyTable(
+        "dashboard_replenishment_history_daily_sync",
+        "dt_date between %(history_start_date)s and %(history_end_date)s",
+    ),
+    CopyTable("dashboard_replenishment_self_asin_sync", "1 = 1"),
+    CopyTable("dashboard_replenishment_supplier_moq_sync", "snapshot_date = %(snapshot_date)s"),
 )
 
 BASELINE_TABLES = (
@@ -223,12 +231,15 @@ def default_snapshot_date(conn, production_schema: str) -> date:
 
 def build_params(snapshot_date: date) -> dict[str, date]:
     biz_date = snapshot_date - timedelta(days=1)
+    history_year = biz_date.year - 1
     return {
         "snapshot_date": snapshot_date,
         "previous_snapshot_date": snapshot_date - timedelta(days=1),
         "biz_date": biz_date,
         "previous_biz_date": biz_date - timedelta(days=1),
         "product_start_date": biz_date - timedelta(days=179),
+        "history_start_date": date(history_year, 1, 1) - timedelta(days=90),
+        "history_end_date": date(history_year, 12, 31) + timedelta(days=90),
     }
 
 
@@ -415,6 +426,55 @@ def build_verification_queries(production_schema: str, test_schema: str) -> dict
             where cur_date = %(snapshot_date)s
               and calculated_replenish_qty = supplier_moq
               and supplier_moq > 0
+        """,
+        "lead_time_summary": f"""
+            select count(*) as rows_count,
+                   sum(effective_purchase_lead_days > 0) as configured_rows,
+                   sum(lead_time_stockout_flag = 1) as stockout_rows,
+                   coalesce(sum(lead_time_lost_sales_qty), 0) as lost_sales_qty,
+                   coalesce(sum(calculated_replenish_qty), 0) as calculated_replenish_qty,
+                   coalesce(sum(executable_replenish_qty), 0) as executable_replenish_qty
+            from `{test_schema}`.`dashboard_pur_plan_replenish_data`
+            where cur_date = %(snapshot_date)s
+        """,
+        "lead_time_formula_check": f"""
+            select sum(case
+                       when arrival_inventory_qty < -0.0001
+                         or (arrival_inventory_support_days >= 0
+                             and lead_adjusted_replenish_need_qty > 0
+                             and abs(arrival_inventory_qty
+                                     + lead_adjusted_replenish_need_qty
+                                     - 120 * daily_avg_sales) > 0.02)
+                         or (arrival_inventory_support_days < 0
+                             and abs(lead_adjusted_replenish_need_qty
+                                     - 120 * daily_avg_sales) > 0.02)
+                         or (arrival_inventory_support_days < 0
+                             and abs(lead_time_lost_sales_qty
+                                     - (-arrival_inventory_support_days * daily_avg_sales)) > 0.02)
+                       then 1 else 0
+                   end) as bad_rows
+            from `{test_schema}`.`dashboard_pur_plan_replenish_data`
+            where cur_date = %(snapshot_date)s
+              and daily_avg_sales > 0
+              and asin_merge_flag = 0
+        """,
+        "lead_time_asin_inheritance_check": f"""
+            select sum(case
+                       when abs(coalesce(r.effective_purchase_lead_days, 0)
+                                - coalesce(a.group_effective_purchase_lead_days, 0)) > 0.001
+                         or abs(coalesce(r.arrival_inventory_qty, 0)
+                                - coalesce(a.group_arrival_inventory_qty, 0)) > 0.02
+                         or abs(coalesce(r.lead_adjusted_replenish_need_qty, 0)
+                                - coalesce(a.group_lead_adjusted_replenish_need_qty, 0)) > 0.02
+                       then 1 else 0
+                   end) as bad_rows
+            from `{test_schema}`.`dashboard_pur_plan_replenish_data` r
+            inner join `{test_schema}`.`dashboard_replenishment_work_asin_merge_assignments_v3` a
+                    on r.country_category = a.country_category
+                   and r.seller_name_new = a.seller_name_new
+                   and r.seller_sku_adj = a.seller_sku_adj
+            where r.cur_date = %(snapshot_date)s
+              and a.asin_merge_target_flag = 1
         """,
     }
 
@@ -636,7 +696,12 @@ def verify_test_database(
                 print(f"[{name}]")
                 for row in rows:
                     print(row)
-                if name in {"followed_zero_check", "moq_gate_zero_check"}:
+                if name in {
+                    "followed_zero_check",
+                    "moq_gate_zero_check",
+                    "lead_time_formula_check",
+                    "lead_time_asin_inheritance_check",
+                }:
                     bad_rows = int((rows[0] if rows else {}).get("bad_rows") or 0)
                     if bad_rows:
                         raise RuntimeError(f"Verification {name} found {bad_rows} invalid rows")

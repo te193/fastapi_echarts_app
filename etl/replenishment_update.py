@@ -222,6 +222,7 @@ create table if not exists etl_datasync.dashboard_replenishment_listing_basic_sy
     max_local_name varchar(512) null,
     max_brand_name varchar(255) null,
     max_cg_box_pcs decimal(18,4) null,
+    max_cg_delivery decimal(10,2) null,
     max_cg_price decimal(18,4) null,
     max_cg_transport_costs decimal(18,4) null,
     synced_at datetime not null default current_timestamp,
@@ -302,6 +303,9 @@ create table if not exists etl_datasync.dashboard_pur_plan_replenish_data (
     max_cg_box_pcs decimal(18,4) null,
     max_cg_price decimal(18,4) null,
     max_cg_transport_costs decimal(18,4) null,
+    purchase_lead_days_raw decimal(10,2) null,
+    effective_purchase_lead_days decimal(10,2) not null default 0,
+    purchase_lead_status varchar(32) not null default 'unconfigured',
     stockout_status varchar(64) null,
     pre_daily_avg_sales decimal(18,6) null,
     pre_normal_replenish_need_qty decimal(18,4) null,
@@ -313,6 +317,14 @@ create table if not exists etl_datasync.dashboard_pur_plan_replenish_data (
     history_recovery_flag tinyint not null default 0,
     support_inventory_qty decimal(18,4) null,
     inventory_support_days decimal(18,6) null,
+    arrival_inventory_support_days decimal(18,6) null,
+    arrival_inventory_qty decimal(18,4) null,
+    lead_time_demand_qty decimal(18,4) null,
+    base_replenish_need_qty decimal(18,4) null,
+    lead_adjusted_replenish_need_qty decimal(18,4) null,
+    lead_time_stockout_flag tinyint not null default 0,
+    lead_time_stockout_days decimal(18,6) null,
+    lead_time_lost_sales_qty decimal(18,4) null,
     support_replenish_level varchar(64) null,
     support_replenish_level_sort tinyint null,
     abcd_category varchar(16) null,
@@ -495,6 +507,7 @@ LISTING_BASIC_COLUMNS = (
     "max_local_name",
     "max_brand_name",
     "max_cg_box_pcs",
+    "max_cg_delivery",
     "max_cg_price",
     "max_cg_transport_costs",
 )
@@ -560,6 +573,7 @@ select
     max(max_local_name) as max_local_name,
     max(max_brand_name) as max_brand_name,
     max(max_cg_box_pcs) as max_cg_box_pcs,
+    max(max_cg_delivery) as max_cg_delivery,
     max(max_cg_price) as max_cg_price,
     max(max_cg_transport_costs) as max_cg_transport_costs
 from (
@@ -588,6 +602,8 @@ from (
             over (partition by sml.country_category, sml.seller_name_new, sml.seller_sku) as max_brand_name,
         max(plpi.cg_box_pcs)
             over (partition by sml.country_category, sml.seller_name_new, sml.seller_sku) as max_cg_box_pcs,
+        max(lead_info.cg_delivery)
+            over (partition by sml.country_category, sml.seller_name_new, sml.seller_sku) as max_cg_delivery,
         max(plpi.cg_price)
             over (partition by sml.country_category, sml.seller_name_new, sml.seller_sku) as max_cg_price,
         max(plpi.cg_transport_costs)
@@ -641,6 +657,8 @@ from (
            on sml.seller_sku = plpi.seller_sku
           and sml.marketplace = plpi.country
           and sml.seller_name_new = plpi.seller_name_new
+    left join dwd_datasync.lx_product_local_product_info as lead_info
+           on binary sml.local_sku = binary lead_info.sku
     left join (
         select
             sku,
@@ -1832,6 +1850,11 @@ from (
                  / greatest(greatest(coalesce(ks.r_30d_salable_days, 0), coalesce(fm.origin_r_30d_salable_days, 0)), 15)
         end as final_adjusted_daily_sales_30d,
         l.max_cg_box_pcs,
+        l.max_cg_delivery as purchase_lead_days_raw,
+        case when coalesce(l.max_cg_delivery, 0) > 0 then l.max_cg_delivery else 0 end
+            as effective_purchase_lead_days,
+        case when coalesce(l.max_cg_delivery, 0) > 0 then 'configured' else 'unconfigured' end
+            as purchase_lead_status,
         l.max_cg_price,
         l.max_cg_transport_costs,
         4 as pre_replenish_comp_months,
@@ -1920,37 +1943,82 @@ from tmp_pur_plan_support_metric_base metric_base;
 drop temporary table if exists tmp_pur_plan_support_layer_all;
 create temporary table tmp_pur_plan_support_layer_all as
 select
+    arrival.*,
+    case
+        when coalesce(arrival.daily_avg_sales, 0) <= 0 then 5
+        when arrival.arrival_inventory_support_days <= 35 then 1
+        when arrival.arrival_inventory_support_days <= 65 then 2
+        when arrival.arrival_inventory_support_days <= 90 then 3
+        when arrival.arrival_inventory_support_days > 90 then 4
+        else 2
+    end as support_replenish_level_sort,
+    case
+        when coalesce(arrival.daily_avg_sales, 0) <= 0 then '日销为0'
+        when arrival.arrival_inventory_support_days <= 35 then '紧急补货'
+        when arrival.arrival_inventory_support_days <= 65 then '建议补货'
+        when arrival.arrival_inventory_support_days <= 90 then '计划补货'
+        when arrival.arrival_inventory_support_days > 90 then '库存充足'
+        else '建议补货'
+    end as support_replenish_level
+from (
+select
     base.*,
     case
         when coalesce(base.daily_avg_sales, 0) <= 0 then null
         else base.support_inventory_qty / base.daily_avg_sales
     end as inventory_support_days,
     case
-        when coalesce(base.daily_avg_sales, 0) <= 0 then 5
-        when base.support_inventory_qty / base.daily_avg_sales <= 35 then 1
-        when base.support_inventory_qty / base.daily_avg_sales <= 65 then 2
-        when base.support_inventory_qty / base.daily_avg_sales <= 90 then 3
-        when base.support_inventory_qty / base.daily_avg_sales > 90 then 4
-        else 2
-    end as support_replenish_level_sort,
+        when coalesce(base.daily_avg_sales, 0) <= 0 then null
+        else base.support_inventory_qty / base.daily_avg_sales - base.effective_purchase_lead_days
+    end as arrival_inventory_support_days,
+    greatest(
+        base.support_inventory_qty
+        - base.effective_purchase_lead_days * base.daily_avg_sales,
+        0
+    ) as arrival_inventory_qty,
+    base.effective_purchase_lead_days * coalesce(base.daily_avg_sales, 0) as lead_time_demand_qty,
+    greatest(120 * coalesce(base.daily_avg_sales, 0) - base.support_inventory_qty, 0)
+        as base_replenish_need_qty,
+    greatest(
+        120 * coalesce(base.daily_avg_sales, 0)
+        - greatest(
+            base.support_inventory_qty
+            - base.effective_purchase_lead_days * base.daily_avg_sales,
+            0
+        ),
+        0
+    ) as lead_adjusted_replenish_need_qty,
     case
-        when coalesce(base.daily_avg_sales, 0) <= 0 then '日销为0'
-        when base.support_inventory_qty / base.daily_avg_sales <= 35 then '紧急补货'
-        when base.support_inventory_qty / base.daily_avg_sales <= 65 then '建议补货'
-        when base.support_inventory_qty / base.daily_avg_sales <= 90 then '计划补货'
-        when base.support_inventory_qty / base.daily_avg_sales > 90 then '库存充足'
-        else '建议补货'
-    end as support_replenish_level
-from tmp_pur_plan_support_calc_base base;
+        when coalesce(base.daily_avg_sales, 0) > 0
+         and base.support_inventory_qty / base.daily_avg_sales < base.effective_purchase_lead_days
+            then 1
+        else 0
+    end as lead_time_stockout_flag,
+    case
+        when coalesce(base.daily_avg_sales, 0) <= 0 then 0
+        else greatest(
+            base.effective_purchase_lead_days
+            - base.support_inventory_qty / base.daily_avg_sales,
+            0
+        )
+    end as lead_time_stockout_days,
+    case
+        when coalesce(base.daily_avg_sales, 0) <= 0 then 0
+        else greatest(
+            base.effective_purchase_lead_days
+            - base.support_inventory_qty / base.daily_avg_sales,
+            0
+        ) * base.daily_avg_sales
+    end as lead_time_lost_sales_qty
+from tmp_pur_plan_support_calc_base base
+) arrival;
 
 drop temporary table if exists tmp_pur_plan_replenish_calc;
 create temporary table tmp_pur_plan_replenish_calc as
 select
     support.*,
-    pre_replenish_comp_months * 30 * coalesce(daily_avg_sales, 0)
-    - available_total
-    - stock_up_num
-    - local_quantity as normal_replenish_need_qty,
+    greatest(120 * support.daily_avg_sales - support.arrival_inventory_qty, 0)
+        as normal_replenish_need_qty,
     case
         when support.pre_normal_replenish_need_qty < support.pre_replenish_trigger_qty
              and support.r_30d_salable_days < 15
@@ -1970,32 +2038,103 @@ from tmp_pur_plan_support_layer_all support;
 drop temporary table if exists tmp_asin_merge_groups;
 create temporary table tmp_asin_merge_groups as
 select
-    country_category,
-    max_asin,
+    group_base.country_category,
+    group_base.max_asin,
     count(*) as link_count,
     max(case when coalesce(fllow_flag, 1) = 0 then 1 else 0 end) as has_follow_link,
     max(case when coalesce(followed_flag, 0) = 1 then 1 else 0 end) as has_followed_origin,
     max(coalesce(daily_avg_sales, 0)) as group_daily_avg_sales,
     max(coalesce(pre_replenish_comp_months, 4)) as group_replenish_comp_months,
     sum(coalesce(support_inventory_qty, 0)) as group_support_inventory_qty,
+    max(coalesce(purchase_source.effective_purchase_lead_days, 0))
+        as group_effective_purchase_lead_days,
     sum(case when coalesce(fllow_flag, 1) = 0 then 1 else 0 end) as eligible_target_link_count,
     case
         when max(coalesce(daily_avg_sales, 0)) <= 0 then null
         else sum(coalesce(support_inventory_qty, 0))
             / max(coalesce(daily_avg_sales, 0))
     end as group_inventory_support_days,
-    max(coalesce(pre_replenish_comp_months, 4)) * 30 * max(coalesce(daily_avg_sales, 0))
-        - sum(coalesce(support_inventory_qty, 0)) as group_replenish_need_qty,
+    case
+        when max(coalesce(daily_avg_sales, 0)) <= 0 then null
+        else sum(coalesce(support_inventory_qty, 0))
+            / max(coalesce(daily_avg_sales, 0))
+            - max(coalesce(purchase_source.effective_purchase_lead_days, 0))
+    end as group_arrival_inventory_support_days,
+    greatest(
+        sum(coalesce(support_inventory_qty, 0))
+        - max(coalesce(purchase_source.effective_purchase_lead_days, 0))
+          * max(coalesce(daily_avg_sales, 0)),
+        0
+    ) as group_arrival_inventory_qty,
+    max(coalesce(purchase_source.effective_purchase_lead_days, 0))
+        * max(coalesce(daily_avg_sales, 0)) as group_lead_time_demand_qty,
+    greatest(
+        120 * max(coalesce(daily_avg_sales, 0))
+        - sum(coalesce(support_inventory_qty, 0)),
+        0
+    ) as group_base_replenish_need_qty,
+    greatest(
+        max(coalesce(pre_replenish_comp_months, 4)) * 30
+        * max(coalesce(daily_avg_sales, 0))
+        - greatest(
+            sum(coalesce(support_inventory_qty, 0))
+            - max(coalesce(purchase_source.effective_purchase_lead_days, 0))
+              * max(coalesce(daily_avg_sales, 0)),
+            0
+        ),
+        0
+    ) as group_replenish_need_qty,
+    greatest(
+        max(coalesce(pre_replenish_comp_months, 4)) * 30
+        * max(coalesce(daily_avg_sales, 0))
+        - greatest(
+            sum(coalesce(support_inventory_qty, 0))
+            - max(coalesce(purchase_source.effective_purchase_lead_days, 0))
+              * max(coalesce(daily_avg_sales, 0)),
+            0
+        ),
+        0
+    ) as group_lead_adjusted_replenish_need_qty,
+    case
+        when max(coalesce(daily_avg_sales, 0)) > 0
+         and sum(coalesce(support_inventory_qty, 0))
+             / max(coalesce(daily_avg_sales, 0))
+             < max(coalesce(purchase_source.effective_purchase_lead_days, 0))
+            then 1
+        else 0
+    end as group_lead_time_stockout_flag,
+    case
+        when max(coalesce(daily_avg_sales, 0)) <= 0 then 0
+        else greatest(
+            max(coalesce(purchase_source.effective_purchase_lead_days, 0))
+            - sum(coalesce(support_inventory_qty, 0))
+              / max(coalesce(daily_avg_sales, 0)),
+            0
+        )
+    end as group_lead_time_stockout_days,
+    case
+        when max(coalesce(daily_avg_sales, 0)) <= 0 then 0
+        else greatest(
+            max(coalesce(purchase_source.effective_purchase_lead_days, 0))
+            - sum(coalesce(support_inventory_qty, 0))
+              / max(coalesce(daily_avg_sales, 0)),
+            0
+        ) * max(coalesce(daily_avg_sales, 0))
+    end as group_lead_time_lost_sales_qty,
     case
         when max(coalesce(daily_avg_sales, 0)) <= 0 then 5
         when sum(coalesce(support_inventory_qty, 0))
-            / max(coalesce(daily_avg_sales, 0)) <= 35 then 1
+            / max(coalesce(daily_avg_sales, 0))
+            - max(coalesce(purchase_source.effective_purchase_lead_days, 0)) <= 35 then 1
         when sum(coalesce(support_inventory_qty, 0))
-            / max(coalesce(daily_avg_sales, 0)) <= 65 then 2
+            / max(coalesce(daily_avg_sales, 0))
+            - max(coalesce(purchase_source.effective_purchase_lead_days, 0)) <= 65 then 2
         when sum(coalesce(support_inventory_qty, 0))
-            / max(coalesce(daily_avg_sales, 0)) <= 90 then 3
+            / max(coalesce(daily_avg_sales, 0))
+            - max(coalesce(purchase_source.effective_purchase_lead_days, 0)) <= 90 then 3
         when sum(coalesce(support_inventory_qty, 0))
-            / max(coalesce(daily_avg_sales, 0)) > 90 then 4
+            / max(coalesce(daily_avg_sales, 0))
+            - max(coalesce(purchase_source.effective_purchase_lead_days, 0)) > 90 then 4
         else 2
     end as group_support_replenish_level_sort
 from (
@@ -2014,7 +2153,37 @@ from (
     where max_asin is not null
       and max_asin <> ''
 ) group_base
-group by country_category, max_asin
+left join (
+    select
+        ranked.country_category,
+        ranked.max_asin,
+        ranked.purchase_lead_days_raw,
+        ranked.effective_purchase_lead_days
+    from (
+        select
+            calc.country_category,
+            calc.max_asin,
+            calc.purchase_lead_days_raw,
+            calc.effective_purchase_lead_days,
+            row_number() over (partition by calc.country_category, calc.max_asin order by
+                case when coalesce(calc.followed_flag, 0) = 1 then 0 else 1 end,
+                case when coalesce(calc.fllow_flag, 1) = 1 then 0 else 1 end,
+                case when coalesce(calc.sales_30, 0) > 0 then 0 else 1 end,
+                coalesce(calc.sales_30, 0) desc,
+                calc.seller_name_new,
+                calc.seller_sku_adj
+            ) as rn
+        from tmp_pur_plan_replenish_calc calc
+        where calc.max_asin is not null
+          and calc.max_asin <> ''
+          and calc.max_cg_price is not null
+          and calc.max_cg_transport_costs is not null
+    ) ranked
+    where ranked.rn = 1
+) purchase_source
+       on group_base.country_category = purchase_source.country_category
+      and group_base.max_asin = purchase_source.max_asin
+group by group_base.country_category, group_base.max_asin
 having link_count > 1
    and has_follow_link > 0;
 
@@ -2108,6 +2277,16 @@ select
         else 0
     end as asin_merge_target_flag,
     grp.group_replenish_need_qty,
+    grp.group_effective_purchase_lead_days,
+    grp.group_inventory_support_days,
+    grp.group_arrival_inventory_support_days,
+    grp.group_arrival_inventory_qty,
+    grp.group_lead_time_demand_qty,
+    grp.group_base_replenish_need_qty,
+    grp.group_lead_adjusted_replenish_need_qty,
+    grp.group_lead_time_stockout_flag,
+    grp.group_lead_time_stockout_days,
+    grp.group_lead_time_lost_sales_qty,
     grp.group_support_replenish_level_sort
 from tmp_pur_plan_replenish_calc calc
 inner join tmp_asin_merge_groups grp
@@ -2124,7 +2303,10 @@ select
     ranked.max_asin,
     nullif(ranked.max_cg_box_pcs, 0) as effective_max_cg_box_pcs,
     ranked.max_cg_price as effective_max_cg_price,
-    ranked.max_cg_transport_costs as effective_max_cg_transport_costs
+    ranked.max_cg_transport_costs as effective_max_cg_transport_costs,
+    ranked.purchase_lead_days_raw,
+    ranked.effective_purchase_lead_days,
+    ranked.purchase_lead_status
 from (
     select
         calc.country_category,
@@ -2132,6 +2314,9 @@ from (
         calc.max_cg_box_pcs,
         calc.max_cg_price,
         calc.max_cg_transport_costs,
+        calc.purchase_lead_days_raw,
+        calc.effective_purchase_lead_days,
+        calc.purchase_lead_status,
         row_number() over (partition by calc.country_category, calc.max_asin order by
             case when coalesce(calc.followed_flag, 0) = 1 then 0 else 1 end,
             case when coalesce(calc.fllow_flag, 1) = 1 then 0 else 1 end,
@@ -2154,11 +2339,16 @@ insert into etl_datasync.dashboard_pur_plan_replenish_data (
     marketplace_status, seller_name_concat, onsale_sites, unsale_sites, sales_status,
     marketplace_concat, global_tags, seller_name_copy, seller_name_ue, seller_name_new, country_category,
     max_local_name, max_brand_name, principal, sales_team_1, max_receiving_time, receiving_cnt,
-    max_cg_box_pcs, max_cg_price, max_cg_transport_costs, stockout_status,
+    max_cg_box_pcs, max_cg_price, max_cg_transport_costs,
+    purchase_lead_days_raw, effective_purchase_lead_days, purchase_lead_status, stockout_status,
     pre_daily_avg_sales, pre_normal_replenish_need_qty, pre_replenish_trigger_qty,
     hist_90d_instock_days, hist_90d_instock_sales, hist_90d_instock_daily_sales,
     history_recovery_need_qty, history_recovery_flag,
-    support_inventory_qty, inventory_support_days, support_replenish_level, support_replenish_level_sort,
+    support_inventory_qty, inventory_support_days,
+    arrival_inventory_support_days, arrival_inventory_qty, lead_time_demand_qty,
+    base_replenish_need_qty, lead_adjusted_replenish_need_qty,
+    lead_time_stockout_flag, lead_time_stockout_days, lead_time_lost_sales_qty,
+    support_replenish_level, support_replenish_level_sort,
     abcd_category, gp_margin_range, predict_abcd_category,
     fba_local_quantity, total, available_total, afn_fulfillable_quantity, stock_up_num, afn_unsellable_quantity,
     sc_quantity_local_valid, sc_quantity_purchase_shipping, sc_quantity_purchase_plan, sc_quantity_local_qc, local_quantity,
@@ -2202,8 +2392,11 @@ select
     effective_max_cg_box_pcs as max_cg_box_pcs,
     effective_max_cg_price as max_cg_price,
     effective_max_cg_transport_costs as max_cg_transport_costs,
+    final_purchase_lead_days_raw as purchase_lead_days_raw,
+    final_effective_purchase_lead_days as effective_purchase_lead_days,
+    final_purchase_lead_status as purchase_lead_status,
     case
-        when inventory_support_days > 60 then '不会缺货'
+        when final_inventory_support_days > 60 then '不会缺货'
         when stock_up_num = 0 and local_quantity = 0 then '缺货未补货'
         else '缺货已补货'
     end as stockout_status,
@@ -2216,9 +2409,17 @@ select
     history_recovery_need_qty,
     history_recovery_flag,
     support_inventory_qty,
-    inventory_support_days,
-    support_replenish_level,
-    support_replenish_level_sort,
+    final_inventory_support_days as inventory_support_days,
+    final_arrival_inventory_support_days as arrival_inventory_support_days,
+    final_arrival_inventory_qty as arrival_inventory_qty,
+    final_lead_time_demand_qty as lead_time_demand_qty,
+    final_base_replenish_need_qty as base_replenish_need_qty,
+    final_lead_adjusted_replenish_need_qty as lead_adjusted_replenish_need_qty,
+    final_lead_time_stockout_flag as lead_time_stockout_flag,
+    final_lead_time_stockout_days as lead_time_stockout_days,
+    final_lead_time_lost_sales_qty as lead_time_lost_sales_qty,
+    final_support_replenish_level as support_replenish_level,
+    final_support_replenish_level_sort as support_replenish_level_sort,
     case
         when adjusted_daily_sales_30d >= 5 and pprofit_ratio_30 >= 0.15 then '明星产品'
         when adjusted_daily_sales_30d >= 1 and adjusted_daily_sales_30d < 5 and pprofit_ratio_30 >= 0.25 then '明星产品'
@@ -2404,7 +2605,22 @@ from (
         assign.asin_merge_reason,
         coalesce(assign.asin_merge_target_flag, 0) as asin_merge_target_flag,
         assign.group_replenish_need_qty,
+        assign.group_effective_purchase_lead_days,
+        assign.group_inventory_support_days,
+        assign.group_arrival_inventory_support_days,
+        assign.group_arrival_inventory_qty,
+        assign.group_lead_time_demand_qty,
+        assign.group_base_replenish_need_qty,
+        assign.group_lead_adjusted_replenish_need_qty,
+        assign.group_lead_time_stockout_flag,
+        assign.group_lead_time_stockout_days,
+        assign.group_lead_time_lost_sales_qty,
         assign.group_support_replenish_level_sort,
+        case
+            when coalesce(assign.asin_merge_flag, 0) = 1
+                then assign.group_inventory_support_days
+            else calc.inventory_support_days
+        end as final_inventory_support_days,
         case
             when coalesce(assign.asin_merge_target_flag, 0) = 1
                 then coalesce(purchase.effective_max_cg_box_pcs, max_cg_box_pcs)
@@ -2419,7 +2635,83 @@ from (
             when coalesce(assign.asin_merge_target_flag, 0) = 1
                 then coalesce(purchase.effective_max_cg_transport_costs, max_cg_transport_costs)
             else max_cg_transport_costs
-        end as effective_max_cg_transport_costs
+        end as effective_max_cg_transport_costs,
+        case
+            when coalesce(assign.asin_merge_flag, 0) = 1
+                then coalesce(purchase.purchase_lead_days_raw, calc.purchase_lead_days_raw)
+            else calc.purchase_lead_days_raw
+        end as final_purchase_lead_days_raw,
+        case
+            when coalesce(assign.asin_merge_flag, 0) = 1
+                then coalesce(
+                    purchase.effective_purchase_lead_days,
+                    assign.group_effective_purchase_lead_days,
+                    calc.effective_purchase_lead_days
+                )
+            else calc.effective_purchase_lead_days
+        end as final_effective_purchase_lead_days,
+        case
+            when coalesce(assign.asin_merge_flag, 0) = 1
+                then coalesce(purchase.purchase_lead_status, calc.purchase_lead_status)
+            else calc.purchase_lead_status
+        end as final_purchase_lead_status,
+        case
+            when coalesce(assign.asin_merge_flag, 0) = 1
+                then assign.group_arrival_inventory_support_days
+            else calc.arrival_inventory_support_days
+        end as final_arrival_inventory_support_days,
+        case
+            when coalesce(assign.asin_merge_flag, 0) = 1
+                then assign.group_arrival_inventory_qty
+            else calc.arrival_inventory_qty
+        end as final_arrival_inventory_qty,
+        case
+            when coalesce(assign.asin_merge_flag, 0) = 1
+                then assign.group_lead_time_demand_qty
+            else calc.lead_time_demand_qty
+        end as final_lead_time_demand_qty,
+        case
+            when coalesce(assign.asin_merge_flag, 0) = 1
+                then assign.group_base_replenish_need_qty
+            else calc.base_replenish_need_qty
+        end as final_base_replenish_need_qty,
+        case
+            when coalesce(assign.asin_merge_flag, 0) = 1
+                then assign.group_lead_adjusted_replenish_need_qty
+            else calc.lead_adjusted_replenish_need_qty
+        end as final_lead_adjusted_replenish_need_qty,
+        case
+            when coalesce(assign.asin_merge_flag, 0) = 1
+                then assign.group_lead_time_stockout_flag
+            else calc.lead_time_stockout_flag
+        end as final_lead_time_stockout_flag,
+        case
+            when coalesce(assign.asin_merge_flag, 0) = 1
+                then assign.group_lead_time_stockout_days
+            else calc.lead_time_stockout_days
+        end as final_lead_time_stockout_days,
+        case
+            when coalesce(assign.asin_merge_flag, 0) = 1
+                then assign.group_lead_time_lost_sales_qty
+            else calc.lead_time_lost_sales_qty
+        end as final_lead_time_lost_sales_qty,
+        case
+            when coalesce(assign.asin_merge_flag, 0) = 1 then
+                case assign.group_support_replenish_level_sort
+                    when 1 then '紧急补货'
+                    when 2 then '建议补货'
+                    when 3 then '计划补货'
+                    when 4 then '库存充足'
+                    when 5 then '日销为0'
+                    else calc.support_replenish_level
+                end
+            else calc.support_replenish_level
+        end as final_support_replenish_level,
+        case
+            when coalesce(assign.asin_merge_flag, 0) = 1
+                then coalesce(assign.group_support_replenish_level_sort, calc.support_replenish_level_sort)
+            else calc.support_replenish_level_sort
+        end as final_support_replenish_level_sort
     from tmp_pur_plan_replenish_calc calc
     left join tmp_asin_merge_assignments assign
            on calc.country_category = assign.country_category
@@ -2875,6 +3167,7 @@ def ensure_replenishment_columns(cursor, schemas: SchemaConfig) -> None:
         ],
         "dashboard_replenishment_listing_basic_sync": [
             ("global_tags", "text null", "marketplace_concat"),
+            ("max_cg_delivery", "decimal(10,2) null", "max_cg_box_pcs"),
         ],
         "dashboard_pur_plan_replenish_data": [
             ("global_tags", "text null", "marketplace_concat"),
@@ -2894,6 +3187,17 @@ def ensure_replenishment_columns(cursor, schemas: SchemaConfig) -> None:
             ("asin_merge_flag", "tinyint not null default 0", "replenish_block_reason"),
             ("asin_merge_target", "varchar(255) null", "asin_merge_flag"),
             ("asin_merge_reason", "varchar(64) null", "asin_merge_target"),
+            ("purchase_lead_days_raw", "decimal(10,2) null", "max_cg_transport_costs"),
+            ("effective_purchase_lead_days", "decimal(10,2) not null default 0", "purchase_lead_days_raw"),
+            ("purchase_lead_status", "varchar(32) not null default 'unconfigured'", "effective_purchase_lead_days"),
+            ("arrival_inventory_support_days", "decimal(18,6) null", "inventory_support_days"),
+            ("arrival_inventory_qty", "decimal(18,4) null", "arrival_inventory_support_days"),
+            ("lead_time_demand_qty", "decimal(18,4) null", "arrival_inventory_qty"),
+            ("base_replenish_need_qty", "decimal(18,4) null", "lead_time_demand_qty"),
+            ("lead_adjusted_replenish_need_qty", "decimal(18,4) null", "base_replenish_need_qty"),
+            ("lead_time_stockout_flag", "tinyint not null default 0", "lead_adjusted_replenish_need_qty"),
+            ("lead_time_stockout_days", "decimal(18,6) null", "lead_time_stockout_flag"),
+            ("lead_time_lost_sales_qty", "decimal(18,4) null", "lead_time_stockout_days"),
             ("supplier_moq", "decimal(18,4) null", "replenish_cost"),
             ("moq_status", "varchar(32) null", "supplier_moq"),
             ("calculated_replenish_qty", "decimal(18,4) null", "moq_status"),

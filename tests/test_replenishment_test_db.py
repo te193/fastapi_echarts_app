@@ -17,6 +17,20 @@ def test_copy_plan_limits_replenishment_tables_to_recent_windows():
     assert plan["dashboard_replenishment_country_metrics"].where_sql == "snapshot_date in (%(snapshot_date)s, %(previous_snapshot_date)s)"
 
 
+def test_copy_plan_includes_replenishment_rule_dependencies():
+    plan = {item.table: item for item in replenishment_test_db.COPY_TABLES}
+
+    assert plan["dashboard_replenishment_fba_shipment_sync"].where_sql == "1 = 1"
+    assert plan["dashboard_replenishment_order_profit_source"].where_sql == "1 = 1"
+    assert plan["dashboard_replenishment_history_daily_sync"].where_sql == (
+        "dt_date between %(history_start_date)s and %(history_end_date)s"
+    )
+    assert plan["dashboard_replenishment_self_asin_sync"].where_sql == "1 = 1"
+    assert plan["dashboard_replenishment_supplier_moq_sync"].where_sql == (
+        "snapshot_date = %(snapshot_date)s"
+    )
+
+
 def test_baseline_plan_preserves_outputs_before_test_recalculation():
     plan = {item.table: item for item in replenishment_test_db.BASELINE_TABLES}
 
@@ -37,6 +51,20 @@ def test_verification_checks_moq_warning_rows_and_equal_moq_release():
     assert "executable_replenish_qty" in queries["test_summary"]
     assert "moq_status = 'below_minimum'" in queries["moq_gate_zero_check"]
     assert "calculated_replenish_qty = supplier_moq" in queries["moq_equal_release_check"]
+
+
+def test_verification_checks_purchase_lead_formulas_and_asin_inheritance():
+    queries = replenishment_test_db.build_verification_queries(
+        "etl_datasync_test",
+        "etl_datasync_replenishment_test",
+    )
+
+    assert "lead_time_summary" in queries
+    assert "lead_time_formula_check" in queries
+    assert "lead_time_asin_inheritance_check" in queries
+    assert "arrival_inventory_qty < -0.0001" in queries["lead_time_formula_check"]
+    assert "lead_adjusted_replenish_need_qty" in queries["lead_time_formula_check"]
+    assert "group_effective_purchase_lead_days" in queries["lead_time_asin_inheritance_check"]
 
 
 def test_promotion_plan_moves_verified_outputs_by_snapshot_in_one_direction():

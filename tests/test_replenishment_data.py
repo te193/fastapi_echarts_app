@@ -127,6 +127,37 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
         self.assertEqual("是否被跟卖", labels["followed_flag"])
         self.assertEqual("订单原始毛利率", labels["final_profit_rate"])
 
+    def test_export_columns_removes_redundant_calculation_fields_but_keeps_stockout_risk(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+        service.database = "etl_datasync_test"
+        removed = [
+            "calculated_replenish_qty",
+            "calculated_replenish_box_qty",
+            "calculated_replenish_cost",
+            "executable_replenish_qty",
+            "executable_replenish_box_qty",
+            "executable_replenish_cost",
+            "replenish_dur_calc_stocko_qty",
+            "replenish_need_qty",
+            "replenish_trigger_qty",
+            "base_replenish_need_qty",
+            "lead_adjusted_replenish_need_qty",
+            "lead_time_lost_sales_qty",
+        ]
+        retained = ["lead_time_stockout_flag", "lead_time_stockout_days"]
+        conn = FakeConnection(
+            [
+                {"column_name": name, "column_comment": ""}
+                for name in removed + retained
+            ]
+        )
+
+        names = [column["name"] for column in service._export_columns(conn)]
+
+        for name in removed:
+            self.assertNotIn(name, names)
+        self.assertEqual(retained, names)
+
     def test_serialize_item_exposes_follow_status(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)
 
@@ -361,21 +392,16 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
         self.assertNotIn("then %(level_followed_block)s", level_expr)
         self.assertNotIn("replenish_block_reason = %(level_followed_block)s then 7", sort_expr)
 
-    def test_asin_merge_zero_qty_displays_as_sufficient_layer(self):
+    def test_asin_merge_rows_keep_group_layer_when_replenishment_qty_is_zero(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)
 
-        condition = service._asin_merge_zero_qty_display_condition()
         level_expr = service._display_level_expr()
         sort_expr = service._display_level_sort_expr()
 
-        self.assertIn("asin_merge_flag", condition)
-        self.assertIn("replenish_qty", condition)
-        self.assertIn(
-            "not (coalesce(replenish_block_reason, '') = %(level_followed_block)s)",
-            condition,
-        )
-        self.assertIn("then %(level_sufficient)s", level_expr)
-        self.assertIn("then 4", sort_expr)
+        self.assertNotIn("then %(level_sufficient)s", level_expr)
+        self.assertNotIn("then 4 when", sort_expr)
+        self.assertIn("else support_replenish_level end", level_expr)
+        self.assertIn("else support_replenish_level_sort end", sort_expr)
         self.assertEqual(
             {
                 "level_below_moq": LEVEL_BELOW_MOQ,
@@ -454,8 +480,9 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
 
         sql = captured["sql"]
         self.assertIn("case when p.seller_sku_adj is null then null else case when", sql)
-        self.assertIn("when coalesce(c.asin_merge_flag, 0) = 1", sql)
-        self.assertIn("when coalesce(p.asin_merge_flag, 0) = 1", sql)
+        self.assertNotIn("then %(level_sufficient)s", sql)
+        self.assertIn("else c.support_replenish_level end as cur_level", sql)
+        self.assertIn("else p.support_replenish_level end as prev_level", sql)
         self.assertNotIn("p.support_replenish_level as prev_level", sql)
         self.assertNotIn("c.support_replenish_level as cur_level", sql)
         self.assertNotIn("p.support_replenish_level_sort as prev_level_sort", sql)
@@ -540,6 +567,123 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
     def test_calculated_box_and_cost_have_export_labels(self):
         self.assertEqual("计算补货箱数", REPLENISHMENT_COLUMN_LABELS["calculated_replenish_box_qty"])
         self.assertEqual("计算补货货值", REPLENISHMENT_COLUMN_LABELS["calculated_replenish_cost"])
+
+    def test_purchase_lead_time_fields_have_export_labels(self):
+        expected_labels = {
+            "purchase_lead_days_raw": "采购交期原始天数",
+            "effective_purchase_lead_days": "有效采购交期天数",
+            "purchase_lead_status": "采购交期状态",
+            "arrival_inventory_support_days": "到货时库存可支撑天数",
+            "arrival_inventory_qty": "到货时预计库存",
+            "lead_time_demand_qty": "采购交期需求量",
+            "base_replenish_need_qty": "原补货需求量",
+            "lead_adjusted_replenish_need_qty": "交期调整后补货需求量",
+            "lead_time_stockout_flag": "交期内断货标记",
+            "lead_time_stockout_days": "交期内预计断货天数",
+            "lead_time_lost_sales_qty": "交期内预计损失销量",
+        }
+
+        for field, label in expected_labels.items():
+            self.assertEqual(label, REPLENISHMENT_COLUMN_LABELS[field])
+
+    def test_items_query_selects_purchase_lead_time_detail_fields(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+        conn = RecordingConnection([])
+
+        service._items(
+            conn,
+            filters="cur_date = %(snapshot_date)s",
+            params={"snapshot_date": "2026-08-03"},
+            sort_field="support_days",
+            sort_dir="asc",
+            page=1,
+            page_size=20,
+        )
+
+        sql = conn.queries[1]
+        for field in (
+            "effective_purchase_lead_days",
+            "purchase_lead_status",
+            "arrival_inventory_support_days",
+            "arrival_inventory_qty",
+            "lead_time_demand_qty",
+            "lead_time_stockout_flag",
+            "lead_time_stockout_days",
+        ):
+            self.assertIn(field, sql)
+
+    def test_items_query_displays_and_sorts_support_days_using_arrival_scope(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+        conn = RecordingConnection([])
+
+        service._items(
+            conn,
+            filters="cur_date = %(snapshot_date)s",
+            params={"snapshot_date": "2026-08-03"},
+            sort_field="support_days",
+            sort_dir="asc",
+            page=1,
+            page_size=20,
+        )
+
+        sql = " ".join(conn.queries[1].split())
+        display_support_days = (
+            "case when r.arrival_inventory_support_days is not null "
+            "and r.effective_purchase_lead_days is not null "
+            "then r.arrival_inventory_support_days + r.effective_purchase_lead_days "
+            "else r.inventory_support_days end"
+        )
+        self.assertIn(f"{display_support_days} as inventory_support_days", sql)
+        self.assertIn(f"order by {display_support_days} asc", sql)
+
+    def test_serialize_item_exposes_purchase_lead_time_details_and_keeps_negative_values(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+
+        item = service._serialize_item(
+            {
+                "cur_date": None,
+                "daily_avg_sales": 6.6,
+                "inventory_support_days": 7.4,
+                "effective_purchase_lead_days": 10,
+                "purchase_lead_status": "configured",
+                "arrival_inventory_support_days": -2.6,
+                "arrival_inventory_qty": -17.16,
+                "lead_time_demand_qty": 66,
+                "lead_time_stockout_flag": 1,
+                "lead_time_stockout_days": 2.6,
+            }
+        )
+
+        self.assertEqual(10, item["effective_purchase_lead_days"])
+        self.assertEqual(-2.6, item["arrival_inventory_support_days"])
+        self.assertEqual(-17.16, item["arrival_inventory_qty"])
+        self.assertEqual(66, item["lead_time_demand_qty"])
+        self.assertEqual(1, item["lead_time_stockout_flag"])
+        self.assertEqual(2.6, item["lead_time_stockout_days"])
+        self.assertEqual("configured", item["purchase_lead_status"])
+
+    def test_serialize_item_keeps_missing_support_and_lead_time_values_nullable(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+
+        item = service._serialize_item(
+            {
+                "cur_date": None,
+                "daily_avg_sales": 1,
+                "inventory_support_days": None,
+                "effective_purchase_lead_days": None,
+                "arrival_inventory_support_days": None,
+                "arrival_inventory_qty": None,
+                "lead_time_demand_qty": None,
+                "lead_time_stockout_days": None,
+            }
+        )
+
+        self.assertIsNone(item["support_days"])
+        self.assertIsNone(item["effective_purchase_lead_days"])
+        self.assertIsNone(item["arrival_inventory_support_days"])
+        self.assertIsNone(item["arrival_inventory_qty"])
+        self.assertIsNone(item["lead_time_demand_qty"])
+        self.assertIsNone(item["lead_time_stockout_days"])
 
     def test_items_query_uses_detail_values_without_changing_summary_values(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)
