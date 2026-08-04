@@ -127,6 +127,37 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
         self.assertEqual("是否被跟卖", labels["followed_flag"])
         self.assertEqual("订单原始毛利率", labels["final_profit_rate"])
 
+    def test_export_columns_removes_redundant_calculation_fields_but_keeps_stockout_risk(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+        service.database = "etl_datasync_test"
+        removed = [
+            "calculated_replenish_qty",
+            "calculated_replenish_box_qty",
+            "calculated_replenish_cost",
+            "executable_replenish_qty",
+            "executable_replenish_box_qty",
+            "executable_replenish_cost",
+            "replenish_dur_calc_stocko_qty",
+            "replenish_need_qty",
+            "replenish_trigger_qty",
+            "base_replenish_need_qty",
+            "lead_adjusted_replenish_need_qty",
+            "lead_time_lost_sales_qty",
+        ]
+        retained = ["lead_time_stockout_flag", "lead_time_stockout_days"]
+        conn = FakeConnection(
+            [
+                {"column_name": name, "column_comment": ""}
+                for name in removed + retained
+            ]
+        )
+
+        names = [column["name"] for column in service._export_columns(conn)]
+
+        for name in removed:
+            self.assertNotIn(name, names)
+        self.assertEqual(retained, names)
+
     def test_serialize_item_exposes_follow_status(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)
 
