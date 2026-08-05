@@ -82,7 +82,9 @@
       "labelHubTable", "labelHubTableSummary", "labelHubTableView", "labelHubPageSize", "labelHubPagination", "labelHubHint", "labelHubDrawer",
       "labelHubDetailView", "labelHubDetailIdentifiers", "labelHubIdentifierExpand", "labelHubIdentifierPopover", "labelHubIdentifierBatchInput",
       "labelHubIdentifierBatchClear", "labelHubIdentifierBatchClose", "labelHubIdentifierBatchSearch",
-      "labelHubDetailLabels", "labelHubDetailCountries", "labelHubDetailCountryCategories",
+      "labelHubDetailLabels", "labelHubDetailLabelTrigger", "labelHubDetailLabelSummary", "labelHubDetailLabelPanel",
+      "labelHubDetailLabelSearch", "labelHubDetailLabelGroups", "labelHubDetailLabelEmpty",
+      "labelHubDetailCountries", "labelHubDetailCountryCategories",
       "labelHubDetailStores", "labelHubDetailProblems", "labelHubDetailProblemMode", "labelHubDetailSalesRoles", "labelHubDetailRoleReasons",
       "labelHubDetailDailyBands", "labelHubDetailMarginBands", "labelHubDetailRankingBands", "labelHubDetailApply", "labelHubDetailClear", "labelHubIdentifierResolution",
       "labelHubDetailCountriesField", "labelHubCountryFilterHint", "labelHubDetailRankingField", "labelHubRankingFilterHint", "labelHubDetailToolbar", "labelHubDetailAdvanced",
@@ -153,6 +155,22 @@
       renderDetails();
     });
     elements.labelHubDetailSalesRoles.addEventListener("change", refreshRoleReasonControl);
+    elements.labelHubDetailLabelTrigger.addEventListener("click", function (event) {
+      event.stopPropagation();
+      toggleDetailLabelPanel();
+    });
+    elements.labelHubDetailLabelSearch.addEventListener("input", function () {
+      renderDetailLabelPanel(this.value);
+    });
+    elements.labelHubDetailLabelGroups.addEventListener("change", function (event) {
+      var checkbox = event.target.closest("[data-detail-label-value]");
+      if (!checkbox) return;
+      var option = Array.from(elements.labelHubDetailLabels.options).find(function (item) {
+        return String(item.value) === String(checkbox.dataset.detailLabelValue);
+      });
+      if (option) option.selected = checkbox.checked;
+      updateDetailLabelTrigger();
+    });
     elements.labelHubRoleReasonTrigger.addEventListener("click", function (event) {
       event.stopPropagation();
       toggleRoleReasonPanel();
@@ -168,10 +186,14 @@
       updateRoleReasonTrigger();
     });
     document.addEventListener("click", function (event) {
+      if (!event.target.closest(".label-hub-detail-label-control")) closeDetailLabelPanel();
       if (!event.target.closest(".label-hub-role-reason-control")) closeRoleReasonPanel();
     });
     document.addEventListener("keydown", function (event) {
-      if (event.key === "Escape") closeRoleReasonPanel();
+      if (event.key === "Escape") {
+        closeDetailLabelPanel();
+        closeRoleReasonPanel();
+      }
     });
     elements.labelHubDetailApply.addEventListener("click", function () { collectDetailFilters(); detailState.page = 1; renderDetailActiveFilters(); renderDetails(); });
     elements.labelHubDetailClear.addEventListener("click", clearDetailFilters);
@@ -477,12 +499,91 @@
     }).join("");
   }
 
-  function detailLabelOptions() {
+  function detailLabelGroups() {
     return (meta.categories || []).concat(meta.excluded_categories || []).map(function (category) {
-      return (category.children || []).map(function (child) {
-        return { key: category.id + ":" + child.id, label: category.label + " · " + child.label };
+      return {
+        id: Number(category.id),
+        label: String(category.label || ""),
+        children: (category.children || []).map(function (child) {
+          return {
+            value: category.id + ":" + child.id,
+            label: String(child.label || "")
+          };
+        })
+      };
+    }).filter(function (group) { return group.children.length > 0; });
+  }
+
+  function detailLabelOptions() {
+    return detailLabelGroups().reduce(function (all, group) {
+      return all.concat(group.children.map(function (child) {
+        return { key: child.value, label: group.label + " · " + child.label };
+      }));
+    }, []);
+  }
+
+  function renderDetailLabelPanel(searchText) {
+    var query = String(searchText || "").trim().toLocaleLowerCase();
+    var selected = {};
+    selectedValues(elements.labelHubDetailLabels).forEach(function (value) { selected[String(value)] = true; });
+    var groups = detailLabelGroups();
+    var html = [];
+    groups.forEach(function (group) {
+      var groupMatches = !query || group.label.toLocaleLowerCase().indexOf(query) >= 0;
+      var children = group.children.filter(function (child) {
+        return groupMatches || child.label.toLocaleLowerCase().indexOf(query) >= 0;
       });
-    }).reduce(function (all, items) { return all.concat(items); }, []);
+      if (!children.length) return;
+      html.push('<section class="label-hub-detail-label-section"><h4>' + app.escapeHtml(group.label) + "</h4>");
+      html.push('<div class="label-hub-detail-label-options">');
+      children.forEach(function (child) {
+        var checked = selected[String(child.value)] ? " checked" : "";
+        html.push('<label class="label-hub-detail-label-option" title="' + app.escapeHtml(child.label) + '">');
+        html.push('<input type="checkbox" data-detail-label-value="' + app.escapeHtml(child.value) + '"' + checked + ">");
+        html.push("<span>" + app.escapeHtml(child.label) + "</span></label>");
+      });
+      html.push("</div></section>");
+    });
+    elements.labelHubDetailLabelGroups.innerHTML = html.join("");
+    elements.labelHubDetailLabelEmpty.textContent = groups.length ? "未找到匹配标签" : "暂无可用标签";
+    elements.labelHubDetailLabelEmpty.hidden = html.length > 0;
+  }
+
+  function updateDetailLabelTrigger() {
+    var selected = selectedValues(elements.labelHubDetailLabels);
+    var label = "全部标签";
+    if (selected.length === 1) label = selectedOptionLabel(elements.labelHubDetailLabels, selected[0]).split(" · ").pop();
+    if (selected.length > 1) label = "已选 " + selected.length + " 项";
+    elements.labelHubDetailLabelSummary.textContent = label;
+    elements.labelHubDetailLabelTrigger.classList.toggle("has-value", selected.length > 0);
+  }
+
+  function syncDetailLabelControl() {
+    elements.labelHubDetailLabelSearch.value = "";
+    renderDetailLabelPanel("");
+    updateDetailLabelTrigger();
+  }
+
+  function closeDetailLabelPanel() {
+    if (!elements.labelHubDetailLabelPanel || elements.labelHubDetailLabelPanel.hidden) return;
+    elements.labelHubDetailLabelPanel.hidden = true;
+    elements.labelHubDetailLabelTrigger.classList.remove("is-open");
+    elements.labelHubDetailLabelTrigger.setAttribute("aria-expanded", "false");
+    elements.labelHubDetailLabelSearch.value = "";
+    renderDetailLabelPanel("");
+  }
+
+  function toggleDetailLabelPanel() {
+    var willOpen = elements.labelHubDetailLabelPanel.hidden;
+    if (!willOpen) {
+      closeDetailLabelPanel();
+      return;
+    }
+    closeRoleReasonPanel();
+    elements.labelHubDetailLabelPanel.hidden = false;
+    elements.labelHubDetailLabelTrigger.classList.add("is-open");
+    elements.labelHubDetailLabelTrigger.setAttribute("aria-expanded", "true");
+    window.setTimeout(function () { elements.labelHubDetailLabelSearch.focus(); }, 0);
   }
 
   var ROLE_REASON_GROUPS = [
@@ -598,6 +699,7 @@
       closeRoleReasonPanel();
       return;
     }
+    closeDetailLabelPanel();
     elements.labelHubRoleReasonPanel.hidden = false;
     elements.labelHubRoleReasonTrigger.classList.add("is-open");
     elements.labelHubRoleReasonTrigger.setAttribute("aria-expanded", "true");
@@ -629,6 +731,7 @@
     reconcileRoleReasonSelections();
     elements.labelHubDetailRoleReasons.innerHTML = roleReasonOptionList();
     syncDetailNativeSelections();
+    syncDetailLabelControl();
     initDetailFilterSelects();
     syncDetailViewControls();
     renderRoleReasonPanel();
@@ -1053,6 +1156,8 @@
     elements.labelHubDetailProblemMode.value = "any";
     destroyDetailFilterSelects();
     initDetailFilterSelects();
+    syncDetailLabelControl();
+    closeDetailLabelPanel();
     renderRoleReasonPanel();
     closeRoleReasonPanel();
     renderDetailActiveFilters();
@@ -1070,7 +1175,7 @@
 
   function detailFilterSelects() {
     return [
-      elements.labelHubDetailLabels, elements.labelHubDetailCountryCategories, elements.labelHubDetailStores,
+      elements.labelHubDetailCountryCategories, elements.labelHubDetailStores,
       elements.labelHubDetailCountries, elements.labelHubDetailSalesRoles,
       elements.labelHubDetailDailyBands, elements.labelHubDetailMarginBands,
       elements.labelHubDetailRankingBands

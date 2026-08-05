@@ -165,7 +165,23 @@
             </div>
           </div>
         </div>
-        <label class="label-hub-detail-filter-control"><span>标签</span><select id="labelHubDetailLabels" multiple data-placeholder="全部标签" aria-label="明细标签多选"></select></label>
+        <div class="label-hub-detail-filter-control label-hub-detail-label-control">
+          <span>标签</span>
+          <button id="labelHubDetailLabelTrigger" class="label-hub-detail-label-trigger" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="labelHubDetailLabelPanel">
+            <span id="labelHubDetailLabelSummary">全部标签</span><i aria-hidden="true"></i>
+          </button>
+          <div id="labelHubDetailLabelPanel" class="label-hub-detail-label-panel" hidden>
+            <div class="label-hub-detail-label-search-wrap">
+              <input id="labelHubDetailLabelSearch" type="search" placeholder="搜索标签名称" autocomplete="off">
+            </div>
+            <div class="label-hub-detail-label-panel-head">
+              <strong>全部标签 · MSKU维度</strong><span>支持跨分类多选</span>
+            </div>
+            <div id="labelHubDetailLabelGroups" class="label-hub-detail-label-groups"></div>
+            <p id="labelHubDetailLabelEmpty" class="label-hub-detail-label-empty" hidden>未找到匹配标签</p>
+          </div>
+          <select id="labelHubDetailLabels" multiple hidden data-placeholder="全部标签" aria-label="明细标签多选"></select>
+        </div>
         <label class="label-hub-detail-filter-control"><span>国家类别</span><select id="labelHubDetailCountryCategories" multiple data-placeholder="全部类别"></select></label>
         <label class="label-hub-detail-filter-control"><span>店铺</span><select id="labelHubDetailStores" multiple data-placeholder="全部店铺"></select></label>
         <label id="labelHubDetailCountriesField" class="label-hub-detail-filter-control"><span>国家</span><select id="labelHubDetailCountries" multiple data-placeholder="全部国家"></select><small id="labelHubCountryFilterHint">仅国家明细视图生效</small></label>
@@ -235,5 +251,5 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', path='vendor/slim-select/slimselect.js') }}?v=4.0.5"></script>
-<script src="{{ url_for('static', path='js/label_hub.js') }}?v=20260731rolereason2"></script>
+<script src="{{ url_for('static', path='js/label_hub.js') }}?v=20260805labelgroups1"></script>
 {% endblock %}

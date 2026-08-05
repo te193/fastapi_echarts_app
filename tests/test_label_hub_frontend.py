@@ -129,6 +129,48 @@ def test_detail_role_reason_filter_replaces_sales_trend_and_follows_detail_scope
     assert "labelHubDetailRoleReasons" not in detail_selects
 
 
+def test_detail_labels_use_searchable_grouped_checkbox_panel():
+    template = (ROOT / "app" / "templates" / "label_hub.html").read_text(encoding="utf-8")
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+
+    for element_id in (
+        "labelHubDetailLabelTrigger",
+        "labelHubDetailLabelSummary",
+        "labelHubDetailLabelPanel",
+        "labelHubDetailLabelSearch",
+        "labelHubDetailLabelGroups",
+        "labelHubDetailLabelEmpty",
+    ):
+        assert f'id="{element_id}"' in template
+    assert 'id="labelHubDetailLabels" multiple hidden' in template
+    for function_name in (
+        "detailLabelGroups",
+        "renderDetailLabelPanel",
+        "updateDetailLabelTrigger",
+        "toggleDetailLabelPanel",
+        "closeDetailLabelPanel",
+        "syncDetailLabelControl",
+    ):
+        assert f"function {function_name}" in script
+    assert "data-detail-label-value" in script
+    assert "未找到匹配标签" in template
+    assert "暂无可用标签" in script
+    assert ".label-hub-detail-label-panel" in styles
+    assert ".label-hub-detail-label-options" in styles
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in styles
+
+    detail_selects = script.split("function detailFilterSelects()", 1)[1].split(
+        "function destroyDetailFilterSelects()", 1
+    )[0]
+    assert "labelHubDetailLabels" not in detail_selects
+    assert "detailState.detail_conditions = serializeDetailConditions(selectedValues(elements.labelHubDetailLabels));" in script
+    role_reason_toggle = script.split("function toggleRoleReasonPanel()", 1)[1].split(
+        "function refreshRoleReasonControl()", 1
+    )[0]
+    assert "closeDetailLabelPanel();" in role_reason_toggle
+
+
 def test_detail_filters_use_compact_toolbar_and_collapsed_advanced_panel():
     template = (ROOT / "app" / "templates" / "label_hub.html").read_text(encoding="utf-8")
     script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
@@ -630,7 +672,7 @@ def test_remote_breakdown_nodes_have_enough_distinct_colors_for_long_status_list
     assert len(colors) >= 12
     assert len(set(colors)) == len(colors)
     assert "remoteBucketColor(panel, bucket)" in script
-    assert "?v=20260731rolereason2" in template
+    assert "?v=20260805labelgroups1" in template
 
 
 def test_label_hub_issue_overview_shows_selected_group_problem_counts():
@@ -791,7 +833,7 @@ def test_current_category_detail_uses_period_scoped_distribution():
     assert "distributionById" in script
     assert 'cache: "no-store"' in common
     assert "js/common.js') }}?v=20260715cache2" in base
-    assert "js/label_hub.js') }}?v=20260731rolereason2" in template
+    assert "js/label_hub.js') }}?v=20260805labelgroups1" in template
 
 
 def test_country_detail_overview_matches_label_hub_information_structure():
