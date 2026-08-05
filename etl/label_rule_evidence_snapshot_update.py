@@ -14,7 +14,7 @@ LABEL_DETAIL_TABLE = "dws_datasync.dws_标签详情表"
 
 
 CREATE_TABLE_SQL = """
-create table if not exists etl_datasync.dashboard_label_rule_evidence_snapshot (
+create table if not exists etl_datasync_test.dashboard_label_rule_evidence_snapshot (
     id bigint unsigned not null auto_increment,
     label_date date not null comment '远端标签事实日期',
     country_category varchar(64) not null,
@@ -50,7 +50,7 @@ select
     sum(coalesce(sales_qty, 0)) as sales_qty,
     sum(coalesce(sales_amount, 0)) as tag_sales_amount,
     sum(coalesce(raw_order_gross_profit, 0)) as tag_gross_profit
-from etl_datasync.dashboard_product_performance_daily
+from etl_datasync_test.dashboard_product_performance_daily
 where dt_date between %(period_start)s and %(period_end)s
   and seller_sku_adj is not null and seller_sku_adj != ''
   and seller_name_new is not null and seller_name_new != ''
@@ -61,7 +61,7 @@ group by country_category, seller_name_new, seller_sku_adj;
 
 
 INSERT_SQL = """
-insert into etl_datasync.dashboard_label_rule_evidence_snapshot (
+insert into etl_datasync_test.dashboard_label_rule_evidence_snapshot (
     label_date, country_category, store, msku, parent_label_id, label_period,
     period_start, period_end, sales_qty, daily_sales, tag_sales_amount,
     tag_gross_profit, tag_gross_margin, computed_sub_label_id,
@@ -200,7 +200,7 @@ def build_rows(target_conn, schemas, label_dates: tuple[date, ...], periods: tup
 
 
 def refresh(target_conn, schemas, rows: list[dict], label_dates: tuple[date, ...]) -> int:
-    table = render_sql("etl_datasync.dashboard_label_rule_evidence_snapshot", schemas)
+    table = render_sql("etl_datasync_test.dashboard_label_rule_evidence_snapshot", schemas)
     status_rank = {"matched": 0, "mismatch": 1, "missing": 2}
     deduplicated: dict[tuple, dict] = {}
     for row in rows:

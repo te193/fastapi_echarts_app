@@ -528,7 +528,7 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("followed_by_count", sql)
         self.assertIn("followed_by_links", sql)
         self.assertIn("from tmp_prod_perf_sku_asin_metrics origin", sql)
-        self.assertIn("inner join etl_datasync.dashboard_replenishment_listing_basic_sync follower", sql)
+        self.assertIn("inner join etl_datasync_test.dashboard_replenishment_listing_basic_sync follower", sql)
         self.assertIn("follower.max_asin = origin.asin", sql)
         self.assertIn("follower.seller_sku", sql)
         self.assertIn("case when followed_by_count > 0 then 1 else 0 end as followed_flag", sql)
@@ -541,17 +541,17 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
 
         self.assertIn("tmp_pur_plan_follow_listing_asins", sql)
         self.assertIn("insert into tmp_pur_plan_candidate_keys", sql)
-        self.assertIn("from etl_datasync.dashboard_replenishment_listing_basic_sync listing", sql)
+        self.assertIn("from etl_datasync_test.dashboard_replenishment_listing_basic_sync listing", sql)
         self.assertIn("inner join tmp_pur_plan_follow_listing_asins follow_asin", sql)
         self.assertIn("on listing.country_category = follow_asin.country_category", sql)
         self.assertIn("and listing.max_asin = follow_asin.max_asin", sql)
         self.assertIn("left join tmp_pur_plan_candidate_keys existing", sql)
-        self.assertIn("left join etl_datasync.dashboard_replenishment_self_asin_sync listing_self", sql)
+        self.assertIn("left join etl_datasync_test.dashboard_replenishment_self_asin_sync listing_self", sql)
         self.assertIn("and listing.max_asin = listing_self.asin", sql)
         self.assertIn("where existing.seller_sku_adj is null", sql)
         self.assertIn("and listing_self.asin is null", sql)
         self.assertIn("and listing.seller_sku not like 'amzn.%%'", sql)
-        self.assertNotIn("from etl_datasync.dashboard_replenishment_listing_basic_sync listing\nwhere", sql)
+        self.assertNotIn("from etl_datasync_test.dashboard_replenishment_listing_basic_sync listing\nwhere", sql)
 
     def test_replenishment_result_merges_follow_groups_by_asin_once(self):
         sql = replenishment_update.REPLENISHMENT_RESULT_SQL
@@ -681,7 +681,7 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
     def test_asin_purchase_fields_rank_origin_before_follow_link(self):
         sql = " ".join(replenishment_update.REPLENISHMENT_RESULT_SQL.split())
         purchase_sql = sql.split("create temporary table tmp_asin_merge_purchase_fields as", 1)[1]
-        purchase_sql = purchase_sql.split("insert into etl_datasync.dashboard_pur_plan_replenish_data", 1)[0]
+        purchase_sql = purchase_sql.split("insert into etl_datasync_test.dashboard_pur_plan_replenish_data", 1)[0]
 
         followed_rank = "case when coalesce(calc.followed_flag, 0) = 1 then 0 else 1 end"
         own_rank = "case when coalesce(calc.fllow_flag, 1) = 1 then 0 else 1 end"
@@ -693,7 +693,7 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
     def test_asin_purchase_fields_do_not_turn_zero_box_into_inherited_box(self):
         sql = " ".join(replenishment_update.REPLENISHMENT_RESULT_SQL.split())
         purchase_sql = sql.split("create temporary table tmp_asin_merge_purchase_fields as", 1)[1]
-        purchase_sql = purchase_sql.split("insert into etl_datasync.dashboard_pur_plan_replenish_data", 1)[0]
+        purchase_sql = purchase_sql.split("insert into etl_datasync_test.dashboard_pur_plan_replenish_data", 1)[0]
 
         self.assertIn("nullif(ranked.max_cg_box_pcs, 0) as effective_max_cg_box_pcs", purchase_sql)
         self.assertIn("ranked.max_cg_price as effective_max_cg_price", purchase_sql)
@@ -839,19 +839,19 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
 
     def test_render_replenishment_sql_maps_pur_plan_tables_to_target_schema(self):
         schemas = replenishment_update.SchemaConfig(
-            target_schema="etl_datasync_test",
+            target_schema="etl_datasync_replenishment_test",
             etl_source_schema="etl_datasync",
             dwd_source_schema="dwd_datasync",
             pricing_source_schema="temporary_dwd",
         )
 
         rendered = replenishment_update.render_replenishment_sql(
-            "create table if not exists etl_datasync.pur_plan_prod_perf_salable_days_stat (id int);",
+            "create table if not exists etl_datasync_test.pur_plan_prod_perf_salable_days_stat (id int);",
             schemas,
         )
 
-        self.assertIn("etl_datasync_test.pur_plan_prod_perf_salable_days_stat", rendered)
-        self.assertNotIn("etl_datasync.pur_plan_prod_perf_salable_days_stat", rendered)
+        self.assertIn("etl_datasync_replenishment_test.pur_plan_prod_perf_salable_days_stat", rendered)
+        self.assertNotIn("etl_datasync_test.pur_plan_prod_perf_salable_days_stat", rendered)
 
     def test_apply_database_ini_env_skips_placeholder_source_values(self):
         with tempfile.TemporaryDirectory() as temp_dir:

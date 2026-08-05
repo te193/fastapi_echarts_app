@@ -176,7 +176,19 @@ def build_schema_config() -> SchemaConfig:
 
 def render_sql(sql: str, schemas: SchemaConfig) -> str:
     rendered = sql
-    rendered = rendered.replace("create schema if not exists etl_datasync", f"create schema if not exists {schemas.target_schema}")
+    canonical_create_schema = "create schema if not exists etl_datasync_test"
+    legacy_create_schema = "create schema if not exists etl_datasync"
+    if canonical_create_schema in rendered:
+        rendered = rendered.replace(
+            canonical_create_schema,
+            f"create schema if not exists {schemas.target_schema}",
+        )
+    else:
+        rendered = rendered.replace(
+            legacy_create_schema,
+            f"create schema if not exists {schemas.target_schema}",
+        )
+    rendered = rendered.replace("etl_datasync_test.dashboard_", f"{schemas.target_schema}.dashboard_")
     rendered = rendered.replace("etl_datasync.dashboard_", f"{schemas.target_schema}.dashboard_")
     rendered = rendered.replace("etl_datasync.etl_dispose_", f"{schemas.etl_source_schema}.etl_dispose_")
     rendered = rendered.replace("dwd_datasync.", f"{schemas.dwd_source_schema}.")
@@ -185,10 +197,10 @@ def render_sql(sql: str, schemas: SchemaConfig) -> str:
     return rendered
 
 
-CREATE_SCHEMA_SQL = "create schema if not exists etl_datasync default character set utf8mb4;"
+CREATE_SCHEMA_SQL = "create schema if not exists etl_datasync_test default character set utf8mb4;"
 
 CREATE_LOG_TABLE_SQL = """
-create table if not exists etl_datasync.dashboard_etl_task_log (
+create table if not exists etl_datasync_test.dashboard_etl_task_log (
     id bigint unsigned not null auto_increment primary key,
     task_name varchar(128) not null,
     biz_date date null,
@@ -207,7 +219,7 @@ create table if not exists etl_datasync.dashboard_etl_task_log (
 """
 
 CREATE_PRODUCT_DAILY_SQL = """
-create table if not exists etl_datasync.dashboard_product_performance_daily (
+create table if not exists etl_datasync_test.dashboard_product_performance_daily (
     dt_year int not null,
     dt_week int not null,
     dt_month int not null,
@@ -249,7 +261,7 @@ create table if not exists etl_datasync.dashboard_product_performance_daily (
 """
 
 CREATE_RESTOCK_SQL = """
-create table if not exists etl_datasync.dashboard_restock_daily_snapshot (
+create table if not exists etl_datasync_test.dashboard_restock_daily_snapshot (
     snapshot_date date not null,
     item_key varchar(512) not null,
     country_category varchar(64) not null,
@@ -272,7 +284,7 @@ create table if not exists etl_datasync.dashboard_restock_daily_snapshot (
 """
 
 CREATE_INVENTORY_SQL = """
-create table if not exists etl_datasync.dashboard_inventory_daily_snapshot (
+create table if not exists etl_datasync_test.dashboard_inventory_daily_snapshot (
     snapshot_date date not null,
     item_key varchar(512) not null,
     country_category varchar(64) not null,
@@ -302,7 +314,7 @@ create table if not exists etl_datasync.dashboard_inventory_daily_snapshot (
 """
 
 CREATE_INVENTORY_WEEKLY_SQL = """
-create table if not exists etl_datasync.dashboard_inventory_weekly_snapshot (
+create table if not exists etl_datasync_test.dashboard_inventory_weekly_snapshot (
     snapshot_date date not null,
     week_start date not null,
     week_end date not null,
@@ -329,7 +341,7 @@ create table if not exists etl_datasync.dashboard_inventory_weekly_snapshot (
 """
 
 CREATE_LISTING_PRICE_SQL = """
-create table if not exists etl_datasync.dashboard_listing_price_daily_snapshot (
+create table if not exists etl_datasync_test.dashboard_listing_price_daily_snapshot (
     snapshot_date date not null,
     item_key varchar(512) not null,
     seller_name_new varchar(128) not null,
@@ -350,7 +362,7 @@ create table if not exists etl_datasync.dashboard_listing_price_daily_snapshot (
 """
 
 CREATE_LIMIT_PRICE_SQL = """
-create table if not exists etl_datasync.dashboard_limit_price_daily_snapshot (
+create table if not exists etl_datasync_test.dashboard_limit_price_daily_snapshot (
     snapshot_date date not null,
     item_key varchar(512) not null,
     local_sku varchar(128) null,
@@ -382,7 +394,7 @@ create table if not exists etl_datasync.dashboard_limit_price_daily_snapshot (
 """
 
 CREATE_PERIOD_SNAPSHOT_SQL = """
-create table if not exists etl_datasync.dashboard_product_period_snapshot (
+create table if not exists etl_datasync_test.dashboard_product_period_snapshot (
     snapshot_date date not null,
     period_start date not null,
     period_end date not null,
@@ -454,15 +466,15 @@ create table if not exists etl_datasync.dashboard_product_period_snapshot (
 """
 
 PERIOD_PRESET_TABLES = {
-    "last_7_days": "etl_datasync.dashboard_product_period_7d_snapshot",
-    "last_14_days": "etl_datasync.dashboard_product_period_14d_snapshot",
-    "last_30_days": "etl_datasync.dashboard_product_period_30d_snapshot",
-    "last_90_days": "etl_datasync.dashboard_product_period_90d_snapshot",
-    "last_month": "etl_datasync.dashboard_product_period_last_month_snapshot",
+    "last_7_days": "etl_datasync_test.dashboard_product_period_7d_snapshot",
+    "last_14_days": "etl_datasync_test.dashboard_product_period_14d_snapshot",
+    "last_30_days": "etl_datasync_test.dashboard_product_period_30d_snapshot",
+    "last_90_days": "etl_datasync_test.dashboard_product_period_90d_snapshot",
+    "last_month": "etl_datasync_test.dashboard_product_period_last_month_snapshot",
 }
 
 CREATE_MATRIX_PERIOD_SNAPSHOT_SQL = """
-create table if not exists etl_datasync.dashboard_product_matrix_period_snapshot (
+create table if not exists etl_datasync_test.dashboard_product_matrix_period_snapshot (
     snapshot_date date not null,
     period_code varchar(32) not null,
     period_start date not null,
@@ -488,7 +500,7 @@ create table if not exists etl_datasync.dashboard_product_matrix_period_snapshot
 """
 
 CREATE_ALERT_COMPARISON_SNAPSHOT_SQL = """
-create table if not exists etl_datasync.dashboard_alert_comparison_snapshot (
+create table if not exists etl_datasync_test.dashboard_alert_comparison_snapshot (
     snapshot_date date not null,
     comparison_code varchar(64) not null,
     comparison_type varchar(32) not null,
@@ -552,7 +564,7 @@ create table if not exists etl_datasync.dashboard_alert_comparison_snapshot (
 """
 
 CREATE_ALERT_COMPARISON_SUMMARY_SQL = """
-create table if not exists etl_datasync.dashboard_alert_comparison_summary (
+create table if not exists etl_datasync_test.dashboard_alert_comparison_summary (
     snapshot_date date not null,
     comparison_code varchar(64) not null,
     country varchar(64) not null default '__ALL__',
@@ -575,7 +587,7 @@ create table if not exists etl_datasync.dashboard_alert_comparison_summary (
 """
 
 CREATE_OPPORTUNITY_COMPARISON_SNAPSHOT_SQL = """
-create table if not exists etl_datasync.dashboard_opportunity_comparison_snapshot (
+create table if not exists etl_datasync_test.dashboard_opportunity_comparison_snapshot (
     snapshot_date date not null,
     comparison_code varchar(64) not null,
     comparison_mode varchar(32) not null,
@@ -633,7 +645,7 @@ create table if not exists etl_datasync.dashboard_opportunity_comparison_snapsho
 """
 
 CREATE_OPPORTUNITY_COMPARISON_SUMMARY_SQL = """
-create table if not exists etl_datasync.dashboard_opportunity_comparison_summary (
+create table if not exists etl_datasync_test.dashboard_opportunity_comparison_summary (
     snapshot_date date not null,
     comparison_code varchar(64) not null,
     country varchar(64) not null default '__ALL__',
@@ -652,7 +664,7 @@ create table if not exists etl_datasync.dashboard_opportunity_comparison_summary
 """
 
 CREATE_ALERT_MONTHLY_METRIC_SNAPSHOT_SQL = """
-create table if not exists etl_datasync.dashboard_alert_monthly_metric_snapshot (
+create table if not exists etl_datasync_test.dashboard_alert_monthly_metric_snapshot (
     snapshot_date date not null,
     month_code char(7) not null,
     month_start date not null,
@@ -691,7 +703,7 @@ create table if not exists etl_datasync.dashboard_alert_monthly_metric_snapshot 
 """
 
 CREATE_ANNUAL_GOAL_SNAPSHOT_SQL = """
-create table if not exists etl_datasync.dashboard_annual_goal_snapshot (
+create table if not exists etl_datasync_test.dashboard_annual_goal_snapshot (
     snapshot_date date not null,
     goal_year int not null,
     year_start date not null,
@@ -714,7 +726,7 @@ create table if not exists etl_datasync.dashboard_annual_goal_snapshot (
 """
 
 CREATE_MONTHLY_GOAL_SQL = """
-create table if not exists etl_datasync.dashboard_monthly_goal (
+create table if not exists etl_datasync_test.dashboard_monthly_goal (
     goal_year int not null,
     goal_month tinyint not null,
     month_start date not null,
@@ -731,7 +743,7 @@ create table if not exists etl_datasync.dashboard_monthly_goal (
 """
 
 CREATE_MONTHLY_GOAL_ACTUAL_SNAPSHOT_SQL = """
-create table if not exists etl_datasync.dashboard_monthly_goal_actual_snapshot (
+create table if not exists etl_datasync_test.dashboard_monthly_goal_actual_snapshot (
     goal_year int not null,
     goal_month tinyint not null,
     data_end_date date null,
@@ -747,12 +759,12 @@ create table if not exists etl_datasync.dashboard_monthly_goal_actual_snapshot (
 """
 
 DELETE_MONTHLY_GOAL_ACTUAL_SNAPSHOT_SQL = """
-delete from etl_datasync.dashboard_monthly_goal_actual_snapshot
+delete from etl_datasync_test.dashboard_monthly_goal_actual_snapshot
 where goal_year = year(%(biz_date)s);
 """
 
 INSERT_MONTHLY_GOAL_ACTUAL_SNAPSHOT_SQL = """
-insert into etl_datasync.dashboard_monthly_goal_actual_snapshot (
+insert into etl_datasync_test.dashboard_monthly_goal_actual_snapshot (
     goal_year, goal_month, data_end_date,
     sales_actual, volume_actual, profit_actual, margin_actual,
     created_at, updated_at
@@ -767,7 +779,7 @@ select
     round(sum(order_gross_profit) / nullif(sum(sales_amount), 0), 6) as margin_actual,
     now() as created_at,
     now() as updated_at
-from etl_datasync.dashboard_product_performance_daily
+from etl_datasync_test.dashboard_product_performance_daily
 where dt_date between makedate(year(%(biz_date)s), 1) and str_to_date(concat(year(%(biz_date)s), '-12-31'), '%%Y-%%m-%%d')
   and seller_name_new not regexp 'baihuiyi|Yuanoboo|Bailboo|Qianytyy'
   and char_length(seller_sku_adj) between 5 and 10
@@ -775,32 +787,32 @@ group by year(dt_date), month(dt_date);
 """
 
 DELETE_INVENTORY_WEEKLY_SNAPSHOT_SQL = """
-delete from etl_datasync.dashboard_inventory_weekly_snapshot
+delete from etl_datasync_test.dashboard_inventory_weekly_snapshot
 where week_start in (
     select week_start
     from (
         select distinct date_sub(snapshot_date, interval weekday(snapshot_date) day) as week_start
-        from etl_datasync.dashboard_inventory_daily_snapshot
+        from etl_datasync_test.dashboard_inventory_daily_snapshot
         where snapshot_date <= %(snapshot_date)s
         union
         select distinct date_sub(snapshot_date, interval weekday(snapshot_date) day) as week_start
-        from etl_datasync.dashboard_restock_daily_snapshot
+        from etl_datasync_test.dashboard_restock_daily_snapshot
         where snapshot_date <= %(snapshot_date)s
     ) refresh_weeks
 );
 """
 
 INSERT_INVENTORY_WEEKLY_SNAPSHOT_SQL = """
-insert into etl_datasync.dashboard_inventory_weekly_snapshot (
+insert into etl_datasync_test.dashboard_inventory_weekly_snapshot (
     snapshot_date, week_start, week_end, item_key, country_category, seller_sku_adj, seller_name_new,
     available_quantity, available_cost, transit_quantity, transit_cost,
     warehouse_quantity, warehouse_cost, plan_quantity, plan_cost,
     created_at, updated_at
 )
 with all_snapshot_dates as (
-    select snapshot_date, 'inventory' as source_type from etl_datasync.dashboard_inventory_daily_snapshot
+    select snapshot_date, 'inventory' as source_type from etl_datasync_test.dashboard_inventory_daily_snapshot
     union
-    select snapshot_date, 'restock' as source_type from etl_datasync.dashboard_restock_daily_snapshot
+    select snapshot_date, 'restock' as source_type from etl_datasync_test.dashboard_restock_daily_snapshot
 ),
 dated_snapshot_dates as (
     select
@@ -847,7 +859,7 @@ base_keys as (
     from week_dates w
     join inventory_week_dates iw
       on iw.week_start = w.week_start
-    join etl_datasync.dashboard_inventory_daily_snapshot i
+    join etl_datasync_test.dashboard_inventory_daily_snapshot i
       on i.snapshot_date = iw.inventory_snapshot_date
     union
     select
@@ -861,7 +873,7 @@ base_keys as (
     from week_dates w
     join restock_week_dates rw
       on rw.week_start = w.week_start
-    join etl_datasync.dashboard_restock_daily_snapshot r
+    join etl_datasync_test.dashboard_restock_daily_snapshot r
       on r.snapshot_date = rw.restock_snapshot_date
 )
 select
@@ -887,16 +899,16 @@ left join inventory_week_dates iw
   on iw.week_start = b.week_start
 left join restock_week_dates rw
   on rw.week_start = b.week_start
-left join etl_datasync.dashboard_inventory_daily_snapshot i
+left join etl_datasync_test.dashboard_inventory_daily_snapshot i
   on i.snapshot_date = iw.inventory_snapshot_date
  and i.item_key = b.item_key
-left join etl_datasync.dashboard_restock_daily_snapshot r
+left join etl_datasync_test.dashboard_restock_daily_snapshot r
   on r.snapshot_date = rw.restock_snapshot_date
  and r.item_key = b.item_key;
 """
 
 DELETE_INVENTORY_WEEKLY_REMOTE_SQL = """
-delete from etl_datasync.dashboard_inventory_weekly_snapshot
+delete from etl_datasync_test.dashboard_inventory_weekly_snapshot
 where week_start = date_sub(%(snapshot_date)s, interval weekday(%(snapshot_date)s) day);
 """
 
@@ -974,7 +986,7 @@ left join restock r
 """
 
 CREATE_GOAL_DIMENSION_SNAPSHOT_SQL = """
-create table if not exists etl_datasync.dashboard_goal_dimension_snapshot (
+create table if not exists etl_datasync_test.dashboard_goal_dimension_snapshot (
     snapshot_date date not null,
     goal_year int not null,
     data_end_date date null,
@@ -992,13 +1004,13 @@ create table if not exists etl_datasync.dashboard_goal_dimension_snapshot (
 """
 
 DELETE_GOAL_DIMENSION_SNAPSHOT_SQL = """
-delete from etl_datasync.dashboard_goal_dimension_snapshot
+delete from etl_datasync_test.dashboard_goal_dimension_snapshot
 where snapshot_date = %(snapshot_date)s
   and goal_year = year(%(biz_date)s);
 """
 
 INSERT_GOAL_DIMENSION_SNAPSHOT_SQL = """
-insert into etl_datasync.dashboard_goal_dimension_snapshot (
+insert into etl_datasync_test.dashboard_goal_dimension_snapshot (
     snapshot_date, goal_year, data_end_date, dimension_type, dimension_name,
     sales_amount_ytd, sales_qty_ytd, order_gross_profit_ytd, order_gross_margin_ytd,
     created_at, updated_at
@@ -1023,7 +1035,7 @@ from (
         sales_amount,
         sales_qty,
         order_gross_profit
-    from etl_datasync.dashboard_product_performance_daily
+    from etl_datasync_test.dashboard_product_performance_daily
     where dt_date between makedate(year(%(biz_date)s), 1) and %(biz_date)s
       and seller_name_new not regexp 'baihuiyi|Yuanoboo|Bailboo|Qianytyy'
       and char_length(seller_sku_adj) between 5 and 10
@@ -1035,7 +1047,7 @@ from (
         sales_amount,
         sales_qty,
         order_gross_profit
-    from etl_datasync.dashboard_product_performance_daily
+    from etl_datasync_test.dashboard_product_performance_daily
     where dt_date between makedate(year(%(biz_date)s), 1) and %(biz_date)s
       and seller_name_new not regexp 'baihuiyi|Yuanoboo|Bailboo|Qianytyy'
       and char_length(seller_sku_adj) between 5 and 10
@@ -1046,7 +1058,7 @@ group by year(dt_date), dimension_type, dimension_name;
 
 def period_create_sql(table_name: str) -> str:
     return CREATE_PERIOD_SNAPSHOT_SQL.replace(
-        "etl_datasync.dashboard_product_period_snapshot",
+        "etl_datasync_test.dashboard_product_period_snapshot",
         table_name,
         1,
     )
@@ -1054,7 +1066,7 @@ def period_create_sql(table_name: str) -> str:
 
 def period_delete_sql(table_name: str) -> str:
     return DELETE_PERIOD_SNAPSHOT_SQL.replace(
-        "etl_datasync.dashboard_product_period_snapshot",
+        "etl_datasync_test.dashboard_product_period_snapshot",
         table_name,
         1,
     )
@@ -1062,7 +1074,7 @@ def period_delete_sql(table_name: str) -> str:
 
 def period_insert_sql(table_name: str) -> str:
     return INSERT_PERIOD_SNAPSHOT_SQL.replace(
-        "etl_datasync.dashboard_product_period_snapshot",
+        "etl_datasync_test.dashboard_product_period_snapshot",
         table_name,
         1,
     )
@@ -1084,7 +1096,7 @@ where snapshot_date not in (
 
 
 DELETE_MATRIX_PERIOD_SNAPSHOT_SQL = """
-delete from etl_datasync.dashboard_product_matrix_period_snapshot
+delete from etl_datasync_test.dashboard_product_matrix_period_snapshot
 where snapshot_date = %(snapshot_date)s
   and period_code = %(period_code)s
   and period_start = %(period_start)s
@@ -1092,12 +1104,12 @@ where snapshot_date = %(snapshot_date)s
 """
 
 DELETE_OLD_MATRIX_PERIOD_SNAPSHOT_SQL = """
-delete from etl_datasync.dashboard_product_matrix_period_snapshot
+delete from etl_datasync_test.dashboard_product_matrix_period_snapshot
 where snapshot_date not in (
     select snapshot_date
     from (
         select distinct snapshot_date
-        from etl_datasync.dashboard_product_matrix_period_snapshot
+        from etl_datasync_test.dashboard_product_matrix_period_snapshot
         order by snapshot_date desc
         limit %(period_snapshot_retention_days)s
     ) keep_dates
@@ -1105,13 +1117,13 @@ where snapshot_date not in (
 """
 
 DELETE_ALERT_COMPARISON_SNAPSHOT_SQL = """
-delete from etl_datasync.dashboard_alert_comparison_snapshot
+delete from etl_datasync_test.dashboard_alert_comparison_snapshot
 where snapshot_date = %(snapshot_date)s
   and comparison_code = %(comparison_code)s;
 """
 
 INSERT_ALERT_COMPARISON_SNAPSHOT_SQL = """
-insert into etl_datasync.dashboard_alert_comparison_snapshot (
+insert into etl_datasync_test.dashboard_alert_comparison_snapshot (
     snapshot_date, comparison_code, comparison_type, comparison_label,
     recent_start, recent_end, previous_start, previous_end, recent_days, previous_days,
     item_key, seller_name_new, seller_name, seller_sku_adj, country_category, country, local_sku,
@@ -1139,7 +1151,7 @@ with recent as (
         sum(order_gross_profit) as order_gross_profit,
         avg(case when ranking > 0 then ranking end) as avg_rank,
         max(afn_fulfillable_quantity) as fba_sellable_inventory
-    from etl_datasync.dashboard_product_performance_daily
+    from etl_datasync_test.dashboard_product_performance_daily
     where dt_date between %(recent_start)s and %(recent_end)s
       and seller_name_new not regexp 'baihuiyi|Yuanoboo|Bailboo|Qianytyy'
       and char_length(seller_sku_adj) between 5 and 10
@@ -1159,7 +1171,7 @@ previous as (
         sum(order_gross_profit) as order_gross_profit,
         avg(case when ranking > 0 then ranking end) as avg_rank,
         max(afn_fulfillable_quantity) as fba_sellable_inventory
-    from etl_datasync.dashboard_product_performance_daily
+    from etl_datasync_test.dashboard_product_performance_daily
     where dt_date between %(previous_start)s and %(previous_end)s
       and seller_name_new not regexp 'baihuiyi|Yuanoboo|Bailboo|Qianytyy'
       and char_length(seller_sku_adj) between 5 and 10
@@ -1167,7 +1179,7 @@ previous as (
 ),
 period_flags as (
     select item_key, max(over_limit_flag) as over_limit_flag, max(filter_flag) as filter_flag
-    from etl_datasync.dashboard_product_period_90d_snapshot
+    from etl_datasync_test.dashboard_product_period_90d_snapshot
     where snapshot_date = %(snapshot_date)s
     group by item_key
 ),
@@ -1361,13 +1373,13 @@ from classified;
 """
 
 DELETE_ALERT_COMPARISON_SUMMARY_SQL = """
-delete from etl_datasync.dashboard_alert_comparison_summary
+delete from etl_datasync_test.dashboard_alert_comparison_summary
 where snapshot_date = %(snapshot_date)s
   and comparison_code = %(comparison_code)s;
 """
 
 INSERT_ALERT_COMPARISON_SUMMARY_SQL = """
-insert into etl_datasync.dashboard_alert_comparison_summary (
+insert into etl_datasync_test.dashboard_alert_comparison_summary (
     snapshot_date, comparison_code, country, seller_name_new,
     alert_type, sales_trend, rank_trend, margin_status, stock_status,
     alert_count, total_sales_amount, created_at, updated_at
@@ -1388,19 +1400,19 @@ select
     now()
 from (
     select snapshot_date, comparison_code, country, seller_name_new, 'sales_drop' as alert_type, sales_trend, rank_trend, margin_status, stock_status, recent_sales_amount
-    from etl_datasync.dashboard_alert_comparison_snapshot
+    from etl_datasync_test.dashboard_alert_comparison_snapshot
     where snapshot_date = %(snapshot_date)s and comparison_code = %(comparison_code)s and sales_drop_flag = 1
     union all
     select snapshot_date, comparison_code, country, seller_name_new, 'margin_low' as alert_type, sales_trend, rank_trend, margin_status, stock_status, recent_sales_amount
-    from etl_datasync.dashboard_alert_comparison_snapshot
+    from etl_datasync_test.dashboard_alert_comparison_snapshot
     where snapshot_date = %(snapshot_date)s and comparison_code = %(comparison_code)s and margin_low_flag = 1
     union all
     select snapshot_date, comparison_code, country, seller_name_new, 'rank_drop' as alert_type, sales_trend, rank_trend, margin_status, stock_status, recent_sales_amount
-    from etl_datasync.dashboard_alert_comparison_snapshot
+    from etl_datasync_test.dashboard_alert_comparison_snapshot
     where snapshot_date = %(snapshot_date)s and comparison_code = %(comparison_code)s and rank_drop_flag = 1
     union all
     select snapshot_date, comparison_code, country, seller_name_new, 'stock_short' as alert_type, sales_trend, rank_trend, margin_status, stock_status, recent_sales_amount
-    from etl_datasync.dashboard_alert_comparison_snapshot
+    from etl_datasync_test.dashboard_alert_comparison_snapshot
     where snapshot_date = %(snapshot_date)s and comparison_code = %(comparison_code)s and stock_short_flag = 1
 ) alerts
 group by
@@ -1409,12 +1421,12 @@ group by
 """
 
 DELETE_OLD_ALERT_COMPARISON_SNAPSHOT_SQL = """
-delete from etl_datasync.dashboard_alert_comparison_snapshot
+delete from etl_datasync_test.dashboard_alert_comparison_snapshot
 where snapshot_date not in (
     select snapshot_date
     from (
         select distinct snapshot_date
-        from etl_datasync.dashboard_alert_comparison_snapshot
+        from etl_datasync_test.dashboard_alert_comparison_snapshot
         order by snapshot_date desc
         limit %(period_snapshot_retention_days)s
     ) keep_dates
@@ -1422,12 +1434,12 @@ where snapshot_date not in (
 """
 
 DELETE_OLD_ALERT_COMPARISON_SUMMARY_SQL = """
-delete from etl_datasync.dashboard_alert_comparison_summary
+delete from etl_datasync_test.dashboard_alert_comparison_summary
 where snapshot_date not in (
     select snapshot_date
     from (
         select distinct snapshot_date
-        from etl_datasync.dashboard_alert_comparison_summary
+        from etl_datasync_test.dashboard_alert_comparison_summary
         order by snapshot_date desc
         limit %(period_snapshot_retention_days)s
     ) keep_dates
@@ -1435,13 +1447,13 @@ where snapshot_date not in (
 """
 
 DELETE_OPPORTUNITY_COMPARISON_SNAPSHOT_SQL = """
-delete from etl_datasync.dashboard_opportunity_comparison_snapshot
+delete from etl_datasync_test.dashboard_opportunity_comparison_snapshot
 where snapshot_date = %(snapshot_date)s
   and comparison_code = %(comparison_code)s;
 """
 
 INSERT_OPPORTUNITY_COMPARISON_FROM_ALERT_SQL = """
-insert into etl_datasync.dashboard_opportunity_comparison_snapshot (
+insert into etl_datasync_test.dashboard_opportunity_comparison_snapshot (
     snapshot_date, comparison_code, comparison_mode, comparison_label,
     recent_start, recent_end, previous_start, previous_end, previous_month, recent_month,
     item_key, seller_name_new, seller_name, seller_sku_adj, country_category, country, local_sku,
@@ -1463,7 +1475,7 @@ with source_rows as (
         coalesce(p.ad_sales, 0) as ad_sales,
         coalesce(p.acos, 0) as acos,
         coalesce(p.tacos, 0) as tacos
-    from etl_datasync.dashboard_alert_comparison_snapshot a
+    from etl_datasync_test.dashboard_alert_comparison_snapshot a
     left join (
         select
             item_key,
@@ -1475,7 +1487,7 @@ with source_rows as (
             max(ad_sales) as ad_sales,
             max(acos) as acos,
             max(tacos) as tacos
-        from etl_datasync.dashboard_product_period_90d_snapshot
+        from etl_datasync_test.dashboard_product_period_90d_snapshot
         where snapshot_date = %(snapshot_date)s
         group by item_key
     ) p
@@ -1579,7 +1591,7 @@ where opportunity_types <> '';
 """
 
 INSERT_OPPORTUNITY_COMPARISON_FROM_MONTH_SQL = """
-insert into etl_datasync.dashboard_opportunity_comparison_snapshot (
+insert into etl_datasync_test.dashboard_opportunity_comparison_snapshot (
     snapshot_date, comparison_code, comparison_mode, comparison_label,
     recent_start, recent_end, previous_start, previous_end, previous_month, recent_month,
     item_key, seller_name_new, seller_name, seller_sku_adj, country_category, country, local_sku,
@@ -1618,8 +1630,8 @@ with joined as (
         r.avg_rank as recent_rank,
         p.avg_rank as previous_rank,
         coalesce(r.fba_sellable_inventory, p.fba_sellable_inventory, 0) as fba_sellable_inventory
-    from etl_datasync.dashboard_alert_monthly_metric_snapshot r
-    left join etl_datasync.dashboard_alert_monthly_metric_snapshot p
+    from etl_datasync_test.dashboard_alert_monthly_metric_snapshot r
+    left join etl_datasync_test.dashboard_alert_monthly_metric_snapshot p
       on p.snapshot_date = r.snapshot_date
      and p.item_key = r.item_key
      and p.month_code = %(previous_month)s
@@ -1631,8 +1643,8 @@ with joined as (
         p.filter_flag, p.over_limit_flag, p.data_start, p.data_end, p.data_start, p.data_end,
         0, p.sales_qty, 0, p.daily_sales, 0, p.sales_amount, 0, p.order_gross_profit,
         null, p.margin, null, p.avg_rank, p.fba_sellable_inventory
-    from etl_datasync.dashboard_alert_monthly_metric_snapshot p
-    left join etl_datasync.dashboard_alert_monthly_metric_snapshot r
+    from etl_datasync_test.dashboard_alert_monthly_metric_snapshot p
+    left join etl_datasync_test.dashboard_alert_monthly_metric_snapshot r
       on r.snapshot_date = p.snapshot_date
      and r.item_key = p.item_key
      and r.month_code = %(recent_month)s
@@ -1663,7 +1675,7 @@ source_rows as (
             max(ad_sales) as ad_sales,
             max(acos) as acos,
             max(tacos) as tacos
-        from etl_datasync.dashboard_product_period_90d_snapshot
+        from etl_datasync_test.dashboard_product_period_90d_snapshot
         where snapshot_date = %(snapshot_date)s
         group by item_key
     ) ps
@@ -1766,13 +1778,13 @@ where opportunity_types <> '';
 """
 
 DELETE_OPPORTUNITY_COMPARISON_SUMMARY_SQL = """
-delete from etl_datasync.dashboard_opportunity_comparison_summary
+delete from etl_datasync_test.dashboard_opportunity_comparison_summary
 where snapshot_date = %(snapshot_date)s
   and comparison_code = %(comparison_code)s;
 """
 
 INSERT_OPPORTUNITY_COMPARISON_SUMMARY_SQL = """
-insert into etl_datasync.dashboard_opportunity_comparison_summary (
+insert into etl_datasync_test.dashboard_opportunity_comparison_summary (
     snapshot_date, comparison_code, country, seller_name_new,
     opportunity_type, stock_status, opportunity_count, estimated_boost_revenue,
     created_at, updated_at
@@ -1788,19 +1800,19 @@ select
     sum(estimated_boost_revenue) as estimated_boost_revenue,
     now(),
     now()
-from etl_datasync.dashboard_opportunity_comparison_snapshot
+from etl_datasync_test.dashboard_opportunity_comparison_snapshot
 where snapshot_date = %(snapshot_date)s
   and comparison_code = %(comparison_code)s
 group by snapshot_date, comparison_code, country, seller_name_new, primary_type, stock_status;
 """
 
 DELETE_OLD_OPPORTUNITY_COMPARISON_SNAPSHOT_SQL = """
-delete from etl_datasync.dashboard_opportunity_comparison_snapshot
+delete from etl_datasync_test.dashboard_opportunity_comparison_snapshot
 where snapshot_date not in (
     select snapshot_date
     from (
         select distinct snapshot_date
-        from etl_datasync.dashboard_opportunity_comparison_snapshot
+        from etl_datasync_test.dashboard_opportunity_comparison_snapshot
         order by snapshot_date desc
         limit %(period_snapshot_retention_days)s
     ) keep_dates
@@ -1808,12 +1820,12 @@ where snapshot_date not in (
 """
 
 DELETE_OLD_OPPORTUNITY_COMPARISON_SUMMARY_SQL = """
-delete from etl_datasync.dashboard_opportunity_comparison_summary
+delete from etl_datasync_test.dashboard_opportunity_comparison_summary
 where snapshot_date not in (
     select snapshot_date
     from (
         select distinct snapshot_date
-        from etl_datasync.dashboard_opportunity_comparison_summary
+        from etl_datasync_test.dashboard_opportunity_comparison_summary
         order by snapshot_date desc
         limit %(period_snapshot_retention_days)s
     ) keep_dates
@@ -1821,13 +1833,13 @@ where snapshot_date not in (
 """
 
 DELETE_ALERT_MONTHLY_METRIC_SNAPSHOT_SQL = """
-delete from etl_datasync.dashboard_alert_monthly_metric_snapshot
+delete from etl_datasync_test.dashboard_alert_monthly_metric_snapshot
 where snapshot_date = %(snapshot_date)s
   and month_code = %(month_code)s;
 """
 
 INSERT_ALERT_MONTHLY_METRIC_SNAPSHOT_SQL = """
-insert into etl_datasync.dashboard_alert_monthly_metric_snapshot (
+insert into etl_datasync_test.dashboard_alert_monthly_metric_snapshot (
     snapshot_date, month_code, month_start, month_end, data_start, data_end, stat_days, is_month_complete,
     item_key, seller_name_new, seller_name, seller_sku_adj, country_category, country, local_sku,
     filter_flag, over_limit_flag, daily_sales_band, margin_band,
@@ -1849,7 +1861,7 @@ with monthly as (
         sum(order_gross_profit) as order_gross_profit,
         avg(case when ranking > 0 then ranking end) as avg_rank,
         max(afn_fulfillable_quantity) as fba_sellable_inventory
-    from etl_datasync.dashboard_product_performance_daily
+    from etl_datasync_test.dashboard_product_performance_daily
     where dt_date between %(data_start)s and %(data_end)s
       and seller_name_new not regexp 'baihuiyi|Yuanoboo|Bailboo|Qianytyy'
       and char_length(seller_sku_adj) between 5 and 10
@@ -1857,7 +1869,7 @@ with monthly as (
 ),
 period_flags as (
     select item_key, max(over_limit_flag) as over_limit_flag, max(filter_flag) as filter_flag
-    from etl_datasync.dashboard_product_period_90d_snapshot
+    from etl_datasync_test.dashboard_product_period_90d_snapshot
     where snapshot_date = %(snapshot_date)s
     group by item_key
 ),
@@ -1919,12 +1931,12 @@ from metrics;
 """
 
 DELETE_OLD_ALERT_MONTHLY_METRIC_SNAPSHOT_SQL = """
-delete from etl_datasync.dashboard_alert_monthly_metric_snapshot
+delete from etl_datasync_test.dashboard_alert_monthly_metric_snapshot
 where snapshot_date not in (
     select snapshot_date
     from (
         select distinct snapshot_date
-        from etl_datasync.dashboard_alert_monthly_metric_snapshot
+        from etl_datasync_test.dashboard_alert_monthly_metric_snapshot
         order by snapshot_date desc
         limit %(period_snapshot_retention_days)s
     ) keep_dates
@@ -1932,13 +1944,13 @@ where snapshot_date not in (
 """
 
 DELETE_ANNUAL_GOAL_SNAPSHOT_SQL = """
-delete from etl_datasync.dashboard_annual_goal_snapshot
+delete from etl_datasync_test.dashboard_annual_goal_snapshot
 where snapshot_date = %(snapshot_date)s
   and goal_year = year(%(snapshot_date)s);
 """
 
 INSERT_ANNUAL_GOAL_SNAPSHOT_SQL = f"""
-insert into etl_datasync.dashboard_annual_goal_snapshot (
+insert into etl_datasync_test.dashboard_annual_goal_snapshot (
     snapshot_date, goal_year, year_start, data_end_date,
     sales_goal, margin_goal, sales_goal_buffer,
     sales_amount_ytd, sales_amount_ex_tax_ytd, order_gross_profit_ytd, order_gross_margin_ytd,
@@ -1957,7 +1969,7 @@ ytd as (
         coalesce(sum(p.sales_amount_ex_tax), 0) as sales_amount_ex_tax_ytd,
         coalesce(sum(p.order_gross_profit), 0) as order_gross_profit_ytd,
         max(p.dt_date) as data_end_date
-    from etl_datasync.dashboard_product_performance_daily p
+    from etl_datasync_test.dashboard_product_performance_daily p
     join calendar c
       on p.dt_date between c.year_start and %(biz_date)s
     where p.seller_name_new not regexp 'baihuiyi|Yuanoboo|Bailboo|Qianytyy'
@@ -1986,7 +1998,7 @@ monthly_goal as (
         ) as target_amount_to_date
     from calendar c
     cross join ytd y
-    left join etl_datasync.dashboard_monthly_goal g
+    left join etl_datasync_test.dashboard_monthly_goal g
       on g.goal_year = c.goal_year
     group by c.goal_year, c.year_start, c.year_end, y.data_end_date
 )
@@ -2023,7 +2035,7 @@ def matrix_insert_sql(period_table_name: str) -> str:
           and p.filter_flag = 1
     """
     return f"""
-insert into etl_datasync.dashboard_product_matrix_period_snapshot (
+insert into etl_datasync_test.dashboard_product_matrix_period_snapshot (
     snapshot_date, period_code, period_start, period_end,
     country, seller_name_new, over_limit_scope,
     margin_band, daily_sales_band, sku_count, over_limit_count
@@ -2086,13 +2098,13 @@ group by
 """
 
 DELETE_PRODUCT_DAILY_SQL = """
-delete from etl_datasync.dashboard_product_performance_daily
+delete from etl_datasync_test.dashboard_product_performance_daily
 where %(product_full_load)s = 1
    or dt_date between %(product_start_date)s and %(product_end_date)s;
 """
 
 INSERT_PRODUCT_DAILY_SQL = """
-insert into etl_datasync.dashboard_product_performance_daily (
+insert into etl_datasync_test.dashboard_product_performance_daily (
     dt_year, dt_week, dt_month, dt_date, item_key, country, country_category,
     local_sku, seller_name, seller_name_new, seller_sku_adj,
     sales_qty, sales_amount, sales_amount_ex_tax,
@@ -2211,12 +2223,12 @@ group by
 """
 
 DELETE_RESTOCK_SQL = """
-delete from etl_datasync.dashboard_restock_daily_snapshot
+delete from etl_datasync_test.dashboard_restock_daily_snapshot
 where snapshot_date = %(snapshot_date)s;
 """
 
 INSERT_RESTOCK_SQL = """
-insert into etl_datasync.dashboard_restock_daily_snapshot (
+insert into etl_datasync_test.dashboard_restock_daily_snapshot (
     snapshot_date, item_key, country_category, seller_sku_adj, seller_name_new,
     local_quantity, purchase_shipping_quantity, purchase_plan_quantity,
     local_valid_quantity, local_qc_quantity, purchase_cost, transport_cost,
@@ -2255,12 +2267,12 @@ group by
 """
 
 DELETE_INVENTORY_SQL = """
-delete from etl_datasync.dashboard_inventory_daily_snapshot
+delete from etl_datasync_test.dashboard_inventory_daily_snapshot
 where snapshot_date = %(snapshot_date)s;
 """
 
 INSERT_INVENTORY_SQL = """
-insert into etl_datasync.dashboard_inventory_daily_snapshot (
+insert into etl_datasync_test.dashboard_inventory_daily_snapshot (
     snapshot_date, item_key, country_category, seller_sku_adj, seller_name_new,
     total, total_price, available_total, available_price, afn_fulfillable_quantity,
     reserved_fc_transfers, reserved_fc_processing, reserved_customerorders,
@@ -2301,12 +2313,12 @@ group by
 """
 
 DELETE_LISTING_PRICE_SQL = """
-delete from etl_datasync.dashboard_listing_price_daily_snapshot
+delete from etl_datasync_test.dashboard_listing_price_daily_snapshot
 where snapshot_date = %(snapshot_date)s;
 """
 
 INSERT_LISTING_PRICE_SQL = """
-insert into etl_datasync.dashboard_listing_price_daily_snapshot (
+insert into etl_datasync_test.dashboard_listing_price_daily_snapshot (
     snapshot_date, item_key, seller_name_new, seller_name, seller_sku,
     country_category, country, price, org_currency_icon, price_cny,
     created_at, updated_at
@@ -2368,12 +2380,12 @@ group by
 """
 
 DELETE_LIMIT_PRICE_SQL = """
-delete from etl_datasync.dashboard_limit_price_daily_snapshot
+delete from etl_datasync_test.dashboard_limit_price_daily_snapshot
 where snapshot_date = %(snapshot_date)s;
 """
 
 INSERT_LIMIT_PRICE_SQL = """
-insert into etl_datasync.dashboard_limit_price_daily_snapshot (
+insert into etl_datasync_test.dashboard_limit_price_daily_snapshot (
     snapshot_date, item_key, local_sku, seller_sku, seller_name_new,
     country, country_category, shipping_method, target_margin, currency,
     tax_inclusive_price, tax_inclusive_price_noad, tax_inclusive_price_adj,
@@ -2449,14 +2461,14 @@ group by
 """
 
 DELETE_PERIOD_SNAPSHOT_SQL = """
-delete from etl_datasync.dashboard_product_period_snapshot
+delete from etl_datasync_test.dashboard_product_period_snapshot
 where snapshot_date = %(snapshot_date)s
   and period_start = %(period_start)s
   and period_end = %(period_end)s;
 """
 
 INSERT_PERIOD_SNAPSHOT_SQL = """
-insert into etl_datasync.dashboard_product_period_snapshot (
+insert into etl_datasync_test.dashboard_product_period_snapshot (
     snapshot_date, period_start, period_end, item_key, stat_period,
     seller_name_new, seller_name, seller_sku_adj, country_category, country, local_sku,
     sales_qty, sales_amount, sales_amount_ex_tax,
@@ -2504,7 +2516,7 @@ with product_period as (
         round(sum(ad_spend) / nullif(sum(ad_sales), 0), 4) as acos,
         round(sum(ad_spend) / nullif(sum(sales_amount), 0), 4) as tacos,
         round(sum(ad_clicks) / nullif(sum(ad_impressions), 0), 4) as ctr
-    from etl_datasync.dashboard_product_performance_daily
+    from etl_datasync_test.dashboard_product_performance_daily
     where dt_date between %(period_start)s and %(period_end)s
       and seller_name_new not regexp 'baihuiyi|Yuanoboo|Bailboo|Qianytyy'
       and char_length(seller_sku_adj) between 5 and 10
@@ -2519,22 +2531,22 @@ effective_snapshot_dates as (
     select
         (
             select max(snapshot_date)
-            from etl_datasync.dashboard_restock_daily_snapshot
+            from etl_datasync_test.dashboard_restock_daily_snapshot
             where snapshot_date <= %(snapshot_date)s
         ) as restock_snapshot_date,
         (
             select max(snapshot_date)
-            from etl_datasync.dashboard_inventory_daily_snapshot
+            from etl_datasync_test.dashboard_inventory_daily_snapshot
             where snapshot_date <= %(snapshot_date)s
         ) as inventory_snapshot_date,
         (
             select max(snapshot_date)
-            from etl_datasync.dashboard_listing_price_daily_snapshot
+            from etl_datasync_test.dashboard_listing_price_daily_snapshot
             where snapshot_date <= %(snapshot_date)s
         ) as listing_snapshot_date,
         (
             select max(snapshot_date)
-            from etl_datasync.dashboard_limit_price_daily_snapshot
+            from etl_datasync_test.dashboard_limit_price_daily_snapshot
             where snapshot_date <= %(snapshot_date)s
         ) as limit_snapshot_date
 ),
@@ -2566,23 +2578,23 @@ joined as (
         lim.target_margin
     from product_period p
     cross join effective_snapshot_dates ed
-    left join etl_datasync.dashboard_restock_daily_snapshot r
+    left join etl_datasync_test.dashboard_restock_daily_snapshot r
       on r.snapshot_date = ed.restock_snapshot_date
      and p.country_category = r.country_category
      and p.seller_sku_adj = r.seller_sku_adj
      and p.seller_name_new = r.seller_name_new
-    left join etl_datasync.dashboard_inventory_daily_snapshot i
+    left join etl_datasync_test.dashboard_inventory_daily_snapshot i
       on i.snapshot_date = ed.inventory_snapshot_date
      and p.country_category = i.country_category
      and p.seller_sku_adj = i.seller_sku_adj
      and p.seller_name_new = i.seller_name_new
-    left join etl_datasync.dashboard_listing_price_daily_snapshot lp
+    left join etl_datasync_test.dashboard_listing_price_daily_snapshot lp
       on lp.snapshot_date = ed.listing_snapshot_date
      and p.country_category = lp.country_category
      and binary p.seller_sku_adj = binary lp.seller_sku
      and p.seller_name_new = lp.seller_name_new
      and p.country = lp.country
-    left join etl_datasync.dashboard_limit_price_daily_snapshot lim
+    left join etl_datasync_test.dashboard_limit_price_daily_snapshot lim
       on lim.snapshot_date = ed.limit_snapshot_date
      and p.country_category = lim.country_category
      and p.seller_sku_adj = lim.seller_sku
@@ -2773,7 +2785,7 @@ STEPS = {
         "product_performance_daily",
         DELETE_PRODUCT_DAILY_SQL,
         extract_source_select(INSERT_PRODUCT_DAILY_SQL),
-        "etl_datasync.dashboard_product_performance_daily",
+        "etl_datasync_test.dashboard_product_performance_daily",
         PRODUCT_DAILY_COLUMNS,
     ),
     "monthly_goal_actual_snapshot": SqlStep(
@@ -2796,35 +2808,35 @@ STEPS = {
         "inventory_weekly_remote_snapshot",
         DELETE_INVENTORY_WEEKLY_REMOTE_SQL,
         SELECT_INVENTORY_WEEKLY_REMOTE_SQL,
-        "etl_datasync.dashboard_inventory_weekly_snapshot",
+        "etl_datasync_test.dashboard_inventory_weekly_snapshot",
         INVENTORY_WEEKLY_COLUMNS,
     ),
     "restock_snapshot": SourceLoadStep(
         "restock_snapshot",
         DELETE_RESTOCK_SQL,
         extract_source_select(INSERT_RESTOCK_SQL),
-        "etl_datasync.dashboard_restock_daily_snapshot",
+        "etl_datasync_test.dashboard_restock_daily_snapshot",
         RESTOCK_COLUMNS,
     ),
     "inventory_snapshot": SourceLoadStep(
         "inventory_snapshot",
         DELETE_INVENTORY_SQL,
         extract_source_select(INSERT_INVENTORY_SQL),
-        "etl_datasync.dashboard_inventory_daily_snapshot",
+        "etl_datasync_test.dashboard_inventory_daily_snapshot",
         INVENTORY_COLUMNS,
     ),
     "listing_price_snapshot": SourceLoadStep(
         "listing_price_snapshot",
         DELETE_LISTING_PRICE_SQL,
         extract_source_select(INSERT_LISTING_PRICE_SQL),
-        "etl_datasync.dashboard_listing_price_daily_snapshot",
+        "etl_datasync_test.dashboard_listing_price_daily_snapshot",
         LISTING_PRICE_COLUMNS,
     ),
     "limit_price_snapshot": SourceLoadStep(
         "limit_price_snapshot",
         DELETE_LIMIT_PRICE_SQL,
         extract_source_select(INSERT_LIMIT_PRICE_SQL),
-        "etl_datasync.dashboard_limit_price_daily_snapshot",
+        "etl_datasync_test.dashboard_limit_price_daily_snapshot",
         LIMIT_PRICE_COLUMNS,
     ),
     "period_preset_snapshots": PeriodPresetStep("period_preset_snapshots"),
@@ -2948,7 +2960,7 @@ def log_task(
         cursor.execute(
             render_sql(
                 """
-            insert into etl_datasync.dashboard_etl_task_log (
+            insert into etl_datasync_test.dashboard_etl_task_log (
                 task_name, biz_date, snapshot_date, period_start, period_end,
                 status, affected_rows, started_at, finished_at, error_message
             )
@@ -3449,7 +3461,7 @@ def validate_product_performance_result(
             render_sql(
                 """
                 select count(*) as row_count
-                from etl_datasync.dashboard_product_performance_daily
+                from etl_datasync_test.dashboard_product_performance_daily
                 where dt_date = %(biz_date)s
                 """,
                 schemas,
@@ -3475,7 +3487,7 @@ def product_daily_is_empty(conn, schemas: SchemaConfig) -> bool:
     with conn.cursor() as cursor:
         cursor.execute(
             render_sql(
-                "select count(*) as total from etl_datasync.dashboard_product_performance_daily;",
+                "select count(*) as total from etl_datasync_test.dashboard_product_performance_daily;",
                 schemas,
             )
         )
@@ -3487,7 +3499,7 @@ def product_daily_min_date(conn, schemas: SchemaConfig) -> date | None:
     with conn.cursor() as cursor:
         cursor.execute(
             render_sql(
-                "select min(dt_date) as min_date from etl_datasync.dashboard_product_performance_daily;",
+                "select min(dt_date) as min_date from etl_datasync_test.dashboard_product_performance_daily;",
                 schemas,
             )
         )

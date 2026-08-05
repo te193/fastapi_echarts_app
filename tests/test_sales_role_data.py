@@ -49,5 +49,5 @@ def test_sales_role_bands_match_page_matrix_contract():
 
 
 def test_sales_role_uses_full_pool_snapshot_table_and_fixed_periods():
-    assert SALES_ROLE_PERIOD_TABLE == "etl_datasync.dashboard_sales_role_period_snapshot"
+    assert SALES_ROLE_PERIOD_TABLE == "etl_datasync_test.dashboard_sales_role_period_snapshot"
     assert SALES_ROLE_PERIODS == {"7d", "14d", "30d", "90d"}

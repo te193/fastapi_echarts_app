@@ -33,7 +33,7 @@ class FixedDashboardPeriodTests(unittest.TestCase):
         self.assertEqual(date(2026, 7, 19), window.end_date)
         self.assertEqual("last_90_days", window.period_code)
         self.assertEqual(
-            "etl_datasync.dashboard_product_period_90d_snapshot",
+            "etl_datasync_test.dashboard_product_period_90d_snapshot",
             window.period_table,
         )
 
@@ -44,14 +44,14 @@ class FixedDashboardPeriodTests(unittest.TestCase):
 
         self.assertEqual("last_30_days", window.period_code)
         self.assertEqual(
-            "etl_datasync.dashboard_product_period_30d_snapshot",
+            "etl_datasync_test.dashboard_product_period_30d_snapshot",
             window.period_table,
         )
 
     def test_custom_period_table_is_not_allowed(self):
         with self.assertRaises(RuntimeError):
             self.service._render_period_table(
-                "etl_datasync.dashboard_product_period_snapshot"
+                "etl_datasync_test.dashboard_product_period_snapshot"
             )
 
     def test_daily_etl_does_not_create_or_run_custom_period_snapshot(self):

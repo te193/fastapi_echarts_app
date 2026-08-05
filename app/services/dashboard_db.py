@@ -28,13 +28,13 @@ SALES_GOAL_BUFFER = 1.01
 MARGIN_GOAL = 0.20
 DEFAULT_DASHBOARD_DAYS = int(os.getenv("DASHBOARD_DEFAULT_PERIOD_DAYS", "90"))
 MATRIX_ALL_VALUE = "__ALL__"
-MATRIX_PERIOD_TABLE = "etl_datasync.dashboard_product_matrix_period_snapshot"
-ALERT_COMPARISON_TABLE = "etl_datasync.dashboard_alert_comparison_snapshot"
-ALERT_MONTHLY_METRIC_TABLE = "etl_datasync.dashboard_alert_monthly_metric_snapshot"
-OPPORTUNITY_COMPARISON_TABLE = "etl_datasync.dashboard_opportunity_comparison_snapshot"
+MATRIX_PERIOD_TABLE = "etl_datasync_test.dashboard_product_matrix_period_snapshot"
+ALERT_COMPARISON_TABLE = "etl_datasync_test.dashboard_alert_comparison_snapshot"
+ALERT_MONTHLY_METRIC_TABLE = "etl_datasync_test.dashboard_alert_monthly_metric_snapshot"
+OPPORTUNITY_COMPARISON_TABLE = "etl_datasync_test.dashboard_opportunity_comparison_snapshot"
 ALERT_DAY_COMPARISONS = {7: "d7", 14: "d14", 30: "d30", 60: "d60", 90: "d90"}
 MARGIN_TRANSITION_LAYERS = ["\u65e0\u6bdb\u5229", "<0%", "0-10%", "10-15%", "15-25%", "25-35%", ">35%"]
-SALES_ROLE_PERIOD_TABLE = "etl_datasync.dashboard_sales_role_period_snapshot"
+SALES_ROLE_PERIOD_TABLE = "etl_datasync_test.dashboard_sales_role_period_snapshot"
 SALES_ROLE_PERIODS = {"7d", "14d", "30d", "90d"}
 SALES_ROLE_SNAPSHOT_CODE_MAP = {
     "star": "star",
@@ -129,7 +129,7 @@ class PeriodWindow:
     start_date: date
     end_date: date
     snapshot_date: date
-    period_table: str = "etl_datasync.dashboard_product_period_90d_snapshot"
+    period_table: str = "etl_datasync_test.dashboard_product_period_90d_snapshot"
     period_code: str = "last_90_days"
 
     @property
@@ -1071,7 +1071,7 @@ class DashboardDbService:
         ]
 
     def _inventory_weekly_table(self) -> str:
-        return render_sql("etl_datasync.dashboard_inventory_weekly_snapshot", self.schemas)
+        return render_sql("etl_datasync_test.dashboard_inventory_weekly_snapshot", self.schemas)
 
     def _inventory_weekly_where(
         self,
@@ -2231,8 +2231,8 @@ class DashboardDbService:
 
     def _lifecycle_metric_table(self, metric_days: int) -> str:
         if metric_days == 30:
-            return "etl_datasync.dashboard_product_period_30d_snapshot"
-        return "etl_datasync.dashboard_product_period_90d_snapshot"
+            return "etl_datasync_test.dashboard_product_period_30d_snapshot"
+        return "etl_datasync_test.dashboard_product_period_90d_snapshot"
 
     def _period_snapshot_window(
         self,

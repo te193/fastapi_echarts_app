@@ -12,7 +12,7 @@ class OpportunityPrecomputeTests(unittest.TestCase):
     def test_service_declares_opportunity_snapshot_table(self):
         self.assertEqual(
             dashboard_db.OPPORTUNITY_COMPARISON_TABLE,
-            "etl_datasync.dashboard_opportunity_comparison_snapshot",
+            "etl_datasync_test.dashboard_opportunity_comparison_snapshot",
         )
 
 

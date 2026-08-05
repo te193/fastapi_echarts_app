@@ -23,7 +23,7 @@ from .label_hub_data import (
 )
 
 
-EVIDENCE_TABLE = "etl_datasync.dashboard_label_rule_evidence_snapshot"
+EVIDENCE_TABLE = "etl_datasync_test.dashboard_label_rule_evidence_snapshot"
 CHANGE_TYPES = {"all", "added", "removed", "changed", "unchanged"}
 CHANGE_SORT_FIELDS = {"change_type", "msku", "previous_label", "current_label", "business_unit_count"}
 ROLE_LABELS = {101: "明星产品", 102: "潜力产品", 103: "瘦狗产品", 104: "问题产品"}

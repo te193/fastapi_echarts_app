@@ -74,6 +74,21 @@ cd .worktrees\dashboard-test
 .\scripts\run_daily_update_task.ps1
 ```
 
+如果 PowerShell 启动脚本不可用，可以直接运行独立的 Python 汇总调度器：
+
+```powershell
+python -m etl.daily_update_runner
+```
+
+只验证完整流程、不写业务结果表且不发送钉钉通知：
+
+```powershell
+python -m etl.daily_update_runner --dry-run
+```
+
+两个入口执行相同的每日 ETL 顺序。Python 入口会显示每一步的开始时间、
+完成状态、耗时和日志位置，失败时立即停止必需步骤并保留原退出码。
+
 数据更新策略：
 
 - 产品表现日表每天回滚刷新最近 50 天

@@ -3,6 +3,7 @@ from argparse import Namespace
 from datetime import date
 
 from etl.dashboard_daily_update import (
+    CREATE_SCHEMA_SQL,
     INSERT_ALERT_COMPARISON_SNAPSHOT_SQL,
     INSERT_ALERT_MONTHLY_METRIC_SNAPSHOT_SQL,
     INSERT_INVENTORY_SQL,
@@ -15,11 +16,39 @@ from etl.dashboard_daily_update import (
     SourceLoadStep,
     build_params,
     execute_source_load_step,
+    render_sql,
     validate_product_performance_result,
 )
 
 
 class DashboardDailyUpdateSqlTests(unittest.TestCase):
+    def test_create_schema_sql_uses_canonical_local_target_schema(self):
+        self.assertIn("create schema if not exists etl_datasync_test", CREATE_SCHEMA_SQL)
+
+    def test_render_sql_maps_canonical_local_target_schema(self):
+        schemas = SchemaConfig(
+            target_schema="etl_datasync_replenishment_test",
+            etl_source_schema="etl_datasync",
+            dwd_source_schema="dwd_datasync",
+            pricing_source_schema="temporary_dwd",
+        )
+
+        rendered = render_sql(
+            "select * from etl_datasync_test.dashboard_inventory_daily_snapshot",
+            schemas,
+        )
+
+        self.assertEqual(
+            "select * from etl_datasync_replenishment_test.dashboard_inventory_daily_snapshot",
+            rendered,
+        )
+
+        rendered_create = render_sql(CREATE_SCHEMA_SQL, schemas)
+        self.assertEqual(
+            "create schema if not exists etl_datasync_replenishment_test default character set utf8mb4;",
+            rendered_create,
+        )
+
     def test_product_daily_sql_contains_complete_country_rules(self):
         self.assertIn("when country in ('美国', '加拿大', '巴西', '墨西哥') then '北美站'", INSERT_PRODUCT_DAILY_SQL)
         self.assertIn("when country = '英国' then '英国站'", INSERT_PRODUCT_DAILY_SQL)
