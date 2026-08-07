@@ -1,4 +1,5 @@
 import os
+import inspect
 import tempfile
 import unittest
 from argparse import Namespace
@@ -9,6 +10,29 @@ from etl import replenishment_update
 
 
 class ReplenishmentUpdateSqlTests(unittest.TestCase):
+    def test_replenishment_result_has_sales_spike_metadata_columns(self):
+        ddl = replenishment_update.CREATE_REPLENISHMENT_RESULT_SQL
+
+        for column in (
+            "sales_spike_status",
+            "sales_spike_flag",
+            "sales_spike_date",
+            "sales_spike_qty",
+            "sales_spike_baseline",
+            "sales_spike_score",
+            "sales_spike_reason",
+        ):
+            self.assertIn(column, ddl)
+
+    def test_replenishment_result_refreshes_spike_flags_before_validation(self):
+        source = inspect.getsource(replenishment_update.execute_sql_step)
+
+        self.assertIn("refresh_replenishment_sales_spike_flags", source)
+        self.assertLess(
+            source.index("refresh_replenishment_sales_spike_flags"),
+            source.index("validate_replenishment_result"),
+        )
+
     def test_local_table_ddl_contains_required_dashboard_fields(self):
         ddl = "\n".join(replenishment_update.DDL_STATEMENTS)
 
