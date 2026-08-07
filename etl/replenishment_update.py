@@ -25,6 +25,10 @@ from etl.dashboard_daily_update import (
     parse_day,
     render_sql,
 )
+from etl.replenishment_sales_spike import (
+    SpikeConfigurationError,
+    refresh_replenishment_sales_spike_flags,
+)
 
 
 DEFAULT_CANDIDATE_DAYS = 1
@@ -421,6 +425,13 @@ create table if not exists etl_datasync_test.dashboard_pur_plan_replenish_data (
     asin_merge_flag tinyint not null default 0,
     asin_merge_target varchar(255) null,
     asin_merge_reason varchar(64) null,
+    sales_spike_status varchar(32) not null default 'normal',
+    sales_spike_flag tinyint not null default 0,
+    sales_spike_date date null,
+    sales_spike_qty decimal(18,4) null,
+    sales_spike_baseline decimal(18,6) null,
+    sales_spike_score decimal(18,6) null,
+    sales_spike_reason varchar(500) null,
     created_at datetime not null default current_timestamp,
     updated_at datetime not null default current_timestamp on update current_timestamp,
     primary key (cur_date, country_category, seller_name_new, seller_sku_adj),
@@ -3208,6 +3219,13 @@ def ensure_replenishment_columns(cursor, schemas: SchemaConfig) -> None:
             ("executable_replenish_box_qty", "decimal(18,4) null", "executable_replenish_qty"),
             ("executable_replenish_cost", "decimal(18,4) null", "executable_replenish_box_qty"),
             ("moq_shortfall_qty", "decimal(18,4) null", "executable_replenish_cost"),
+            ("sales_spike_status", "varchar(32) not null default 'normal'", "asin_merge_reason"),
+            ("sales_spike_flag", "tinyint not null default 0", "sales_spike_status"),
+            ("sales_spike_date", "date null", "sales_spike_flag"),
+            ("sales_spike_qty", "decimal(18,4) null", "sales_spike_date"),
+            ("sales_spike_baseline", "decimal(18,6) null", "sales_spike_qty"),
+            ("sales_spike_score", "decimal(18,6) null", "sales_spike_baseline"),
+            ("sales_spike_reason", "varchar(500) null", "sales_spike_score"),
         ],
     }
     for table_name, columns in column_specs.items():
@@ -3303,6 +3321,17 @@ def execute_sql_step(conn, schemas: SchemaConfig, step: ReplenishmentStep, param
                     affected_rows += max(cursor.rowcount, 0)
                 conn.commit()
         if step.name == "replenishment_result":
+            try:
+                spike_rows = refresh_replenishment_sales_spike_flags(
+                    conn,
+                    schemas,
+                    snapshot_date=params["snapshot_date"],
+                    biz_date=params["biz_date"],
+                    calibration_path=Path("config/replenishment_sales_spike.json"),
+                )
+                print(f"[success] sales_spike_refresh: affected_rows={spike_rows}")
+            except SpikeConfigurationError as exc:
+                print(f"[warning] sales_spike_refresh skipped: {exc}", file=sys.stderr)
             validate_replenishment_result(conn, schemas, params)
         log_task(conn, schemas, step.name, params, "success", affected_rows, started_at)
         print(f"[success] {step.name}: affected_rows={affected_rows}")

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import date
+from collections import defaultdict
+from datetime import date, timedelta
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path
@@ -288,3 +289,134 @@ def detect_sales_spike(
         reason="异常后销量持续高位，不作为一次性爆单长期提醒",
         **common,
     )
+
+
+def refresh_replenishment_sales_spike_flags(
+    conn,
+    schemas,
+    *,
+    snapshot_date: date,
+    biz_date: date,
+    calibration_path: Path,
+) -> int:
+    calibration = load_spike_calibration(calibration_path)
+    schema = schemas.target_schema.replace("`", "``")
+    result_table = f"`{schema}`.`dashboard_pur_plan_replenish_data`"
+    sales_table = f"`{schema}`.`dashboard_product_performance_daily`"
+    start_date = biz_date - timedelta(days=calibration.lookback_days - 1)
+
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"""
+            select distinct
+                country_category,
+                seller_name_new,
+                seller_sku_adj,
+                max_asin
+            from {result_table}
+            where cur_date = %(snapshot_date)s
+              and max_asin is not null
+              and max_asin <> ''
+            """,
+            {"snapshot_date": snapshot_date},
+        )
+        mappings = cursor.fetchall()
+        if not mappings:
+            return 0
+
+        cursor.execute(
+            f"""
+            select
+                p.dt_date,
+                mapping.country_category,
+                mapping.max_asin,
+                sum(coalesce(p.sales_qty, 0)) as sales_qty
+            from {sales_table} p
+            inner join (
+                select distinct
+                    country_category,
+                    seller_name_new,
+                    seller_sku_adj,
+                    max_asin
+                from {result_table}
+                where cur_date = %(snapshot_date)s
+                  and max_asin is not null
+                  and max_asin <> ''
+            ) mapping
+              on mapping.country_category = p.country_category
+             and mapping.seller_name_new = p.seller_name_new
+             and mapping.seller_sku_adj = p.seller_sku_adj
+            where p.dt_date between %(start_date)s and %(biz_date)s
+            group by p.dt_date, mapping.country_category, mapping.max_asin
+            order by mapping.country_category, mapping.max_asin, p.dt_date
+            """,
+            {
+                "snapshot_date": snapshot_date,
+                "start_date": start_date,
+                "biz_date": biz_date,
+            },
+        )
+        sales_rows = cursor.fetchall()
+
+        group_keys = {
+            (str(row["country_category"]), str(row["max_asin"]))
+            for row in mappings
+            if row.get("max_asin")
+        }
+        sales_by_group_day: dict[tuple[str, str], dict[date, Decimal]] = defaultdict(dict)
+        for row in sales_rows:
+            key = (str(row["country_category"]), str(row["max_asin"]))
+            sales_by_group_day[key][row["dt_date"]] = Decimal(str(row["sales_qty"] or 0))
+
+        update_params = []
+        for country_category, max_asin in sorted(group_keys):
+            daily_sales = sales_by_group_day.get((country_category, max_asin), {})
+            if daily_sales:
+                series_start = max(start_date, min(daily_sales))
+                series_days = (biz_date - series_start).days + 1
+                points = [
+                    DailySalesPoint(
+                        day=series_start + timedelta(days=offset),
+                        sales_qty=daily_sales.get(
+                            series_start + timedelta(days=offset), Decimal("0")
+                        ),
+                    )
+                    for offset in range(series_days)
+                ]
+            else:
+                points = []
+            detection = detect_sales_spike(points, calibration)
+            update_params.append(
+                {
+                    "sales_spike_status": detection.status.value,
+                    "sales_spike_flag": int(detection.highlight),
+                    "sales_spike_date": detection.spike_date,
+                    "sales_spike_qty": detection.spike_qty,
+                    "sales_spike_baseline": detection.baseline,
+                    "sales_spike_score": detection.score,
+                    "sales_spike_reason": detection.reason,
+                    "snapshot_date": snapshot_date,
+                    "country_category": country_category,
+                    "max_asin": max_asin,
+                }
+            )
+
+        cursor.executemany(
+            f"""
+            update {result_table}
+            set sales_spike_status = %(sales_spike_status)s,
+                sales_spike_flag = %(sales_spike_flag)s,
+                sales_spike_date = %(sales_spike_date)s,
+                sales_spike_qty = %(sales_spike_qty)s,
+                sales_spike_baseline = %(sales_spike_baseline)s,
+                sales_spike_score = %(sales_spike_score)s,
+                sales_spike_reason = %(sales_spike_reason)s
+            where cur_date = %(snapshot_date)s
+              and country_category = %(country_category)s
+              and binary max_asin = binary %(max_asin)s
+            """,
+            update_params,
+        )
+        affected_rows = max(cursor.rowcount, 0)
+    conn.commit()
+    return affected_rows
