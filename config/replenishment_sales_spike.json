@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "calibrated_at": "2026-08-06",
+  "lookback_days": 30,
+  "min_history_days": 14,
+  "scale_floor": "1",
+  "bands": [
+    {
+      "baseline_upper": "0.00",
+      "suspected_score_threshold": "18.0000000",
+      "recovery_mean_upper": "0.6666666666666666666666666667"
+    },
+    {
+      "baseline_upper": null,
+      "suspected_score_threshold": "10.11736139214892755969243221",
+      "recovery_mean_upper": "8.666666666666666666666666667"
+    }
+  ]
+}

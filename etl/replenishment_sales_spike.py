@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from enum import Enum
+from pathlib import Path
 from statistics import median
 from typing import Sequence
 
@@ -16,6 +18,10 @@ class SpikeStatus(str, Enum):
     SUSPECTED = "suspected"
     CONFIRMED_RECOVERED = "confirmed_recovered"
     SUSTAINED_GROWTH = "sustained_growth"
+
+
+class SpikeConfigurationError(ValueError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -51,6 +57,13 @@ class SpikeDetection:
 
 
 @dataclass(frozen=True)
+class CalibrationSample:
+    baseline: Decimal
+    score: Decimal
+    following_three_day_mean: Decimal
+
+
+@dataclass(frozen=True)
 class _ScoredPoint:
     point: DailySalesPoint
     baseline: Decimal
@@ -82,6 +95,126 @@ def select_band(baseline: Decimal, calibration: SpikeCalibration) -> SpikeBand:
         if band.baseline_upper is None or baseline <= band.baseline_upper:
             return band
     raise ValueError("爆单校准配置缺少兜底销量分组")
+
+
+def decimal_quantile(values: Sequence[Decimal], quantile: Decimal) -> Decimal:
+    ordered = sorted(values)
+    if not ordered:
+        raise ValueError("分位数样本不能为空")
+    if quantile < 0 or quantile > 1:
+        raise ValueError("分位数必须在0到1之间")
+    position = quantile * Decimal(len(ordered) - 1)
+    lower_index = int(position)
+    upper_index = min(lower_index + 1, len(ordered) - 1)
+    fraction = position - Decimal(lower_index)
+    return ordered[lower_index] + (ordered[upper_index] - ordered[lower_index]) * fraction
+
+
+def calibrate_spike_bands(samples: Sequence[CalibrationSample]) -> SpikeCalibration:
+    if not samples:
+        raise ValueError("爆单校准样本不能为空")
+
+    baselines = [sample.baseline for sample in samples]
+    candidate_bounds = [
+        decimal_quantile(baselines, quantile)
+        for quantile in (Decimal("0.25"), Decimal("0.50"), Decimal("0.75"))
+    ]
+    bounds: list[Decimal | None] = []
+    for bound in candidate_bounds:
+        if not bounds or bound != bounds[-1]:
+            bounds.append(bound)
+    bounds.append(None)
+
+    bands: list[SpikeBand] = []
+    lower_bound: Decimal | None = None
+    for upper_bound in bounds:
+        group = [
+            sample
+            for sample in samples
+            if (lower_bound is None or sample.baseline > lower_bound)
+            and (upper_bound is None or sample.baseline <= upper_bound)
+        ]
+        if not group:
+            lower_bound = upper_bound
+            continue
+        positive_scores = [sample.score for sample in group if sample.score > 0]
+        if not positive_scores:
+            positive_scores = [Decimal("1")]
+        suspected_threshold = decimal_quantile(positive_scores, Decimal("0.995"))
+        normal_means = [
+            sample.following_three_day_mean
+            for sample in group
+            if sample.score < suspected_threshold
+        ]
+        if not normal_means:
+            normal_means = [sample.following_three_day_mean for sample in group]
+        bands.append(
+            SpikeBand(
+                baseline_upper=upper_bound,
+                suspected_score_threshold=suspected_threshold,
+                recovery_mean_upper=decimal_quantile(normal_means, Decimal("0.95")),
+            )
+        )
+        lower_bound = upper_bound
+
+    if not bands or bands[-1].baseline_upper is not None:
+        raise SpikeConfigurationError("爆单校准配置缺少兜底销量分组")
+    return SpikeCalibration(
+        lookback_days=30,
+        min_history_days=14,
+        scale_floor=Decimal("1"),
+        bands=tuple(bands),
+    )
+
+
+def write_spike_calibration(
+    calibration: SpikeCalibration,
+    path: Path,
+    calibrated_at: date,
+) -> None:
+    payload = {
+        "version": 1,
+        "calibrated_at": calibrated_at.isoformat(),
+        "lookback_days": calibration.lookback_days,
+        "min_history_days": calibration.min_history_days,
+        "scale_floor": str(calibration.scale_floor),
+        "bands": [
+            {
+                "baseline_upper": None if band.baseline_upper is None else str(band.baseline_upper),
+                "suspected_score_threshold": str(band.suspected_score_threshold),
+                "recovery_mean_upper": str(band.recovery_mean_upper),
+            }
+            for band in calibration.bands
+        ],
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def load_spike_calibration(path: Path) -> SpikeCalibration:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        bands = tuple(
+            SpikeBand(
+                baseline_upper=(
+                    None if item.get("baseline_upper") is None else Decimal(str(item["baseline_upper"]))
+                ),
+                suspected_score_threshold=Decimal(str(item["suspected_score_threshold"])),
+                recovery_mean_upper=Decimal(str(item["recovery_mean_upper"])),
+            )
+            for item in payload["bands"]
+        )
+        calibration = SpikeCalibration(
+            lookback_days=int(payload["lookback_days"]),
+            min_history_days=int(payload["min_history_days"]),
+            scale_floor=Decimal(str(payload["scale_floor"])),
+            bands=bands,
+        )
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError, OSError) as exc:
+        raise SpikeConfigurationError(f"无法读取爆单校准配置: {exc}") from exc
+    if not calibration.bands or calibration.bands[-1].baseline_upper is not None:
+        raise SpikeConfigurationError("爆单校准配置缺少兜底销量分组")
+    return calibration
 
 
 def detect_sales_spike(
