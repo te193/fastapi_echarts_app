@@ -61,8 +61,9 @@ REPLENISHMENT_EXPORT_HEADER_COMMENTS = {
     ),
     "local_quantity": "本地库存 = 本地可用+采购在途+采购计划+本地质检",
     "final_sales_3d": (
-        "黄色提醒规则：仅针对紧急补货、建议补货和计划补货的有效行；"
-        "当7天销量不少于10，且3天销量达到7天销量的70%时，整行标黄。"
+        "黄色提醒包括：1. 当前3天销量集中；2. 最新完整销售日疑似单日爆单；"
+        "3. 近30天内已确认爆单后恢复正常，但异常销量仍影响当前补货日销。"
+        "黄色仅用于人工复核，不修改补货数量。"
     ),
 }
 REPLENISHMENT_SALES_CONCENTRATION_FILL = PatternFill(
@@ -241,12 +242,13 @@ def is_replenishment_sales_concentrated(row: dict) -> bool:
     except (ArithmeticError, TypeError, ValueError):
         return False
 
-    asin_merge_flag = str(row.get("asin_merge_flag") or 0).strip().lower()
-    is_asin_merged = asin_merge_flag in {"1", "1.0", "true", "yes", "是"}
     if level_sort not in (1, 2, 3):
         return False
-    if is_asin_merged and replenish_qty == 0:
+    if replenish_qty <= 0:
         return False
+    sales_spike_flag = str(row.get("sales_spike_flag") or 0).strip().lower()
+    if sales_spike_flag in {"1", "1.0", "true", "yes", "是"}:
+        return True
     if sales_7d < 10:
         return False
     return sales_3d * 10 >= sales_7d * 7
