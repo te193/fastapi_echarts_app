@@ -214,6 +214,16 @@ REPLENISHMENT_COLUMN_LABELS.update({
     "lead_time_lost_sales_qty": "\u4ea4\u671f\u5185\u9884\u8ba1\u635f\u5931\u9500\u91cf",
 })
 
+REPLENISHMENT_EXPORT_HIDDEN_HIGHLIGHT_COLUMNS = (
+    "sales_spike_status",
+    "sales_spike_flag",
+    "sales_spike_date",
+    "sales_spike_qty",
+    "sales_spike_baseline",
+    "sales_spike_score",
+    "sales_spike_reason",
+)
+
 REPLENISHMENT_EXPORT_EXCLUDED_COLUMNS = {
     "stockout_status",
     "gamount_30d",
@@ -242,6 +252,7 @@ REPLENISHMENT_EXPORT_EXCLUDED_COLUMNS = {
     "base_replenish_need_qty",
     "lead_adjusted_replenish_need_qty",
     "lead_time_lost_sales_qty",
+    *REPLENISHMENT_EXPORT_HIDDEN_HIGHLIGHT_COLUMNS,
 }
 
 
@@ -471,13 +482,19 @@ class ReplenishmentDataService:
                 moq_status=moq_status,
             )
             columns = self._export_columns(conn)
+            selected_columns = list(
+                dict.fromkeys(
+                    [col["name"] for col in columns]
+                    + list(REPLENISHMENT_EXPORT_HIDDEN_HIGHLIGHT_COLUMNS)
+                )
+            )
             rows = self._export_items(
                 conn,
                 filters,
                 params,
                 sort_field,
                 sort_dir,
-                [col["name"] for col in columns],
+                selected_columns,
                 period_metrics=period_metrics,
             )
             return {"columns": columns, "rows": rows, "snapshot_date": format_day(selected_date)}

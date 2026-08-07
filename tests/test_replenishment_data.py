@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import MagicMock
 
 from app.services.replenishment_data import (
     FLOW_ENTRY_LABEL,
@@ -38,6 +39,12 @@ class FakeConnection:
     def cursor(self):
         return FakeCursor(self.rows)
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
 
 class RecordingCursor:
     def __init__(self, conn):
@@ -71,6 +78,41 @@ class RecordingConnection:
 
 
 class ReplenishmentDataServiceTests(unittest.TestCase):
+    def test_sales_spike_metadata_is_hidden_from_visible_export_columns(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+        service.database = "etl_datasync_test"
+        conn = FakeConnection(
+            [
+                {"column_name": "seller_sku_adj", "column_comment": ""},
+                {"column_name": "sales_spike_status", "column_comment": ""},
+                {"column_name": "sales_spike_flag", "column_comment": ""},
+                {"column_name": "sales_spike_reason", "column_comment": ""},
+                {"column_name": "replenish_qty", "column_comment": ""},
+            ]
+        )
+
+        names = [column["name"] for column in service._export_columns(conn)]
+
+        self.assertEqual(["seller_sku_adj", "replenish_qty"], names)
+
+    def test_export_payload_queries_hidden_spike_metadata(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+        service.connect = MagicMock(return_value=FakeConnection([]))
+        service._build_where = MagicMock(return_value=("cur_date = %(snapshot_date)s", {}))
+        service._export_columns = MagicMock(
+            return_value=[{"name": "seller_sku_adj", "label": "MSKU"}]
+        )
+        service._export_items = MagicMock(
+            return_value=[{"seller_sku_adj": "JC029b", "sales_spike_flag": 1}]
+        )
+
+        payload = service.get_export_payload(snapshot_date="2026-08-07", keyword="JC029b")
+
+        selected_columns = service._export_items.call_args.args[5]
+        self.assertNotIn("sales_spike_flag", [column["name"] for column in payload["columns"]])
+        self.assertIn("sales_spike_flag", selected_columns)
+        self.assertEqual(1, payload["rows"][0]["sales_spike_flag"])
+
     def test_export_columns_excludes_empty_gmv_and_gross_profit_fields(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)
         service.database = "etl_datasync_test"

@@ -100,7 +100,7 @@ class ExportHeaderTests(unittest.TestCase):
 
     def test_replenishment_sales_concentration_rule(self):
         cases = [
-            ({"final_sales_3d": 7, "final_sales_7d": 10, "support_replenish_level_sort": 1}, True),
+            ({"final_sales_3d": 7, "final_sales_7d": 10, "support_replenish_level_sort": 1, "replenish_qty": 50}, True),
             (
                 {
                     "final_sales_3d": 7,
@@ -130,6 +130,43 @@ class ExportHeaderTests(unittest.TestCase):
         for row, expected in cases:
             with self.subTest(row=row):
                 self.assertEqual(expected, main.is_replenishment_sales_concentrated(row))
+
+    def test_mad_spike_highlight_requires_active_level_and_positive_replenishment(self):
+        cases = [
+            ({"support_replenish_level_sort": 1, "replenish_qty": 2295, "sales_spike_flag": 1, "sales_spike_status": "suspected"}, True),
+            ({"support_replenish_level_sort": 2, "replenish_qty": 2295, "sales_spike_flag": 1, "sales_spike_status": "confirmed_recovered"}, True),
+            ({"support_replenish_level_sort": 3, "replenish_qty": 0, "sales_spike_flag": 1}, False),
+            ({"support_replenish_level_sort": 4, "replenish_qty": 2295, "sales_spike_flag": 1}, False),
+            ({"support_replenish_level_sort": 1, "replenish_qty": 2295, "sales_spike_flag": 0, "sales_spike_status": "sustained_growth", "final_sales_3d": 5, "final_sales_7d": 183}, False),
+        ]
+
+        for row, expected in cases:
+            with self.subTest(row=row):
+                self.assertEqual(expected, main.is_replenishment_sales_concentrated(row))
+
+    def test_mad_spike_xlsx_keeps_quantity_and_hides_metadata_columns(self):
+        payload = {
+            "columns": [
+                {"name": "seller_sku_adj", "label": "MSKU"},
+                {"name": "replenish_qty", "label": "补货数量"},
+            ],
+            "rows": [
+                {
+                    "seller_sku_adj": "KQ-UFY7-HWK2",
+                    "replenish_qty": Decimal("2295"),
+                    "support_replenish_level_sort": 1,
+                    "sales_spike_flag": 1,
+                    "sales_spike_status": "confirmed_recovered",
+                }
+            ],
+        }
+
+        workbook = load_workbook(BytesIO(main.build_replenishment_xlsx(payload)), read_only=False)
+        worksheet = workbook.active
+
+        self.assertEqual(["MSKU", "补货数量"], [cell.value for cell in worksheet[1]])
+        self.assertEqual(2295, worksheet["B2"].value)
+        self.assertTrue(all(cell.fill.fgColor.rgb.endswith("FFF2CC") for cell in worksheet[2]))
 
     def test_replenishment_xlsx_highlights_concentrated_sales_row(self):
         payload = {
@@ -162,7 +199,8 @@ class ExportHeaderTests(unittest.TestCase):
         worksheet = workbook.active
 
         self.assertIsNotNone(worksheet["B1"].comment)
-        self.assertIn("3天销量达到7天销量的70%", worksheet["B1"].comment.text)
+        self.assertIn("最新完整销售日疑似单日爆单", worksheet["B1"].comment.text)
+        self.assertIn("不修改补货数量", worksheet["B1"].comment.text)
         self.assertTrue(all(cell.fill.fill_type == "solid" for cell in worksheet[2]))
         self.assertTrue(all(cell.fill.fgColor.rgb.endswith("FFF2CC") for cell in worksheet[2]))
         self.assertTrue(all(cell.fill.fill_type is None for cell in worksheet[3]))
