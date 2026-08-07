@@ -456,6 +456,16 @@ def test_role_diagnostic_drawer_loads_evidence_and_supports_period_and_country_d
     assert "还差多少" in script
 
 
+def test_country_dimension_role_diagnostic_drawer_prioritizes_clicked_country():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+
+    assert "focusCountry" in script
+    assert "function prioritizeRoleDiagnosticCountry(countries, focusCountry)" in script
+    assert 'detailState.detail_view === "country"' in script
+    assert "roleDiagnosticState.focusCountry" in script
+    assert "items.slice(0, focusIndex), items.slice(focusIndex + 1)" in script
+
+
 def test_role_diagnostic_table_cell_uses_a_clear_action_button():
     script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
     styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")

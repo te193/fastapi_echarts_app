@@ -53,6 +53,7 @@
     row: null,
     period: "30d",
     payload: null,
+    focusCountry: "",
     openCountry: null,
     requestToken: 0
   };
@@ -2724,6 +2725,9 @@
     roleDiagnosticState.row = row;
     roleDiagnosticState.period = linkedPeriod;
     roleDiagnosticState.payload = null;
+    roleDiagnosticState.focusCountry = detailState.detail_view === "country"
+      ? String(row.country || "").trim()
+      : "";
     roleDiagnosticState.openCountry = null;
     loadRoleDiagnosticDrawer();
   }
@@ -2781,12 +2785,31 @@
       rows + '</tbody></table></div>';
   }
 
+  function prioritizeRoleDiagnosticCountry(countries, focusCountry) {
+    var items = (countries || []).slice();
+    var normalizedFocus = String(focusCountry || "").trim();
+    if (!normalizedFocus) return items;
+    var focusIndex = items.findIndex(function (item) {
+      return String((item || {}).country || "").trim() === normalizedFocus;
+    });
+    if (focusIndex <= 0) return items;
+    return [items[focusIndex]].concat(items.slice(0, focusIndex), items.slice(focusIndex + 1));
+  }
+
   function renderRoleDiagnosticDrawer(payload) {
     var identity = payload.identity || {};
     var globalDiagnostic = payload.global_diagnostic;
-    var countries = payload.country_diagnostics || [];
+    var countries = prioritizeRoleDiagnosticCountry(
+      payload.country_diagnostics,
+      roleDiagnosticState.focusCountry
+    );
+    var focusCountryVisible = Boolean(roleDiagnosticState.focusCountry) && countries.some(function (item) {
+      return String((item || {}).country || "").trim() === roleDiagnosticState.focusCountry;
+    });
     if (roleDiagnosticState.openCountry === null && countries.length) {
-      roleDiagnosticState.openCountry = countries[0].country || "";
+      roleDiagnosticState.openCountry = focusCountryVisible
+        ? roleDiagnosticState.focusCountry
+        : (countries[0].country || "");
     }
     var periods = ["7d", "14d", "30d", "90d"].map(function (period) {
       return '<button type="button" data-role-diagnostic-period="' + period + '" class="' +
@@ -2832,8 +2855,11 @@
         '<span class="label-hub-role-country-gap"><small>' + Number(item.unmet_count || 0) + ' 项待提升</small><b>' +
         app.escapeHtml(item.summary || "当前指标均已达标") + '</b></span></button>' + details + '</article>';
     }).join("");
+    var countryOrderCopy = focusCountryVisible
+      ? "当前国家优先 · 其余按问题优先级"
+      : "按问题优先级排列";
     var countryHtml = '<section class="label-hub-role-countries"><div class="label-hub-role-section-title"><div><span>国家站点判断</span>' +
-      '<h3>各国家子标签与问题情况</h3></div><small>按问题优先级排列 · ' + countries.length +
+      '<h3>各国家子标签与问题情况</h3></div><small>' + countryOrderCopy + ' · ' + countries.length +
       ' 个国家</small></div><div class="label-hub-role-country-list">' +
       (countryRows || '<div class="empty-state compact">当前周期没有国家站点角色证据。</div>') + '</div></section>';
 
