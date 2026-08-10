@@ -102,3 +102,16 @@ def test_latest_status_section_has_inventory_quick_filters():
         assert f'data-inventory-status-filter="{filter_key}"' in template
     assert "inventory_status_filter: state.inventory_status_filter || \"all\"" in script
     assert 'el.inventoryStatusFilters.addEventListener("click"' in script
+
+
+def test_latest_status_grid_sort_values_match_displayed_values():
+    script = (ROOT / "app" / "static" / "js" / "return_goods.js").read_text(encoding="utf-8")
+
+    assert 'headerName: "销量恢复率", field: "sales_recovery_rate"' in script
+    assert "params.data.sales_recovery_rate_text" in script
+    assert 'headerName: "当前累计恢复率", field: "cumulative_avg_recovery_rate"' in script
+    assert "params.data.cumulative_avg_recovery_rate_text" in script
+    assert 'headerName: "近期趋势", colId: "recovery_trend"' in script
+    assert "valueGetter: function (params) { return recoveryTrendText(params.data || {}); }" in script
+    assert 'headerName: "国家售价 / 定价", field: "listing_preview", sortable: false, filter: false' in script
+    assert 'headerName: "广告概览", field: "listing_preview", sortable: false, filter: false' in script
