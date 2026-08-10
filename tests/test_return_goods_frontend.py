@@ -115,3 +115,14 @@ def test_latest_status_grid_sort_values_match_displayed_values():
     assert "valueGetter: function (params) { return recoveryTrendText(params.data || {}); }" in script
     assert 'headerName: "国家售价 / 定价", field: "listing_preview", sortable: false, filter: false' in script
     assert 'headerName: "广告概览", field: "listing_preview", sortable: false, filter: false' in script
+
+
+def test_return_goods_page_size_options_include_large_and_all_choices():
+    template = (ROOT / "app" / "templates" / "return_goods.html").read_text(encoding="utf-8")
+    script = (ROOT / "app" / "static" / "js" / "return_goods.js").read_text(encoding="utf-8")
+
+    assert '<option value="200">200条</option>' in template
+    assert '<option value="500">500条</option>' in template
+    assert '<option value="0">全部</option>' in template
+    assert "state.page_size = Number(el.pageSizeSelect.value || 20);" in script
+    assert "page_size: state.page_size" in script

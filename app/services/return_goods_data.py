@@ -68,6 +68,16 @@ def to_int(value: Any) -> int:
         return 0
 
 
+def _resolve_pagination(page: int, page_size: int, total: int) -> tuple[int, int, int, int]:
+    safe_page = max(1, int(page or 1))
+    requested_page_size = int(20 if page_size is None else page_size)
+    if requested_page_size == 0:
+        return 1, max(1, total), 0, 1
+    safe_page_size = max(10, min(500, requested_page_size))
+    total_pages = max(1, math.ceil(total / safe_page_size))
+    return min(safe_page, total_pages), safe_page_size, safe_page_size, total_pages
+
+
 class ReturnGoodsDataService:
     def __init__(self) -> None:
         apply_database_ini_env()
@@ -105,12 +115,11 @@ class ReturnGoodsDataService:
         page: int = 1,
         page_size: int = 20,
     ) -> dict[str, Any]:
-        safe_page = max(1, int(page or 1))
-        safe_page_size = max(10, min(100, int(page_size or 20)))
+        empty_page, _, empty_page_size, _ = _resolve_pagination(page, page_size, 0)
         with self.connect() as conn:
             latest_snapshot = self._latest_snapshot_date(conn)
             if latest_snapshot is None:
-                return self._empty_payload(safe_page, safe_page_size)
+                return self._empty_payload(empty_page, empty_page_size)
             safe_period_days = max(1, int(period_days or 1))
             requested_snapshot, period_start, period_end = self._resolve_period(snapshot_date, safe_period_days, latest_snapshot)
             snapshot_day = self._snapshot_for_period(conn, requested_snapshot) or latest_snapshot
@@ -160,9 +169,10 @@ class ReturnGoodsDataService:
             warnings = self._warnings(conn, filters, params)
             detail_filters = self._detail_where(filters, inventory_status_filter)
             total = self._total(conn, detail_filters, params)
-            total_pages = max(1, math.ceil(total / safe_page_size))
-            safe_page = min(safe_page, total_pages)
-            items = self._items(conn, detail_filters, params, safe_page, safe_page_size)
+            safe_page, query_page_size, response_page_size, total_pages = _resolve_pagination(
+                page, page_size, total
+            )
+            items = self._items(conn, detail_filters, params, safe_page, query_page_size) if total else []
             self._attach_listing_previews(conn, snapshot_day, items)
             meta = self._meta(conn)
         return {
@@ -184,7 +194,7 @@ class ReturnGoodsDataService:
             "meta": meta,
             "total": total,
             "page": safe_page,
-            "page_size": safe_page_size,
+            "page_size": response_page_size,
             "total_pages": total_pages,
         }
 

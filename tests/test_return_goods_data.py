@@ -5,10 +5,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.services.return_goods_data import ReturnGoodsDataService
+from app.services.return_goods_data import ReturnGoodsDataService, _resolve_pagination
 
 
 class ReturnGoodsServiceSqlTests(unittest.TestCase):
+    def test_resolve_pagination_supports_500_rows(self):
+        self.assertEqual((2, 500, 500, 3), _resolve_pagination(2, 500, 1200))
+
+    def test_resolve_pagination_uses_total_for_all_rows(self):
+        self.assertEqual((1, 694, 0, 1), _resolve_pagination(7, 0, 694))
+        self.assertEqual((1, 1, 0, 1), _resolve_pagination(3, 0, 0))
+
     def test_build_where_filters_country_store_keyword_stage_and_warning(self):
         service = ReturnGoodsDataService()
 
