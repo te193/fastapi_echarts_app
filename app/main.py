@@ -1459,7 +1459,7 @@ def api_return_goods(
     inventory_status_filter: str = Query(default="all"),
     return_day: int = Query(default=0, ge=0, le=21),
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=10, le=100),
+    page_size: int = Query(default=20, ge=0, le=500),
 ) -> dict:
     safe_return_day = return_day if isinstance(return_day, int) else 0
     params = {

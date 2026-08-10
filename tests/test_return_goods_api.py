@@ -3,6 +3,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from fastapi.testclient import TestClient
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import main
@@ -87,6 +89,21 @@ class ReturnGoodsApiTests(unittest.TestCase):
             main.api_return_goods(return_day=6)
 
         self.assertEqual(6, service.calls[0]["return_day"])
+
+    def test_api_return_goods_accepts_all_and_larger_page_sizes(self):
+        service = FakeReturnGoodsService()
+        client = TestClient(main.app)
+
+        with patch("app.main.return_goods_service", service):
+            statuses = [
+                client.get("/api/return-goods", params={"page_size": value}).status_code
+                for value in (0, 200, 500)
+            ]
+            too_large = client.get("/api/return-goods", params={"page_size": 501})
+
+        self.assertEqual([200, 200, 200], statuses)
+        self.assertEqual([0, 200, 500], [call["page_size"] for call in service.calls])
+        self.assertEqual(422, too_large.status_code)
 
     def test_api_return_goods_stage_detail_passes_query_params_to_service(self):
         service = FakeReturnGoodsService()
