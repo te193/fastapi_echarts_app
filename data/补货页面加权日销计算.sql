@@ -9,6 +9,10 @@
    - 品牌年份，用于区分新品/老品权重
 3. etl_datasync.etl_dispose_lx_fba_shipment
    - 接收次数 receiving_cnt
+4. dwd_datasync.lx_sales_mws_listing
+   - 国家站点最新 Listing 售价和原币币种
+5. dwd_datasync.lx_basic_currency
+   - Listing 同步月份的原币兑人民币官方汇率
 
 按用户要求，本 SQL 不计算跟卖补偿、补货数量、库存支撑天数等其他指标。
 
@@ -239,29 +243,82 @@ adjusted_daily_sales AS (
             ELSE m.sales_30 / GREATEST(m.r_30d_salable_days, 15)
         END AS daily_sales_30d
     FROM metric_base AS m
-)
-SELECT
-    prm.biz_date,
-    a.country_category,
-    a.country,
-    a.seller_name_new,
-    a.seller_sku_adj,
-    a.max_brand_name,
-    a.receiving_cnt,
-    CASE WHEN a.is_new_product = 1 THEN '新品' ELSE '老品' END AS product_type,
-    a.sales_3,
-    a.r_3d_salable_days,
-    ROUND(a.daily_sales_3d, 6) AS daily_sales_3d,
-    a.sales_7,
-    a.r_7d_salable_days,
-    ROUND(a.daily_sales_7d, 6) AS daily_sales_7d,
-    a.sales_14,
-    a.r_14d_salable_days,
-    ROUND(a.daily_sales_14d, 6) AS daily_sales_14d,
-    a.sales_30,
-    a.r_30d_salable_days,
-    ROUND(a.daily_sales_30d, 6) AS daily_sales_30d,
-    ROUND(
+),
+
+/* 规范化 Listing 当前同步数据，并排除空值及非正数售价。 */
+listing_source AS (
+    SELECT
+        CASE
+            WHEN l.marketplace = '英国' THEN '英国站'
+            WHEN l.marketplace IN ('美国', '加拿大', '巴西', '墨西哥') THEN '北美站'
+            ELSE '欧洲站'
+        END AS country_category,
+        l.marketplace AS country,
+        CASE
+            WHEN LOCATE('-', l.seller_name) > 0
+                THEN LEFT(l.seller_name, LOCATE('-', l.seller_name) - 1)
+            ELSE l.seller_name
+        END AS seller_name_new,
+        l.seller_sku AS seller_sku_adj,
+        CAST(NULLIF(l.landed_price, '') AS DECIMAL(18,4)) AS listing_price,
+        NULLIF(UPPER(TRIM(l.currency_code)), '') AS currency_code,
+        l.create_time,
+        CASE NULLIF(UPPER(TRIM(l.currency_code)), '')
+            WHEN 'EUR' THEN '欧元'
+            WHEN 'PLN' THEN '波兰兹罗提'
+            WHEN 'SEK' THEN '瑞典'
+            WHEN 'TRY' THEN '土耳其里拉'
+            WHEN 'GBP' THEN '英镑'
+            WHEN 'USD' THEN '美元'
+            WHEN 'CAD' THEN '加元'
+            WHEN 'MXN' THEN '墨西哥比索'
+            WHEN 'BRL' THEN '巴西雷亚尔'
+            ELSE NULL
+        END AS currency_name
+    FROM dwd_datasync.lx_sales_mws_listing AS l
+    CROSS JOIN params AS prm
+    WHERE NULLIF(TRIM(l.landed_price), '') IS NOT NULL
+      AND CAST(l.landed_price AS DECIMAL(18,4)) > 0
+      AND l.seller_sku IS NOT NULL
+      AND l.seller_sku <> ''
+      AND (prm.target_msku = '' OR l.seller_sku = prm.target_msku)
+),
+
+/* 每个国家、店铺和 MSKU 只保留最新一条有效 Listing 售价。 */
+listing_ranked AS (
+    SELECT
+        l.*,
+        ROW_NUMBER() OVER (
+            PARTITION BY
+                l.country_category,
+                l.country,
+                l.seller_name_new,
+                l.seller_sku_adj
+            ORDER BY l.create_time DESC, l.listing_price DESC
+        ) AS price_rank
+    FROM listing_source AS l
+),
+listing_latest AS (
+    SELECT
+        l.country_category,
+        l.country,
+        l.seller_name_new,
+        l.seller_sku_adj,
+        l.listing_price,
+        l.currency_code,
+        l.create_time AS listing_create_time,
+        CAST(NULLIF(c.rate_org, '') AS DECIMAL(18,8)) AS exchange_rate_cny
+    FROM listing_ranked AS l
+    LEFT JOIN dwd_datasync.lx_basic_currency AS c
+           ON l.currency_name = c.name
+          AND DATE_FORMAT(l.create_time, '%Y-%m') = c.date
+    WHERE l.price_rank = 1
+),
+
+/* 先保留未舍入的加权日销，供两种币种的广告预算共同使用。 */
+weighted_metrics AS (
+    SELECT
+        a.*,
         CASE
             WHEN a.is_new_product = 1 THEN
                 a.daily_sales_3d * 0.5
@@ -270,13 +327,50 @@ SELECT
                 a.daily_sales_7d * 0.6
                 + a.daily_sales_14d * 0.2
                 + a.daily_sales_30d * 0.2
-        END,
-        6
-    ) AS daily_avg_sales
-FROM adjusted_daily_sales AS a
+        END AS daily_avg_sales
+    FROM adjusted_daily_sales AS a
+)
+SELECT
+    prm.biz_date,
+    w.country_category,
+    w.country,
+    w.seller_name_new,
+    w.seller_sku_adj,
+    w.max_brand_name,
+    w.receiving_cnt,
+    CASE WHEN w.is_new_product = 1 THEN '新品' ELSE '老品' END AS product_type,
+    w.sales_3,
+    w.r_3d_salable_days,
+    ROUND(w.daily_sales_3d, 6) AS daily_sales_3d,
+    w.sales_7,
+    w.r_7d_salable_days,
+    ROUND(w.daily_sales_7d, 6) AS daily_sales_7d,
+    w.sales_14,
+    w.r_14d_salable_days,
+    ROUND(w.daily_sales_14d, 6) AS daily_sales_14d,
+    w.sales_30,
+    w.r_30d_salable_days,
+    ROUND(w.daily_sales_30d, 6) AS daily_sales_30d,
+    ROUND(w.daily_avg_sales, 6) AS daily_avg_sales,
+    ROUND(lp.listing_price, 4) AS listing_price,
+    lp.currency_code,
+    ROUND(lp.exchange_rate_cny, 4) AS exchange_rate_cny,
+    ROUND(lp.listing_price * lp.exchange_rate_cny, 2) AS listing_price_cny,
+    ROUND(lp.listing_price * 0.05 * w.daily_avg_sales * 30, 2) AS ad_budget_original,
+    ROUND(
+        lp.listing_price * lp.exchange_rate_cny
+        * 0.05 * w.daily_avg_sales * 30,
+        2
+    ) AS ad_budget_cny
+FROM weighted_metrics AS w
 CROSS JOIN params AS prm
+LEFT JOIN listing_latest AS lp
+       ON w.country_category = lp.country_category
+      AND w.country = lp.country
+      AND w.seller_name_new = lp.seller_name_new
+      AND BINARY w.seller_sku_adj = lp.seller_sku_adj
 ORDER BY
-    a.country_category,
-    a.country,
-    a.seller_name_new,
-    a.seller_sku_adj;
+    w.country_category,
+    w.country,
+    w.seller_name_new,
+    w.seller_sku_adj;
