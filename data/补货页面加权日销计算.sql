@@ -1,13 +1,13 @@
 /*
-用途：使用 DWS 分层表计算补货口径的国家站点加权日销和双币种广告预算。
+用途：使用两张会话临时表计算补货口径的国家站点加权日销和双币种广告预算，最终直接返回查询结果。
 
-正式过程表：
+会话临时表：
 1. dws_datasync.tmp_replenishment_weighted_sales_product_30d
    - 产品表现最近 30 天的国家周期汇总
 2. dws_datasync.tmp_replenishment_listing_price_latest
    - Listing 最新同步日的国家售价和人民币汇率
-3. dws_datasync.dws_replenishment_weighted_daily_sales
-   - 最终加权日销和广告预算结果
+
+以上两张表只在当前数据库连接内存在，连接关闭后由 MySQL 自动释放；本 SQL 不持久化过程表或最终结果表。
 
 远端源表：
 1. dwd_datasync.lx_statistics_product_performance
@@ -200,12 +200,7 @@ ALTER TABLE dws_datasync.tmp_replenishment_listing_price_latest
         seller_sku_adj
     );
 
-/* 第三层：从两张小过程表生成最终结果的 building 表。 */
-DROP TABLE IF EXISTS dws_datasync.dws_replenishment_weighted_daily_sales_building;
-CREATE TABLE dws_datasync.dws_replenishment_weighted_daily_sales_building
-ENGINE=InnoDB
-DEFAULT CHARSET=utf8mb4
-AS
+/* 第三层：直接读取两张会话临时表并返回最终结果。 */
 WITH
 period_metrics AS (
     SELECT
@@ -383,27 +378,9 @@ LEFT JOIN dws_datasync.tmp_replenishment_listing_price_latest AS lp
        ON w.country_category = lp.country_category
       AND w.country = lp.country
       AND w.seller_name_new = lp.seller_name_new
-      AND BINARY w.seller_sku_adj = lp.seller_sku_adj;
-
-ALTER TABLE dws_datasync.dws_replenishment_weighted_daily_sales_building
-    ADD PRIMARY KEY (
-        biz_date,
-        country_category,
-        country,
-        seller_name_new,
-        seller_sku_adj
-    );
-
-/* building 完成后原子切换，避免下游读取空表或半成品。 */
-CREATE TABLE IF NOT EXISTS dws_datasync.dws_replenishment_weighted_daily_sales
-LIKE dws_datasync.dws_replenishment_weighted_daily_sales_building;
-
-DROP TABLE IF EXISTS dws_datasync.dws_replenishment_weighted_daily_sales_old;
-
-RENAME TABLE
-    dws_datasync.dws_replenishment_weighted_daily_sales
-        TO dws_datasync.dws_replenishment_weighted_daily_sales_old,
-    dws_datasync.dws_replenishment_weighted_daily_sales_building
-        TO dws_datasync.dws_replenishment_weighted_daily_sales;
-
-DROP TABLE dws_datasync.dws_replenishment_weighted_daily_sales_old;
+      AND BINARY w.seller_sku_adj = lp.seller_sku_adj
+ORDER BY
+    w.country_category,
+    w.country,
+    w.seller_name_new,
+    w.seller_sku_adj;
