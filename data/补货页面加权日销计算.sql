@@ -20,180 +20,180 @@
 - @biz_date：产品表现的最新业务日期。
 */
 
-SET @biz_date = (
-    SELECT DATE(MAX(start_date))
-    FROM dwd_datasync.lx_statistics_product_performance
+set @biz_date = (
+    select date(max(start_date))
+    from dwd_datasync.lx_statistics_product_performance
 );
-SET @product_start_date = DATE_SUB(@biz_date, INTERVAL 29 DAY);
-SET @product_end_date = DATE_ADD(@biz_date, INTERVAL 1 DAY);
-SET @listing_date = (
-    SELECT DATE(MAX(create_time))
-    FROM dwd_datasync.lx_sales_mws_listing
+set @product_start_date = date_sub(@biz_date, interval 29 day);
+set @product_end_date = date_add(@biz_date, interval 1 day);
+set @listing_date = (
+    select date(max(create_time))
+    from dwd_datasync.lx_sales_mws_listing
 );
-SET @listing_end_date = DATE_ADD(@listing_date, INTERVAL 1 DAY);
+set @listing_end_date = date_add(@listing_date, interval 1 day);
 
 /* 第一层：会话临时表只扫描最近 30 天，先按日去重，再落国家周期指标。 */
-DROP TEMPORARY TABLE IF EXISTS dws_datasync.tmp_replenishment_weighted_sales_product_30d;
-CREATE TEMPORARY TABLE dws_datasync.tmp_replenishment_weighted_sales_product_30d
-ENGINE=InnoDB
-DEFAULT CHARSET=utf8mb4
-AS
-SELECT
+drop temporary table if exists dws_datasync.tmp_replenishment_weighted_sales_product_30d;
+create temporary table dws_datasync.tmp_replenishment_weighted_sales_product_30d
+engine=InnoDB
+default charset=utf8mb4
+as
+select
     d.country_category,
     d.country,
     d.seller_name_new,
     d.seller_sku_adj,
-    SUM(CASE WHEN d.dt_date >= DATE_SUB(@biz_date, INTERVAL 2 DAY)
-             THEN d.sales_qty ELSE 0 END) AS sales_3,
-    SUM(CASE WHEN d.dt_date >= DATE_SUB(@biz_date, INTERVAL 6 DAY)
-             THEN d.sales_qty ELSE 0 END) AS sales_7,
-    SUM(CASE WHEN d.dt_date >= DATE_SUB(@biz_date, INTERVAL 13 DAY)
-             THEN d.sales_qty ELSE 0 END) AS sales_14,
-    SUM(d.sales_qty) AS sales_30,
-    SUM(CASE WHEN d.dt_date >= DATE_SUB(@biz_date, INTERVAL 2 DAY)
-              AND d.afn_fulfillable_quantity > 0 THEN 1 ELSE 0 END)
-        AS r_3d_salable_days,
-    SUM(CASE WHEN d.dt_date >= DATE_SUB(@biz_date, INTERVAL 6 DAY)
-              AND d.afn_fulfillable_quantity > 0 THEN 1 ELSE 0 END)
-        AS r_7d_salable_days,
-    SUM(CASE WHEN d.dt_date >= DATE_SUB(@biz_date, INTERVAL 13 DAY)
-              AND d.afn_fulfillable_quantity > 0 THEN 1 ELSE 0 END)
-        AS r_14d_salable_days,
-    SUM(CASE WHEN d.afn_fulfillable_quantity > 0 THEN 1 ELSE 0 END)
-        AS r_30d_salable_days
-FROM (
-    SELECT
-        DATE(p.start_date) AS dt_date,
-        CAST(
-            CASE
-                WHEN p.country = '英国' THEN '英国站'
-                WHEN p.country IN ('美国', '加拿大', '巴西', '墨西哥') THEN '北美站'
-                ELSE '欧洲站'
-            END AS CHAR(16)
-        ) AS country_category,
-        CAST(p.country AS CHAR(32)) AS country,
-        CAST(
-            CASE
-                WHEN LOCATE('-', p.seller_name) > 0
-                    THEN LEFT(p.seller_name, LOCATE('-', p.seller_name) - 1)
-                ELSE p.seller_name
-            END AS CHAR(64)
-        ) AS seller_name_new,
-        CAST(
-            IF(
-                LENGTH(SUBSTRING_INDEX(p.seller_sku, ',', 1)) > 16,
-                TRIM(
-                    LEADING 'amzn.gr.' FROM
-                    SUBSTRING_INDEX(SUBSTRING_INDEX(p.seller_sku, ',', 1), '-', 1)
+    sum(case when d.dt_date >= date_sub(@biz_date, interval 2 day)
+             then d.sales_qty else 0 end) as sales_3,
+    sum(case when d.dt_date >= date_sub(@biz_date, interval 6 day)
+             then d.sales_qty else 0 end) as sales_7,
+    sum(case when d.dt_date >= date_sub(@biz_date, interval 13 day)
+             then d.sales_qty else 0 end) as sales_14,
+    sum(d.sales_qty) as sales_30,
+    sum(case when d.dt_date >= date_sub(@biz_date, interval 2 day)
+              and d.afn_fulfillable_quantity > 0 then 1 else 0 end)
+        as r_3d_salable_days,
+    sum(case when d.dt_date >= date_sub(@biz_date, interval 6 day)
+              and d.afn_fulfillable_quantity > 0 then 1 else 0 end)
+        as r_7d_salable_days,
+    sum(case when d.dt_date >= date_sub(@biz_date, interval 13 day)
+              and d.afn_fulfillable_quantity > 0 then 1 else 0 end)
+        as r_14d_salable_days,
+    sum(case when d.afn_fulfillable_quantity > 0 then 1 else 0 end)
+        as r_30d_salable_days
+from (
+    select
+        date(p.start_date) as dt_date,
+        cast(
+            case
+                when p.country = '英国' then '英国站'
+                when p.country in ('美国', '加拿大', '巴西', '墨西哥') then '北美站'
+                else '欧洲站'
+            end as char(16)
+        ) as country_category,
+        cast(p.country as char(32)) as country,
+        cast(
+            case
+                when locate('-', p.seller_name) > 0
+                    then left(p.seller_name, locate('-', p.seller_name) - 1)
+                else p.seller_name
+            end as char(64)
+        ) as seller_name_new,
+        cast(
+            if(
+                length(substring_index(p.seller_sku, ',', 1)) > 16,
+                trim(
+                    leading 'amzn.gr.' from
+                    substring_index(substring_index(p.seller_sku, ',', 1), '-', 1)
                 ),
-                SUBSTRING_INDEX(p.seller_sku, ',', 1)
-            ) AS CHAR(100)
-        ) AS seller_sku_adj,
-        SUM(COALESCE(p.volume, 0)) AS sales_qty,
-        MAX(COALESCE(p.afn_fulfillable_quantity, 0)) AS afn_fulfillable_quantity
-    FROM dwd_datasync.lx_statistics_product_performance AS p
-    FORCE INDEX (idx_osp_performance_dashboard_cover)
-    WHERE p.start_date >= DATE_FORMAT(@product_start_date, '%Y-%m-%d')
-      AND p.start_date < DATE_FORMAT(@product_end_date, '%Y-%m-%d')
-      AND p.seller_sku NOT LIKE 'Amazon.Found%'
-      AND p.seller_sku IS NOT NULL
-      AND p.seller_sku <> ''
-    GROUP BY
+                substring_index(p.seller_sku, ',', 1)
+            ) as char(100)
+        ) as seller_sku_adj,
+        sum(coalesce(p.volume, 0)) as sales_qty,
+        max(coalesce(p.afn_fulfillable_quantity, 0)) as afn_fulfillable_quantity
+    from dwd_datasync.lx_statistics_product_performance as p
+    force index (idx_osp_performance_dashboard_cover)
+    where p.start_date >= date_format(@product_start_date, '%Y-%m-%d')
+      and p.start_date < date_format(@product_end_date, '%Y-%m-%d')
+      and p.seller_sku not like 'Amazon.Found%'
+      and p.seller_sku is not null
+      and p.seller_sku <> ''
+    group by
         dt_date,
         country_category,
         country,
         seller_name_new,
         seller_sku_adj
-) AS d
-GROUP BY
+) as d
+group by
     d.country_category,
     d.country,
     d.seller_name_new,
     d.seller_sku_adj;
 
 /* 第二层：会话临时表只扫描最新同步日，再在当天取每个业务键的最新有效售价。 */
-DROP TEMPORARY TABLE IF EXISTS dws_datasync.tmp_replenishment_listing_price_latest;
-CREATE TEMPORARY TABLE dws_datasync.tmp_replenishment_listing_price_latest
-ENGINE=InnoDB
-DEFAULT CHARSET=utf8mb4
-AS
-WITH listing_source AS (
-    SELECT
-        CAST(
-            CASE
-                WHEN l.marketplace = '英国' THEN '英国站'
-                WHEN l.marketplace IN ('美国', '加拿大', '巴西', '墨西哥') THEN '北美站'
-                ELSE '欧洲站'
-            END AS CHAR(16)
-        ) AS country_category,
-        CAST(l.marketplace AS CHAR(32)) AS country,
-        CAST(
-            CASE
-                WHEN LOCATE('-', l.seller_name) > 0
-                    THEN LEFT(l.seller_name, LOCATE('-', l.seller_name) - 1)
-                ELSE l.seller_name
-            END AS CHAR(64)
-        ) AS seller_name_new,
-        CAST(l.seller_sku AS CHAR(100)) AS seller_sku_adj,
-        CAST(NULLIF(l.landed_price, '') AS DECIMAL(18,4)) AS listing_price,
-        CAST(NULLIF(UPPER(TRIM(l.currency_code)), '') AS CHAR(10)) AS currency_code,
+drop temporary table if exists dws_datasync.tmp_replenishment_listing_price_latest;
+create temporary table dws_datasync.tmp_replenishment_listing_price_latest
+engine=InnoDB
+default charset=utf8mb4
+as
+with listing_source as (
+    select
+        cast(
+            case
+                when l.marketplace = '英国' then '英国站'
+                when l.marketplace in ('美国', '加拿大', '巴西', '墨西哥') then '北美站'
+                else '欧洲站'
+            end as char(16)
+        ) as country_category,
+        cast(l.marketplace as char(32)) as country,
+        cast(
+            case
+                when locate('-', l.seller_name) > 0
+                    then left(l.seller_name, locate('-', l.seller_name) - 1)
+                else l.seller_name
+            end as char(64)
+        ) as seller_name_new,
+        cast(l.seller_sku as char(100)) as seller_sku_adj,
+        cast(nullif(l.landed_price, '') as decimal(18,4)) as listing_price,
+        cast(nullif(upper(trim(l.currency_code)), '') as char(10)) as currency_code,
         l.create_time,
-        CAST(
-            CASE NULLIF(UPPER(TRIM(l.currency_code)), '')
-                WHEN 'EUR' THEN '欧元'
-                WHEN 'PLN' THEN '波兰兹罗提'
-                WHEN 'SEK' THEN '瑞典'
-                WHEN 'TRY' THEN '土耳其里拉'
-                WHEN 'GBP' THEN '英镑'
-                WHEN 'USD' THEN '美元'
-                WHEN 'CAD' THEN '加元'
-                WHEN 'MXN' THEN '墨西哥比索'
-                WHEN 'BRL' THEN '巴西雷亚尔'
-                ELSE NULL
-            END AS CHAR(32)
-        ) AS currency_name
-    FROM dwd_datasync.lx_sales_mws_listing AS l
-    WHERE l.create_time >= @listing_date
-      AND l.create_time < @listing_end_date
-      AND NULLIF(TRIM(l.landed_price), '') IS NOT NULL
-      AND CAST(l.landed_price AS DECIMAL(18,4)) > 0
-      AND l.seller_sku IS NOT NULL
-      AND l.seller_sku <> ''
+        cast(
+            case nullif(upper(trim(l.currency_code)), '')
+                when 'EUR' then '欧元'
+                when 'PLN' then '波兰兹罗提'
+                when 'SEK' then '瑞典'
+                when 'TRY' then '土耳其里拉'
+                when 'GBP' then '英镑'
+                when 'USD' then '美元'
+                when 'CAD' then '加元'
+                when 'MXN' then '墨西哥比索'
+                when 'BRL' then '巴西雷亚尔'
+                else null
+            end as char(32)
+        ) as currency_name
+    from dwd_datasync.lx_sales_mws_listing as l
+    where l.create_time >= @listing_date
+      and l.create_time < @listing_end_date
+      and nullif(trim(l.landed_price), '') is not null
+      and cast(l.landed_price as decimal(18,4)) > 0
+      and l.seller_sku is not null
+      and l.seller_sku <> ''
 ),
-listing_ranked AS (
-    SELECT
+listing_ranked as (
+    select
         l.*,
-        ROW_NUMBER() OVER (
-            PARTITION BY
+        row_number() over (
+            partition by
                 l.country_category,
                 l.country,
                 l.seller_name_new,
                 l.seller_sku_adj
-            ORDER BY l.create_time DESC, l.listing_price DESC
-        ) AS price_rank
-    FROM listing_source AS l
+            order by l.create_time desc, l.listing_price desc
+        ) as price_rank
+    from listing_source as l
 )
-SELECT
+select
     l.country_category,
     l.country,
     l.seller_name_new,
     l.seller_sku_adj,
     l.listing_price,
     l.currency_code,
-    l.create_time AS listing_create_time,
-    CAST(NULLIF(c.rate_org, '') AS DECIMAL(18,8)) AS exchange_rate_cny,
-    ROUND(
-        l.listing_price * CAST(NULLIF(c.rate_org, '') AS DECIMAL(18,8)),
+    l.create_time as listing_create_time,
+    cast(nullif(c.rate_org, '') as decimal(18,8)) as exchange_rate_cny,
+    round(
+        l.listing_price * cast(nullif(c.rate_org, '') as decimal(18,8)),
         2
-    ) AS listing_price_cny
-FROM listing_ranked AS l
-LEFT JOIN dwd_datasync.lx_basic_currency AS c
-       ON l.currency_name = c.name
-      AND DATE_FORMAT(l.create_time, '%Y-%m') = c.date
-WHERE l.price_rank = 1;
+    ) as listing_price_cny
+from listing_ranked as l
+left join dwd_datasync.lx_basic_currency as c
+       on l.currency_name = c.name
+      and date_format(l.create_time, '%Y-%m') = c.date
+where l.price_rank = 1;
 
-ALTER TABLE dws_datasync.tmp_replenishment_listing_price_latest
-    ADD PRIMARY KEY (
+alter table dws_datasync.tmp_replenishment_listing_price_latest
+    add primary key (
         country_category,
         country,
         seller_name_new,
@@ -201,9 +201,9 @@ ALTER TABLE dws_datasync.tmp_replenishment_listing_price_latest
     );
 
 /* 第三层：直接读取两张会话临时表并返回最终结果。 */
-WITH
-period_metrics AS (
-    SELECT
+with
+period_metrics as (
+    select
         p.country_category,
         p.country,
         p.seller_name_new,
@@ -216,170 +216,166 @@ period_metrics AS (
         p.r_7d_salable_days,
         p.r_14d_salable_days,
         p.r_30d_salable_days
-    FROM dws_datasync.tmp_replenishment_weighted_sales_product_30d AS p
+    from dws_datasync.tmp_replenishment_weighted_sales_product_30d as p
 ),
-product_brand AS (
-    SELECT
+product_brand as (
+    select
         country_category,
         seller_name_new,
         seller_sku,
-        MAX(brand_name) AS max_brand_name
-    FROM etl_datasync.etl_dispose_lx_product_local_product_info
-    GROUP BY country_category, seller_name_new, seller_sku
+        max(brand_name) as max_brand_name
+    from etl_datasync.etl_dispose_lx_product_local_product_info
+    group by country_category, seller_name_new, seller_sku
 ),
-shipment_receiving_count AS (
-    SELECT
+shipment_receiving_count as (
+    select
         msku,
         store_name,
-        COUNT(*) AS receiving_cnt
-    FROM etl_datasync.etl_dispose_lx_fba_shipment
-    WHERE receiving_time IS NOT NULL
-      AND receiving_time <> ''
-      AND quantity_shipped <> 0
-    GROUP BY msku, store_name
+        count(*) as receiving_cnt
+    from etl_datasync.etl_dispose_lx_fba_shipment
+    where receiving_time is not null
+      and receiving_time <> ''
+      and quantity_shipped <> 0
+    group by msku, store_name
 ),
-receiving_metrics AS (
-    SELECT
+receiving_metrics as (
+    select
         f.country_category,
         f.seller_name_new,
         f.msku,
-        MAX(rc.receiving_cnt) AS receiving_cnt
-    FROM etl_datasync.etl_dispose_lx_fba_shipment AS f
-    LEFT JOIN shipment_receiving_count AS rc
-           ON f.msku = rc.msku
-          AND f.store_name = rc.store_name
-    WHERE f.receiving_time IS NOT NULL
-      AND f.receiving_time <> ''
-      AND f.quantity_received <> 0
-    GROUP BY f.country_category, f.seller_name_new, f.msku
+        max(rc.receiving_cnt) as receiving_cnt
+    from etl_datasync.etl_dispose_lx_fba_shipment as f
+    left join shipment_receiving_count as rc
+           on f.msku = rc.msku
+          and f.store_name = rc.store_name
+    where f.receiving_time is not null
+      and f.receiving_time <> ''
+      and f.quantity_received <> 0
+    group by f.country_category, f.seller_name_new, f.msku
 ),
-metric_base AS (
-    SELECT
+metric_base as (
+    select
         m.*,
         b.max_brand_name,
         r.receiving_cnt,
-        CASE
-            WHEN (
-                b.max_brand_name LIKE '%2025%'
-                OR b.max_brand_name LIKE '%2026%'
+        case
+            when (
+                b.max_brand_name like '%2025%'
+                or b.max_brand_name like '%2026%'
             )
-            AND (r.receiving_cnt <= 1 OR r.receiving_cnt IS NULL)
-                THEN 1
-            ELSE 0
-        END AS is_new_product
-    FROM period_metrics AS m
-    LEFT JOIN product_brand AS b
-           ON m.country_category = b.country_category
-          AND m.seller_name_new = b.seller_name_new
-          AND m.seller_sku_adj = b.seller_sku
-    LEFT JOIN receiving_metrics AS r
-           ON m.country_category = r.country_category
-          AND m.seller_name_new = r.seller_name_new
-          AND m.seller_sku_adj = r.msku
+            and (r.receiving_cnt <= 1 or r.receiving_cnt is null)
+                then 1
+            else 0
+        end as is_new_product
+    from period_metrics as m
+    left join product_brand as b
+           on m.country_category = b.country_category
+          and m.seller_name_new = b.seller_name_new
+          and m.seller_sku_adj = b.seller_sku
+    left join receiving_metrics as r
+           on m.country_category = r.country_category
+          and m.seller_name_new = r.seller_name_new
+          and m.seller_sku_adj = r.msku
 ),
-adjusted_daily_sales AS (
-    SELECT
+adjusted_daily_sales as (
+    select
         m.*,
-        CASE
-            WHEN m.r_30d_salable_days >= 7 THEN
-                CASE WHEN m.r_3d_salable_days > 0
-                     THEN m.sales_3 / m.r_3d_salable_days ELSE 0 END
-            ELSE m.sales_3 / GREATEST(m.r_3d_salable_days, 2)
-        END AS daily_sales_3d,
-        CASE
-            WHEN m.r_30d_salable_days >= 7 THEN
-                CASE
-                    WHEN m.r_7d_salable_days >= 7
-                        THEN m.sales_7 / m.r_7d_salable_days
-                    ELSE LEAST(
-                        CASE WHEN m.r_7d_salable_days > 0
-                             THEN m.sales_7 / m.r_7d_salable_days ELSE 0 END,
-                        (CASE WHEN m.r_7d_salable_days > 0
-                              THEN m.sales_7 / m.r_7d_salable_days ELSE 0 END)
+        case
+            when m.r_30d_salable_days >= 7 then
+                case when m.r_3d_salable_days > 0
+                     then m.sales_3 / m.r_3d_salable_days else 0 end
+            else m.sales_3 / greatest(m.r_3d_salable_days, 2)
+        end as daily_sales_3d,
+        case
+            when m.r_30d_salable_days >= 7 then
+                case
+                    when m.r_7d_salable_days >= 7
+                        then m.sales_7 / m.r_7d_salable_days
+                    else least(
+                        case when m.r_7d_salable_days > 0
+                             then m.sales_7 / m.r_7d_salable_days else 0 end,
+                        (case when m.r_7d_salable_days > 0
+                              then m.sales_7 / m.r_7d_salable_days else 0 end)
                             * (m.r_7d_salable_days / (m.r_7d_salable_days + 3))
                         + (m.sales_30 / m.r_30d_salable_days)
                             * (1 - m.r_7d_salable_days / (m.r_7d_salable_days + 3))
                     )
-                END
-            ELSE m.sales_7 / GREATEST(m.r_7d_salable_days, 3)
-        END AS daily_sales_7d,
-        CASE
-            WHEN m.r_30d_salable_days >= 7 THEN
-                CASE
-                    WHEN m.r_14d_salable_days >= 14
-                        THEN m.sales_14 / m.r_14d_salable_days
-                    ELSE LEAST(
-                        CASE WHEN m.r_14d_salable_days > 0
-                             THEN m.sales_14 / m.r_14d_salable_days ELSE 0 END,
-                        (CASE WHEN m.r_14d_salable_days > 0
-                              THEN m.sales_14 / m.r_14d_salable_days ELSE 0 END)
+                end
+            else m.sales_7 / greatest(m.r_7d_salable_days, 3)
+        end as daily_sales_7d,
+        case
+            when m.r_30d_salable_days >= 7 then
+                case
+                    when m.r_14d_salable_days >= 14
+                        then m.sales_14 / m.r_14d_salable_days
+                    else least(
+                        case when m.r_14d_salable_days > 0
+                             then m.sales_14 / m.r_14d_salable_days else 0 end,
+                        (case when m.r_14d_salable_days > 0
+                              then m.sales_14 / m.r_14d_salable_days else 0 end)
                             * (m.r_14d_salable_days / (m.r_14d_salable_days + 7))
                         + (m.sales_30 / m.r_30d_salable_days)
                             * (1 - m.r_14d_salable_days / (m.r_14d_salable_days + 7))
                     )
-                END
-            ELSE m.sales_14 / GREATEST(m.r_14d_salable_days, 7)
-        END AS daily_sales_14d,
-        CASE
-            WHEN m.r_30d_salable_days >= 7
-                THEN m.sales_30 / m.r_30d_salable_days
-            ELSE m.sales_30 / GREATEST(m.r_30d_salable_days, 15)
-        END AS daily_sales_30d
-    FROM metric_base AS m
+                end
+            else m.sales_14 / greatest(m.r_14d_salable_days, 7)
+        end as daily_sales_14d,
+        case
+            when m.r_30d_salable_days >= 7
+                then m.sales_30 / m.r_30d_salable_days
+            else m.sales_30 / greatest(m.r_30d_salable_days, 15)
+        end as daily_sales_30d
+    from metric_base as m
 ),
-weighted_metrics AS (
-    SELECT
+weighted_metrics as (
+    select
         a.*,
-        CASE
-            WHEN a.is_new_product = 1 THEN
+        case
+            when a.is_new_product = 1 then
                 a.daily_sales_3d * 0.5
                 + a.daily_sales_7d * 0.5
-            ELSE
+            else
                 a.daily_sales_7d * 0.6
                 + a.daily_sales_14d * 0.2
                 + a.daily_sales_30d * 0.2
-        END AS daily_avg_sales
-    FROM adjusted_daily_sales AS a
+        end as daily_avg_sales
+    from adjusted_daily_sales as a
 )
-SELECT
-    CAST(@biz_date AS DATE) AS biz_date,
+select
+    cast(@biz_date as date) as biz_date,
     w.country_category,
     w.country,
     w.seller_name_new,
     w.seller_sku_adj,
     w.max_brand_name,
     w.receiving_cnt,
-    CASE WHEN w.is_new_product = 1 THEN '新品' ELSE '老品' END AS product_type,
+    case when w.is_new_product = 1 then '新品' else '老品' end as product_type,
     w.sales_3,
     w.r_3d_salable_days,
-    ROUND(w.daily_sales_3d, 6) AS daily_sales_3d,
     w.sales_7,
     w.r_7d_salable_days,
-    ROUND(w.daily_sales_7d, 6) AS daily_sales_7d,
     w.sales_14,
     w.r_14d_salable_days,
-    ROUND(w.daily_sales_14d, 6) AS daily_sales_14d,
     w.sales_30,
     w.r_30d_salable_days,
-    ROUND(w.daily_sales_30d, 6) AS daily_sales_30d,
-    ROUND(w.daily_avg_sales, 6) AS daily_avg_sales,
-    ROUND(lp.listing_price, 4) AS listing_price,
+    round(w.daily_avg_sales, 6) as daily_avg_sales,
+    round(lp.listing_price, 4) as listing_price,
     lp.currency_code,
-    ROUND(lp.exchange_rate_cny, 4) AS exchange_rate_cny,
-    ROUND(lp.listing_price_cny, 2) AS listing_price_cny,
-    ROUND(lp.listing_price * 0.05 * w.daily_avg_sales * 30, 2) AS ad_budget_original,
-    ROUND(
+    round(lp.exchange_rate_cny, 4) as exchange_rate_cny,
+    round(lp.listing_price_cny, 2) as listing_price_cny,
+    round(lp.listing_price * 0.05 * w.daily_avg_sales * 30, 2) as ad_budget_original,
+    round(
         lp.listing_price * lp.exchange_rate_cny
         * 0.05 * w.daily_avg_sales * 30,
         2
-    ) AS ad_budget_cny
-FROM weighted_metrics AS w
-LEFT JOIN dws_datasync.tmp_replenishment_listing_price_latest AS lp
-       ON w.country_category = lp.country_category
-      AND w.country = lp.country
-      AND w.seller_name_new = lp.seller_name_new
-      AND BINARY w.seller_sku_adj = lp.seller_sku_adj
-ORDER BY
+    ) as ad_budget_cny
+from weighted_metrics as w
+left join dws_datasync.tmp_replenishment_listing_price_latest as lp
+       on w.country_category = lp.country_category
+      and w.country = lp.country
+      and w.seller_name_new = lp.seller_name_new
+      and binary w.seller_sku_adj = lp.seller_sku_adj
+order by
     w.country_category,
     w.country,
     w.seller_name_new,
