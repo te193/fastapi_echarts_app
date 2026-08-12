@@ -23,6 +23,29 @@ def _normalized_sql() -> str:
     return re.sub(r"\s+", " ", _sql_text().lower()).strip()
 
 
+def _final_output_columns(sql: str) -> list[str]:
+    select_sql = _final_select(sql)
+    body = select_sql.split("\nselect\n", 1)[1].rsplit("\nfrom ", 1)[0]
+    expressions = []
+    start = 0
+    depth = 0
+    for index, char in enumerate(body):
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        elif char == "," and depth == 0:
+            expressions.append(body[start:index].strip())
+            start = index + 1
+    expressions.append(body[start:].strip())
+
+    columns = []
+    for expression in expressions:
+        alias_match = re.search(r"\bas\s+([a-z_][a-z0-9_]*)\s*$", expression)
+        columns.append(alias_match.group(1) if alias_match else expression.rsplit(".", 1)[-1])
+    return columns
+
+
 def test_final_select_keeps_period_inputs_but_only_exposes_weighted_daily_sales():
     final_select = _final_select(_sql_text())
 
@@ -125,9 +148,58 @@ def test_final_query_exposes_inventory_constrained_monthly_and_weekly_budgets():
         "weekly_ad_budget_cny",
         "total_budget_pool_cny",
         "inventory_sufficient_flag",
-        "budget_data_status",
     ):
         assert column in final_select
+
+
+def test_final_query_hides_internal_inventory_snapshots_and_budget_status():
+    final_select = _final_select(_sql_text())
+
+    assert "\n    a.inventory_snapshot_date," not in final_select
+    assert "\n    a.restock_snapshot_date," not in final_select
+    assert "end as budget_data_status" not in final_select
+
+
+def test_final_query_exposes_exact_37_column_contract_in_order():
+    assert _final_output_columns(_sql_text()) == [
+        "biz_date",
+        "country_category",
+        "country",
+        "seller_name_new",
+        "seller_sku_adj",
+        "max_brand_name",
+        "receiving_cnt",
+        "product_type",
+        "sales_3",
+        "r_3d_salable_days",
+        "sales_7",
+        "r_7d_salable_days",
+        "sales_14",
+        "r_14d_salable_days",
+        "sales_30",
+        "r_30d_salable_days",
+        "daily_avg_sales",
+        "listing_price",
+        "currency_code",
+        "exchange_rate_cny",
+        "listing_price_cny",
+        "available_total",
+        "stock_up_num",
+        "local_quantity",
+        "total_budget_inventory",
+        "total_weighted_daily_sales",
+        "sales_share",
+        "monthly_forecast_qty",
+        "monthly_allocated_qty",
+        "monthly_ad_budget_original",
+        "monthly_ad_budget_cny",
+        "weekly_forecast_qty",
+        "weekly_allocated_qty",
+        "weekly_ad_budget_original",
+        "weekly_ad_budget_cny",
+        "total_budget_pool_cny",
+        "inventory_sufficient_flag",
+    ]
 
 
 def test_allocation_formulas_use_30_and_7_day_inventory_caps():
@@ -140,10 +212,9 @@ def test_allocation_formulas_use_30_and_7_day_inventory_caps():
     assert "e.daily_avg_sales / e.total_weighted_daily_sales" in sql
 
 
-def test_missing_inventory_snapshots_and_negative_inventory_are_not_ready():
+def test_missing_inventory_snapshots_still_protect_allocations_and_budget_pool():
     sql = _normalized_sql()
 
     assert sql.count("e.inventory_snapshot_date is not null and e.restock_snapshot_date is not null") == 2
     assert "greatest( a.total_budget_inventory, 0 )" in sql
-    assert "when a.inventory_snapshot_date is null or a.restock_snapshot_date is null then 'missing_inventory'" in sql
-    assert "when a.total_budget_inventory < 0 then 'negative_inventory'" in sql
+    assert "or a.inventory_snapshot_date is null or a.restock_snapshot_date is null then null" in sql
