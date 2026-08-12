@@ -160,7 +160,7 @@ def test_final_query_hides_internal_inventory_snapshots_and_budget_status():
     assert "end as budget_data_status" not in final_select
 
 
-def test_final_query_exposes_exact_38_column_contract_in_order():
+def test_final_query_exposes_exact_40_column_contract_in_order():
     assert _final_output_columns(_sql_text()) == [
         "biz_date",
         "country_category",
@@ -189,6 +189,8 @@ def test_final_query_exposes_exact_38_column_contract_in_order():
         "total_budget_inventory",
         "total_weighted_daily_sales",
         "sales_share",
+        "total_inventory_allocated_qty",
+        "site_total_budget_cny",
         "monthly_forecast_qty",
         "monthly_allocated_qty",
         "monthly_ad_budget_original",
@@ -217,7 +219,7 @@ def test_missing_inventory_snapshots_still_protect_allocations_and_budget_pool()
     sql = _normalized_sql()
 
     assert sql.count("e.inventory_snapshot_date is not null and e.restock_snapshot_date is not null") == 2
-    assert "greatest( a.total_budget_inventory, 0 )" in sql
+    assert "greatest(a.total_budget_inventory, 0) * a.sales_share" in sql
     assert "or a.inventory_snapshot_date is null or a.restock_snapshot_date is null then null" in sql
 
 
@@ -230,3 +232,39 @@ def test_weekly_inventory_sufficient_flag_uses_seven_day_forecast():
         "when a.total_budget_inventory >= a.total_weighted_daily_sales * 7 then 1 "
         "else 0 end as weekly_inventory_sufficient_flag"
     ) in final_select
+
+
+def test_total_budget_pool_sums_site_budgets_after_inventory_allocation():
+    sql = _normalized_sql()
+
+    assert "as total_inventory_allocated_qty" in sql
+    assert "i.total_inventory_allocated_qty * i.listing_price_cny * 0.05" in sql
+    assert "as site_total_budget_cny" in sql
+    assert "sum(s.site_total_budget_cny) over" in sql
+    assert "as total_budget_pool_cny_sum" in sql
+    assert "round(a.total_budget_pool_cny_sum, 2)" in sql
+    assert "a.weighted_price_cny_numerator / a.total_weighted_daily_sales" not in sql
+
+
+def test_site_total_budget_returns_zero_for_zero_sales_before_price_checks():
+    sql = _normalized_sql()
+
+    assert (
+        "case when i.daily_avg_sales <= 0 then 0 "
+        "when i.listing_price_cny is null then null "
+        "else i.total_inventory_allocated_qty * i.listing_price_cny * 0.05 "
+        "end as site_total_budget_cny"
+    ) in sql
+
+
+def test_total_budget_pool_uses_full_precision_and_complete_inventory_partition():
+    sql = _normalized_sql()
+    site_budget_cte = sql.split("site_budget_metrics as (", 1)[1].split(
+        "), budget_pool_metrics as (", 1
+    )[0]
+
+    assert "round(" not in site_budget_cte
+    assert (
+        "sum(s.site_total_budget_cny) over ( partition by "
+        "s.country_category, s.seller_name_new, s.seller_sku_adj )"
+    ) in sql

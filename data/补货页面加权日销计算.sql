@@ -478,19 +478,6 @@ eligible_site_metrics as (
         sum(
             case
                 when w.daily_avg_sales > 0
-                 and lp.listing_price_cny is not null
-                    then w.daily_avg_sales * lp.listing_price_cny
-                else 0
-            end
-        ) over (
-            partition by
-                w.country_category,
-                w.seller_name_new,
-                w.seller_sku_adj
-        ) as weighted_price_cny_numerator,
-        sum(
-            case
-                when w.daily_avg_sales > 0
                  and (lp.listing_price is null or lp.exchange_rate_cny is null)
                     then 1
                 else 0
@@ -549,6 +536,38 @@ allocation_metrics as (
             else 0
         end as weekly_allocated_qty
     from eligible_site_metrics as e
+),
+site_inventory_allocation as (
+    select
+        a.*,
+        case
+            when a.total_weighted_daily_sales <= 0 then 0
+            when a.inventory_snapshot_date is null
+              or a.restock_snapshot_date is null then null
+            else greatest(a.total_budget_inventory, 0) * a.sales_share
+        end as total_inventory_allocated_qty
+    from allocation_metrics as a
+),
+site_budget_metrics as (
+    select
+        i.*,
+        case
+            when i.daily_avg_sales <= 0 then 0
+            when i.listing_price_cny is null then null
+            else i.total_inventory_allocated_qty * i.listing_price_cny * 0.05
+        end as site_total_budget_cny
+    from site_inventory_allocation as i
+),
+budget_pool_metrics as (
+    select
+        s.*,
+        sum(s.site_total_budget_cny) over (
+            partition by
+                s.country_category,
+                s.seller_name_new,
+                s.seller_sku_adj
+        ) as total_budget_pool_cny_sum
+    from site_budget_metrics as s
 )
 select
     cast(@biz_date as date) as biz_date,
@@ -578,6 +597,8 @@ select
     round(a.total_budget_inventory, 4) as total_budget_inventory,
     round(a.total_weighted_daily_sales, 6) as total_weighted_daily_sales,
     round(a.sales_share, 8) as sales_share,
+    round(a.total_inventory_allocated_qty, 4) as total_inventory_allocated_qty,
+    round(a.site_total_budget_cny, 2) as site_total_budget_cny,
     round(a.monthly_forecast_qty, 4) as monthly_forecast_qty,
     round(a.monthly_allocated_qty, 4) as monthly_allocated_qty,
     case
@@ -607,16 +628,7 @@ select
         when a.missing_price_site_count > 0
           or a.inventory_snapshot_date is null
           or a.restock_snapshot_date is null then null
-        else round(
-            greatest(
-                a.total_budget_inventory,
-                0
-            )
-            * a.weighted_price_cny_numerator
-            / a.total_weighted_daily_sales
-            * 0.05,
-            2
-        )
+        else round(a.total_budget_pool_cny_sum, 2)
     end as total_budget_pool_cny,
     case
         when a.inventory_snapshot_date is null
@@ -632,7 +644,7 @@ select
         when a.total_budget_inventory >= a.total_weighted_daily_sales * 7 then 1
         else 0
     end as weekly_inventory_sufficient_flag
-from allocation_metrics as a
+from budget_pool_metrics as a
 order by
     a.country_category,
     a.country,
