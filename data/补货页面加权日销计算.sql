@@ -572,8 +572,6 @@ select
     a.currency_code,
     round(a.exchange_rate_cny, 4) as exchange_rate_cny,
     round(a.listing_price_cny, 2) as listing_price_cny,
-    a.inventory_snapshot_date,
-    a.restock_snapshot_date,
     round(a.available_total, 4) as available_total,
     round(a.stock_up_num, 4) as stock_up_num,
     round(a.local_quantity, 4) as local_quantity,
@@ -626,17 +624,7 @@ select
         when a.total_weighted_daily_sales <= 0 then 1
         when a.total_budget_inventory >= a.total_weighted_daily_sales * 30 then 1
         else 0
-    end as inventory_sufficient_flag,
-    case
-        when a.daily_avg_sales <= 0 then 'zero_sales'
-        when a.inventory_snapshot_date is null
-          or a.restock_snapshot_date is null then 'missing_inventory'
-        when a.total_budget_inventory < 0 then 'negative_inventory'
-        when a.listing_price is null then 'missing_listing_price'
-        when a.exchange_rate_cny is null then 'missing_exchange_rate'
-        when a.missing_price_site_count > 0 then 'incomplete_group_price'
-        else 'ready'
-    end as budget_data_status
+    end as inventory_sufficient_flag
 from allocation_metrics as a
 order by
     a.country_category,
