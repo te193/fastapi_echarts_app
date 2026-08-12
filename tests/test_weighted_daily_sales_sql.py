@@ -11,12 +11,16 @@ def _sql_text() -> str:
 
 def _final_select(sql: str) -> str:
     match = re.search(
-        r"\nselect\s+cast\(@biz_date\s+as\s+date\).*?\nfrom\s+weighted_metrics\s+as\s+w",
+        r"\nselect\s+cast\(@biz_date\s+as\s+date\).*?\nfrom\s+[a-z_]+\s+as\s+[a-z]+",
         sql,
         flags=re.IGNORECASE | re.DOTALL,
     )
     assert match is not None, "未找到最终加权日销 select"
     return match.group(0).lower()
+
+
+def _normalized_sql() -> str:
+    return re.sub(r"\s+", " ", _sql_text().lower()).strip()
 
 
 def test_final_select_keeps_period_inputs_but_only_exposes_weighted_daily_sales():
@@ -71,3 +75,75 @@ def test_sql_keywords_and_functions_are_lowercase():
     ]
 
     assert uppercase_tokens == []
+
+
+def test_query_is_read_only_and_does_not_use_result_table():
+    sql = _normalized_sql()
+
+    assert "insert into" not in sql
+    assert "dws_monthly_ad_budget_detail" not in sql
+
+
+def test_inventory_pool_uses_replenishment_support_inventory_components():
+    sql = _normalized_sql()
+
+    assert "create temporary table dws_datasync.tmp_replenishment_budget_inventory_latest" in sql
+    assert "create temporary table dws_datasync.tmp_replenishment_budget_fba_latest" in sql
+    assert "create temporary table dws_datasync.tmp_replenishment_budget_restock_latest" in sql
+    assert "drop temporary table dws_datasync.tmp_replenishment_budget_fba_latest" in sql
+    assert "drop temporary table dws_datasync.tmp_replenishment_budget_restock_latest" in sql
+    assert "product_keys as" not in sql
+    assert "from etl_datasync.etl_dispose_lx_storage_fba_warehouse_detail as f where" in sql
+    assert "from etl_datasync.etl_dispose_lx_replenishment_suggest_restocking as r where" in sql
+    assert sql.count("cast(f.seller_name_new as char(64)) as seller_name_new") == 1
+    assert sql.count("cast(r.seller_name_new as char(64)) as seller_name_new") == 1
+    assert "inventory_keys as" not in sql
+    assert "etl_datasync.etl_dispose_lx_storage_fba_warehouse_detail" in sql
+    assert "etl_datasync.etl_dispose_lx_replenishment_suggest_restocking" in sql
+    assert "coalesce(f.available_total, 0) + coalesce(f.stock_up_num, 0) + coalesce(r.local_quantity, 0) as total_budget_inventory" in sql
+
+
+def test_budget_allocation_only_includes_approved_country_sites():
+    sql = _normalized_sql()
+
+    assert "p.country in ('德国', '法国', '意大利', '西班牙', '荷兰', '美国', '英国')" in sql
+    assert "w.country in ('德国', '法国', '意大利', '西班牙', '荷兰', '美国', '英国')" in sql
+
+
+def test_final_query_exposes_inventory_constrained_monthly_and_weekly_budgets():
+    final_select = _final_select(_sql_text())
+
+    for column in (
+        "total_budget_inventory",
+        "total_weighted_daily_sales",
+        "sales_share",
+        "monthly_forecast_qty",
+        "monthly_allocated_qty",
+        "weekly_forecast_qty",
+        "weekly_allocated_qty",
+        "monthly_ad_budget_cny",
+        "weekly_ad_budget_cny",
+        "total_budget_pool_cny",
+        "inventory_sufficient_flag",
+        "budget_data_status",
+    ):
+        assert column in final_select
+
+
+def test_allocation_formulas_use_30_and_7_day_inventory_caps():
+    sql = _normalized_sql()
+
+    assert "greatest(e.daily_avg_sales, 0) * 30 as monthly_forecast_qty" in sql
+    assert "e.daily_avg_sales * least( 30, greatest(e.total_budget_inventory, 0) / e.total_weighted_daily_sales ) else 0 end as monthly_allocated_qty" in sql
+    assert "greatest(e.daily_avg_sales, 0) * 7 as weekly_forecast_qty" in sql
+    assert "e.daily_avg_sales * least( 7, greatest(e.total_budget_inventory, 0) / e.total_weighted_daily_sales ) else 0 end as weekly_allocated_qty" in sql
+    assert "e.daily_avg_sales / e.total_weighted_daily_sales" in sql
+
+
+def test_missing_inventory_snapshots_and_negative_inventory_are_not_ready():
+    sql = _normalized_sql()
+
+    assert sql.count("e.inventory_snapshot_date is not null and e.restock_snapshot_date is not null") == 2
+    assert "greatest( a.total_budget_inventory, 0 )" in sql
+    assert "when a.inventory_snapshot_date is null or a.restock_snapshot_date is null then 'missing_inventory'" in sql
+    assert "when a.total_budget_inventory < 0 then 'negative_inventory'" in sql
