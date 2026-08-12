@@ -1,13 +1,15 @@
 /*
-用途：使用两张会话临时表计算补货口径的国家站点加权日销和双币种广告预算，最终直接返回查询结果。
+用途：按补货库存池和白名单国家站点的加权日销占比，计算月度、周度广告预算并直接返回查询结果。
 
 会话临时表：
 1. dws_datasync.tmp_replenishment_weighted_sales_product_30d
    - 产品表现最近 30 天的国家周期汇总
 2. dws_datasync.tmp_replenishment_listing_price_latest
    - Listing 最新同步日的国家售价和人民币汇率
+3. dws_datasync.tmp_replenishment_budget_inventory_latest
+   - 补货口径最新库存池，粒度为国家类别、店铺、MSKU
 
-以上两张表只在当前数据库连接内存在，连接关闭后由 MySQL 自动释放；本 SQL 不持久化过程表或最终结果表。
+三张临时表只在当前数据库连接内存在；本 SQL 不建结果表，也不写入结果表。
 
 远端源表：
 1. dwd_datasync.lx_statistics_product_performance
@@ -15,9 +17,10 @@
 3. dwd_datasync.lx_basic_currency
 4. etl_datasync.etl_dispose_lx_product_local_product_info
 5. etl_datasync.etl_dispose_lx_fba_shipment
+6. etl_datasync.etl_dispose_lx_storage_fba_warehouse_detail
+7. etl_datasync.etl_dispose_lx_replenishment_suggest_restocking
 
-参数：
-- @biz_date：产品表现的最新业务日期。
+白名单国家站点：德国、法国、意大利、西班牙、荷兰、美国、英国。
 */
 
 set @biz_date = (
@@ -31,6 +34,16 @@ set @listing_date = (
     from dwd_datasync.lx_sales_mws_listing
 );
 set @listing_end_date = date_add(@listing_date, interval 1 day);
+set @inventory_date = (
+    select date(max(create_time))
+    from etl_datasync.etl_dispose_lx_storage_fba_warehouse_detail
+);
+set @inventory_end_date = date_add(@inventory_date, interval 1 day);
+set @restock_date = (
+    select date(max(create_time))
+    from etl_datasync.etl_dispose_lx_replenishment_suggest_restocking
+);
+set @restock_end_date = date_add(@restock_date, interval 1 day);
 
 /* 第一层：会话临时表只扫描最近 30 天，先按日去重，再落国家周期指标。 */
 drop temporary table if exists dws_datasync.tmp_replenishment_weighted_sales_product_30d;
@@ -98,6 +111,7 @@ from (
       and p.seller_sku not like 'Amazon.Found%'
       and p.seller_sku is not null
       and p.seller_sku <> ''
+      and p.country in ('德国', '法国', '意大利', '西班牙', '荷兰', '美国', '英国')
     group by
         dt_date,
         country_category,
@@ -200,7 +214,106 @@ alter table dws_datasync.tmp_replenishment_listing_price_latest
         seller_sku_adj
     );
 
-/* 第三层：直接读取两张会话临时表并返回最终结果。 */
+/* 第三层：汇总补货口径库存池，避免在国家站点结果中重复计算国家类别库存。 */
+drop temporary table if exists dws_datasync.tmp_replenishment_budget_fba_latest;
+create temporary table dws_datasync.tmp_replenishment_budget_fba_latest
+engine=InnoDB
+default charset=utf8mb4
+as
+select
+    cast(f.country_category as char(16)) as country_category,
+    cast(f.seller_name_new as char(64)) as seller_name_new,
+    cast(f.seller_sku_adj as char(100)) as seller_sku_adj,
+    sum(coalesce(f.available_total, 0)) as available_total,
+    sum(coalesce(f.stock_up_num, 0)) as stock_up_num
+from etl_datasync.etl_dispose_lx_storage_fba_warehouse_detail as f
+where f.create_time >= @inventory_date
+  and f.create_time < @inventory_end_date
+  and f.seller_sku_adj is not null
+  and f.seller_sku_adj <> ''
+group by
+    f.country_category,
+    f.seller_name_new,
+    f.seller_sku_adj;
+
+alter table dws_datasync.tmp_replenishment_budget_fba_latest
+    add primary key (
+        country_category,
+        seller_name_new,
+        seller_sku_adj
+    );
+
+drop temporary table if exists dws_datasync.tmp_replenishment_budget_restock_latest;
+create temporary table dws_datasync.tmp_replenishment_budget_restock_latest
+engine=InnoDB
+default charset=utf8mb4
+as
+select
+    cast(r.country_category as char(16)) as country_category,
+    cast(r.seller_name_new as char(64)) as seller_name_new,
+    cast(r.seller_sku_adj as char(100)) as seller_sku_adj,
+    max(coalesce(r.local_quantity, 0)) as local_quantity
+from etl_datasync.etl_dispose_lx_replenishment_suggest_restocking as r
+where r.create_time >= @restock_date
+  and r.create_time < @restock_end_date
+  and r.seller_sku_adj is not null
+  and r.seller_sku_adj <> ''
+group by
+    r.country_category,
+    r.seller_name_new,
+    r.seller_sku_adj;
+
+alter table dws_datasync.tmp_replenishment_budget_restock_latest
+    add primary key (
+        country_category,
+        seller_name_new,
+        seller_sku_adj
+    );
+
+drop temporary table if exists dws_datasync.tmp_replenishment_budget_inventory_latest;
+create temporary table dws_datasync.tmp_replenishment_budget_inventory_latest
+engine=InnoDB
+default charset=utf8mb4
+as
+select
+    p.country_category,
+    p.seller_name_new,
+    p.seller_sku_adj,
+    cast(@inventory_date as date) as inventory_snapshot_date,
+    cast(@restock_date as date) as restock_snapshot_date,
+    coalesce(f.available_total, 0) as available_total,
+    coalesce(f.stock_up_num, 0) as stock_up_num,
+    coalesce(r.local_quantity, 0) as local_quantity,
+    coalesce(f.available_total, 0)
+        + coalesce(f.stock_up_num, 0)
+        + coalesce(r.local_quantity, 0) as total_budget_inventory
+from (
+    select distinct
+        country_category,
+        seller_name_new,
+        seller_sku_adj
+    from dws_datasync.tmp_replenishment_weighted_sales_product_30d
+) as p
+left join dws_datasync.tmp_replenishment_budget_fba_latest as f
+       on p.country_category = f.country_category
+      and p.seller_name_new = f.seller_name_new
+      and binary p.seller_sku_adj = f.seller_sku_adj
+left join dws_datasync.tmp_replenishment_budget_restock_latest as r
+       on p.country_category = r.country_category
+      and p.seller_name_new = r.seller_name_new
+      and binary p.seller_sku_adj = r.seller_sku_adj;
+
+alter table dws_datasync.tmp_replenishment_budget_inventory_latest
+    add primary key (
+        country_category,
+        seller_name_new,
+        seller_sku_adj
+    );
+
+drop temporary table dws_datasync.tmp_replenishment_budget_fba_latest;
+drop temporary table dws_datasync.tmp_replenishment_budget_restock_latest;
+
+/* 第四层：只处理白名单国家站点，按加权日销占比分配库存和预算并直接返回结果。 */
 with
 period_metrics as (
     select
@@ -340,43 +453,193 @@ weighted_metrics as (
                 + a.daily_sales_30d * 0.2
         end as daily_avg_sales
     from adjusted_daily_sales as a
+),
+eligible_site_metrics as (
+    select
+        w.*,
+        lp.listing_price,
+        lp.currency_code,
+        lp.exchange_rate_cny,
+        lp.listing_price_cny,
+        i.inventory_snapshot_date,
+        i.restock_snapshot_date,
+        i.available_total,
+        i.stock_up_num,
+        i.local_quantity,
+        i.total_budget_inventory,
+        sum(
+            case when w.daily_avg_sales > 0 then w.daily_avg_sales else 0 end
+        ) over (
+            partition by
+                w.country_category,
+                w.seller_name_new,
+                w.seller_sku_adj
+        ) as total_weighted_daily_sales,
+        sum(
+            case
+                when w.daily_avg_sales > 0
+                 and lp.listing_price_cny is not null
+                    then w.daily_avg_sales * lp.listing_price_cny
+                else 0
+            end
+        ) over (
+            partition by
+                w.country_category,
+                w.seller_name_new,
+                w.seller_sku_adj
+        ) as weighted_price_cny_numerator,
+        sum(
+            case
+                when w.daily_avg_sales > 0
+                 and (lp.listing_price is null or lp.exchange_rate_cny is null)
+                    then 1
+                else 0
+            end
+        ) over (
+            partition by
+                w.country_category,
+                w.seller_name_new,
+                w.seller_sku_adj
+        ) as missing_price_site_count
+    from weighted_metrics as w
+    left join dws_datasync.tmp_replenishment_listing_price_latest as lp
+           on w.country_category = lp.country_category
+          and w.country = lp.country
+          and w.seller_name_new = lp.seller_name_new
+          and binary w.seller_sku_adj = lp.seller_sku_adj
+    left join dws_datasync.tmp_replenishment_budget_inventory_latest as i
+           on w.country_category = i.country_category
+          and w.seller_name_new = i.seller_name_new
+          and binary w.seller_sku_adj = i.seller_sku_adj
+    where w.country in ('德国', '法国', '意大利', '西班牙', '荷兰', '美国', '英国')
+),
+allocation_metrics as (
+    select
+        e.*,
+        case
+            when e.daily_avg_sales > 0
+             and e.total_weighted_daily_sales > 0
+                then e.daily_avg_sales / e.total_weighted_daily_sales
+            else 0
+        end as sales_share,
+        greatest(e.daily_avg_sales, 0) * 30 as monthly_forecast_qty,
+        case
+            when e.daily_avg_sales > 0
+             and e.total_weighted_daily_sales > 0
+             and e.inventory_snapshot_date is not null
+             and e.restock_snapshot_date is not null
+                then e.daily_avg_sales * least(
+                    30,
+                    greatest(e.total_budget_inventory, 0)
+                        / e.total_weighted_daily_sales
+                )
+            else 0
+        end as monthly_allocated_qty,
+        greatest(e.daily_avg_sales, 0) * 7 as weekly_forecast_qty,
+        case
+            when e.daily_avg_sales > 0
+             and e.total_weighted_daily_sales > 0
+             and e.inventory_snapshot_date is not null
+             and e.restock_snapshot_date is not null
+                then e.daily_avg_sales * least(
+                    7,
+                    greatest(e.total_budget_inventory, 0)
+                        / e.total_weighted_daily_sales
+                )
+            else 0
+        end as weekly_allocated_qty
+    from eligible_site_metrics as e
 )
 select
     cast(@biz_date as date) as biz_date,
-    w.country_category,
-    w.country,
-    w.seller_name_new,
-    w.seller_sku_adj,
-    w.max_brand_name,
-    w.receiving_cnt,
-    case when w.is_new_product = 1 then '新品' else '老品' end as product_type,
-    w.sales_3,
-    w.r_3d_salable_days,
-    w.sales_7,
-    w.r_7d_salable_days,
-    w.sales_14,
-    w.r_14d_salable_days,
-    w.sales_30,
-    w.r_30d_salable_days,
-    round(w.daily_avg_sales, 6) as daily_avg_sales,
-    round(lp.listing_price, 4) as listing_price,
-    lp.currency_code,
-    round(lp.exchange_rate_cny, 4) as exchange_rate_cny,
-    round(lp.listing_price_cny, 2) as listing_price_cny,
-    round(lp.listing_price * 0.05 * w.daily_avg_sales * 30, 2) as ad_budget_original,
-    round(
-        lp.listing_price * lp.exchange_rate_cny
-        * 0.05 * w.daily_avg_sales * 30,
-        2
-    ) as ad_budget_cny
-from weighted_metrics as w
-left join dws_datasync.tmp_replenishment_listing_price_latest as lp
-       on w.country_category = lp.country_category
-      and w.country = lp.country
-      and w.seller_name_new = lp.seller_name_new
-      and binary w.seller_sku_adj = lp.seller_sku_adj
+    a.country_category,
+    a.country,
+    a.seller_name_new,
+    a.seller_sku_adj,
+    a.max_brand_name,
+    a.receiving_cnt,
+    case when a.is_new_product = 1 then '新品' else '老品' end as product_type,
+    a.sales_3,
+    a.r_3d_salable_days,
+    a.sales_7,
+    a.r_7d_salable_days,
+    a.sales_14,
+    a.r_14d_salable_days,
+    a.sales_30,
+    a.r_30d_salable_days,
+    round(a.daily_avg_sales, 6) as daily_avg_sales,
+    round(a.listing_price, 4) as listing_price,
+    a.currency_code,
+    round(a.exchange_rate_cny, 4) as exchange_rate_cny,
+    round(a.listing_price_cny, 2) as listing_price_cny,
+    a.inventory_snapshot_date,
+    a.restock_snapshot_date,
+    round(a.available_total, 4) as available_total,
+    round(a.stock_up_num, 4) as stock_up_num,
+    round(a.local_quantity, 4) as local_quantity,
+    round(a.total_budget_inventory, 4) as total_budget_inventory,
+    round(a.total_weighted_daily_sales, 6) as total_weighted_daily_sales,
+    round(a.sales_share, 8) as sales_share,
+    round(a.monthly_forecast_qty, 4) as monthly_forecast_qty,
+    round(a.monthly_allocated_qty, 4) as monthly_allocated_qty,
+    case
+        when a.daily_avg_sales <= 0 then 0
+        when a.listing_price is null then null
+        else round(a.monthly_allocated_qty * a.listing_price * 0.05, 2)
+    end as monthly_ad_budget_original,
+    case
+        when a.daily_avg_sales <= 0 then 0
+        when a.listing_price_cny is null then null
+        else round(a.monthly_allocated_qty * a.listing_price_cny * 0.05, 2)
+    end as monthly_ad_budget_cny,
+    round(a.weekly_forecast_qty, 4) as weekly_forecast_qty,
+    round(a.weekly_allocated_qty, 4) as weekly_allocated_qty,
+    case
+        when a.daily_avg_sales <= 0 then 0
+        when a.listing_price is null then null
+        else round(a.weekly_allocated_qty * a.listing_price * 0.05, 2)
+    end as weekly_ad_budget_original,
+    case
+        when a.daily_avg_sales <= 0 then 0
+        when a.listing_price_cny is null then null
+        else round(a.weekly_allocated_qty * a.listing_price_cny * 0.05, 2)
+    end as weekly_ad_budget_cny,
+    case
+        when a.total_weighted_daily_sales <= 0 then 0
+        when a.missing_price_site_count > 0
+          or a.inventory_snapshot_date is null
+          or a.restock_snapshot_date is null then null
+        else round(
+            greatest(
+                a.total_budget_inventory,
+                0
+            )
+            * a.weighted_price_cny_numerator
+            / a.total_weighted_daily_sales
+            * 0.05,
+            2
+        )
+    end as total_budget_pool_cny,
+    case
+        when a.inventory_snapshot_date is null
+          or a.restock_snapshot_date is null then 0
+        when a.total_weighted_daily_sales <= 0 then 1
+        when a.total_budget_inventory >= a.total_weighted_daily_sales * 30 then 1
+        else 0
+    end as inventory_sufficient_flag,
+    case
+        when a.daily_avg_sales <= 0 then 'zero_sales'
+        when a.inventory_snapshot_date is null
+          or a.restock_snapshot_date is null then 'missing_inventory'
+        when a.total_budget_inventory < 0 then 'negative_inventory'
+        when a.listing_price is null then 'missing_listing_price'
+        when a.exchange_rate_cny is null then 'missing_exchange_rate'
+        when a.missing_price_site_count > 0 then 'incomplete_group_price'
+        else 'ready'
+    end as budget_data_status
+from allocation_metrics as a
 order by
-    w.country_category,
-    w.country,
-    w.seller_name_new,
-    w.seller_sku_adj;
+    a.country_category,
+    a.country,
+    a.seller_name_new,
+    a.seller_sku_adj;
