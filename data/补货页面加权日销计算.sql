@@ -624,7 +624,14 @@ select
         when a.total_weighted_daily_sales <= 0 then 1
         when a.total_budget_inventory >= a.total_weighted_daily_sales * 30 then 1
         else 0
-    end as inventory_sufficient_flag
+    end as inventory_sufficient_flag,
+    case
+        when a.inventory_snapshot_date is null
+          or a.restock_snapshot_date is null then 0
+        when a.total_weighted_daily_sales <= 0 then 1
+        when a.total_budget_inventory >= a.total_weighted_daily_sales * 7 then 1
+        else 0
+    end as weekly_inventory_sufficient_flag
 from allocation_metrics as a
 order by
     a.country_category,

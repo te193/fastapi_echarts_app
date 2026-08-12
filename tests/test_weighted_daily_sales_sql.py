@@ -160,7 +160,7 @@ def test_final_query_hides_internal_inventory_snapshots_and_budget_status():
     assert "end as budget_data_status" not in final_select
 
 
-def test_final_query_exposes_exact_37_column_contract_in_order():
+def test_final_query_exposes_exact_38_column_contract_in_order():
     assert _final_output_columns(_sql_text()) == [
         "biz_date",
         "country_category",
@@ -199,6 +199,7 @@ def test_final_query_exposes_exact_37_column_contract_in_order():
         "weekly_ad_budget_cny",
         "total_budget_pool_cny",
         "inventory_sufficient_flag",
+        "weekly_inventory_sufficient_flag",
     ]
 
 
@@ -218,3 +219,14 @@ def test_missing_inventory_snapshots_still_protect_allocations_and_budget_pool()
     assert sql.count("e.inventory_snapshot_date is not null and e.restock_snapshot_date is not null") == 2
     assert "greatest( a.total_budget_inventory, 0 )" in sql
     assert "or a.inventory_snapshot_date is null or a.restock_snapshot_date is null then null" in sql
+
+
+def test_weekly_inventory_sufficient_flag_uses_seven_day_forecast():
+    final_select = re.sub(r"\s+", " ", _final_select(_sql_text())).strip()
+
+    assert (
+        "when a.inventory_snapshot_date is null or a.restock_snapshot_date is null then 0 "
+        "when a.total_weighted_daily_sales <= 0 then 1 "
+        "when a.total_budget_inventory >= a.total_weighted_daily_sales * 7 then 1 "
+        "else 0 end as weekly_inventory_sufficient_flag"
+    ) in final_select
