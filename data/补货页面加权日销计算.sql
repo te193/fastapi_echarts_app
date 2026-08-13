@@ -314,6 +314,11 @@ drop temporary table dws_datasync.tmp_replenishment_budget_fba_latest;
 drop temporary table dws_datasync.tmp_replenishment_budget_restock_latest;
 
 /* 第四层：只处理白名单国家站点，按加权日销占比分配库存和预算并直接返回结果。 */
+
+delete from dws_datasync.dws_monthly_ad_budget_detail
+where biz_date = @biz_date;
+
+insert into dws_datasync.dws_monthly_ad_budget_detail
 with
 period_metrics as (
     select
@@ -650,3 +655,5 @@ order by
     a.country,
     a.seller_name_new,
     a.seller_sku_adj;
+
+select * from dws_datasync.dws_monthly_ad_budget_detail

@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from etl.dashboard_daily_update import COLUMN_COMMENTS
 
 from .services.dashboard_db import dashboard_service
+from .services.ad_budget_data import ad_budget_service
 from .services.country_label_hub_data import country_label_hub_service
 from .services.label_hub_data import label_hub_service
 from .services.label_hub_diagnostics import label_hub_diagnostics_service
@@ -350,6 +351,67 @@ def alerts_page(request: Request) -> HTMLResponse:
         "alerts.html",
         {"page": "alerts", "title": "异常预警工作台"},
     )
+
+
+@app.get("/ad-budget", response_class=HTMLResponse)
+def ad_budget_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "ad_budget.html",
+        {"page": "ad_budget", "title": "广告预算执行工作台"},
+    )
+
+
+@app.get("/api/ad-budget/meta")
+def api_ad_budget_meta() -> dict:
+    return ad_budget_service.get_meta()
+
+
+@app.get("/api/ad-budget")
+def api_ad_budget(
+    country_category: str = "all",
+    country: str = "all",
+    seller_name_new: str = "all",
+    product_type: str = "all",
+    inventory_status: str = "all",
+    anomaly: str = "all",
+    keyword: str = "",
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=20, le=200),
+    sort_field: str = "anomaly_priority",
+    sort_dir: Literal["asc", "desc"] = "desc",
+) -> dict:
+    return ad_budget_service.get_payload(
+        country_category=country_category,
+        country=country,
+        seller_name_new=seller_name_new,
+        product_type=product_type,
+        inventory_status=inventory_status,
+        anomaly=anomaly,
+        keyword=keyword,
+        page=page,
+        page_size=page_size,
+        sort_field=sort_field,
+        sort_dir=sort_dir,
+    )
+
+
+@app.get("/api/ad-budget/detail")
+def api_ad_budget_detail(
+    country_category: str,
+    country: str,
+    seller_name_new: str,
+    seller_sku_adj: str,
+) -> dict:
+    try:
+        return ad_budget_service.get_detail(
+            country_category=country_category,
+            country=country,
+            seller_name_new=seller_name_new,
+            seller_sku_adj=seller_sku_adj,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.get("/opportunities", response_class=HTMLResponse)

@@ -61,10 +61,10 @@
             </div>
           </section>
 
-          <section class="nav-v2-group {% if page in ['alerts', 'opportunities', 'sales_role', 'label_hub', 'price_review'] %}open{% endif %}" data-nav-group="operation">
-            <button class="nav-v2-group-toggle" type="button" aria-expanded="{% if page in ['alerts', 'opportunities', 'sales_role', 'label_hub', 'price_review'] %}true{% else %}false{% endif %}">
+          <section class="nav-v2-group {% if page in ['alerts', 'opportunities', 'sales_role', 'label_hub', 'price_review', 'ad_budget'] %}open{% endif %}" data-nav-group="operation">
+            <button class="nav-v2-group-toggle" type="button" aria-expanded="{% if page in ['alerts', 'opportunities', 'sales_role', 'label_hub', 'price_review', 'ad_budget'] %}true{% else %}false{% endif %}">
               <span><i>⌄</i> 经营诊断</span>
-              <b>4</b>
+              <b>6</b>
             </button>
             <div class="nav-v2-group-links">
               <a class="nav-v2-link {% if page == 'alerts' %}active{% endif %}" href="/alerts">
@@ -86,6 +86,10 @@
               <a class="nav-v2-link {% if page == 'price_review' %}active{% endif %}" href="/price-review">
                 <span class="nav-v2-icon">复</span>
                 <span><strong>调价复盘</strong><small>调价效果 / 复盘</small></span>
+              </a>
+              <a class="nav-v2-link {% if page == 'ad_budget' %}active{% endif %}" href="/ad-budget">
+                <span class="nav-v2-icon">广</span>
+                <span><strong>广告预算</strong><small>预算执行 / 投放异常</small></span>
               </a>
             </div>
           </section>

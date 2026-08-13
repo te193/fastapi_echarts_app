@@ -3,7 +3,11 @@ from argparse import Namespace
 from datetime import date
 
 from etl.dashboard_daily_update import (
+    AD_BUDGET_COLUMNS,
+    CREATE_AD_BUDGET_SNAPSHOT_SQL,
     CREATE_SCHEMA_SQL,
+    DEFAULT_STEP_ORDER,
+    DELETE_AD_BUDGET_SNAPSHOT_SQL,
     INSERT_ALERT_COMPARISON_SNAPSHOT_SQL,
     INSERT_ALERT_MONTHLY_METRIC_SNAPSHOT_SQL,
     INSERT_INVENTORY_SQL,
@@ -12,6 +16,8 @@ from etl.dashboard_daily_update import (
     INSERT_PERIOD_SNAPSHOT_SQL,
     INSERT_PRODUCT_DAILY_SQL,
     INSERT_RESTOCK_SQL,
+    SELECT_AD_BUDGET_SNAPSHOT_SQL,
+    STEPS,
     SchemaConfig,
     SourceLoadStep,
     build_params,
@@ -118,6 +124,20 @@ class DashboardDailyUpdateSqlTests(unittest.TestCase):
         self.assertEqual(date(2026, 6, 11), params["next_snapshot_date"])
         self.assertEqual(date(2026, 6, 9), params["product_end_date"])
         self.assertEqual(date(2026, 6, 10), params["next_product_end_date"])
+        self.assertEqual(date(2026, 5, 11), params["budget_start_date"])
+
+    def test_ad_budget_snapshot_is_registered_as_history_preserving_source_load(self):
+        self.assertIn("ad_budget_snapshot", DEFAULT_STEP_ORDER)
+        step = STEPS["ad_budget_snapshot"]
+        self.assertIsInstance(step, SourceLoadStep)
+        self.assertEqual("etl_datasync.dashboard_ad_budget_snapshot", step.target_table)
+        self.assertEqual(40, len(AD_BUDGET_COLUMNS))
+        self.assertIn(
+            "primary key (biz_date, country_category, country, seller_name_new, seller_sku_adj)",
+            CREATE_AD_BUDGET_SNAPSHOT_SQL,
+        )
+        self.assertIn("where biz_date >= %(budget_start_date)s", SELECT_AD_BUDGET_SNAPSHOT_SQL)
+        self.assertIn("where biz_date >= %(budget_start_date)s", DELETE_AD_BUDGET_SNAPSHOT_SQL)
 
     def test_source_load_reconnects_and_retries_after_source_timeout(self):
         step = SourceLoadStep(
@@ -165,6 +185,33 @@ class DashboardDailyUpdateSqlTests(unittest.TestCase):
                 {"biz_date": date(2026, 6, 26)},
             )
 
+    def test_ad_budget_empty_source_rolls_back_instead_of_deleting_last_snapshot(self):
+        target_conn = FakeTargetConnection()
+
+        with self.assertRaisesRegex(RuntimeError, "ad_budget_snapshot.*0 rows"):
+            execute_source_load_step(
+                target_conn,
+                EmptySourceConnection(),
+                SchemaConfig(
+                    target_schema="etl_datasync",
+                    etl_source_schema="etl_datasync",
+                    dwd_source_schema="dwd_datasync",
+                    pricing_source_schema="temporary_dwd",
+                ),
+                STEPS["ad_budget_snapshot"],
+                {
+                    "biz_date": date(2026, 6, 26),
+                    "snapshot_date": date(2026, 6, 27),
+                    "period_start": date(2026, 3, 29),
+                    "period_end": date(2026, 6, 26),
+                    "budget_start_date": date(2026, 5, 28),
+                },
+                batch_size=1000,
+            )
+
+        self.assertGreaterEqual(target_conn.rollback_count, 1)
+        self.assertEqual([], target_conn.inserted_batches)
+
 
 class FakeSourceCursor:
     def __init__(self, conn):
@@ -201,6 +248,16 @@ class FakeSourceConnection:
 
     def ping(self, reconnect=False):
         self.ping_reconnect_values.append(reconnect)
+
+
+class EmptySourceCursor(FakeSourceCursor):
+    def execute(self, sql, params):
+        self.rows = []
+
+
+class EmptySourceConnection(FakeSourceConnection):
+    def cursor(self):
+        return EmptySourceCursor(self)
 
 
 class FakeTargetCursor:
