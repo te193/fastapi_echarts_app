@@ -537,6 +537,32 @@ class CountryLabelHubDataTests(unittest.TestCase):
         self.assertEqual([50, 100], sorted(row["sales_amount"] for row in payload["rows"]))
         self.assertEqual({"SKU-A"}, {row["sku"] for row in payload["rows"]})
 
+    def test_country_detail_finishes_acos_and_tacos_from_period_totals(self):
+        row = {
+            "_metric_present": True,
+            "ad_spend": 25,
+            "ad_sales": 100,
+            "sales_amount": 500,
+        }
+
+        self.service._finish_country_detail_row(row, {}, "available")
+
+        self.assertEqual(0.25, row["acos"])
+        self.assertEqual(0.05, row["tacos"])
+
+    def test_country_detail_keeps_ad_ratios_empty_for_zero_denominators(self):
+        row = {
+            "_metric_present": True,
+            "ad_spend": 25,
+            "ad_sales": 0,
+            "sales_amount": 0,
+        }
+
+        self.service._finish_country_detail_row(row, {}, "available")
+
+        self.assertIsNone(row["acos"])
+        self.assertIsNone(row["tacos"])
+
     def test_detail_base_rows_keep_label_rows_when_country_metrics_fail(self):
         def fail(**kwargs):
             raise RuntimeError("daily source offline")

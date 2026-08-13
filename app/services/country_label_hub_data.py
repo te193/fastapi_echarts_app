@@ -465,6 +465,10 @@ class CountryLabelHubDataService:
             row["daily_sales"] = qty / inventory_days if qty is not None and inventory_days else 0.0
         if row.get("order_gross_margin") is None:
             row["order_gross_margin"] = profit / sales if profit is not None and sales else None
+        ad_spend = _number(row.get("ad_spend"))
+        ad_sales = _number(row.get("ad_sales"))
+        row["acos"] = ad_spend / ad_sales if ad_spend is not None and ad_sales and ad_sales > 0 else None
+        row["tacos"] = ad_spend / sales if ad_spend is not None and sales and sales > 0 else None
         daily = _number(row.get("daily_sales"))
         if daily is None:
             row["daily_sales_band_code"], row["daily_sales_band"] = "missing", "暂无经营数据"
