@@ -97,6 +97,22 @@ def test_detail_apply_button_shows_loading_feedback_while_request_is_pending():
     assert "setDetailLoading(false);" in script
 
 
+def test_label_hub_detail_export_uses_current_filters_and_downloads_csv_blob():
+    template = (ROOT / "app" / "templates" / "label_hub.html").read_text(encoding="utf-8")
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+
+    assert 'id="labelHubDetailExport"' in template
+    assert '>导出 CSV</button>' in template
+    assert 'fetch("/api/label-hub/details/export"' in script
+    assert "collectDetailFilters();" in script
+    assert "body: JSON.stringify(buildDetailPayload())" in script
+    assert "response.blob()" in script
+    assert "URL.createObjectURL" in script
+    assert "URL.revokeObjectURL" in script
+    assert "function setDetailExportLoading(isLoading)" in script
+    assert 'elements.labelHubDetailExport.textContent = isLoading ? "导出中…" : "导出 CSV";' in script
+
+
 def test_detail_role_reason_filter_replaces_sales_trend_and_follows_detail_scope():
     template = (ROOT / "app" / "templates" / "label_hub.html").read_text(encoding="utf-8")
     script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
