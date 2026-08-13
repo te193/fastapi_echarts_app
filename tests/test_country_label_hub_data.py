@@ -563,6 +563,113 @@ class CountryLabelHubDataTests(unittest.TestCase):
         self.assertIsNone(row["acos"])
         self.assertIsNone(row["tacos"])
 
+    def test_country_detail_base_rows_merge_site_price_fields(self):
+        self.service._country_detail_metric_provider = lambda **kwargs: {
+            "status": "available",
+            "window": {"period_code": "30d"},
+            "rows": [{
+                "country": "美国", "country_category": "北美站", "store": "StoreA",
+                "msku": "A1", "sku": "SKU-A", "sales_amount": 500,
+            }],
+        }
+        self.service._country_detail_price_provider = lambda **kwargs: {
+            "prices": {("美国", "北美站", "StoreA", "A1"): {
+                "listing_price": 19.99,
+                "listing_currency": "USD",
+                "listing_price_cny": 143.52,
+                "price_snapshot_date": "2026-08-12",
+                "limit_price_35": 21.0,
+                "limit_price_10": 15.0,
+                "price_margin_interval": "30%–35%",
+            }},
+        }
+
+        payload = self.service.get_country_detail_base_rows(
+            data_date="2026-07-15", metric_period="30d", detail_view="country"
+        )
+
+        row = next(item for item in payload["rows"] if item["country"] == "美国")
+        self.assertEqual(19.99, row["listing_price"])
+        self.assertEqual("USD", row["listing_currency"])
+        self.assertEqual(143.52, row["listing_price_cny"])
+        self.assertEqual("2026-08-12", row["price_snapshot_date"])
+        self.assertEqual(21.0, row["limit_price_35"])
+        self.assertEqual(15.0, row["limit_price_10"])
+        self.assertEqual("30%–35%", row["price_margin_interval"])
+
+    def test_country_detail_base_rows_keep_empty_prices_when_price_source_fails(self):
+        self.service._country_detail_metric_provider = lambda **kwargs: {
+            "status": "available", "window": {}, "rows": [],
+        }
+
+        def fail(**kwargs):
+            raise RuntimeError("price source offline")
+
+        self.service._country_detail_price_provider = fail
+
+        payload = self.service.get_country_detail_base_rows(
+            data_date="2026-07-15", metric_period="30d", detail_view="country"
+        )
+
+        price_fields = {
+            "listing_price", "listing_currency", "listing_price_cny",
+            "price_snapshot_date", "limit_price_35", "limit_price_10",
+            "price_margin_interval",
+        }
+        self.assertEqual(2, len(payload["rows"]))
+        self.assertTrue(all(
+            all(field in row and row[field] is None for field in price_fields)
+            for row in payload["rows"]
+        ))
+
+    def test_country_detail_prices_load_snapshots_in_bulk_and_reuse_cache(self):
+        statements = []
+        margin_prices = {
+            f"margin_price_{tier}": value
+            for tier, value in zip((35, 30, 25, 20, 15, 10, 5, 0), (20, 18, 16, 15, 14, 13, 12, 10))
+        }
+
+        class Cursor:
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+            def execute(self, sql, params=None):
+                self.sql = sql
+                statements.append((sql, dict(params or {})))
+            def fetchone(self): return {"snapshot_date": date(2026, 8, 12)}
+            def fetchall(self):
+                if "dashboard_listing_price_daily_snapshot" in self.sql:
+                    return [{
+                        "country": "美国", "country_category": "北美站",
+                        "seller_name_new": "StoreA", "seller_sku": "A1",
+                        "price": 19, "org_currency_icon": "USD", "price_cny": 136.8,
+                    }]
+                return [{
+                    "country": "美国", "country_category": "北美站",
+                    "seller_name_new": "StoreA", "seller_sku": "A1",
+                    "currency": "USD", **margin_prices,
+                }]
+
+        class Connection:
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+            def cursor(self): return Cursor()
+
+        self.service._shared._dashboard = SimpleNamespace(
+            schemas=None, connect=lambda: Connection(),
+        )
+        with patch("app.services.country_label_hub_data.render_sql", side_effect=lambda table, _: table):
+            first = self.service._cached_country_detail_prices(country_category="北美站", store="StoreA")
+            second = self.service._cached_country_detail_prices(country_category="北美站", store="StoreA")
+
+        price = first["prices"][("美国", "北美站", "StoreA", "A1")]
+        self.assertIs(first, second)
+        self.assertEqual(4, len(statements))
+        self.assertEqual(19, price["listing_price"])
+        self.assertEqual(20, price["limit_price_35"])
+        self.assertEqual(13, price["limit_price_10"])
+        self.assertEqual("30%–35%", price["price_margin_interval"])
+        self.assertTrue(all(statement[1].get("country_category") == "北美站" for statement in statements[1::2]))
+
     def test_detail_base_rows_keep_label_rows_when_country_metrics_fail(self):
         def fail(**kwargs):
             raise RuntimeError("daily source offline")
