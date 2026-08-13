@@ -87,7 +87,7 @@
       "labelHubDetailLabelSearch", "labelHubDetailLabelGroups", "labelHubDetailLabelEmpty",
       "labelHubDetailCountries", "labelHubDetailCountryCategories",
       "labelHubDetailStores", "labelHubDetailProblems", "labelHubDetailProblemMode", "labelHubDetailSalesRoles", "labelHubDetailRoleReasons",
-      "labelHubDetailDailyBands", "labelHubDetailMarginBands", "labelHubDetailRankingBands", "labelHubDetailApply", "labelHubDetailClear", "labelHubIdentifierResolution",
+      "labelHubDetailDailyBands", "labelHubDetailMarginBands", "labelHubDetailRankingBands", "labelHubDetailApply", "labelHubDetailExport", "labelHubDetailClear", "labelHubIdentifierResolution",
       "labelHubDetailCountriesField", "labelHubCountryFilterHint", "labelHubDetailRankingField", "labelHubRankingFilterHint", "labelHubDetailToolbar", "labelHubDetailAdvanced",
       "labelHubDetailMore", "labelHubDetailMoreCount", "labelHubDetailActiveFilters", "labelHubDetailActiveFilterList", "labelHubRoleReasonScope",
       "labelHubRoleReasonTrigger", "labelHubRoleReasonSummary", "labelHubRoleReasonPanel", "labelHubRoleReasonGroups",
@@ -197,6 +197,7 @@
       }
     });
     elements.labelHubDetailApply.addEventListener("click", function () { collectDetailFilters(); detailState.page = 1; renderDetailActiveFilters(); renderDetails(); });
+    elements.labelHubDetailExport.addEventListener("click", exportDetails);
     elements.labelHubDetailClear.addEventListener("click", clearDetailFilters);
     elements.labelHubDetailMore.addEventListener("click", toggleDetailAdvancedFilters);
     elements.labelHubIdentifierExpand.addEventListener("click", function () {
@@ -1049,6 +1050,57 @@
     elements.labelHubDetailApply.disabled = isLoading;
     elements.labelHubDetailApply.setAttribute("aria-busy", String(isLoading));
     elements.labelHubDetailApply.textContent = isLoading ? "筛选中…" : "应用筛选";
+  }
+
+  function setDetailExportLoading(isLoading) {
+    elements.labelHubDetailExport.disabled = isLoading;
+    elements.labelHubDetailExport.setAttribute("aria-busy", String(isLoading));
+    elements.labelHubDetailExport.textContent = isLoading ? "导出中…" : "导出 CSV";
+  }
+
+  function detailExportFilename(response) {
+    var disposition = response.headers.get("Content-Disposition") || "";
+    var encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (encoded && encoded[1]) {
+      try { return decodeURIComponent(encoded[1]); } catch (ignore) {}
+    }
+    return "标签看板-" + (detailState.detail_view === "country" ? "国家明细" : "MSKU维度") + ".csv";
+  }
+
+  function downloadDetailExport(blob, filename) {
+    var url = URL.createObjectURL(blob);
+    var link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.hidden = true;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportDetails() {
+    collectDetailFilters();
+    renderDetailActiveFilters();
+    setDetailExportLoading(true);
+    return fetch("/api/label-hub/details/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify(buildDetailPayload())
+    }).then(function (response) {
+      if (response.ok) {
+        var filename = detailExportFilename(response);
+        return response.blob().then(function (blob) { downloadDetailExport(blob, filename); });
+      }
+      return response.json().then(function (payload) {
+        throw new Error(payload.detail || ("Request failed: " + response.status));
+      });
+    }).catch(function (error) {
+      elements.labelHubHint.textContent = "标签明细导出失败：" + ((error && error.message) || "请稍后重试");
+    }).then(function () {
+      setDetailExportLoading(false);
+    });
   }
 
   function renderDetails() {
