@@ -267,8 +267,10 @@
       ["质检通过未建FBA", summary.no_fba_plan_count || 0, "tone-2", "可推进FBA计划", "no_fba_plan"],
       ["FBA未出库", summary.fba_not_shipped_count || 0, "tone-2", "已建FBA计划但未出库", "fba_not_shipped"],
       ["FBA未接收", summary.fba_not_receiving_count || 0, "tone-2", "FBA在途未接收", "fba_not_receiving"],
+      ["FBA已接收", summary.fba_receiving_count || 0, "tone-1", "已开始接收，不等于货件关闭", "fba_receiving_done"],
       ["历史FBA在途", summary.historical_fba_in_transit_count || 0, "tone-2", "在途数量 " + formatNumber(summary.historical_fba_in_transit_qty || 0), "historical_fba_in_transit", "未归入本次采购链路、已实际发货且尚未全部接收或关闭的 FBA 货件。它会影响库存与预计到货，但不计入本次链路完成率。"],
-      ["FBA已完成", summary.fba_closed_count || 0, "tone-1", "链路完成", "fba_closed"]
+      ["本次链路全部关闭", summary.fba_closed_count || 0, "tone-1", "本次关联货件均已关闭", "fba_closed"],
+      ["历史FBA已完成", summary.historical_fba_completed_count || 0, "tone-1", "历史货件完成，不计入本次链路完成率", "historical_fba_completed"]
     ];
     el.trackingSummaryTopCards.innerHTML = topCards.map(function (card) {
       var active = state.summary_stage === card[4] ? " active" : "";

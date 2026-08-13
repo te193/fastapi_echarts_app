@@ -879,6 +879,85 @@ def test_summary_separates_historical_fba_in_transit_from_unattributed_plan_only
     assert "历史FBA货件" not in js
 
 
+def test_summary_exposes_receiving_count_and_filters_historical_completed_mskus():
+    service = ReplenishmentTrackingSummaryService()
+    queries = []
+
+    class Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, params):
+            queries.append(sql)
+
+        def fetchone(self):
+            return {}
+
+    class Connection:
+        def cursor(self):
+            return Cursor()
+
+    service._summary(Connection(), "1 = 1", {})
+    filters, _ = service._where(
+        date(2026, 8, 12), 90, "all", "all", "all",
+        "historical_fba_completed", "all", "all", "all", "all", "",
+        "product_category_30d", "",
+    )
+
+    assert "sum(case when fba_receiving_flag = 1 then 1 else 0 end) as fba_receiving_count" in queries[0]
+    assert "coalesce(s.historical_fba_completed_count, 0) > 0" in filters
+
+
+def test_historical_completed_card_applies_the_same_filter_to_flow_and_table(monkeypatch):
+    service = ReplenishmentTrackingSummaryService()
+    calls = {}
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(service, "connect", lambda: Connection())
+    monkeypatch.setattr(service, "_summary", lambda conn, filters, params: {"msku_count": 32})
+    monkeypatch.setattr(service, "_level_flow", lambda conn, filters, params, column: calls.setdefault("flow", filters) and [])
+    monkeypatch.setattr(service, "_total", lambda conn, filters, params: calls.setdefault("total", filters) and 32)
+    monkeypatch.setattr(service, "_items", lambda conn, filters, params, page, page_size, column: calls.setdefault("items", filters) and [])
+    monkeypatch.setattr(service, "_meta", lambda conn: {})
+
+    payload = service.get_payload(
+        cutoff_date="2026-08-12",
+        entry_batch_days=90,
+        summary_stage="historical_fba_completed",
+        level_flow_stage="historical_fba_completed",
+    )
+
+    expected = "coalesce(s.historical_fba_completed_count, 0) > 0"
+    assert expected in calls["flow"]
+    assert expected in calls["total"]
+    assert calls["items"] == calls["total"]
+    assert payload["summary"]["msku_count"] == 32
+    assert payload["total"] == 32
+
+
+def test_summary_top_cards_distinguish_receiving_current_closed_and_historical_completed():
+    js = Path("app/static/js/replenishment_tracking_summary.js").read_text(encoding="utf-8")
+    start = js.index("var topCards = [")
+    end = js.index("];", start)
+    cards = js[start:end]
+
+    assert '["FBA已接收", summary.fba_receiving_count || 0' in cards
+    assert '"fba_receiving_done"' in cards
+    assert '["本次链路全部关闭", summary.fba_closed_count || 0' in cards
+    assert '["历史FBA已完成", summary.historical_fba_completed_count || 0' in cards
+    assert '"historical_fba_completed"' in cards
+    assert '["FBA已完成", summary.fba_closed_count || 0' not in cards
+
+
 def test_historical_fba_shipment_card_uses_fba_shipment_stage():
     js = Path("app/static/js/replenishment_tracking_summary.js").read_text(encoding="utf-8")
     start = js.index("function detailStageOfLine")
