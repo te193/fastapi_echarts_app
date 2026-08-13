@@ -27,6 +27,7 @@ ANNUAL_MARGIN_GOAL = 0.20
 ANNUAL_SALES_GOAL_BUFFER = 1.01
 DEFAULT_STEP_ORDER = [
     "product_performance_daily",
+    "ad_budget_snapshot",
     "monthly_goal_actual_snapshot",
     "goal_dimension_snapshot",
     "annual_goal_snapshot",
@@ -246,6 +247,81 @@ create table if not exists etl_datasync.dashboard_product_performance_daily (
     key idx_price_review_lookup (seller_name, seller_sku_adj, dt_date),
     key idx_sku (seller_sku_adj)
 ) engine=InnoDB default charset=utf8mb4;
+"""
+
+CREATE_AD_BUDGET_SNAPSHOT_SQL = """
+create table if not exists etl_datasync.dashboard_ad_budget_snapshot (
+    biz_date date not null,
+    country_category varchar(32) not null,
+    country varchar(32) not null,
+    seller_name_new varchar(64) not null,
+    seller_sku_adj varchar(100) not null,
+    max_brand_name varchar(255) null,
+    receiving_cnt bigint unsigned null,
+    product_type varchar(10) not null,
+    sales_3 decimal(20,4) not null default 0,
+    r_3d_salable_days int unsigned not null default 0,
+    sales_7 decimal(20,4) not null default 0,
+    r_7d_salable_days int unsigned not null default 0,
+    sales_14 decimal(20,4) not null default 0,
+    r_14d_salable_days int unsigned not null default 0,
+    sales_30 decimal(20,4) not null default 0,
+    r_30d_salable_days int unsigned not null default 0,
+    daily_avg_sales decimal(20,6) not null default 0,
+    listing_price decimal(20,4) null,
+    currency_code varchar(10) null,
+    exchange_rate_cny decimal(20,8) null,
+    listing_price_cny decimal(20,2) null,
+    available_total decimal(20,4) null,
+    stock_up_num decimal(20,4) null,
+    local_quantity decimal(20,4) null,
+    total_budget_inventory decimal(20,4) null,
+    total_weighted_daily_sales decimal(20,6) not null default 0,
+    sales_share decimal(18,8) not null default 0,
+    total_inventory_allocated_qty decimal(20,4) null,
+    site_total_budget_cny decimal(20,2) null,
+    monthly_forecast_qty decimal(20,4) not null default 0,
+    monthly_allocated_qty decimal(20,4) not null default 0,
+    monthly_ad_budget_original decimal(20,2) null,
+    monthly_ad_budget_cny decimal(20,2) null,
+    weekly_forecast_qty decimal(20,4) not null default 0,
+    weekly_allocated_qty decimal(20,4) not null default 0,
+    weekly_ad_budget_original decimal(20,2) null,
+    weekly_ad_budget_cny decimal(20,2) null,
+    total_budget_pool_cny decimal(20,2) null,
+    inventory_sufficient_flag tinyint unsigned not null default 0,
+    weekly_inventory_sufficient_flag tinyint unsigned not null default 0,
+    synced_at datetime not null default current_timestamp,
+    primary key (biz_date, country_category, country, seller_name_new, seller_sku_adj),
+    key idx_budget_latest (biz_date, country_category, country, seller_name_new),
+    key idx_budget_msku (seller_sku_adj, biz_date)
+) engine=InnoDB default charset=utf8mb4;
+"""
+
+DELETE_AD_BUDGET_SNAPSHOT_SQL = """
+delete from etl_datasync.dashboard_ad_budget_snapshot
+where biz_date >= %(budget_start_date)s;
+"""
+
+SELECT_AD_BUDGET_SNAPSHOT_SQL = """
+select
+    biz_date, country_category, country, seller_name_new, seller_sku_adj,
+    max_brand_name, receiving_cnt, product_type,
+    sales_3, r_3d_salable_days, sales_7, r_7d_salable_days,
+    sales_14, r_14d_salable_days, sales_30, r_30d_salable_days,
+    daily_avg_sales, listing_price, currency_code, exchange_rate_cny,
+    listing_price_cny, available_total, stock_up_num, local_quantity,
+    total_budget_inventory, total_weighted_daily_sales, sales_share,
+    total_inventory_allocated_qty, site_total_budget_cny,
+    monthly_forecast_qty, monthly_allocated_qty,
+    monthly_ad_budget_original, monthly_ad_budget_cny,
+    weekly_forecast_qty, weekly_allocated_qty,
+    weekly_ad_budget_original, weekly_ad_budget_cny,
+    total_budget_pool_cny, inventory_sufficient_flag,
+    weekly_inventory_sufficient_flag
+from dws_datasync.dws_monthly_ad_budget_detail
+where biz_date >= %(budget_start_date)s
+order by biz_date, country_category, country, seller_name_new, seller_sku_adj;
 """
 
 CREATE_RESTOCK_SQL = """
@@ -2690,6 +2766,7 @@ DDL_STATEMENTS = (
     CREATE_SCHEMA_SQL,
     CREATE_LOG_TABLE_SQL,
     CREATE_PRODUCT_DAILY_SQL,
+    CREATE_AD_BUDGET_SNAPSHOT_SQL,
     CREATE_RESTOCK_SQL,
     CREATE_INVENTORY_SQL,
     CREATE_INVENTORY_WEEKLY_SQL,
@@ -2720,6 +2797,23 @@ PRODUCT_DAILY_COLUMNS = (
     "ad_spend", "ad_orders", "ad_sales", "ad_clicks", "ad_impressions",
     "sessions_total", "ranking", "return_count", "return_amount", "net_amount",
     "created_at", "updated_at",
+)
+
+AD_BUDGET_COLUMNS = (
+    "biz_date", "country_category", "country", "seller_name_new", "seller_sku_adj",
+    "max_brand_name", "receiving_cnt", "product_type",
+    "sales_3", "r_3d_salable_days", "sales_7", "r_7d_salable_days",
+    "sales_14", "r_14d_salable_days", "sales_30", "r_30d_salable_days",
+    "daily_avg_sales", "listing_price", "currency_code", "exchange_rate_cny",
+    "listing_price_cny", "available_total", "stock_up_num", "local_quantity",
+    "total_budget_inventory", "total_weighted_daily_sales", "sales_share",
+    "total_inventory_allocated_qty", "site_total_budget_cny",
+    "monthly_forecast_qty", "monthly_allocated_qty",
+    "monthly_ad_budget_original", "monthly_ad_budget_cny",
+    "weekly_forecast_qty", "weekly_allocated_qty",
+    "weekly_ad_budget_original", "weekly_ad_budget_cny",
+    "total_budget_pool_cny", "inventory_sufficient_flag",
+    "weekly_inventory_sufficient_flag",
 )
 
 RESTOCK_COLUMNS = (
@@ -2775,6 +2869,13 @@ STEPS = {
         extract_source_select(INSERT_PRODUCT_DAILY_SQL),
         "etl_datasync.dashboard_product_performance_daily",
         PRODUCT_DAILY_COLUMNS,
+    ),
+    "ad_budget_snapshot": SourceLoadStep(
+        "ad_budget_snapshot",
+        DELETE_AD_BUDGET_SNAPSHOT_SQL,
+        SELECT_AD_BUDGET_SNAPSHOT_SQL,
+        "etl_datasync.dashboard_ad_budget_snapshot",
+        AD_BUDGET_COLUMNS,
     ),
     "monthly_goal_actual_snapshot": SqlStep(
         "monthly_goal_actual_snapshot",
@@ -3421,6 +3522,8 @@ def execute_source_load_step(
 
             if step.name == "product_performance_daily":
                 validate_product_performance_result(target_conn, schemas, params)
+            if step.name == "ad_budget_snapshot" and affected_rows == 0:
+                raise RuntimeError("ad_budget_snapshot source returned 0 rows; preserving the last successful snapshot")
             target_conn.commit()
             log_task(target_conn, schemas, step.name, params, "success", affected_rows, started_at)
             print(f"[success] {step.name}: affected_rows={affected_rows}")
@@ -3548,6 +3651,7 @@ def build_params(args: argparse.Namespace) -> dict[str, object]:
         "product_end_date": product_end_date,
         "next_product_end_date": product_end_date + timedelta(days=1),
         "product_full_load": 1 if args.product_full_load else 0,
+        "budget_start_date": biz_date - timedelta(days=29),
     }
 
 

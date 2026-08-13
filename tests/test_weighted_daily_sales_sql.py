@@ -100,11 +100,12 @@ def test_sql_keywords_and_functions_are_lowercase():
     assert uppercase_tokens == []
 
 
-def test_query_is_read_only_and_does_not_use_result_table():
+def test_query_replaces_current_business_date_in_budget_result_table():
     sql = _normalized_sql()
 
-    assert "insert into" not in sql
-    assert "dws_monthly_ad_budget_detail" not in sql
+    assert "delete from dws_datasync.dws_monthly_ad_budget_detail where biz_date = @biz_date" in sql
+    assert "insert into dws_datasync.dws_monthly_ad_budget_detail" in sql
+    assert sql.rfind("select * from dws_datasync.dws_monthly_ad_budget_detail") > sql.rfind("insert into")
 
 
 def test_inventory_pool_uses_replenishment_support_inventory_components():

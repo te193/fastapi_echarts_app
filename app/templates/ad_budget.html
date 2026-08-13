@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', path='css/ad_budget.css') }}?v=20260813k">
+{% endblock %}
+
+{% block content %}
+<section class="ad-budget-page" aria-labelledby="ad-budget-title">
+  <header class="ad-budget-hero">
+    <div>
+      <p class="ad-budget-eyebrow">AD SPEND CONTROL</p>
+      <h1 id="ad-budget-title">广告预算执行工作台</h1>
+      <p>把预算、消耗节奏与广告漏斗放在同一张运营视图里。</p>
+    </div>
+    <div class="ad-budget-date-panel" id="ad-budget-dates" aria-live="polite">
+      <span>正在读取数据日期…</span>
+    </div>
+  </header>
+
+  <section class="ad-budget-filters" aria-label="筛选条件">
+    <label>市场<select id="ab-market"><option value="all">全部市场</option></select></label>
+    <label>国家<select id="ab-country"><option value="all">全部国家</option></select></label>
+    <label>店铺<select id="ab-store"><option value="all">全部店铺</option></select></label>
+    <label>产品阶段<select id="ab-product-type"><option value="all">全部阶段</option></select></label>
+    <label>库存状态
+      <select id="ab-inventory">
+        <option value="all">全部状态</option>
+        <option value="monthly_sufficient">30天库存充足</option>
+        <option value="monthly_insufficient">30天库存不足</option>
+        <option value="weekly_sufficient">7天库存充足</option>
+      </select>
+    </label>
+    <label>异常类型<select id="ab-anomaly"><option value="all">全部异常</option></select></label>
+    <label class="ad-budget-search">搜索产品<input id="ab-keyword" type="search" placeholder="MSKU / ASIN / 商品名"></label>
+    <button id="ab-reset" type="button">重置</button>
+  </section>
+
+  <div id="ab-stale" class="ad-budget-stale" hidden></div>
+  <section id="ab-kpis" class="ad-budget-kpis" aria-label="预算概览"></section>
+
+  <section class="ad-budget-insights">
+    <article class="ad-budget-panel">
+      <header><div><span>预算执行</span><h2>国家预算与花费</h2></div><small>点击国家筛选明细</small></header>
+      <div id="ab-country-chart" class="ad-budget-chart" role="img" aria-label="各国家月预算与本月广告花费"></div>
+    </article>
+    <article class="ad-budget-panel">
+      <header>
+        <div><span>异常雷达</span><h2>需要优先处理</h2></div>
+        <div class="ab-panel-meta">
+          <small>按运营优先级聚合</small>
+          <div class="ab-help-wrap">
+            <button class="ab-help-trigger" type="button" aria-label="查看异常判断口径" aria-describedby="ab-anomaly-help">?</button>
+            <div id="ab-anomaly-help" class="ab-anomaly-help" role="tooltip">
+              <strong>异常判断口径</strong>
+              <p>本月指当月 1 日至最新表现日期；近 7 天指最新表现日期及往前 6 天。圆环图按每个产品最高优先级异常聚合。</p>
+              <dl>
+                <dt>预算配置异常</dt><dd>周预算大于月预算，或月预算大于站点总预算；允许 ¥0.01 舍入误差。</dd>
+                <dt>有花费但无月预算</dt><dd>本月广告花费大于 0，但月预算为空或不大于 0。</dd>
+                <dt>月预算超支</dt><dd>本月累计广告花费超过月预算 ¥0.01 以上。</dd>
+                <dt>近7天预算超支</dt><dd>近 7 天广告花费超过周预算 ¥0.01 以上。</dd>
+                <dt>消耗过快</dt><dd>月预算消耗率比当月时间进度高至少 20 个百分点。</dd>
+                <dt>有花费无广告销售</dt><dd>本月广告花费至少 ¥50，且广告销售额为 0。</dd>
+                <dt>低点击</dt><dd>同国家、新老品分组至少 30 个有效样本；曝光至少 100，且 CTR 不高于组内 P25。</dd>
+                <dt>低转化</dt><dd>同国家、新老品分组至少 30 个有效样本；点击至少 20，且广告 CVR 不高于组内 P25。</dd>
+                <dt>高ACOS</dt><dd>同国家、新老品分组至少 30 个有效样本；花费至少 ¥50，且 ACOS 不低于组内 P75。</dd>
+                <dt>预算偏慢</dt><dd>本月已过至少 25%，且月预算消耗率比时间进度落后至少 20 个百分点。</dd>
+                <dt>未启动</dt><dd>存在本月表现数据、月预算大于 0，但本月广告花费为 0。</dd>
+              </dl>
+            </div>
+          </div>
+        </div>
+      </header>
+      <div id="ab-anomaly-chart" class="ad-budget-chart" role="img" aria-label="广告预算异常类型分布"></div>
+    </article>
+  </section>
+
+  <section class="ad-budget-table-panel">
+    <header>
+      <div><span>站点产品明细</span><h2>预算与投放表现</h2></div>
+      <p id="ab-table-count">正在加载…</p>
+    </header>
+    <div id="ab-grid" class="ad-budget-grid" aria-label="广告预算产品明细表格"></div>
+    <footer class="ad-budget-pagination">
+      <span id="ab-page-summary">共 0 条，第 1 / 1 页</span>
+      <div class="ad-budget-page-controls">
+        <label>每页
+          <select id="ab-page-size" aria-label="每页展示行数">
+            <option value="20">20条</option>
+            <option value="50" selected>50条</option>
+            <option value="100">100条</option>
+            <option value="200">200条</option>
+          </select>
+        </label>
+        <button id="ab-prev" type="button">上一页</button>
+        <span id="ab-page">第 1 / 1 页</span>
+        <button id="ab-next" type="button">下一页</button>
+      </div>
+    </footer>
+  </section>
+</section>
+
+<div id="ab-drawer-backdrop" class="ad-budget-drawer-backdrop" hidden></div>
+<aside id="ab-drawer" class="ad-budget-drawer" aria-label="产品预算详情" aria-hidden="true">
+  <header><div><span>站点产品详情</span><h2 id="ab-drawer-title">—</h2></div><button id="ab-drawer-close" type="button" aria-label="关闭详情">×</button></header>
+  <div id="ab-drawer-content" class="ad-budget-drawer-content"></div>
+</aside>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', path='js/ad-budget.js') }}?v=20260813k"></script>
+{% endblock %}
