@@ -8,7 +8,7 @@
 
 店铺品牌关系来自远端表：
 
-```text
+```
 opt_db.store_brand_relation
 ```
 
@@ -26,20 +26,20 @@ opt_db.store_brand_relation
 
 补货 ETL 会用店铺品牌映射表关联 listing：
 
-```text
+```
 dwd_datasync.lx_sales_mws_listing
 ```
 
 匹配逻辑：
 
-```text
+```
 store_brand_relation.店铺名 = substring_index(listing.seller_name, '-', 1)
 store_brand_relation.品牌名 = listing.seller_brand
 ```
 
 匹配成功后同步到：
 
-```text
+```
 dashboard_replenishment_self_asin_sync
 ```
 
@@ -65,10 +65,10 @@ dashboard_replenishment_self_asin_sync
 1. 优先使用 `dashboard_replenishment_self_asin_sync` 中登记的自有 ASIN 链接。
 2. 如果没有登记，则用 fallback 规则，在同站点同 ASIN 中选择销量最高的链接。
 3. fallback 排序使用真实销量：
-   - 30 天销量高优先
-   - 14 天销量高优先
-   - 7 天销量高优先
-   - 3 天销量高优先
+  - 30 天销量高优先
+  - 14 天销量高优先
+  - 7 天销量高优先
+  - 3 天销量高优先
 4. 仍并列时，按 `seller_name_new + seller_sku_adj` 稳定排序。
 
 注意：fallback 主链接用于计算和合并，但只有登记在 `self_asin_sync` 中的原始链接才会稳定显示为“是否被跟卖=是”。
@@ -77,7 +77,7 @@ dashboard_replenishment_self_asin_sync
 
 同站点同 ASIN 下：
 
-```text
+```
 不是自有 ASIN 原始链接的其它链接 = 跟卖链接
 ```
 
@@ -95,7 +95,7 @@ dashboard_replenishment_self_asin_sync
 
 固定规则：
 
-```text
+```
 replenish_qty = 0
 replenish_box_qty = 0
 replenish_cost = 0
@@ -110,13 +110,13 @@ replenish_block_reason = 被跟卖点不补货
 
 跟卖链接用于单行展示和补货计算的短周期销量为：
 
-```text
+```
 跟卖链接自身真实销量 + 原始主链接真实销量
 ```
 
 覆盖周期：
 
-```text
+```
 30天
 14天
 7天
@@ -131,7 +131,7 @@ replenish_block_reason = 被跟卖点不补货
 
 有效可售天数：
 
-```text
+```
 max(跟卖链接自身可售天数, 原始主链接可售天数)
 ```
 
@@ -143,7 +143,7 @@ max(跟卖链接自身可售天数, 原始主链接可售天数)
 
 错误方式：
 
-```text
+```
 主链接销量 12
 4 个跟卖链接各继承 12
 产品组销量 = 12 + 12 + 12 + 12 + 12 = 60
@@ -151,13 +151,13 @@ max(跟卖链接自身可售天数, 原始主链接可售天数)
 
 正确方式：
 
-```text
+```
 产品组真实销量 = 原始主链接真实销量 + 各跟卖链接自身真实销量
 ```
 
 如果跟卖链接自身销量分别是 `3、8、0、5`，原始主链接销量是 `12`，则产品组销量为：
 
-```text
+```
 12 + 3 + 8 + 0 + 5 = 28
 ```
 
@@ -167,7 +167,7 @@ max(跟卖链接自身可售天数, 原始主链接可售天数)
 
 产品组库存：
 
-```text
+```
 所有同 ASIN 链接的 FBA可用 + FBA在途 + 本地库存
 ```
 
@@ -175,7 +175,7 @@ max(跟卖链接自身可售天数, 原始主链接可售天数)
 
 例如 `YP0309a`：
 
-```text
+```
 某条跟卖链接有 210 在途
 则整个 YP0309a 同 ASIN 产品组共享这 210 在途
 ```
@@ -184,7 +184,7 @@ max(跟卖链接自身可售天数, 原始主链接可售天数)
 
 满足以下条件时进入 ASIN 合并：
 
-```text
+```
 同 country_category + max_asin 下 link_count > 1
 并且存在跟卖链接或被跟卖原始链接
 ```
@@ -202,7 +202,7 @@ max(跟卖链接自身可售天数, 原始主链接可售天数)
 
 先按产品组统一计算：
 
-```text
+```
 产品组日销
 产品组共享库存
 产品组支撑天数
@@ -211,7 +211,7 @@ max(跟卖链接自身可售天数, 原始主链接可售天数)
 
 如果产品组库存充足：
 
-```text
+```
 所有链接补货为 0
 原因 = 同ASIN库存充足不补货
 不选择补货目标链接
@@ -219,7 +219,7 @@ max(跟卖链接自身可售天数, 原始主链接可售天数)
 
 如果产品组库存不足：
 
-```text
+```
 整组只生成一份补货需求
 只选择一个补货目标链接承接补货量
 其它链接补货为 0
@@ -235,16 +235,16 @@ max(跟卖链接自身可售天数, 原始主链接可售天数)
 3. `停售中` 不再硬排除，只作为排序降权。
 4. 在售链接优先于停售链接。
 5. 采购信息完整优先：
-   - 有箱规
-   - 有采购价
-   - 有运输成本
+  - 有箱规
+  - 有采购价
+  - 有运输成本
 6. 有库存或在途记录优先。
 7. 最近有真实销量优先。
 8. 仍并列时，按 `seller_name_new + seller_sku_adj` 稳定排序。
 
 也就是说：
 
-```text
+```
 停售中链接可以承接补货，但只有在没有更优在售目标时才会被选中。
 ```
 
@@ -252,14 +252,14 @@ max(跟卖链接自身可售天数, 原始主链接可售天数)
 
 如果某行是 ASIN 合并目标：
 
-```text
+```
 该行承接产品组补货量
 asin_merge_reason = 产品组补货目标链接
 ```
 
 如果某行不是目标：
 
-```text
+```
 replenish_qty = 0
 replenish_box_qty = 0
 replenish_cost = 0
@@ -268,7 +268,7 @@ asin_merge_reason = 同ASIN已合并至主链接
 
 如果整组库存充足：
 
-```text
+```
 asin_merge_target = 空
 asin_merge_reason = 同ASIN库存充足不补货
 ```
@@ -277,7 +277,7 @@ asin_merge_reason = 同ASIN库存充足不补货
 
 ### 14.1 YP0309a：库存充足不补
 
-```text
+```
 SKU = YP0309a
 ASIN = B0CRKQGBM7
 站点 = 欧洲站
@@ -293,14 +293,14 @@ ASIN = B0CRKQGBM7
 
 结果：
 
-```text
+```
 原始主链接：被跟卖点不补货
 其它跟卖链接：同ASIN库存充足不补货
 ```
 
 ### 14.2 XIE0258a：库存不足，跟卖链接承接补货
 
-```text
+```
 SKU = XIE0258a
 ASIN = B0DP9V7DF2
 站点 = 欧洲站
@@ -309,7 +309,7 @@ ASIN = B0DP9V7DF2
 结果：
 
 | 链接 | 角色 | 补货 |
-| --- | --- | ---: |
+| --- | --- | --- |
 | QIKONG / QK043a | 被跟卖原始链接 | 0 |
 | YuanJinRong / YJR024a | 跟卖链接，补货目标 | 50 |
 
@@ -317,7 +317,7 @@ ASIN = B0DP9V7DF2
 
 品牌映射更新后：
 
-```text
+```
 pingter / PT068a
 ```
 
@@ -326,14 +326,14 @@ pingter / PT068a
 当前结果：
 
 | 链接 | 状态 | 角色 | 补货 |
-| --- | --- | --- | ---: |
+| --- | --- | --- | --- |
 | pingter / PT068a | 在售中 | 被跟卖原始链接 | 0 |
 | Qipunike / 8F-8THH-F6H6 | 停售中 | ASIN合并目标 | 257 |
 | Qipunike / 0U-87XW-DNZ5 | 停售中 | 合并到目标 | 0 |
 
 这里体现的是最新规则：
 
-```text
+```
 停售中不再硬排除，只是排序降权。
 当没有更优在售候选时，停售跟卖链接也可以承接补货。
 ```
@@ -344,7 +344,7 @@ pingter / PT068a
 
 页面中的库存与补货层级使用以下口径：
 
-```text
+```
 进入同 ASIN 合并的链接
 → 组内所有行显示同一套产品组库存支撑、到货支撑和产品组层级
 
@@ -377,4 +377,3 @@ pingter / PT068a
 3. 补货目标不会同时是被跟卖原始链接。
 4. 普通单链接 MSKU 不进入 ASIN 合并逻辑。
 5. 停售链接只降权，不硬排除。
-

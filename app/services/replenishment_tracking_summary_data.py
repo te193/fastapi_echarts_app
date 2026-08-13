@@ -922,6 +922,8 @@ class ReplenishmentTrackingSummaryService:
             clauses.append("coalesce(s.historical_fba_inbound_qty, 0) > 0")
         elif summary_stage == "historical_fba_in_transit":
             clauses.append("coalesce(s.historical_fba_in_transit_count, 0) > 0")
+        elif summary_stage == "historical_fba_completed":
+            clauses.append("coalesce(s.historical_fba_completed_count, 0) > 0")
         elif summary_stage == "unattributed_fba_plan":
             clauses.append("coalesce(s.unattributed_fba_plan_count, 0) > 0")
         elif summary_stage == "received":
@@ -1023,6 +1025,7 @@ class ReplenishmentTrackingSummaryService:
                     sum(case when qc_passed_flag = 1 and fba_plan_flag = 0 then 1 else 0 end) as no_fba_plan_count,
                     sum(case when fba_plan_flag = 1 and fba_shipped_flag = 0 then 1 else 0 end) as fba_not_shipped_count,
                     sum(case when fba_shipped_flag = 1 and fba_receiving_flag = 0 then 1 else 0 end) as fba_not_receiving_count,
+                    sum(case when fba_receiving_flag = 1 then 1 else 0 end) as fba_receiving_count,
                     sum(case when fba_closed_flag = 1 then 1 else 0 end) as fba_closed_count,
                     sum(case when coalesce(unattributed_fba_plan_count, 0) > 0 then 1 else 0 end) as unattributed_fba_plan_count,
                     sum(coalesce(unattributed_fba_plan_qty, 0)) as unattributed_fba_plan_qty,
