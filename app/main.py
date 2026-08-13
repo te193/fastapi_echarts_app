@@ -23,6 +23,7 @@ from .services.label_hub_data import label_hub_service
 from .services.label_hub_diagnostics import label_hub_diagnostics_service
 from .services.label_hub_role_diagnostics import label_hub_role_diagnostic_service
 from .services.label_hub_detail_data import label_hub_detail_service
+from .services.label_hub_export import label_hub_export_service
 from .services.label_hub_change_data import label_hub_change_service
 from .services.price_review_data import price_review_service
 from .services.replenishment_data import replenishment_service
@@ -545,6 +546,23 @@ def api_label_hub_details(request: LabelHubDetailRequest) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=503, detail="标签明细数据暂不可用，请稍后重试") from exc
+
+
+@app.post("/api/label-hub/details/export")
+def api_label_hub_details_export(request: LabelHubDetailRequest) -> StreamingResponse:
+    try:
+        filename, chunks = label_hub_export_service.build_export(**request.model_dump())
+        return StreamingResponse(
+            chunks,
+            media_type="text/csv; charset=utf-8",
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}",
+            },
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="标签明细导出暂不可用，请稍后重试") from exc
 
 
 @app.get("/api/label-hub/msku-country-profile")

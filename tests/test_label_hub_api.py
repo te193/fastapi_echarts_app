@@ -33,6 +33,18 @@ class FakeLabelHubDetailService:
         return {"rows": [], "total": 0}
 
 
+class FakeLabelHubExportService:
+    def __init__(self):
+        self.calls = []
+
+    def build_export(self, **kwargs):
+        self.calls.append(kwargs)
+        return "标签看板-MSKU维度-2026-08-13.csv", iter([
+            "\ufeff国家类别,MSKU,可售库存\r\n",
+            "欧洲站,A1,18\r\n",
+        ])
+
+
 class FakeLabelHubDiagnosticsService:
     def __init__(self):
         self.calls = []
@@ -175,6 +187,44 @@ class LabelHubApiTests(unittest.TestCase):
                 self.assertEqual(expected_status, ctx.exception.status_code)
                 if expected_status == 503:
                     self.assertEqual("标签明细数据暂不可用，请稍后重试", ctx.exception.detail)
+                    self.assertNotIn("offline", ctx.exception.detail)
+
+    def test_detail_export_returns_csv_download_and_forwards_filters(self):
+        service = FakeLabelHubExportService()
+        with patch("app.main.label_hub_export_service", service):
+            response = TestClient(main.app).post(
+                "/api/label-hub/details/export",
+                json={
+                    "detail_view": "business_unit",
+                    "country_categories": ["欧洲站"],
+                    "page": 2,
+                    "page_size": 20,
+                },
+            )
+
+        self.assertEqual(200, response.status_code)
+        self.assertTrue(response.content.startswith(b"\xef\xbb\xbf"))
+        self.assertIn("text/csv", response.headers["content-type"])
+        self.assertIn("filename*=UTF-8''", response.headers["content-disposition"])
+        self.assertEqual(["欧洲站"], service.calls[0]["country_categories"])
+        self.assertEqual(2, service.calls[0]["page"])
+
+    def test_detail_export_maps_validation_and_source_failures(self):
+        class FailingExportService:
+            def __init__(self, error):
+                self.error = error
+
+            def build_export(self, **kwargs):
+                raise self.error
+
+        request = main.LabelHubDetailRequest()
+        for error, expected_status in ((ValueError("bad input"), 400), (RuntimeError("offline"), 503)):
+            with self.subTest(expected_status=expected_status):
+                with patch("app.main.label_hub_export_service", FailingExportService(error), create=True), self.assertRaises(HTTPException) as ctx:
+                    main.api_label_hub_details_export(request)
+                self.assertEqual(expected_status, ctx.exception.status_code)
+                if expected_status == 503:
+                    self.assertEqual("标签明细导出暂不可用，请稍后重试", ctx.exception.detail)
                     self.assertNotIn("offline", ctx.exception.detail)
 
     def test_detail_http_validation_rejects_non_positive_page_and_invalid_sort(self):
