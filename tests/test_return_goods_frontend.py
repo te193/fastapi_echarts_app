@@ -81,6 +81,13 @@ def test_latest_status_grid_shows_return_to_snapshot_cumulative_sales():
     assert "function nullableNumberColumn" in script
 
 
+def test_latest_status_grid_and_detail_name_dynamic_cutoff_sales():
+    script = (ROOT / "app" / "static" / "js" / "return_goods.js").read_text(encoding="utf-8")
+
+    assert 'numberColumn("返场后截止销量", "post_recovery_sales_qty"' in script
+    assert 'detailMetric("返场后截止销量", formatDecimal(event.post_recovery_sales_qty))' in script
+
+
 def test_latest_status_grid_and_detail_show_post_return_inventory_status():
     script = (ROOT / "app" / "static" / "js" / "return_goods.js").read_text(encoding="utf-8")
 
