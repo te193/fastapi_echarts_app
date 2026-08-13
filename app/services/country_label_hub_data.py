@@ -35,6 +35,11 @@ COUNTRY_PROFILE_TIE_PRIORITY = {
 # Keep this in one place: the limit-price snapshot can provide every standard
 # target gross-margin tier, and the drawer should expose all populated values.
 LIMIT_PRICE_MARGIN_TIERS = (35, 30, 25, 20, 15, 10, 5, 0)
+COUNTRY_DETAIL_PRICE_FIELDS = (
+    "listing_price", "listing_currency", "listing_price_cny",
+    "price_snapshot_date", "limit_price_35", "limit_price_10",
+    "price_margin_interval",
+)
 PAGE_SIZES = {20, 50, 100}
 SORT_FIELDS = {
     "problem_priority",
@@ -126,8 +131,10 @@ class CountryLabelHubDataService:
         self._country_profile_metrics_cache: dict[tuple[str, str, str, str, str], tuple[datetime, dict[str, Any]]] = {}
         self._country_detail_metrics_cache: OrderedDict[tuple[Any, ...], tuple[datetime, dict[str, Any]]] = OrderedDict()
         self._country_detail_raw_metrics_cache: OrderedDict[tuple[Any, ...], tuple[datetime, dict[str, Any]]] = OrderedDict()
+        self._country_detail_prices_cache: dict[tuple[str, str], tuple[datetime, dict[str, Any]]] = {}
         self._country_detail_count_cache: OrderedDict[tuple[Any, ...], tuple[datetime, dict[str, int]]] = OrderedDict()
         self._country_detail_metric_provider: Callable[..., dict[str, Any]] = self._country_detail_metrics_with_fallback
+        self._country_detail_price_provider: Callable[..., dict[str, Any]] = self._cached_country_detail_prices
         register_callback = getattr(self._shared, "register_source_invalidation_callback", None)
         if callable(register_callback):
             register_callback(self._clear_remote_label_caches)
@@ -395,6 +402,25 @@ class CountryLabelHubDataService:
                 or keyword in " ".join(str(row.get(field) or "") for field in ("country", "country_category", "store", "msku", "sku")).casefold()
             )
         ]
+        prices: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+        if str(filters.get("detail_view") or "country") == "country":
+            try:
+                price_scope = self._country_detail_price_provider(
+                    country_category=country_category,
+                    store=store,
+                )
+                prices = dict(price_scope.get("prices") or {})
+            except Exception:
+                prices = {}
+            for row in result:
+                price_key = (
+                    str(row.get("country") or ""),
+                    str(row.get("country_category") or ""),
+                    str(row.get("store") or ""),
+                    str(row.get("msku") or ""),
+                )
+                row.update({field: None for field in COUNTRY_DETAIL_PRICE_FIELDS})
+                row.update(prices.get(price_key) or {})
         warnings = [] if metric_status in {"available", "labels_only"} else ["国家经营指标暂不可用，当前仅展示标签明细"]
         return {
             "rows": result,
@@ -1362,6 +1388,117 @@ class CountryLabelHubDataService:
             }
         self._limit_price_cache[cache_key] = (datetime.now(), snapshot_text, prices)
         return snapshot_text, prices
+
+    def _cached_country_detail_prices(self, *, country_category: str, store: str) -> dict[str, Any]:
+        """Load current listing and margin prices once for a country-detail request scope."""
+        cache_key = (country_category, store)
+        cached = self._country_detail_prices_cache.get(cache_key)
+        if cached and (datetime.now() - cached[0]).total_seconds() < CACHE_SECONDS:
+            return cached[1]
+
+        listing_date: str | None = None
+        listing_rows: list[dict[str, Any]] = []
+        try:
+            listing_table = render_sql(
+                "etl_datasync.dashboard_listing_price_daily_snapshot",
+                self._shared._dashboard.schemas,
+            )
+            listing_where = ["snapshot_date = %(snapshot_date)s"]
+            listing_params: dict[str, Any] = {}
+            if country_category != "all":
+                listing_where.append("country_category = %(country_category)s")
+                listing_params["country_category"] = country_category
+            if store != "all":
+                listing_where.append("seller_name_new = %(store)s")
+                listing_params["store"] = store
+            with self._shared._dashboard.connect() as conn, conn.cursor() as cursor:
+                cursor.execute(f"select max(snapshot_date) as snapshot_date from {listing_table}")
+                snapshot_date = (cursor.fetchone() or {}).get("snapshot_date")
+                if snapshot_date:
+                    listing_date = snapshot_date.isoformat() if hasattr(snapshot_date, "isoformat") else str(snapshot_date)
+                    listing_params["snapshot_date"] = snapshot_date
+                    cursor.execute(
+                        f"""
+                        select country, country_category, seller_name_new, seller_sku,
+                               price, org_currency_icon, price_cny
+                        from {listing_table}
+                        where {' and '.join(listing_where)}
+                        """,
+                        listing_params,
+                    )
+                    listing_rows = list(cursor.fetchall())
+        except Exception:
+            listing_date, listing_rows = None, []
+
+        limit_rows: list[dict[str, Any]] = []
+        try:
+            limit_table = render_sql(
+                "etl_datasync.dashboard_limit_price_daily_snapshot",
+                self._shared._dashboard.schemas,
+            )
+            limit_where = ["snapshot_date = %(snapshot_date)s"]
+            limit_params: dict[str, Any] = {}
+            if country_category != "all":
+                limit_where.append("country_category = %(country_category)s")
+                limit_params["country_category"] = country_category
+            if store != "all":
+                limit_where.append("seller_name_new = %(store)s")
+                limit_params["store"] = store
+            with self._shared._dashboard.connect() as conn, conn.cursor() as cursor:
+                cursor.execute(f"select max(snapshot_date) as snapshot_date from {limit_table}")
+                snapshot_date = (cursor.fetchone() or {}).get("snapshot_date")
+                if snapshot_date:
+                    limit_params["snapshot_date"] = snapshot_date
+                    cursor.execute(
+                        f"""
+                        select country, country_category, seller_name_new, seller_sku, currency,
+                               {", ".join(f"margin_price_{tier}" for tier in LIMIT_PRICE_MARGIN_TIERS)}
+                        from {limit_table}
+                        where {' and '.join(limit_where)}
+                        """,
+                        limit_params,
+                    )
+                    limit_rows = list(cursor.fetchall())
+        except Exception:
+            limit_rows = []
+
+        def row_key(row: dict[str, Any]) -> tuple[str, str, str, str]:
+            return (
+                str(row.get("country") or ""),
+                str(row.get("country_category") or ""),
+                str(row.get("seller_name_new") or ""),
+                str(row.get("seller_sku") or ""),
+            )
+
+        listing_by_key = {row_key(row): row for row in listing_rows}
+        limit_by_key = {row_key(row): row for row in limit_rows}
+        prices: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+        for key in listing_by_key.keys() | limit_by_key.keys():
+            listing = listing_by_key.get(key) or {}
+            limit = limit_by_key.get(key) or {}
+            listing_price = _number(listing.get("price"))
+            price_payload = {"value": listing_price, "available": listing_price is not None}
+            limit_payload = {
+                "available": bool(limit),
+                "margin_prices": [
+                    {"margin": tier, "value": _number(limit.get(f"margin_price_{tier}"))}
+                    for tier in LIMIT_PRICE_MARGIN_TIERS
+                    if _number(limit.get(f"margin_price_{tier}")) is not None
+                ],
+            }
+            interval = _price_margin_interval(price_payload, limit_payload)
+            prices[key] = {
+                "listing_price": listing_price,
+                "listing_currency": str(listing.get("org_currency_icon") or limit.get("currency") or "") or None,
+                "listing_price_cny": _number(listing.get("price_cny")),
+                "price_snapshot_date": listing_date if listing else None,
+                "limit_price_35": _number(limit.get("margin_price_35")),
+                "limit_price_10": _number(limit.get("margin_price_10")),
+                "price_margin_interval": None if interval == "--" else interval,
+            }
+        result = {"prices": prices}
+        self._country_detail_prices_cache[cache_key] = (datetime.now(), result)
+        return result
 
     def _cached_profile_country_facts(self, data_date: str, country_category: str, store: str, msku: str) -> list[dict[str, Any]]:
         cache_key = (data_date, country_category, store, msku)
