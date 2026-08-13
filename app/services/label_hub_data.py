@@ -692,10 +692,18 @@ class LabelHubDataService:
                 "sales_amount_ex_tax",
                 "ending_inventory_qty",
                 "avg_inventory_qty",
+                "settlement_gross_profit",
+                "settlement_gross_margin",
                 "ad_spend",
+                "ad_sales",
+                "ad_orders",
+                "ad_clicks",
+                "ad_impressions",
                 "acos",
                 "tacos",
+                "sessions_total",
                 "return_count",
+                "return_amount",
                 "net_amount",
             ):
                 row[field] = _number((metric or {}).get(field))
