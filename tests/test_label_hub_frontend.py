@@ -111,6 +111,7 @@ def test_label_hub_detail_export_uses_current_filters_and_downloads_csv_blob():
     assert "URL.revokeObjectURL" in script
     assert "function setDetailExportLoading(isLoading)" in script
     assert 'elements.labelHubDetailExport.textContent = isLoading ? "导出中…" : "导出 CSV";' in script
+    assert "js/label_hub.js') }}?v=20260813detailcsv1" in template
 
 
 def test_detail_role_reason_filter_replaces_sales_trend_and_follows_detail_scope():
@@ -698,7 +699,7 @@ def test_remote_breakdown_nodes_have_enough_distinct_colors_for_long_status_list
     assert len(colors) >= 12
     assert len(set(colors)) == len(colors)
     assert "remoteBucketColor(panel, bucket)" in script
-    assert "?v=20260805labelgroups1" in template
+    assert "?v=20260813detailcsv1" in template
 
 
 def test_label_hub_issue_overview_shows_selected_group_problem_counts():
@@ -859,7 +860,7 @@ def test_current_category_detail_uses_period_scoped_distribution():
     assert "distributionById" in script
     assert 'cache: "no-store"' in common
     assert "js/common.js') }}?v=20260715cache2" in base
-    assert "js/label_hub.js') }}?v=20260805labelgroups1" in template
+    assert "js/label_hub.js') }}?v=20260813detailcsv1" in template
 
 
 def test_country_detail_overview_matches_label_hub_information_structure():
