@@ -176,6 +176,12 @@ class LabelHubDetailDataService:
         return {str(item).strip().casefold() for item in value or [] if str(item).strip()}, country_count
 
     def get_details(self, **filters: Any) -> dict[str, Any]:
+        return self._get_details(paginate=True, **filters)
+
+    def get_export_rows(self, **filters: Any) -> dict[str, Any]:
+        return self._get_details(paginate=False, **filters)
+
+    def _get_details(self, *, paginate: bool, **filters: Any) -> dict[str, Any]:
         detail_view = str(filters.get("detail_view") or "business_unit")
         if detail_view not in {"business_unit", "country"}:
             raise ValueError("明细视图不受支持")
@@ -440,7 +446,8 @@ class LabelHubDetailDataService:
             "cross_country_inconsistent": "跨国标签不一致",
         }
         public_rows = []
-        for row in rows[start:start + page_size]:
+        selected_rows = rows[start:start + page_size] if paginate else rows
+        for row in selected_rows:
             codes = sorted(_issues(row, metric_status))
             row = dict(row)
             row["issue_codes"] = codes
