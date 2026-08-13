@@ -120,6 +120,52 @@ class ReturnGoodsServiceSqlTests(unittest.TestCase):
         self.assertEqual("2026-06-10", item["return_start_date"])
         self.assertIsNone(item["exit_date"])
 
+    def test_serialize_item_uses_dynamic_post_return_cutoff_sales(self):
+        service = ReturnGoodsDataService()
+        cases = [
+            (
+                {
+                    "recovery_followup_flag": 0,
+                    "post_recovery_sales_qty": 21,
+                    "post_cumulative_sales_qty": None,
+                    "exit_date": date(2026, 5, 21),
+                },
+                21,
+            ),
+            (
+                {
+                    "recovery_followup_flag": 1,
+                    "post_recovery_sales_qty": 14,
+                    "post_cumulative_sales_qty": 52,
+                    "exit_date": date(2026, 6, 28),
+                },
+                52,
+            ),
+            (
+                {
+                    "recovery_followup_flag": 1,
+                    "post_recovery_sales_qty": 14,
+                    "post_cumulative_sales_qty": 61,
+                    "exit_date": None,
+                },
+                61,
+            ),
+            (
+                {
+                    "recovery_followup_flag": 1,
+                    "post_recovery_sales_qty": 14,
+                    "post_cumulative_sales_qty": None,
+                    "exit_date": None,
+                },
+                14,
+            ),
+        ]
+
+        for row, expected in cases:
+            with self.subTest(row=row):
+                item = service._serialize_item(row)
+                self.assertEqual(expected, item["post_recovery_sales_qty"])
+
     def test_serialize_item_only_exposes_return_to_snapshot_sales_for_active_event(self):
         service = ReturnGoodsDataService()
 

@@ -1988,6 +1988,10 @@ class ReturnGoodsDataService:
             "items": items,
         }
     def _serialize_item(self, row: dict[str, Any]) -> dict[str, Any]:
+        post_recovery_sales_qty = number_value(row.get("post_recovery_sales_qty"))
+        post_cumulative_sales_qty = number_value(row.get("post_cumulative_sales_qty"))
+        if row.get("recovery_followup_flag") and post_cumulative_sales_qty is not None:
+            post_recovery_sales_qty = post_cumulative_sales_qty
         return_to_snapshot_sales_qty = number_value(row.get("post_cumulative_sales_qty"))
         if return_to_snapshot_sales_qty is None:
             return_to_snapshot_sales_qty = number_value(row.get("post_recovery_sales_qty"))
@@ -2002,6 +2006,7 @@ class ReturnGoodsDataService:
             "stockout_date": format_day(row.get("stockout_date")),
             "return_start_date": format_day(row.get("return_start_date")),
             "exit_date": format_day(row.get("exit_date")),
+            "post_recovery_sales_qty": post_recovery_sales_qty,
             "post_return_inventory_status": post_return_inventory_status,
             "return_to_snapshot_sales_qty": (
                 None if row.get("exit_date") else return_to_snapshot_sales_qty
