@@ -237,6 +237,30 @@ class LabelHubDetailDataTests(unittest.TestCase):
         self.assertEqual(20, len(payload["rows"]))
         self.assertNotIn(None, [row["sales_amount"] for row in payload["rows"]])
 
+    def test_export_rows_keep_filters_and_sort_but_ignore_pagination(self):
+        rows = [
+            {
+                "country_category": "Europe",
+                "store": f"S{index}",
+                "msku": f"M{index}",
+                "sales_amount": index,
+            }
+            for index in range(25)
+        ]
+        service = LabelHubDetailDataService(lambda **kwargs: rows)
+
+        payload = service.get_export_rows(
+            country_categories=["Europe"],
+            page=2,
+            page_size=20,
+            sort_field="sales_amount",
+            sort_dir="desc",
+        )
+
+        self.assertEqual(25, payload["total"])
+        self.assertEqual(25, len(payload["rows"]))
+        self.assertEqual(list(range(24, -1, -1)), [row["sales_amount"] for row in payload["rows"]])
+
     def test_missing_sort_values_are_last_for_ascending_and_descending(self):
         rows = [
             {"msku": "missing", "sales_amount": None},
