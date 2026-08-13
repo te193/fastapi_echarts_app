@@ -69,6 +69,8 @@ class LabelHubExportTests(unittest.TestCase):
         self.assertEqual("是", parsed[0]["是否标签冲突"])
         self.assertEqual("25.00%", parsed[0]["动销趋势变化率"])
         self.assertEqual(2, detail_service.calls[0]["page"])
+        self.assertNotIn("当前售价", parsed[0])
+        self.assertNotIn("35%毛利限价", parsed[0])
 
     def test_country_export_adds_country_sku_ranking_and_keeps_header_when_empty(self):
         service = LabelHubExportService(FakeDetailService({"rows": [], "total": 0}))
@@ -89,6 +91,31 @@ class LabelHubExportTests(unittest.TestCase):
         self.assertEqual(1, header.count("可售库存"))
         self.assertIn("7天销量", header)
         self.assertIn("7天销售额", header)
+
+    def test_country_export_adds_compact_price_columns(self):
+        service = LabelHubExportService(FakeDetailService({
+            "rows": [{
+                "country": "德国", "country_category": "欧洲站", "store": "StoreA",
+                "msku": "A1", "sku": "SKU-A", "listing_price": 19.99,
+                "listing_currency": "EUR", "listing_price_cny": 156.2,
+                "price_snapshot_date": "2026-08-12", "limit_price_35": 21,
+                "limit_price_10": 15, "price_margin_interval": "10%–15%",
+            }],
+            "total": 1,
+        }))
+
+        _, chunks = service.build_export(
+            detail_view="country", data_date="2026-08-13", metric_period="30d"
+        )
+        row = next(csv.DictReader(io.StringIO("".join(chunks).lstrip("\ufeff"))))
+
+        self.assertEqual("19.99", row["当前售价"])
+        self.assertEqual("EUR", row["售价币种"])
+        self.assertEqual("156.2", row["当前售价（人民币）"])
+        self.assertEqual("2026-08-12", row["价格快照日期"])
+        self.assertEqual("21", row["35%毛利限价"])
+        self.assertEqual("15", row["10%毛利限价"])
+        self.assertEqual("10%–15%", row["当前毛利区间"])
 
 
 if __name__ == "__main__":

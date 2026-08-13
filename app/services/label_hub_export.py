@@ -62,6 +62,13 @@ def _columns(detail_view: str, metric_period: str) -> list[Column]:
             ("MSKU", "msku", None),
             ("SKU", "sku", None),
             ("排名", "ranking", None),
+            ("当前售价", "listing_price", None),
+            ("售价币种", "listing_currency", None),
+            ("当前售价（人民币）", "listing_price_cny", None),
+            ("价格快照日期", "price_snapshot_date", None),
+            ("35%毛利限价", "limit_price_35", None),
+            ("10%毛利限价", "limit_price_10", None),
+            ("当前毛利区间", "price_margin_interval", None),
         ])
     else:
         columns.extend([
