@@ -372,9 +372,32 @@ class LabelHubDataTests(unittest.TestCase):
             self.service.parse_conditions("broken")
 
     def test_analysis_categories_exclude_non_msku_grain_parents(self):
-        categories = self.service._analysis_categories(DETAILS, {})
+        station_role_detail = {
+            "label_id": 21,
+            "label_name": "断货前销售角色(站点)",
+            "sub_label_id": 2101,
+            "sub_label_name": "断货前-明星产品（站点）",
+            "tag_rule": "站点断货前销售角色",
+            "business_definition": "国家站点维度",
+            "business_owner": "运营",
+            "label_category": "经营",
+            "update_frequency": "每日",
+            "mutual_exclusion": "互斥",
+            "status": "已启用",
+            "tagging_method": "auto_sql",
+        }
+        details = DETAILS + [station_role_detail]
 
-        self.assertNotIn(13, {item["id"] for item in categories})
+        analysis_ids = {
+            item["id"] for item in self.service._analysis_categories(details, {})
+        }
+        filterable_ids = {
+            item["id"] for item in self.service._filterable_categories(details, {})
+        }
+
+        self.assertNotIn(13, analysis_ids)
+        self.assertNotIn(21, analysis_ids)
+        self.assertIn(21, filterable_ids)
 
     def test_payload_rejects_conditions_for_excluded_parent(self):
         with self.assertRaisesRegex(ValueError, "不存在或归属错误"):
