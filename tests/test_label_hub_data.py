@@ -419,16 +419,16 @@ class LabelHubDataTests(unittest.TestCase):
             },
             *[
                 {
-                    "label_id": 21,
-                    "label_name": "断货前销售角色(站点)",
+                    "label_id": 20,
+                    "label_name": "断货前销售角色",
                     "sub_label_id": role_id,
                     "sub_label_name": name,
                 }
                 for role_id, name in (
-                    (2101, "明星产品"),
-                    (2102, "潜力产品"),
-                    (2103, "瘦狗产品"),
-                    (2104, "问题产品"),
+                    (2001, "明星产品"),
+                    (2002, "潜力产品"),
+                    (2003, "瘦狗产品"),
+                    (2004, "问题产品"),
                 )
             ],
         ]
@@ -436,10 +436,10 @@ class LabelHubDataTests(unittest.TestCase):
             fact("欧洲站", "StoreA", "M1", 304, "current"),
             fact("欧洲站", "StoreB", "M1", 304, "current"),
             fact("美国站", "StoreC", "M2", 304, "current"),
-            fact("欧洲站", "StoreA", "M1", 2101, "30d"),
-            fact("欧洲站", "StoreB", "M1", 2102, "30d"),
-            fact("欧洲站", "StoreB", "M1", 2103, "30d"),
-            fact("美国站", "StoreC", "M2", 2104, "7d"),
+            fact("欧洲站", "StoreA", "M1", 2001, "30d"),
+            fact("欧洲站", "StoreB", "M1", 2002, "30d"),
+            fact("欧洲站", "StoreB", "M1", 2003, "30d"),
+            fact("美国站", "StoreC", "M2", 2004, "7d"),
         ]
 
         payload = self.service.build_stockout_before_role_summary(
@@ -454,11 +454,11 @@ class LabelHubDataTests(unittest.TestCase):
         self.assertEqual(1, payload["coverage"]["missing_count"])
         self.assertEqual(1, payload["coverage"]["conflict_count"])
         self.assertEqual(
-            {2101: 1, 2102: 0, 2103: 0, 2104: 0},
+            {2001: 1, 2002: 0, 2003: 0, 2004: 0},
             {item["id"]: item["business_unit_count"] for item in payload["roles"]},
         )
 
-    def test_public_business_row_exposes_stockout_roles_without_restoring_analysis_label(self):
+    def test_public_business_row_exposes_msku_stockout_before_role(self):
         public = _public_business_row({
             "country_category": "欧洲站",
             "store": "StoreA",
@@ -466,22 +466,21 @@ class LabelHubDataTests(unittest.TestCase):
             "_label_facts": [
                 {
                     "detail": {
-                        "label_id": 21,
-                        "label_name": "断货前销售角色(站点)",
-                        "sub_label_name": "断货前-明星产品（站点）",
+                        "label_id": 20,
+                        "label_name": "断货前销售角色",
+                        "sub_label_name": "断货前-明星产品",
                     },
-                    "label_id": 2101,
+                    "label_id": 2001,
                     "label_period": "30d",
                 }
             ],
         })
 
         self.assertEqual(
-            [{"id": 2101, "label": "明星产品", "period": "30d"}],
+            [{"id": 2001, "label": "明星产品", "period": "30d"}],
             public["stockout_before_roles"],
         )
-        self.assertEqual([], public["labels"])
-        self.assertEqual("", public["label_summary"])
+        self.assertEqual(20, public["labels"][0]["parent_id"])
 
     def test_payload_rejects_conditions_for_excluded_parent(self):
         with self.assertRaisesRegex(ValueError, "不存在或归属错误"):

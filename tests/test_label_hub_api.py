@@ -181,7 +181,7 @@ class LabelHubApiTests(unittest.TestCase):
             role_reason_ids=[1502, 1503],
             current_stockout_only=True,
             stockout_before_role_period="30d",
-            stockout_before_role_ids=[2101, 2102],
+            stockout_before_role_ids=[2001, 2002],
             daily_sales_bands=["gt5"],
             margin_bands=["gt25"],
             ranking_bands=["11_20"],
@@ -204,7 +204,7 @@ class LabelHubApiTests(unittest.TestCase):
         self.assertEqual([1502, 1503], service.calls[0]["role_reason_ids"])
         self.assertTrue(service.calls[0]["current_stockout_only"])
         self.assertEqual("30d", service.calls[0]["stockout_before_role_period"])
-        self.assertEqual([2101, 2102], service.calls[0]["stockout_before_role_ids"])
+        self.assertEqual([2001, 2002], service.calls[0]["stockout_before_role_ids"])
         self.assertEqual(["11_20"], service.calls[0]["ranking_bands"])
         self.assertEqual(50, service.calls[0]["page_size"])
 

@@ -41,7 +41,7 @@
     sort_field: "sales_amount", sort_dir: "desc"
   };
   var STOCKOUT_ROLE_PERIODS = ["7d", "14d", "30d", "90d"];
-  var STOCKOUT_ROLE_LABELS = { "2101": "明星产品", "2102": "潜力产品", "2103": "瘦狗产品", "2104": "问题产品" };
+  var STOCKOUT_ROLE_LABELS = { "2001": "明星产品", "2002": "潜力产品", "2003": "瘦狗产品", "2004": "问题产品" };
   var stockoutRoleState = {
     open: false,
     period: normalizeStockoutRolePeriod(state.metric_period),
