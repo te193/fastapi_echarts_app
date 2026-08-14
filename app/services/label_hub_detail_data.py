@@ -35,6 +35,10 @@ ROLE_REASON_IDS_BY_VIEW = {
     "country": set(range(1601, 1619)),
 }
 DETAIL_CACHE_SECONDS = 300
+CURRENT_STOCKOUT_PARENT_ID = 3
+CURRENT_STOCKOUT_CHILD_ID = 304
+STOCKOUT_BEFORE_ROLE_IDS = {2101, 2102, 2103, 2104}
+STOCKOUT_BEFORE_ROLE_PERIODS = {"7d", "14d", "30d", "90d"}
 
 
 def _normalize_identifiers(values: list[str] | None) -> tuple[list[str], list[str]]:
@@ -215,6 +219,21 @@ class LabelHubDetailDataService:
             raise ValueError("角色原因筛选与当前明细维度不匹配")
         role_reason_parent = ROLE_REASON_PARENT_BY_VIEW[detail_view]
 
+        stockout_before_role_period = str(filters.get("stockout_before_role_period") or "")
+        if stockout_before_role_period and stockout_before_role_period not in STOCKOUT_BEFORE_ROLE_PERIODS:
+            raise ValueError("断货前角色周期不存在")
+        try:
+            stockout_before_role_ids = {
+                int(item) for item in filters.get("stockout_before_role_ids") or []
+            }
+        except (TypeError, ValueError) as exc:
+            raise ValueError("断货前角色筛选包含无效标签") from exc
+        if not stockout_before_role_ids.issubset(STOCKOUT_BEFORE_ROLE_IDS):
+            raise ValueError("断货前角色筛选包含无效标签")
+        if stockout_before_role_ids and not stockout_before_role_period:
+            raise ValueError("断货前角色筛选必须指定周期")
+        current_stockout_only = bool(filters.get("current_stockout_only"))
+
         requested, normalized = _normalize_identifiers(filters.get("identifiers"))
         aliases, provider_country_count = self._alias_payload(normalized)
         alias_targets: dict[str, set[str]] = {}
@@ -253,6 +272,7 @@ class LabelHubDetailDataService:
             or role_reason_ids
             or filters.get("sales_trends") or filters.get("daily_sales_bands")
             or filters.get("margin_bands") or filters.get("problems")
+            or current_stockout_only or stockout_before_role_period or stockout_before_role_ids
             or (detail_view == "country" and ranking_bands)
         )
         use_country_summary = (
@@ -379,7 +399,7 @@ class LabelHubDetailDataService:
                 return False
             if any(selected and row.get(field) not in selected for field, selected in selections):
                 return False
-            if conditions or role_reason_ids:
+            if conditions or role_reason_ids or current_stockout_only:
                 labels_by_parent = {
                     int(parent): {int(child) for child in children}
                     for parent, children in (row.get("_by_parent") or {}).items()
@@ -391,6 +411,19 @@ class LabelHubDetailDataService:
                 if any(not labels_by_parent.get(parent, set()).intersection(children) for parent, children in conditions.items()):
                     return False
                 if role_reason_ids and not labels_by_parent.get(role_reason_parent, set()).intersection(role_reason_ids):
+                    return False
+                if current_stockout_only and CURRENT_STOCKOUT_CHILD_ID not in labels_by_parent.get(CURRENT_STOCKOUT_PARENT_ID, set()):
+                    return False
+            if stockout_before_role_period:
+                matched_roles = [
+                    role
+                    for role in row.get("stockout_before_roles") or []
+                    if str(role.get("period") or "") == stockout_before_role_period
+                ]
+                if stockout_before_role_ids and (
+                    len(matched_roles) != 1
+                    or int(matched_roles[0].get("id") or 0) not in stockout_before_role_ids
+                ):
                     return False
             row_issues = _issues(row, metric_status)
             if problems and mode == "any" and not row_issues.intersection(problems):
@@ -452,12 +485,25 @@ class LabelHubDetailDataService:
             row = dict(row)
             row["issue_codes"] = codes
             row["issue_labels"] = [issue_labels[code] for code in codes]
+            if stockout_before_role_period:
+                matched_roles = [
+                    role
+                    for role in row.get("stockout_before_roles") or []
+                    if str(role.get("period") or "") == stockout_before_role_period
+                ]
+                if len(matched_roles) == 1:
+                    row["stockout_before_role"] = matched_roles[0].get("label") or ""
+                    row["stockout_before_role_id"] = int(matched_roles[0].get("id") or 0)
+                    row["stockout_before_role_period"] = stockout_before_role_period
             public_rows.append({key: value for key, value in row.items() if not key.startswith("_")})
         rows = public_rows
         applied = {key: filters.get(key, default) for key, default in (
             ("country_categories", []), ("stores", []), ("countries", []), ("sales_roles", []),
             ("sales_trends", []), ("daily_sales_bands", []), ("margin_bands", []), ("ranking_bands", []), ("problems", []),
             ("role_reason_ids", []),
+            ("current_stockout_only", False),
+            ("stockout_before_role_period", ""),
+            ("stockout_before_role_ids", []),
             ("detail_conditions", ""), ("problem_mode", "any"),
         )}
         applied.update({
@@ -471,6 +517,9 @@ class LabelHubDetailDataService:
             "keyword": filters.get("keyword", ""),
             "conditions": filters.get("conditions", ""),
             "label_period": filters.get("label_period", "all"),
+            "current_stockout_only": current_stockout_only,
+            "stockout_before_role_period": stockout_before_role_period,
+            "stockout_before_role_ids": sorted(stockout_before_role_ids),
         })
         return {
             "rows": rows, "counts": counts,

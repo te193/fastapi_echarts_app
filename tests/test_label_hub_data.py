@@ -12,6 +12,7 @@ from app.services.label_hub_data import (
     SOURCE_INITIAL_CONTENT_CHECK_DELAY_SECONDS,
     LabelHubDataService,
     _missing_metric_units,
+    _public_business_row,
 )
 
 
@@ -456,6 +457,31 @@ class LabelHubDataTests(unittest.TestCase):
             {2101: 1, 2102: 0, 2103: 0, 2104: 0},
             {item["id"]: item["business_unit_count"] for item in payload["roles"]},
         )
+
+    def test_public_business_row_exposes_stockout_roles_without_restoring_analysis_label(self):
+        public = _public_business_row({
+            "country_category": "欧洲站",
+            "store": "StoreA",
+            "msku": "M1",
+            "_label_facts": [
+                {
+                    "detail": {
+                        "label_id": 21,
+                        "label_name": "断货前销售角色(站点)",
+                        "sub_label_name": "断货前-明星产品（站点）",
+                    },
+                    "label_id": 2101,
+                    "label_period": "30d",
+                }
+            ],
+        })
+
+        self.assertEqual(
+            [{"id": 2101, "label": "明星产品", "period": "30d"}],
+            public["stockout_before_roles"],
+        )
+        self.assertEqual([], public["labels"])
+        self.assertEqual("", public["label_summary"])
 
     def test_payload_rejects_conditions_for_excluded_parent(self):
         with self.assertRaisesRegex(ValueError, "不存在或归属错误"):

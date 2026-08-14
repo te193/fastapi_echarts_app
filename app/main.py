@@ -193,6 +193,9 @@ class LabelHubDetailRequest(BaseModel):
     countries: list[str] = Field(default_factory=list)
     sales_roles: list[str] = Field(default_factory=list)
     role_reason_ids: list[int] = Field(default_factory=list)
+    current_stockout_only: bool = False
+    stockout_before_role_period: str = ""
+    stockout_before_role_ids: list[int] = Field(default_factory=list)
     daily_sales_bands: list[str] = Field(default_factory=list)
     margin_bands: list[str] = Field(default_factory=list)
     ranking_bands: list[str] = Field(default_factory=list)
