@@ -79,6 +79,7 @@ def test_current_stockout_card_expands_period_role_summary_and_drills_to_details
         assert token in script
 
     assert '"7d", "14d", "30d", "90d"' in script
+    assert 'stockout_before_role_period: ""' in script
     assert ".label-hub-stockout-role-panel" in styles
     assert ".label-hub-stockout-role-periods" in styles
     assert ".label-hub-stockout-role-row" in styles
