@@ -399,6 +399,64 @@ class LabelHubDataTests(unittest.TestCase):
         self.assertNotIn(21, analysis_ids)
         self.assertIn(21, filterable_ids)
 
+    def test_stockout_before_role_summary_uses_business_unit_key_period_and_coverage(self):
+        def fact(country_category, store, msku, label_id, label_period):
+            return {
+                "country_category": country_category,
+                "store": store,
+                "msku": msku,
+                "label_id": label_id,
+                "label_period": label_period,
+            }
+
+        details = [
+            {
+                "label_id": 3,
+                "label_name": "运营状态",
+                "sub_label_id": 304,
+                "sub_label_name": "断货中",
+            },
+            *[
+                {
+                    "label_id": 21,
+                    "label_name": "断货前销售角色(站点)",
+                    "sub_label_id": role_id,
+                    "sub_label_name": name,
+                }
+                for role_id, name in (
+                    (2101, "明星产品"),
+                    (2102, "潜力产品"),
+                    (2103, "瘦狗产品"),
+                    (2104, "问题产品"),
+                )
+            ],
+        ]
+        facts = [
+            fact("欧洲站", "StoreA", "M1", 304, "current"),
+            fact("欧洲站", "StoreB", "M1", 304, "current"),
+            fact("美国站", "StoreC", "M2", 304, "current"),
+            fact("欧洲站", "StoreA", "M1", 2101, "30d"),
+            fact("欧洲站", "StoreB", "M1", 2102, "30d"),
+            fact("欧洲站", "StoreB", "M1", 2103, "30d"),
+            fact("美国站", "StoreC", "M2", 2104, "7d"),
+        ]
+
+        payload = self.service.build_stockout_before_role_summary(
+            details=details,
+            facts=facts,
+            role_period="30d",
+        )
+
+        self.assertEqual(3, payload["scope"]["business_unit_count"])
+        self.assertEqual(2, payload["scope"]["unique_msku_count"])
+        self.assertEqual(1, payload["coverage"]["identified_count"])
+        self.assertEqual(1, payload["coverage"]["missing_count"])
+        self.assertEqual(1, payload["coverage"]["conflict_count"])
+        self.assertEqual(
+            {2101: 1, 2102: 0, 2103: 0, 2104: 0},
+            {item["id"]: item["business_unit_count"] for item in payload["roles"]},
+        )
+
     def test_payload_rejects_conditions_for_excluded_parent(self):
         with self.assertRaisesRegex(ValueError, "不存在或归属错误"):
             self.service.build_payload(
