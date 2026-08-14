@@ -236,17 +236,17 @@ class LabelHubDetailDataTests(unittest.TestCase):
             row(
                 "A",
                 status_id=304,
-                roles=[{"id": 2101, "label": "明星产品", "period": "30d"}],
+                roles=[{"id": 2001, "label": "明星产品", "period": "30d"}],
             ),
             row(
                 "B",
                 status_id=304,
-                roles=[{"id": 2102, "label": "潜力产品", "period": "7d"}],
+                roles=[{"id": 2002, "label": "潜力产品", "period": "7d"}],
             ),
             row(
                 "C",
                 status_id=301,
-                roles=[{"id": 2101, "label": "明星产品", "period": "30d"}],
+                roles=[{"id": 2001, "label": "明星产品", "period": "30d"}],
             ),
         ]
         service = LabelHubDetailDataService(lambda **kwargs: rows)
@@ -254,7 +254,7 @@ class LabelHubDetailDataTests(unittest.TestCase):
         payload = service.get_details(
             current_stockout_only=True,
             stockout_before_role_period="30d",
-            stockout_before_role_ids=[2101],
+            stockout_before_role_ids=[2001],
         )
 
         self.assertEqual(["A"], [item["msku"] for item in payload["rows"]])
@@ -272,7 +272,7 @@ class LabelHubDetailDataTests(unittest.TestCase):
                 stockout_before_role_ids=[2199],
             )
         with self.assertRaisesRegex(ValueError, "必须指定周期"):
-            service.get_details(stockout_before_role_ids=[2101])
+            service.get_details(stockout_before_role_ids=[2001])
 
     def test_counts_precede_pagination_unique_msku_is_deduplicated_and_missing_sorts_last(self):
         rows = [
