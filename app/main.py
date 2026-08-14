@@ -1,5 +1,6 @@
 import csv
 import io
+from contextlib import asynccontextmanager
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -158,7 +159,13 @@ CSV_HEADER_LABELS = {
     "updated_at": "更新时间",
 }
 
-app = FastAPI(title="产品分层看板", version="1.0.0")
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    ad_budget_service.warm_cache()
+    yield
+
+
+app = FastAPI(title="产品分层看板", version="1.0.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
@@ -380,6 +387,7 @@ def api_ad_budget(
     page_size: int = Query(default=50, ge=20, le=200),
     sort_field: str = "anomaly_priority",
     sort_dir: Literal["asc", "desc"] = "desc",
+    column_filters: str = "",
 ) -> dict:
     return ad_budget_service.get_payload(
         country_category=country_category,
@@ -393,6 +401,7 @@ def api_ad_budget(
         page_size=page_size,
         sort_field=sort_field,
         sort_dir=sort_dir,
+        column_filters=column_filters,
     )
 
 
@@ -496,6 +505,28 @@ def api_label_hub_refresh() -> dict:
         return label_hub_service.force_source_refresh()
     except Exception as exc:
         raise HTTPException(status_code=503, detail="远端标签刷新失败，请稍后重试") from exc
+
+
+@app.get("/api/label-hub/stockout-before-roles")
+def api_label_hub_stockout_before_roles(
+    data_date: str = "",
+    role_period: str = "30d",
+    country_category: str = "all",
+    store: str = "all",
+    keyword: str = "",
+) -> dict:
+    try:
+        return label_hub_service.get_stockout_before_role_summary(
+            data_date=data_date,
+            role_period=role_period,
+            country_category=country_category,
+            store=store,
+            keyword=keyword,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="断货前销售角色汇总暂不可用，请稍后重试") from exc
 
 
 @app.get("/api/label-hub")

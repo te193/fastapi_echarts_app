@@ -23,6 +23,10 @@ class FakeLabelHubService:
         self.calls.append(("profile", kwargs))
         return {"msku": "MSKU1"}
 
+    def get_stockout_before_role_summary(self, **kwargs):
+        self.calls.append(("stockout_before_roles", kwargs))
+        return {"ok": True, "roles": []}
+
 
 class FakeLabelHubDetailService:
     def __init__(self):
@@ -82,6 +86,33 @@ class FakeCountryProfileService:
 
 
 class LabelHubApiTests(unittest.TestCase):
+    def test_stockout_before_role_api_passes_scope_and_period(self):
+        service = FakeLabelHubService()
+
+        with patch("app.main.label_hub_service", service):
+            payload = main.api_label_hub_stockout_before_roles(
+                data_date="2026-08-13",
+                role_period="30d",
+                country_category="欧洲站",
+                store="StoreA",
+                keyword="M1",
+            )
+
+        self.assertTrue(payload["ok"])
+        self.assertEqual(
+            (
+                "stockout_before_roles",
+                {
+                    "data_date": "2026-08-13",
+                    "role_period": "30d",
+                    "country_category": "欧洲站",
+                    "store": "StoreA",
+                    "keyword": "M1",
+                },
+            ),
+            service.calls[0],
+        )
+
     def test_msku_role_diagnostics_forwards_exact_identity_and_period(self):
         service = FakeRoleDiagnosticService()
         with patch("app.main.label_hub_role_diagnostic_service", service):

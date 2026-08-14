@@ -32,6 +32,16 @@ EXCLUDED_ANALYSIS_PARENT_IDS = (
     | DIAGNOSTIC_PARENT_IDS
     | MSKU_ANALYSIS_HIDDEN_PARENT_IDS
 )
+CURRENT_STOCKOUT_CHILD_ID = 304
+STOCKOUT_BEFORE_ROLE_PARENT_ID = 21
+STOCKOUT_BEFORE_ROLE_IDS = (2101, 2102, 2103, 2104)
+STOCKOUT_BEFORE_ROLE_PERIODS = ("7d", "14d", "30d", "90d")
+STOCKOUT_BEFORE_ROLE_LABELS = {
+    2101: "明星产品",
+    2102: "潜力产品",
+    2103: "瘦狗产品",
+    2104: "问题产品",
+}
 SALES_ROLE_PARENT_ID = 1
 PROBLEM_PRODUCT_CHILD_ID = 104
 RETURN_STAGE_PARENT_ID = 5
@@ -452,6 +462,74 @@ class LabelHubDataService:
                 }
             )
         return result
+
+    def build_stockout_before_role_summary(
+        self,
+        *,
+        details: list[dict[str, Any]],
+        facts: list[dict[str, Any]],
+        role_period: str,
+    ) -> dict[str, Any]:
+        if role_period not in STOCKOUT_BEFORE_ROLE_PERIODS:
+            raise ValueError("role_period 不存在")
+
+        stockout_keys = {
+            _business_unit_key(fact)
+            for fact in facts
+            if int(fact.get("label_id") or 0) == CURRENT_STOCKOUT_CHILD_ID
+            and str(fact.get("label_period") or "") == "current"
+        }
+        roles_by_key: dict[tuple[str, str, str], set[int]] = defaultdict(set)
+        for fact in facts:
+            role_id = int(fact.get("label_id") or 0)
+            if role_id not in STOCKOUT_BEFORE_ROLE_IDS:
+                continue
+            if str(fact.get("label_period") or "") != role_period:
+                continue
+            key = _business_unit_key(fact)
+            if key in stockout_keys:
+                roles_by_key[key].add(role_id)
+
+        role_keys: dict[int, set[tuple[str, str, str]]] = {
+            role_id: set() for role_id in STOCKOUT_BEFORE_ROLE_IDS
+        }
+        conflict_keys: set[tuple[str, str, str]] = set()
+        missing_keys: set[tuple[str, str, str]] = set()
+        for key in stockout_keys:
+            role_ids = roles_by_key.get(key, set())
+            if len(role_ids) == 1:
+                role_keys[next(iter(role_ids))].add(key)
+            elif len(role_ids) > 1:
+                conflict_keys.add(key)
+            else:
+                missing_keys.add(key)
+
+        total = len(stockout_keys)
+        identified_count = sum(len(keys) for keys in role_keys.values())
+        return {
+            "role_period": role_period,
+            "available_periods": list(STOCKOUT_BEFORE_ROLE_PERIODS),
+            "scope": {
+                "business_unit_count": total,
+                "unique_msku_count": len({key[2] for key in stockout_keys}),
+            },
+            "roles": [
+                {
+                    "id": role_id,
+                    "label": STOCKOUT_BEFORE_ROLE_LABELS[role_id],
+                    "business_unit_count": len(role_keys[role_id]),
+                    "unique_msku_count": len({key[2] for key in role_keys[role_id]}),
+                    "share": round(len(role_keys[role_id]) / total, 4) if total else 0,
+                }
+                for role_id in STOCKOUT_BEFORE_ROLE_IDS
+            ],
+            "coverage": {
+                "identified_count": identified_count,
+                "missing_count": len(missing_keys),
+                "conflict_count": len(conflict_keys),
+                "rate": round(identified_count / total, 4) if total else 0,
+            },
+        }
 
     def _analysis_categories(self, details: list[dict[str, Any]], fact_stats: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:
         return [
@@ -1333,6 +1411,31 @@ class LabelHubDataService:
             self._cache_payload(cache_key, payload)
         self._start_comparison_warmup(metric_period)
         return payload
+
+    def get_stockout_before_role_summary(self, **filters: Any) -> dict[str, Any]:
+        meta = self.get_meta()
+        data_date = str(filters.get("data_date") or meta["default_data_date"])
+        role_period = str(filters.get("role_period") or "30d").lower()
+        country_category = str(filters.get("country_category") or "all")
+        store = str(filters.get("store") or "all")
+        keyword = str(filters.get("keyword") or "").strip().casefold()
+        facts = [
+            fact
+            for fact in self._cached_facts(data_date)
+            if (country_category == "all" or str(fact.get("country_category") or "") == country_category)
+            and (store == "all" or str(fact.get("store") or "") == store)
+            and (
+                not keyword
+                or keyword in str(fact.get("msku") or "").casefold()
+                or keyword in str(fact.get("store") or "").casefold()
+            )
+        ]
+        payload = self.build_stockout_before_role_summary(
+            details=self._cached_details(),
+            facts=facts,
+            role_period=role_period,
+        )
+        return {"data_date": data_date, **payload}
 
     def get_diagnostic_base_rows(self, **filters: Any) -> list[dict[str, Any]]:
         meta = self.get_meta()
