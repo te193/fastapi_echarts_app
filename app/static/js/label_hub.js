@@ -49,6 +49,12 @@
     requestKey: "",
     requestToken: 0
   };
+  var stockoutEvidenceState = {
+    row: null,
+    payload: null,
+    activeTab: "timeline",
+    requestToken: 0
+  };
   var chartMeasure = query.get("measure") || "msku_count";
   var meta = null;
   var lastPayload = null;
@@ -108,7 +114,8 @@
       "labelHubChangeBrief", "labelHubOpenChanges", "labelHubChangeSubtitle", "labelHubSectionNav",
       "labelHubDiagnosticsSection", "labelHubDiagnosticsScope", "labelHubDiagnosticsPeriod",
       "labelHubDiagnosticsRoles", "labelHubDiagnosticsContent", "labelHubDiagnosticsCondition",
-      "labelHubDiagnosticsSubtitle"
+      "labelHubDiagnosticsSubtitle", "labelHubStockoutEvidenceModal", "labelHubStockoutEvidenceClose",
+      "labelHubStockoutEvidenceContent"
     ].forEach(function (id) { elements[id] = document.getElementById(id); });
     setLoading(true);
     bindEvents();
@@ -204,6 +211,7 @@
       if (event.key === "Escape") {
         closeDetailLabelPanel();
         closeRoleReasonPanel();
+        closeStockoutBeforeEvidence();
       }
     });
     elements.labelHubDetailApply.addEventListener("click", function () { collectDetailFilters(); detailState.page = 1; renderDetailActiveFilters(); renderDetails(); });
@@ -378,6 +386,21 @@
     elements.labelHubCountryProfileDrawer.addEventListener("click", function (event) { if (event.target === elements.labelHubCountryProfileDrawer) closeCountryProfileDrawer(); });
     elements.labelHubRuleDrawerClose.addEventListener("click", closeRuleDrawer);
     elements.labelHubRuleDrawer.addEventListener("click", function (event) { if (event.target === elements.labelHubRuleDrawer) closeRuleDrawer(); });
+    elements.labelHubStockoutEvidenceClose.addEventListener("click", closeStockoutBeforeEvidence);
+    elements.labelHubStockoutEvidenceModal.addEventListener("click", function (event) {
+      if (event.target === elements.labelHubStockoutEvidenceModal) closeStockoutBeforeEvidence();
+    });
+    elements.labelHubStockoutEvidenceContent.addEventListener("click", function (event) {
+      var tab = event.target.closest("[data-stockout-evidence-tab]");
+      var close = event.target.closest("[data-stockout-evidence-close]");
+      if (close) {
+        closeStockoutBeforeEvidence();
+        return;
+      }
+      if (!tab || !stockoutEvidenceState.payload) return;
+      stockoutEvidenceState.activeTab = tab.dataset.stockoutEvidenceTab || "timeline";
+      renderStockoutEvidenceModal(stockoutEvidenceState.payload);
+    });
     elements.labelHubTransitionPeriod.addEventListener("change", function () { state.transition_period = this.value; changePage = 1; app.writeQueryState(state); loadChanges(); });
     elements.labelHubChangeType.addEventListener("change", function () { state.change_type = this.value; changePage = 1; app.writeQueryState(state); loadChanges(); });
     if (elements.labelHubChangeContent) elements.labelHubChangeContent.addEventListener("click", function (event) {
@@ -2678,6 +2701,191 @@
 
   function closeRuleDrawer() { elements.labelHubRuleDrawer.hidden = true; }
 
+  function openStockoutBeforeEvidence(row) {
+    if (!row || !row.stockout_before_role_id || !row.stockout_before_role_period) return;
+    stockoutEvidenceState.row = row;
+    stockoutEvidenceState.payload = null;
+    stockoutEvidenceState.activeTab = "timeline";
+    var token = ++stockoutEvidenceState.requestToken;
+    elements.labelHubStockoutEvidenceContent.innerHTML = '<div class="label-hub-stockout-evidence-loading"><strong>正在读取断货前销售角色依据</strong><span>' + app.escapeHtml(row.country_category || "") + ' · ' + app.escapeHtml(row.store || "") + ' · ' + app.escapeHtml(row.msku || "") + '</span></div>';
+    elements.labelHubStockoutEvidenceModal.hidden = false;
+    document.body.classList.add("has-label-hub-stockout-evidence-modal");
+    elements.labelHubStockoutEvidenceClose.focus();
+    app.apiGet("/api/label-hub/stockout-before-role-evidence", {
+      data_date: state.data_date,
+      country_category: row.country_category,
+      store: row.store,
+      msku: row.msku,
+      role_period: row.stockout_before_role_period,
+      country: detailState.detail_view === "country" ? (row.country || "") : ""
+    }).then(function (payload) {
+      if (token !== stockoutEvidenceState.requestToken) return;
+      stockoutEvidenceState.payload = payload || {};
+      renderStockoutEvidenceModal(stockoutEvidenceState.payload);
+    }).catch(function (error) {
+      if (token !== stockoutEvidenceState.requestToken) return;
+      elements.labelHubStockoutEvidenceContent.innerHTML = '<div class="label-hub-stockout-evidence-error"><strong>依据读取失败</strong><p>' + app.escapeHtml(error && error.message ? error.message : "请稍后重试") + '</p><button type="button" class="ghost-button" data-stockout-evidence-close>关闭</button></div>';
+    });
+  }
+
+  function closeStockoutBeforeEvidence() {
+    if (!elements.labelHubStockoutEvidenceModal || elements.labelHubStockoutEvidenceModal.hidden) return;
+    stockoutEvidenceState.requestToken += 1;
+    stockoutEvidenceState.row = null;
+    stockoutEvidenceState.payload = null;
+    elements.labelHubStockoutEvidenceModal.hidden = true;
+    document.body.classList.remove("has-label-hub-stockout-evidence-modal");
+  }
+
+  function renderStockoutEvidenceModal(payload) {
+    var identity = payload.identity || {};
+    var role = payload.role || {};
+    var evidence = payload.evidence || {};
+    var isCountryScope = payload.scope === "country";
+    var identityParts = isCountryScope
+      ? [identity.country, identity.country_category, identity.store, identity.msku]
+      : [identity.country_category, identity.store, identity.msku];
+    var oos = evidence.oos || {};
+    var startDate = oos.oos_start_date || "";
+    var tabs = [
+      ["timeline", "断货时间线"],
+      ["performance", "断货前表现"],
+      ["role", "角色判定"],
+      ["calculation", "计算与来源"],
+      ["raw", "原始 JSON"]
+    ];
+    elements.labelHubStockoutEvidenceContent.innerHTML = [
+      '<header class="label-hub-stockout-evidence-head">',
+      '<div><h2 id="labelHubStockoutEvidenceTitle">' + (isCountryScope ? '断货前销售角色依据（站点）' : '断货前销售角色依据') + '</h2><p>' + identityParts.map(function (value) { return app.escapeHtml(value || "-"); }).join(' · ') + '</p></div>',
+      '<div class="label-hub-stockout-evidence-badges"><span class="is-role">' + app.escapeHtml(role.label || "暂无角色") + '</span><span>' + app.escapeHtml(role.period ? role.period.replace("d", "天") : "暂无周期") + '</span></div>',
+      '</header>',
+      '<div class="label-hub-stockout-evidence-summary">',
+      evidenceSummaryItem("开始断货", startDate || "暂无"),
+      evidenceSummaryItem("已断货", evidenceStockoutDays(startDate, identity.data_date)),
+      '</div>',
+      '<nav class="label-hub-stockout-evidence-tabs" aria-label="依据详情页签">',
+      tabs.map(function (tab) {
+        var active = stockoutEvidenceState.activeTab === tab[0];
+        return '<button type="button" class="' + (active ? "active" : "") + '" data-stockout-evidence-tab="' + tab[0] + '" aria-selected="' + String(active) + '">' + tab[1] + '</button>';
+      }).join(""),
+      '</nav>',
+      '<div class="label-hub-stockout-evidence-body">' + renderStockoutEvidenceTab(stockoutEvidenceState.activeTab, payload) + '</div>',
+      '<footer class="label-hub-stockout-evidence-foot"><p>数据来自断货标签 evidence_json · 规则版本 ' + app.escapeHtml(evidence.rule_version || "暂无") + ' · schema ' + app.escapeHtml(evidence.schema_version || "暂无") + '</p><div><button type="button" class="ghost-button" data-stockout-evidence-close>关闭</button><button type="button" class="primary-button" data-stockout-evidence-tab="calculation">查看完整计算依据</button></div></footer>'
+    ].join("");
+  }
+
+  function renderStockoutEvidenceTab(tab, payload) {
+    var evidence = payload.evidence || {};
+    var oos = evidence.oos || {};
+    var metrics = evidence.metrics || {};
+    var identity = payload.identity || {};
+    if (tab === "performance") {
+      return '<section class="label-hub-stockout-evidence-section"><div class="label-hub-stockout-evidence-section-head"><div><span>断货前表现</span><h3>' + app.escapeHtml((evidence.window || {}).period || (payload.role || {}).period || "观察窗口") + '经营快照</h3></div><p>' + app.escapeHtml(evidenceDateRange(evidence.window || {})) + '</p></div><div class="label-hub-stockout-evidence-kpis">' + [
+        evidenceMetric("日均销量", evidenceNumber(metrics.daily_sales, 2)),
+        evidenceMetric("周期销量", evidenceNumber(metrics.period_sales_qty, 0)),
+        evidenceMetric("销售额", evidenceAmount(metrics.sales_amount)),
+        evidenceMetric("标签毛利", evidenceAmount(metrics.tag_gross_profit)),
+        evidenceMetric("标签毛利率", evidencePercent(metrics.tag_margin_rate)),
+        evidenceMetric("观察天数", evidenceWindowDays(evidence.window || {}))
+      ].join("") + '</div></section>';
+    }
+    if (tab === "role") {
+      var matchedRule = evidence.matched_rule && typeof evidence.matched_rule === "object" ? evidence.matched_rule : {};
+      return '<section class="label-hub-stockout-evidence-section"><div class="label-hub-stockout-evidence-role-result"><span>断货前销售角色</span><strong>' + app.escapeHtml((payload.role || {}).label || matchedRule.sales_role || "暂无") + '</strong><em>标签 ' + app.escapeHtml(String((payload.role || {}).id || "-")) + ' · ' + app.escapeHtml((payload.role || {}).period || "-") + '</em></div><div class="label-hub-stockout-evidence-pairs">' + evidenceObjectRows(matchedRule, {
+        sales_role: "规则角色", daily_sales: "规则记录日均销量", tag_margin_rate: "规则记录毛利率"
+      }) + '</div></section>';
+    }
+    if (tab === "calculation") {
+      return '<div class="label-hub-stockout-evidence-source-grid"><section class="label-hub-stockout-evidence-section"><div class="label-hub-stockout-evidence-section-head"><div><span>计算信息</span><h3>标签如何生成</h3></div></div><div class="label-hub-stockout-evidence-pairs">' + evidenceObjectRows(evidence.calculation || {}, {
+        mode: "计算方式", status: "计算状态", first_calculated_data_date: "首次计算日期", source_role_data_date: "沿用角色日期"
+      }) + '</div></section><section class="label-hub-stockout-evidence-section"><div class="label-hub-stockout-evidence-section-head"><div><span>库存与来源</span><h3>断货时点状态</h3></div></div><div class="label-hub-stockout-evidence-pairs">' + evidenceObjectRows(oos, {
+        inventory_source_fba: "FBA库存来源", current_fba_available: "当前FBA可售", current_fba_in_transit: "当前FBA在途", inventory_source_local: "本地库存来源", current_local_quantity: "当前本地库存", current_operation_status: "当前运营状态", current_status_data_date: "状态数据日期"
+      }, ["inventory_source_fba", "current_fba_available", "current_fba_in_transit", "inventory_source_local", "current_local_quantity", "current_operation_status", "current_status_data_date"]) + '</div></section>' + (evidence.source_sales_role ? '<section class="label-hub-stockout-evidence-section is-wide"><div class="label-hub-stockout-evidence-section-head"><div><span>沿用来源</span><h3>前一日销售角色</h3></div></div><div class="label-hub-stockout-evidence-pairs">' + evidenceObjectRows(evidence.source_sales_role, { data_date: "数据日期", label_period: "标签周期", sub_label_id: "标签ID", sub_label_name: "标签名称" }) + '</div></section>' : "") + '</div>';
+    }
+    if (tab === "raw") {
+      return '<section class="label-hub-stockout-evidence-section is-raw"><div class="label-hub-stockout-evidence-section-head"><div><span>审计数据</span><h3>原始 evidence_json</h3></div><p>仅用于核对字段与追溯计算</p></div><pre>' + app.escapeHtml(JSON.stringify(evidence, null, 2)) + '</pre></section>';
+    }
+    var timelineItems = [
+      [oos.oos_start_date || "暂无", "断货开始", ""],
+      [evidenceStockoutDays(oos.oos_start_date, identity.data_date), "已断货", identity.data_date ? "截至 " + identity.data_date : ""]
+    ];
+    return '<div class="label-hub-stockout-evidence-timeline-layout"><section class="label-hub-stockout-evidence-section"><div class="label-hub-stockout-evidence-section-head"><div><span>断货状态</span><h3>断货日期与累计天数</h3></div></div><ol class="label-hub-stockout-evidence-timeline">' + timelineItems.map(function (item, index) {
+      return '<li class="' + (index === timelineItems.length - 1 ? "is-current" : "") + '"><time>' + app.escapeHtml(item[0]) + '</time><div><strong>' + app.escapeHtml(item[1]) + '</strong><p>' + app.escapeHtml(item[2] || "") + '</p></div></li>';
+    }).join("") + '</ol></section><section class="label-hub-stockout-evidence-section"><div class="label-hub-stockout-evidence-section-head"><div><span>断货前表现</span><h3>' + app.escapeHtml((evidence.window || {}).period || (payload.role || {}).period || "观察窗口") + '核心指标</h3></div></div><div class="label-hub-stockout-evidence-kpis is-compact">' + [
+      evidenceMetric("日均销量", evidenceNumber(metrics.daily_sales, 2)), evidenceMetric("周期销量", evidenceNumber(metrics.period_sales_qty, 0)), evidenceMetric("销售额", evidenceAmount(metrics.sales_amount)), evidenceMetric("标签毛利", evidenceAmount(metrics.tag_gross_profit)), evidenceMetric("标签毛利率", evidencePercent(metrics.tag_margin_rate))
+    ].join("") + '</div><div class="label-hub-stockout-evidence-role-result is-compact"><span>角色判定</span><strong>' + app.escapeHtml((payload.role || {}).label || "暂无") + '</strong><em>' + app.escapeHtml(evidence.matched_rule ? "已保存规则命中依据" : "暂无规则命中字段") + '</em></div></section></div>';
+  }
+
+  function evidenceSummaryItem(label, value) {
+    return '<div><span>' + app.escapeHtml(label) + '</span><strong>' + app.escapeHtml(value) + '</strong></div>';
+  }
+
+  function evidenceMetric(label, value) {
+    return '<div><span>' + app.escapeHtml(label) + '</span><strong>' + app.escapeHtml(value) + '</strong></div>';
+  }
+
+  function evidenceValue(value) {
+    return value === null || value === undefined || value === "" ? "暂无" : String(value);
+  }
+
+  function evidenceNumber(value, digits) {
+    if (value === null || value === undefined || value === "") return "暂无";
+    var number = Number(value);
+    return Number.isFinite(number) ? number.toLocaleString("zh-CN", { minimumFractionDigits: digits || 0, maximumFractionDigits: digits || 0 }) : evidenceValue(value);
+  }
+
+  function evidenceAmount(value) {
+    var formatted = evidenceNumber(value, 2);
+    return formatted === "暂无" ? formatted : "¥" + formatted;
+  }
+
+  function evidencePercent(value) {
+    if (value === null || value === undefined || value === "") return "暂无";
+    var number = Number(value);
+    if (!Number.isFinite(number)) return evidenceValue(value);
+    if (Math.abs(number) <= 1) number *= 100;
+    return number.toLocaleString("zh-CN", { maximumFractionDigits: 2 }) + "%";
+  }
+
+  function evidenceStockoutDays(startDate, endDate) {
+    var start = new Date(startDate || "");
+    var end = new Date(endDate || "");
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return "暂无";
+    return Math.max(1, Math.floor((end.getTime() - start.getTime()) / 86400000) + 1) + "天";
+  }
+
+  function evidenceCalculationMode(mode) {
+    return ({ historical_backtrack: "历史回溯", copy_previous_day_sales_role: "沿用前一日角色" })[mode] || evidenceValue(mode);
+  }
+
+  function evidenceOosMethod(method) {
+    return ({ daily_status_transition: "根据每日库存状态变化识别", historical_backtrack: "根据历史库存回溯识别" })[method] || evidenceValue(method);
+  }
+
+  function evidenceDateRange(windowData) {
+    var range = [windowData.start, windowData.end].filter(Boolean).join(" 至 ");
+    return range || "暂无观察窗口日期";
+  }
+
+  function evidenceWindowDays(windowData) {
+    return windowData.days === null || windowData.days === undefined || windowData.days === "" ? "暂无" : evidenceValue(windowData.days) + "天";
+  }
+
+  function evidenceObjectRows(source, labels, fields) {
+    source = source && typeof source === "object" ? source : {};
+    var keys = fields || Object.keys(source);
+    var rows = keys.filter(function (key) {
+      return Object.prototype.hasOwnProperty.call(source, key) && source[key] !== null && source[key] !== "";
+    }).map(function (key) {
+      var value = source[key];
+      if (key === "mode") value = evidenceCalculationMode(value);
+      if (key.indexOf("margin_rate") >= 0) value = evidencePercent(value);
+      if (typeof value === "object") value = JSON.stringify(value);
+      return '<div><span>' + app.escapeHtml(labels[key] || key) + '</span><strong>' + app.escapeHtml(evidenceValue(value)) + '</strong></div>';
+    });
+    return rows.length ? rows.join("") : '<p class="label-hub-stockout-evidence-empty">暂无对应字段</p>';
+  }
+
   function renderTable(payload) {
     var counts = payload.counts || {};
     elements.labelHubTableSummary.textContent = "MSKU维度 " + formatNumber(counts.business_unit_count) + " · 国家明细 " + formatNumber(counts.country_unit_count) + " · 去重 MSKU " + formatNumber(counts.unique_msku_count) + " · 第 " + payload.page + " / " + payload.total_pages + " 页";
@@ -2705,6 +2913,7 @@
           return;
         }
         if (!event.data || !event.colDef) return;
+        if (event.colDef.field === "stockout_before_evidence") openStockoutBeforeEvidence(event.data);
         if (event.colDef.field === "label_summary") openDrawer(event.data);
         if (event.colDef.field === "role_diagnostic_summary") openRoleDiagnosticDrawer(event.data);
         if (event.colDef.field === "country_profile") openCountryProfileDrawer(event.data);
@@ -2741,6 +2950,27 @@
 
   function currentLabelColumn() {
     return { headerName: "当前标签", field: "current_label", width: 150, tooltipField: "current_label", cellClass: "label-text-cell" };
+  }
+
+  function stockoutBeforeEvidenceColumn() {
+    return {
+      headerName: "断货前依据",
+      field: "stockout_before_evidence",
+      width: detailState.detail_view === "country" ? 184 : 124,
+      sortable: false,
+      filter: false,
+      cellClass: "label-hub-stockout-evidence-cell",
+      cellRenderer: function (params) {
+        var row = params.data || {};
+        if (!row.stockout_before_role_id || !row.stockout_before_role_period) {
+          return '<span class="ag-empty-copy">暂无依据</span>';
+        }
+        if (row.stockout_before_role_scope === "country") {
+          return '<div class="label-hub-stockout-country-evidence"><span class="label-hub-stockout-country-role">' + app.escapeHtml(row.stockout_before_role || "暂无角色") + '</span><button type="button" class="label-hub-stockout-evidence-button" data-stockout-evidence>查看明细</button></div>';
+        }
+        return '<button type="button" class="label-hub-stockout-evidence-button" data-stockout-evidence>查看明细</button>';
+      }
+    };
   }
 
   function roleDiagnosticColumn() {
@@ -2786,6 +3016,7 @@
   function overviewColumns() {
     return identityColumns().concat([
       currentLabelColumn(),
+      stockoutBeforeEvidenceColumn(),
       roleDiagnosticColumn(),
       labelProfileColumn(),
       countryProfileColumn(),
@@ -2809,6 +3040,7 @@
     ] : [];
     return identityColumns().concat([
       currentLabelColumn(),
+      stockoutBeforeEvidenceColumn(),
       roleDiagnosticColumn(),
       labelProfileColumn(),
       countryProfileColumn(),

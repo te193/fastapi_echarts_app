@@ -39,6 +39,12 @@ CURRENT_STOCKOUT_PARENT_ID = 3
 CURRENT_STOCKOUT_CHILD_ID = 304
 STOCKOUT_BEFORE_ROLE_IDS = {2001, 2002, 2003, 2004}
 STOCKOUT_BEFORE_ROLE_PERIODS = {"7d", "14d", "30d", "90d"}
+COUNTRY_STOCKOUT_BEFORE_ROLE_LABELS = {
+    2101: "明星产品",
+    2102: "潜力产品",
+    2103: "瘦狗产品",
+    2104: "问题产品",
+}
 
 
 def _normalize_identifiers(values: list[str] | None) -> tuple[list[str], list[str]]:
@@ -109,11 +115,13 @@ class LabelHubDetailDataService:
         condition_parser: Callable[[str], dict[int, set[int]]] | None = None,
         country_row_provider: Callable[..., list[dict[str, Any]] | dict[str, Any]] | None = None,
         country_summary_provider: Callable[..., Mapping[str, Any]] | None = None,
+        country_stockout_role_provider: Callable[..., list[dict[str, Any]]] | None = None,
     ) -> None:
         self._business_row_provider = business_row_provider
         self._identifier_alias_provider = identifier_alias_provider or {}
         self._country_row_provider = country_row_provider
         self._country_summary_provider = country_summary_provider
+        self._country_stockout_role_provider = country_stockout_role_provider
         self._business_rows_cache: OrderedDict[tuple[Any, ...], tuple[float, Any]] = OrderedDict()
         self._country_rows_cache: OrderedDict[tuple[Any, ...], tuple[float, Any]] = OrderedDict()
         self._business_rows_cache_lock = RLock()
@@ -233,6 +241,15 @@ class LabelHubDetailDataService:
         if stockout_before_role_ids and not stockout_before_role_period:
             raise ValueError("断货前角色筛选必须指定周期")
         current_stockout_only = bool(filters.get("current_stockout_only"))
+        global_conditions = self._condition_parser(str(filters.get("conditions") or ""))
+        detail_conditions = self._condition_parser(str(filters.get("detail_conditions") or ""))
+        stockout_label_selected = any(
+            CURRENT_STOCKOUT_CHILD_ID in conditions.get(CURRENT_STOCKOUT_PARENT_ID, set())
+            for conditions in (global_conditions, detail_conditions)
+        )
+        evidence_role_period = stockout_before_role_period or (
+            "30d" if current_stockout_only or stockout_label_selected else ""
+        )
 
         requested, normalized = _normalize_identifiers(filters.get("identifiers"))
         aliases, provider_country_count = self._alias_payload(normalized)
@@ -335,6 +352,38 @@ class LabelHubDetailDataService:
                 merged_country_rows.append(merged)
             country_rows = merged_country_rows
             if detail_view == "country":
+                if evidence_role_period and self._country_stockout_role_provider is not None:
+                    country_role_facts = self._country_stockout_role_provider(
+                        data_date=str(filters.get("data_date") or ""),
+                        country_category=str(filters.get("country_category") or "all"),
+                        store=str(filters.get("store") or "all"),
+                        keyword=str(filters.get("keyword") or ""),
+                        label_period=evidence_role_period,
+                    )
+                    roles_by_country: dict[tuple[str, str, str, str], list[dict[str, Any]]] = {}
+                    for fact in country_role_facts:
+                        role_id = int(fact.get("label_id") or 0)
+                        if role_id not in COUNTRY_STOCKOUT_BEFORE_ROLE_LABELS:
+                            continue
+                        country_key = (
+                            str(fact.get("country_category") or ""),
+                            str(fact.get("store") or ""),
+                            str(fact.get("msku") or "").casefold(),
+                            str(fact.get("country") or ""),
+                        )
+                        roles_by_country.setdefault(country_key, []).append({
+                            "id": role_id,
+                            "label": COUNTRY_STOCKOUT_BEFORE_ROLE_LABELS[role_id],
+                            "period": str(fact.get("label_period") or ""),
+                        })
+                    for row in country_rows:
+                        country_key = (
+                            str(row.get("country_category") or ""),
+                            str(row.get("store") or ""),
+                            str(row.get("msku") or "").casefold(),
+                            str(row.get("country") or ""),
+                        )
+                        row["country_stockout_before_roles"] = roles_by_country.get(country_key, [])
                 rows = country_rows
                 metric_status = country_metric_status
                 warnings = country_warnings
@@ -485,16 +534,22 @@ class LabelHubDetailDataService:
             row = dict(row)
             row["issue_codes"] = codes
             row["issue_labels"] = [issue_labels[code] for code in codes]
-            if stockout_before_role_period:
+            if evidence_role_period:
+                available_roles = (
+                    row.get("country_stockout_before_roles")
+                    if detail_view == "country"
+                    else row.get("stockout_before_roles")
+                )
                 matched_roles = [
                     role
-                    for role in row.get("stockout_before_roles") or []
-                    if str(role.get("period") or "") == stockout_before_role_period
+                    for role in available_roles or []
+                    if str(role.get("period") or "") == evidence_role_period
                 ]
                 if len(matched_roles) == 1:
                     row["stockout_before_role"] = matched_roles[0].get("label") or ""
                     row["stockout_before_role_id"] = int(matched_roles[0].get("id") or 0)
-                    row["stockout_before_role_period"] = stockout_before_role_period
+                    row["stockout_before_role_period"] = evidence_role_period
+                    row["stockout_before_role_scope"] = "country" if detail_view == "country" else "msku"
             public_rows.append({key: value for key, value in row.items() if not key.startswith("_")})
         rows = public_rows
         applied = {key: filters.get(key, default) for key, default in (
@@ -545,4 +600,8 @@ label_hub_detail_service = LabelHubDetailDataService(
     label_hub_service.get_business_detail_base_rows,
     country_row_provider=country_label_hub_service.get_country_detail_base_rows,
     country_summary_provider=country_label_hub_service.get_country_detail_count,
+    country_stockout_role_provider=lambda **kwargs: label_hub_service.get_diagnostic_facts(
+        parent_id=21,
+        **kwargs,
+    ),
 )

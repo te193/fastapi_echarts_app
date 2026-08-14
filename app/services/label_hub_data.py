@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import math
 import threading
 from collections import defaultdict
@@ -35,12 +36,19 @@ EXCLUDED_ANALYSIS_PARENT_IDS = (
 CURRENT_STOCKOUT_CHILD_ID = 304
 STOCKOUT_BEFORE_ROLE_PARENT_ID = 20
 STOCKOUT_BEFORE_ROLE_IDS = (2001, 2002, 2003, 2004)
+COUNTRY_STOCKOUT_BEFORE_ROLE_IDS = (2101, 2102, 2103, 2104)
 STOCKOUT_BEFORE_ROLE_PERIODS = ("7d", "14d", "30d", "90d")
 STOCKOUT_BEFORE_ROLE_LABELS = {
     2001: "明星产品",
     2002: "潜力产品",
     2003: "瘦狗产品",
     2004: "问题产品",
+}
+COUNTRY_STOCKOUT_BEFORE_ROLE_LABELS = {
+    2101: "明星产品",
+    2102: "潜力产品",
+    2103: "瘦狗产品",
+    2104: "问题产品",
 }
 SALES_ROLE_PARENT_ID = 1
 PROBLEM_PRODUCT_CHILD_ID = 104
@@ -546,6 +554,85 @@ class LabelHubDataService:
                 "conflict_count": len(conflict_keys),
                 "rate": round(identified_count / total, 4) if total else 0,
             },
+        }
+
+    def get_stockout_before_role_evidence(
+        self,
+        *,
+        data_date: str,
+        country_category: str,
+        store: str,
+        msku: str,
+        role_period: str,
+        country: str = "",
+    ) -> dict[str, Any]:
+        if role_period not in STOCKOUT_BEFORE_ROLE_PERIODS:
+            raise ValueError("断货前销售角色周期不存在")
+        if not all(str(value or "").strip() for value in (data_date, country_category, store, msku)):
+            raise ValueError("查看断货前销售角色依据需要完整的日期、国家类别、店铺和 MSKU")
+
+        params = {
+            "data_date": data_date,
+            "country_category": country_category,
+            "store": store,
+            "msku": msku,
+            "role_period": role_period,
+        }
+        country_text = str(country or "").strip()
+        role_ids = COUNTRY_STOCKOUT_BEFORE_ROLE_IDS if country_text else STOCKOUT_BEFORE_ROLE_IDS
+        role_labels = COUNTRY_STOCKOUT_BEFORE_ROLE_LABELS if country_text else STOCKOUT_BEFORE_ROLE_LABELS
+        country_clause = "and country = %(country)s" if country_text else ""
+        if country_text:
+            params["country"] = country_text
+        with self._source_connection() as conn, conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                select data_date, country, country_category, store, msku,
+                       label_id, label_period, evidence_json
+                from {LABEL_FACT_TABLE}
+                where data_date = %(data_date)s
+                  and country_category = %(country_category)s
+                  and store = %(store)s
+                  and msku = %(msku)s
+                  {country_clause}
+                  and label_period = %(role_period)s
+                  and label_id in ({','.join(str(item) for item in role_ids)})
+                order by label_id
+                limit 1
+                """,
+                params,
+            )
+            row = cursor.fetchone()
+
+        if not row:
+            raise ValueError("当前国家没有对应周期的断货前销售角色依据" if country_text else "当前 MSKU 没有对应周期的断货前销售角色依据")
+        raw_evidence = row.get("evidence_json")
+        if isinstance(raw_evidence, dict):
+            evidence = raw_evidence
+        else:
+            try:
+                evidence = json.loads(str(raw_evidence or ""))
+            except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                raise ValueError("断货前销售角色依据 JSON 无法解析") from exc
+        if not isinstance(evidence, dict):
+            raise ValueError("断货前销售角色依据 JSON 结构无效")
+
+        role_id = int(row.get("label_id") or 0)
+        return {
+            "scope": "country" if country_text else "msku",
+            "identity": {
+                "data_date": _date_text(row.get("data_date")),
+                "country_category": str(row.get("country_category") or ""),
+                "store": str(row.get("store") or ""),
+                "msku": str(row.get("msku") or ""),
+                "country": str(row.get("country") or country_text),
+            },
+            "role": {
+                "id": role_id,
+                "label": role_labels.get(role_id, ""),
+                "period": str(row.get("label_period") or role_period),
+            },
+            "evidence": evidence,
         }
 
     def _analysis_categories(self, details: list[dict[str, Any]], fact_stats: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:

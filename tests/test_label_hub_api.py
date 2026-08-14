@@ -27,6 +27,10 @@ class FakeLabelHubService:
         self.calls.append(("stockout_before_roles", kwargs))
         return {"ok": True, "roles": []}
 
+    def get_stockout_before_role_evidence(self, **kwargs):
+        self.calls.append(("stockout_before_role_evidence", kwargs))
+        return {"role": {"id": 2001, "label": "明星产品"}, "evidence": {"schema_version": "1.0"}}
+
 
 class FakeLabelHubDetailService:
     def __init__(self):
@@ -86,6 +90,49 @@ class FakeCountryProfileService:
 
 
 class LabelHubApiTests(unittest.TestCase):
+    def test_stockout_before_role_evidence_api_passes_exact_identity_and_period(self):
+        service = FakeLabelHubService()
+
+        with patch("app.main.label_hub_service", service):
+            payload = main.api_label_hub_stockout_before_role_evidence(
+                data_date="2026-08-13",
+                country_category="欧洲站",
+                store="ShChu",
+                msku="SCH6038a",
+                role_period="30d",
+            )
+
+        self.assertEqual("1.0", payload["evidence"]["schema_version"])
+        self.assertEqual(
+            (
+                "stockout_before_role_evidence",
+                {
+                    "data_date": "2026-08-13",
+                    "country_category": "欧洲站",
+                    "store": "ShChu",
+                    "msku": "SCH6038a",
+                    "role_period": "30d",
+                    "country": "",
+                },
+            ),
+            service.calls[0],
+        )
+
+    def test_stockout_before_role_evidence_api_passes_country_scope(self):
+        service = FakeLabelHubService()
+
+        with patch("app.main.label_hub_service", service):
+            main.api_label_hub_stockout_before_role_evidence(
+                data_date="2026-08-13",
+                country_category="欧洲站",
+                store="ShChu",
+                msku="SCH6038a",
+                role_period="30d",
+                country="法国",
+            )
+
+        self.assertEqual("法国", service.calls[0][1]["country"])
+
     def test_stockout_before_role_api_passes_scope_and_period(self):
         service = FakeLabelHubService()
 

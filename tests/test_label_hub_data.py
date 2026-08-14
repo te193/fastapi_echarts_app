@@ -482,6 +482,134 @@ class LabelHubDataTests(unittest.TestCase):
         )
         self.assertEqual(20, public["labels"][0]["parent_id"])
 
+    def test_stockout_before_role_evidence_queries_exact_msku_role_and_parses_json(self):
+        class Cursor:
+            def __init__(self):
+                self.sql = ""
+                self.params = {}
+
+            def execute(self, sql, params):
+                self.sql = sql
+                self.params = params
+
+            def fetchone(self):
+                return {
+                    "data_date": "2026-08-13",
+                    "country_category": "欧洲站",
+                    "store": "ShChu",
+                    "msku": "SCH6038a",
+                    "label_id": 2001,
+                    "label_period": "30d",
+                    "evidence_json": '{"schema_version":"1.0","oos":{"oos_start_date":"2026-08-13"}}',
+                }
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        class Connection:
+            def __init__(self):
+                self.cursor_instance = Cursor()
+
+            def cursor(self):
+                return self.cursor_instance
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        connection = Connection()
+        self.service._source_connection = lambda: connection
+
+        payload = self.service.get_stockout_before_role_evidence(
+            data_date="2026-08-13",
+            country_category="欧洲站",
+            store="ShChu",
+            msku="SCH6038a",
+            role_period="30d",
+        )
+
+        self.assertEqual(2001, payload["role"]["id"])
+        self.assertEqual("明星产品", payload["role"]["label"])
+        self.assertEqual("2026-08-13", payload["evidence"]["oos"]["oos_start_date"])
+        self.assertIn("label_id in (2001,2002,2003,2004)", connection.cursor_instance.sql.lower())
+        self.assertEqual("SCH6038a", connection.cursor_instance.params["msku"])
+
+    def test_stockout_before_role_evidence_queries_exact_country_role(self):
+        class Cursor:
+            def __init__(self):
+                self.sql = ""
+                self.params = {}
+
+            def execute(self, sql, params):
+                self.sql = sql
+                self.params = params
+
+            def fetchone(self):
+                return {
+                    "data_date": "2026-08-13",
+                    "country": "法国",
+                    "country_category": "欧洲站",
+                    "store": "ShChu",
+                    "msku": "SCH6038a",
+                    "label_id": 2102,
+                    "label_period": "30d",
+                    "evidence_json": '{"schema_version":"1.0","dimension":{"country":"法国"}}',
+                }
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        class Connection:
+            def __init__(self):
+                self.cursor_instance = Cursor()
+
+            def cursor(self):
+                return self.cursor_instance
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        connection = Connection()
+        self.service._source_connection = lambda: connection
+
+        payload = self.service.get_stockout_before_role_evidence(
+            data_date="2026-08-13",
+            country_category="欧洲站",
+            store="ShChu",
+            msku="SCH6038a",
+            role_period="30d",
+            country="法国",
+        )
+
+        self.assertEqual("country", payload["scope"])
+        self.assertEqual("法国", payload["identity"]["country"])
+        self.assertEqual(2102, payload["role"]["id"])
+        self.assertEqual("潜力产品", payload["role"]["label"])
+        self.assertIn("country = %(country)s", connection.cursor_instance.sql.lower())
+        self.assertIn("label_id in (2101,2102,2103,2104)", connection.cursor_instance.sql.lower())
+        self.assertEqual("法国", connection.cursor_instance.params["country"])
+
+    def test_stockout_before_role_evidence_rejects_invalid_period(self):
+        with self.assertRaisesRegex(ValueError, "周期"):
+            self.service.get_stockout_before_role_evidence(
+                data_date="2026-08-13",
+                country_category="欧洲站",
+                store="ShChu",
+                msku="SCH6038a",
+                role_period="current",
+            )
+
     def test_payload_rejects_conditions_for_excluded_parent(self):
         with self.assertRaisesRegex(ValueError, "不存在或归属错误"):
             self.service.build_payload(
