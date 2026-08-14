@@ -1,6 +1,5 @@
 import csv
 import io
-from contextlib import asynccontextmanager
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -159,13 +158,7 @@ CSV_HEADER_LABELS = {
     "updated_at": "更新时间",
 }
 
-@asynccontextmanager
-async def lifespan(_: FastAPI):
-    ad_budget_service.warm_cache()
-    yield
-
-
-app = FastAPI(title="产品分层看板", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="产品分层看板", version="1.0.0")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
@@ -390,7 +383,6 @@ def api_ad_budget(
     page_size: int = Query(default=50, ge=20, le=200),
     sort_field: str = "anomaly_priority",
     sort_dir: Literal["asc", "desc"] = "desc",
-    column_filters: str = "",
 ) -> dict:
     return ad_budget_service.get_payload(
         country_category=country_category,
@@ -404,7 +396,6 @@ def api_ad_budget(
         page_size=page_size,
         sort_field=sort_field,
         sort_dir=sort_dir,
-        column_filters=column_filters,
     )
 
 
