@@ -36,7 +36,7 @@
     detail_view: storedDetailView === "country" ? "country" : "business_unit",
     identifiers: [], country_categories: [], stores: [], countries: [], detail_conditions: "",
     sales_roles: [], role_reason_ids: [], daily_sales_bands: [], margin_bands: [], ranking_bands: [], problems: [],
-    current_stockout_only: false, stockout_before_role_period: null, stockout_before_role_ids: [],
+    current_stockout_only: false, stockout_before_role_period: "", stockout_before_role_ids: [],
     problem_mode: "any", page: 1, page_size: state.page_size,
     sort_field: "sales_amount", sort_dir: "desc"
   };
@@ -1220,7 +1220,7 @@
     detailState.identifiers = []; detailState.country_categories = []; detailState.stores = []; detailState.countries = [];
     detailState.detail_conditions = ""; detailState.problems = []; detailState.problem_mode = "any";
     detailState.sales_roles = []; detailState.role_reason_ids = []; detailState.daily_sales_bands = []; detailState.margin_bands = []; detailState.ranking_bands = [];
-    detailState.current_stockout_only = false; detailState.stockout_before_role_period = null; detailState.stockout_before_role_ids = [];
+    detailState.current_stockout_only = false; detailState.stockout_before_role_period = ""; detailState.stockout_before_role_ids = [];
     detailState.page = 1;
     elements.labelHubDetailIdentifiers.value = "";
     elements.labelHubIdentifierBatchInput.value = "";
@@ -1362,7 +1362,7 @@
       elements.labelHubIdentifierBatchInput.value = "";
     } else if (field === "stockout_before_role_scope") {
       detailState.current_stockout_only = false;
-      detailState.stockout_before_role_period = null;
+      detailState.stockout_before_role_period = "";
       detailState.stockout_before_role_ids = [];
     } else if (field === "detail_conditions") {
       detailState.detail_conditions = serializeDetailConditions(detailConditionValues().filter(function (item) { return item !== value; }));
