@@ -19,6 +19,10 @@ def _period_label(value: Any) -> str:
     return f"{match.group(1)}天" if match else (text or "经营周期")
 
 
+def _optional_period_label(value: Any) -> str:
+    return _period_label(value) if str(value or "").strip() else ""
+
+
 def _plain(value: Any) -> Any:
     if value is None:
         return ""
@@ -82,6 +86,8 @@ def _columns(detail_view: str, metric_period: str) -> list[Column]:
     columns.extend([
         ("当前标签", "current_label", None),
         ("销售角色", "sales_role", None),
+        ("断货前角色", "stockout_before_role", None),
+        ("角色周期", "stockout_before_role_period", _optional_period_label),
         ("生命周期标签", "lifecycle_label", None),
         ("国家销售角色标签", "country_sales_role_label", None),
         ("站点生命周期标签", "site_lifecycle_label", None),

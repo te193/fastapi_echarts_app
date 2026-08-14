@@ -161,6 +161,22 @@ def _missing_metric_units(rows: list[dict[str, Any]]) -> set[tuple[str, str, str
 
 
 def _public_business_row(row: dict[str, Any]) -> dict[str, Any]:
+    stockout_before_roles = [
+        {
+            "id": int(item["label_id"]),
+            "label": STOCKOUT_BEFORE_ROLE_LABELS[int(item["label_id"])],
+            "period": item.get("label_period") or "",
+        }
+        for item in sorted(
+            row.get("_label_facts") or [],
+            key=lambda item: (
+                str(item.get("label_period") or ""),
+                int(item.get("label_id") or 0),
+            ),
+        )
+        if int(item["detail"]["label_id"]) == STOCKOUT_BEFORE_ROLE_PARENT_ID
+        and int(item.get("label_id") or 0) in STOCKOUT_BEFORE_ROLE_IDS
+    ]
     role_diagnostics = [
         {
             "parent_id": int(item["detail"]["label_id"]),
@@ -220,6 +236,7 @@ def _public_business_row(row: dict[str, Any]) -> dict[str, Any]:
         "metric_present": bool(metric_present),
         "labels": labels,
         "label_summary": label_summary,
+        "stockout_before_roles": stockout_before_roles,
         "role_diagnostics": role_diagnostics,
         "role_diagnostic_summary": " / ".join(diagnostic_labels),
         "role_diagnostic_count": len(role_diagnostics),

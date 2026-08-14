@@ -26,6 +26,8 @@ class LabelHubExportTests(unittest.TestCase):
                 "countries": "德国,法国,意大利",
                 "current_label": "明星产品",
                 "sales_role": "明星产品",
+                "stockout_before_role": "潜力产品",
+                "stockout_before_role_period": "30d",
                 "role_diagnostic_summary": "高毛利",
                 "label_summary": "销售角色：明星产品",
                 "labels": [{"label": "明星产品"}],
@@ -67,6 +69,8 @@ class LabelHubExportTests(unittest.TestCase):
         self.assertEqual("店铺,A", parsed[0]["店铺"])
         self.assertEqual('M"1', parsed[0]["MSKU"])
         self.assertEqual("是", parsed[0]["是否标签冲突"])
+        self.assertEqual("潜力产品", parsed[0]["断货前角色"])
+        self.assertEqual("30天", parsed[0]["角色周期"])
         self.assertEqual("25.00%", parsed[0]["动销趋势变化率"])
         self.assertEqual(2, detail_service.calls[0]["page"])
         self.assertNotIn("当前售价", parsed[0])
@@ -116,6 +120,8 @@ class LabelHubExportTests(unittest.TestCase):
         self.assertEqual("21", row["35%毛利限价"])
         self.assertEqual("15", row["10%毛利限价"])
         self.assertEqual("10%–15%", row["当前毛利区间"])
+        self.assertEqual("", row["断货前角色"])
+        self.assertEqual("", row["角色周期"])
 
 
 if __name__ == "__main__":
