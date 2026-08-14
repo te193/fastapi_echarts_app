@@ -261,6 +261,48 @@ class LabelHubDetailDataTests(unittest.TestCase):
         self.assertEqual("明星产品", payload["rows"][0]["stockout_before_role"])
         self.assertEqual("30d", payload["rows"][0]["stockout_before_role_period"])
 
+    def test_current_stockout_defaults_evidence_period_to_30d(self):
+        rows = [
+            {
+                "country_category": "Europe",
+                "store": "StoreA",
+                "msku": "A",
+                "labels": [{"parent_id": 3, "id": 304}],
+                "stockout_before_roles": [
+                    {"id": 2001, "label": "明星产品", "period": "7d"},
+                    {"id": 2002, "label": "潜力产品", "period": "30d"},
+                ],
+            },
+        ]
+        service = LabelHubDetailDataService(lambda **kwargs: rows)
+
+        payload = service.get_details(current_stockout_only=True)
+
+        self.assertEqual(1, payload["total"])
+        self.assertEqual("潜力产品", payload["rows"][0]["stockout_before_role"])
+        self.assertEqual(2002, payload["rows"][0]["stockout_before_role_id"])
+        self.assertEqual("30d", payload["rows"][0]["stockout_before_role_period"])
+
+    def test_selected_stockout_label_defaults_evidence_period_to_30d(self):
+        rows = [
+            {
+                "country_category": "Europe",
+                "store": "StoreA",
+                "msku": "A",
+                "labels": [{"parent_id": 3, "id": 304}],
+                "stockout_before_roles": [
+                    {"id": 2001, "label": "明星产品", "period": "30d"},
+                ],
+            },
+        ]
+        service = LabelHubDetailDataService(lambda **kwargs: rows)
+
+        payload = service.get_details(conditions="3:304")
+
+        self.assertEqual("明星产品", payload["rows"][0]["stockout_before_role"])
+        self.assertEqual(2001, payload["rows"][0]["stockout_before_role_id"])
+        self.assertEqual("30d", payload["rows"][0]["stockout_before_role_period"])
+
     def test_stockout_before_role_filter_rejects_invalid_period_and_role(self):
         service = LabelHubDetailDataService(lambda **kwargs: [])
 
@@ -394,6 +436,33 @@ class LabelHubDetailDataTests(unittest.TestCase):
         self.assertEqual(["德国"], [row["country"] for row in country["rows"]])
         self.assertEqual({"StoreA", "StoreB"}, {row["store"] for row in business["rows"]})
         self.assertEqual(["德国"], business["applied_filters"]["countries"])
+
+    def test_country_stockout_rows_use_parent_twenty_one_role_for_each_country(self):
+        country_rows = [
+            {"country": "法国", "country_category": "欧洲站", "store": "StoreA", "msku": "MSKU-1", "sku": "SKU-FR"},
+            {"country": "德国", "country_category": "欧洲站", "store": "StoreA", "msku": "MSKU-1", "sku": "SKU-DE"},
+        ]
+        country_role_facts = [
+            {"country": "法国", "country_category": "欧洲站", "store": "StoreA", "msku": "MSKU-1", "label_id": 2102, "label_period": "30d"},
+            {"country": "德国", "country_category": "欧洲站", "store": "StoreA", "msku": "MSKU-1", "label_id": 2101, "label_period": "30d"},
+        ]
+        service = LabelHubDetailDataService(
+            business_row_provider=lambda **kwargs: [
+                {"country_category": "欧洲站", "store": "StoreA", "msku": "MSKU-1", "labels": [{"parent_id": 3, "id": 304}]},
+            ],
+            country_row_provider=lambda **kwargs: {"rows": country_rows, "metric_status": "available"},
+            country_stockout_role_provider=lambda **kwargs: country_role_facts,
+        )
+
+        payload = service.get_details(detail_view="country", detail_conditions="3:304")
+        by_country = {row["country"]: row for row in payload["rows"]}
+
+        self.assertEqual(2102, by_country["法国"]["stockout_before_role_id"])
+        self.assertEqual("潜力产品", by_country["法国"]["stockout_before_role"])
+        self.assertEqual(2101, by_country["德国"]["stockout_before_role_id"])
+        self.assertEqual("明星产品", by_country["德国"]["stockout_before_role"])
+        self.assertEqual("30d", by_country["法国"]["stockout_before_role_period"])
+        self.assertEqual("country", by_country["法国"]["stockout_before_role_scope"])
 
     def test_country_metric_filters_fail_clearly_when_metric_source_is_unavailable(self):
         service = LabelHubDetailDataService(

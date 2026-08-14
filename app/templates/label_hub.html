@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block extra_head %}
-<link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}?v=20260731rolereason2">
+<link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}?v=20260814simpleoostime1">
 <link rel="stylesheet" href="{{ url_for('static', path='vendor/slim-select/slimselect.css') }}?v=4.0.5">
 {% endblock %}
 
@@ -248,9 +248,17 @@
     <div id="labelHubRuleDrawerContent"></div>
   </div>
 </div>
+<div id="labelHubStockoutEvidenceModal" class="label-hub-stockout-evidence-modal" hidden>
+  <section class="label-hub-stockout-evidence-card" role="dialog" aria-modal="true" aria-labelledby="labelHubStockoutEvidenceTitle">
+    <button id="labelHubStockoutEvidenceClose" class="label-hub-stockout-evidence-close" type="button" aria-label="关闭断货前销售角色依据">×</button>
+    <div id="labelHubStockoutEvidenceContent" aria-live="polite">
+      <div class="empty-state compact">正在读取断货前销售角色依据…</div>
+    </div>
+  </section>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script src="{{ url_for('static', path='vendor/slim-select/slimselect.js') }}?v=4.0.5"></script>
-<script src="{{ url_for('static', path='js/label_hub.js') }}?v=20260814stockoutroles2"></script>
+<script src="{{ url_for('static', path='js/label_hub.js') }}?v=20260814simpleoostime1"></script>
 {% endblock %}
