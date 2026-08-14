@@ -13668,6 +13668,125 @@ body[data-page="label_hub"] {
   font-variant-numeric: tabular-nums;
 }
 
+.label-hub-stockout-role-toggle {
+  align-items: center;
+  background: #f4f8ff;
+  border: 0;
+  border-top: 1px solid #dce9fa;
+  color: #1764b5;
+  cursor: pointer;
+  display: flex;
+  font-size: 10px;
+  font-weight: 700;
+  justify-content: space-between;
+  padding: 5px 11px;
+  width: 100%;
+}
+
+.label-hub-stockout-role-toggle:hover { background: #eaf3ff; }
+.label-hub-stockout-role-toggle i { font-size: 10px; font-style: normal; font-weight: 500; }
+
+.label-hub-stockout-role-panel {
+  background: #fff;
+  border: 1px solid #b9d4f5;
+  border-radius: 9px;
+  box-shadow: 0 8px 22px rgba(37, 84, 134, .08);
+  display: grid;
+  gap: 11px;
+  padding: 12px;
+}
+
+.label-hub-stockout-role-panel > header {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.label-hub-stockout-role-panel > header > div:first-child { display: grid; gap: 2px; }
+.label-hub-stockout-role-panel > header strong { color: var(--text); font-size: 13px; }
+.label-hub-stockout-role-panel > header span { color: var(--muted); font-size: 10px; }
+
+.label-hub-stockout-role-periods {
+  background: #edf2f8;
+  border-radius: 7px;
+  display: inline-flex;
+  padding: 2px;
+}
+
+.label-hub-stockout-role-periods button {
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  color: #60758c;
+  cursor: pointer;
+  font-size: 11px;
+  min-width: 43px;
+  padding: 5px 8px;
+}
+
+.label-hub-stockout-role-periods button.active {
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(37, 84, 134, .14);
+  color: #075bb8;
+  font-weight: 700;
+}
+
+.label-hub-stockout-role-content { display: grid; gap: 10px; }
+.label-hub-stockout-role-loading,
+.label-hub-stockout-role-error { color: var(--muted); font-size: 11px; padding: 10px 2px; text-align: center; }
+.label-hub-stockout-role-error button { background: none; border: 0; color: var(--brand); cursor: pointer; margin-left: 6px; }
+
+.label-hub-stockout-role-summary {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 10px;
+  gap: 8px 18px;
+}
+
+.label-hub-stockout-role-summary strong { color: #315270; font-size: 11px; font-variant-numeric: tabular-nums; }
+.label-hub-stockout-role-list { display: grid; gap: 7px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+.label-hub-stockout-role-row {
+  align-items: center;
+  background: #f8fafd;
+  border: 1px solid #e1e8f1;
+  border-radius: 7px;
+  color: #48637c;
+  cursor: pointer;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(88px, .8fr) minmax(70px, 1.4fr) auto;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.label-hub-stockout-role-row:hover { background: #eef6ff; border-color: #8fbbea; }
+.label-hub-stockout-role-row > span { display: grid; gap: 2px; }
+.label-hub-stockout-role-row b { color: var(--text); font-size: 11px; }
+.label-hub-stockout-role-row small { color: var(--muted); font-size: 10px; font-weight: 500; }
+.label-hub-stockout-role-row > i { background: #dfe8f3; border-radius: 999px; height: 4px; overflow: hidden; }
+.label-hub-stockout-role-row > i > em { background: #3b82d0; border-radius: inherit; display: block; height: 100%; }
+.label-hub-stockout-role-row > strong { color: #183e65; font-size: 13px; font-variant-numeric: tabular-nums; }
+
+.label-hub-stockout-role-all {
+  background: transparent;
+  border: 0;
+  color: #1266bd;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  justify-self: end;
+  padding: 2px 0;
+}
+
+.label-hub-stockout-role-toggle:focus-visible,
+.label-hub-stockout-role-periods button:focus-visible,
+.label-hub-stockout-role-row:focus-visible,
+.label-hub-stockout-role-all:focus-visible { outline: 2px solid #1b73cb; outline-offset: 2px; }
+
 .label-hub-operating-stockout-rate {
   align-items: center;
   border-top: 1px solid var(--line);
@@ -16750,6 +16869,7 @@ body[data-page="country_label_hub"] .country-label-overview-grid .label-hub-cate
 
   .label-hub-filter-secondary,
   .label-hub-category-detail > header,
+  .label-hub-stockout-role-panel > header,
   .label-hub-issue-head > div {
     align-items: stretch;
     flex-direction: column;
@@ -16761,9 +16881,14 @@ body[data-page="country_label_hub"] .country-label-overview-grid .label-hub-cate
   }
 
   .label-hub-category-detail > header,
+  .label-hub-stockout-role-panel > header,
   .label-hub-issue-head > div {
     gap: 5px;
   }
+
+  .label-hub-stockout-role-periods { align-self: stretch; }
+  .label-hub-stockout-role-periods button { flex: 1; }
+  .label-hub-stockout-role-list { grid-template-columns: minmax(0, 1fr); }
 
   .label-hub-overview-section .sales-role-section-head,
   .label-hub-cohort .sales-role-section-head {
