@@ -88,9 +88,10 @@ def test_price_review_scroll_layout_assets_have_fresh_cache_versions():
     base_template = (ROOT / "app" / "templates" / "base.html").read_text(encoding="utf-8")
     page_template = (ROOT / "app" / "templates" / "price_review.html").read_text(encoding="utf-8")
 
-    assert "styles.css') }}?v=20260817rolefilterscompact1" in base_template
+    assert "styles.css') }}?v=20260817financeflow1" in base_template
     assert "price_review.js') }}?v=20260817roletimelinec2" in page_template
-    assert "price_review_role.js') }}?v=20260817roletimelinec2" in page_template
+    assert "price_review_finance_flow.js') }}?v=20260817financeflow1" in page_template
+    assert "price_review_role.js') }}?v=20260817financeflow1" in page_template
 
 
 def test_price_review_has_performance_and_station_role_views():
@@ -174,13 +175,13 @@ def test_station_role_primary_kpis_and_deterministic_insight_panel():
     script = (ROOT / "app" / "static" / "js" / "price_review_role.js").read_text(encoding="utf-8")
 
     assert 'id="roleMigrationInsights"' in template
-    assert 'id="financeMigrationToggleBtn"' in template
+    assert 'id="financeMigrationMatrix"' in template
     assert 'id="roleWindowMeta"' in template
     assert 'id="roleFinanceSnapshotMeta"' in template
     assert 'id="roleCacheStatusMeta"' in template
     assert "renderMigrationInsights" in script
     assert "largestRoleTransition" in script
-    assert "renderFinanceTransitions" in script
+    assert "renderFinanceFlow" in script
     assert "renderCacheStatus" in script
     assert "cards.length" not in script
     assert 'change: "up"' in script
@@ -289,3 +290,18 @@ def test_station_role_primary_bar_has_compact_role_columns_and_two_column_more_f
     assert "repeat(3, minmax(130px, 0.72fr))" in scope_rule
     assert "minmax(220px, 1.15fr)" in scope_rule
     assert "repeat(2, minmax(150px, 1fr))" in advanced_rule
+
+
+def test_station_finance_migration_renders_all_pricing_bands_as_a_flow_diagram():
+    template = (ROOT / "app" / "templates" / "price_review.html").read_text(encoding="utf-8")
+    script = (ROOT / "app" / "static" / "js" / "price_review_role.js").read_text(encoding="utf-8")
+
+    assert template.index("price_review_finance_flow.js") < template.index("price_review_role.js")
+    assert "全区间迁移流向" in template
+    assert 'id="financeMigrationToggleBtn"' not in template
+    assert "window.priceReviewFinanceFlow" in script
+    assert "flowApi.buildModel" in script
+    assert "finance-flow-link" in script
+    assert "model.leftNodes" in script
+    assert "model.rightNodes" in script
+    assert "items.slice(0, 5)" not in script

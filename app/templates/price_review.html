@@ -359,8 +359,8 @@
       <div class="panel-head"><div><p class="section-kicker">变化摘要</p><h3>本次调价角色表现</h3></div></div>
       <div id="roleMigrationInsights" class="role-migration-insight-list"></div>
       <div class="finance-migration-section">
-        <div class="finance-migration-heading"><div><span class="section-kicker">财务区间</span><strong>主要迁移路径</strong></div><button id="financeMigrationToggleBtn" class="text-button" type="button" aria-expanded="false">查看全部</button></div>
-      <div id="financeMigrationMatrix" class="finance-migration-list"></div>
+        <div class="finance-migration-heading"><div><span class="section-kicker">财务区间</span><strong>全区间迁移流向</strong></div><span class="muted">点击流线筛选明细</span></div>
+        <div id="financeMigrationMatrix" class="finance-migration-flow"></div>
       </div>
     </article>
   </div>
@@ -396,5 +396,6 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', path='js/price_review.js') }}?v=20260817roletimelinec2"></script>
-<script src="{{ url_for('static', path='js/price_review_role.js') }}?v=20260817roletimelinec2"></script>
+<script src="{{ url_for('static', path='js/price_review_finance_flow.js') }}?v=20260817financeflow1"></script>
+<script src="{{ url_for('static', path='js/price_review_role.js') }}?v=20260817financeflow1"></script>
 {% endblock %}

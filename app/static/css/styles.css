@@ -4078,56 +4078,106 @@ body[data-page="price_review"] .price-review-scroll-table {
   cursor: pointer;
 }
 
-.finance-migration-list {
+.finance-migration-flow {
+  min-width: 0;
+}
+
+.finance-flow-summary {
   display: grid;
-  gap: 3px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin: 10px 0 8px;
+}
+
+.finance-flow-summary span {
+  padding: 8px 5px;
+  border-radius: 9px;
+  background: #f2f5f9;
+  color: #61758b;
+  font-size: 10px;
+  text-align: center;
+}
+
+.finance-flow-summary b {
+  display: block;
+  margin-top: 2px;
+  color: #173a5f;
+  font-size: 15px;
+}
+
+.finance-flow-summary .is-up { background: #e9f7f2; color: #08795f; }
+.finance-flow-summary .is-down { background: #fff0f1; color: #b43e49; }
+.finance-flow-summary .is-stable { background: #edf4ff; color: #315f9e; }
+
+.finance-flow-scroll {
+  overflow-x: auto;
+  padding-bottom: 3px;
+  scrollbar-width: thin;
+  scrollbar-color: #bfd0e2 transparent;
+}
+
+.finance-flow-svg {
+  display: block;
+  width: 100%;
+  min-width: 430px;
+  height: auto;
   overflow: visible;
 }
 
-.finance-path-row {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 9px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: #2c435d;
-  font: inherit;
-  text-align: left;
+.finance-flow-axis-title {
+  fill: #73869a;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+.finance-flow-link {
+  fill: none;
+  opacity: 0.42;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  pointer-events: stroke;
   cursor: pointer;
+  transition: opacity 160ms ease, filter 160ms ease;
 }
 
-.finance-path-row:hover {
-  background: #f2f7fd;
+.finance-flow-link.is-up { stroke: #22a486; }
+.finance-flow-link.is-down { stroke: #df5d67; }
+.finance-flow-link.is-stable { stroke: #5686c7; }
+
+.finance-flow-link:hover,
+.finance-flow-link:focus-visible {
+  opacity: 1;
+  filter: drop-shadow(0 1px 2px rgba(22, 57, 91, 0.28));
+  outline: none;
 }
 
-.finance-path-row span {
-  display: flex;
-  min-width: 0;
-  align-items: baseline;
-  gap: 6px;
+.finance-flow-node rect {
+  fill: #f7faff;
+  stroke: #cfddec;
+  stroke-width: 1;
 }
 
-.finance-path-row strong,
-.finance-path-row small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.finance-flow-node-label {
+  fill: #284762;
+  font-size: 10px;
+  font-weight: 800;
 }
 
-.finance-path-row small {
-  color: #718197;
+.finance-flow-node-count {
+  fill: #1a5898;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.finance-flow-node.is-empty {
+  opacity: 0.48;
+}
+
+.finance-flow-empty {
+  fill: #8798aa;
   font-size: 11px;
-}
-
-.finance-path-row b {
-  min-width: 32px;
-  color: #1c4f84;
-  font-size: 13px;
-  text-align: right;
+  font-weight: 700;
 }
 
 .price-review-role-linked-filter {

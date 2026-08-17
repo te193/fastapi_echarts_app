@@ -3,8 +3,6 @@
   var elements = {};
   var loaded = false;
   var meta = null;
-  var financeExpanded = false;
-  var currentFinanceItems = [];
   var linkedFilter = null;
   var currentView = "performance";
   var performanceHero = null;
@@ -41,7 +39,7 @@
       "roleAfterSelect", "roleChangeSelect", "financeChangeSelect", "roleDataStatusSelect",
       "roleKeywordInput", "applyRoleFiltersBtn", "resetRoleFiltersBtn", "roleAdvancedFiltersBtn",
       "roleAdvancedFilters", "roleAdvancedFilterCount", "roleActiveFilterChips", "roleMigrationKpis",
-      "roleMigrationMatrix", "roleMigrationInsights", "financeMigrationMatrix", "financeMigrationToggleBtn",
+      "roleMigrationMatrix", "roleMigrationInsights", "financeMigrationMatrix",
       "roleMigrationCount", "roleMigrationTableBody", "rolePaginationInfo", "rolePaginationNumbers",
       "rolePrevPageBtn", "roleNextPageBtn", "roleRuleVersion", "roleWindowMeta",
       "roleCacheStatusMeta", "roleFinanceSnapshotMeta", "roleLinkedFilterBar", "roleLinkedFilterText",
@@ -113,24 +111,29 @@
       elements.financeMigrationMatrix.addEventListener("click", function (event) {
         var row = event.target.closest("[data-finance-before][data-finance-after]");
         if (!row) return;
-        state.finance_before = row.dataset.financeBefore;
-        state.finance_after = row.dataset.financeAfter;
-        state.finance_change = "all";
-        linkedFilter = {
-          type: "finance_path",
-          label: "财务路径：" + row.dataset.beforeLabel + " 至 " + row.dataset.afterLabel
-        };
-        state.page = 1;
-        renderFilterState();
-        loadRoleMigration();
+        selectFinancePath(row);
+      });
+      elements.financeMigrationMatrix.addEventListener("keydown", function (event) {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        var row = event.target.closest("[data-finance-before][data-finance-after]");
+        if (!row) return;
+        event.preventDefault();
+        selectFinancePath(row);
       });
     }
-    if (elements.financeMigrationToggleBtn) {
-      elements.financeMigrationToggleBtn.addEventListener("click", function () {
-        financeExpanded = !financeExpanded;
-        renderFinanceTransitions(currentFinanceItems);
-      });
-    }
+  }
+
+  function selectFinancePath(row) {
+    state.finance_before = row.dataset.financeBefore;
+    state.finance_after = row.dataset.financeAfter;
+    state.finance_change = "all";
+    linkedFilter = {
+      type: "finance_path",
+      label: "财务路径：" + row.dataset.beforeLabel + " 至 " + row.dataset.afterLabel
+    };
+    state.page = 1;
+    renderFilterState();
+    loadRoleMigration();
   }
 
   function activateView(view) {
@@ -391,25 +394,68 @@
   }
 
   function renderFinanceMatrix(items) {
-    currentFinanceItems = items.slice().sort(function (a, b) { return Number(b.count || 0) - Number(a.count || 0); });
-    renderFinanceTransitions(currentFinanceItems);
+    renderFinanceFlow(items);
   }
 
-  function renderFinanceTransitions(items) {
-    if (!items.length) {
-      elements.financeMigrationMatrix.innerHTML = '<div class="empty-state compact">当前筛选下暂无可归类的财务区间迁移</div>';
-      elements.financeMigrationToggleBtn.hidden = true;
+  function renderFinanceFlow(items) {
+    var flowApi = window.priceReviewFinanceFlow;
+    var bands = (meta && meta.finance_bands) || [];
+    if (!flowApi || !bands.length) {
+      elements.financeMigrationMatrix.innerHTML = '<div class="empty-state compact">财务定价区间加载失败</div>';
       return;
     }
-    elements.financeMigrationToggleBtn.hidden = items.length <= 5;
-    elements.financeMigrationToggleBtn.textContent = financeExpanded ? "收起" : "查看全部";
-    elements.financeMigrationToggleBtn.setAttribute("aria-expanded", financeExpanded ? "true" : "false");
-    var visibleItems = financeExpanded ? items : items.slice(0, 5);
-    elements.financeMigrationMatrix.innerHTML = visibleItems.map(function (item) {
-      var beforeLabel = item.before_label || item.before;
-      var afterLabel = item.after_label || item.after;
-      return '<button type="button" class="finance-path-row" data-finance-before="' + app.escapeHtml(item.before) + '" data-finance-after="' + app.escapeHtml(item.after) + '" data-before-label="' + app.escapeHtml(beforeLabel) + '" data-after-label="' + app.escapeHtml(afterLabel) + '"><span><strong>' + app.escapeHtml(beforeLabel) + '</strong><small>至 ' + app.escapeHtml(afterLabel) + '</small></span><b>' + Number(item.count || 0).toLocaleString("zh-CN") + '</b></button>';
+    var model = flowApi.buildModel(bands, items || []);
+    var width = 520;
+    var height = Math.max(430, model.leftNodes.length * 44 + 50);
+    var top = 42;
+    var bottom = height - 22;
+    var step = model.leftNodes.length > 1 ? (bottom - top) / (model.leftNodes.length - 1) : 0;
+    var leftEdge = 112;
+    var rightEdge = width - 112;
+    var centerLeft = width * 0.42;
+    var centerRight = width * 0.58;
+    var totals = { up: 0, stable: 0, down: 0 };
+
+    var links = model.links.map(function (link) {
+      totals[link.direction] += link.count;
+      var sourceY = top + link.sourceIndex * step;
+      var targetY = top + link.targetIndex * step;
+      var path = "M " + leftEdge + " " + sourceY.toFixed(1) +
+        " C " + centerLeft.toFixed(1) + " " + sourceY.toFixed(1) +
+        ", " + centerRight.toFixed(1) + " " + targetY.toFixed(1) +
+        ", " + rightEdge + " " + targetY.toFixed(1);
+      var beforeLabel = app.escapeHtml(link.beforeLabel);
+      var afterLabel = app.escapeHtml(link.afterLabel);
+      var count = Number(link.count || 0).toLocaleString("zh-CN");
+      return '<path class="finance-flow-link is-' + link.direction + '" d="' + path + '" stroke-width="' + link.strokeWidth.toFixed(1) + '" tabindex="0" role="button" aria-label="' + beforeLabel + ' 至 ' + afterLabel + '，' + count + ' 个 SKU" data-finance-before="' + app.escapeHtml(link.before) + '" data-finance-after="' + app.escapeHtml(link.after) + '" data-before-label="' + beforeLabel + '" data-after-label="' + afterLabel + '"><title>' + beforeLabel + ' → ' + afterLabel + '：' + count + ' 个 SKU</title></path>';
     }).join("");
+
+    function renderNode(node, side) {
+      var y = top + node.index * step;
+      var x = side === "left" ? 4 : width - 108;
+      var labelX = side === "left" ? 14 : width - 98;
+      var countX = side === "left" ? 102 : width - 10;
+      return '<g class="finance-flow-node' + (node.count ? '' : ' is-empty') + '">' +
+        '<rect x="' + x + '" y="' + (y - 15).toFixed(1) + '" width="104" height="30" rx="8"></rect>' +
+        '<text class="finance-flow-node-label" x="' + labelX + '" y="' + (y + 4).toFixed(1) + '">' + app.escapeHtml(node.label) + '</text>' +
+        '<text class="finance-flow-node-count" x="' + countX + '" y="' + (y + 4).toFixed(1) + '" text-anchor="end">' + Number(node.count || 0).toLocaleString("zh-CN") + '</text>' +
+        '</g>';
+    }
+
+    var emptyMessage = model.links.length ? "" : '<text class="finance-flow-empty" x="' + (width / 2) + '" y="' + (height / 2) + '" text-anchor="middle">当前筛选下暂无可归类迁移</text>';
+    elements.financeMigrationMatrix.innerHTML =
+      '<div class="finance-flow-summary" aria-label="财务区间迁移汇总">' +
+        '<span class="is-up">↑ 上移 <b>' + totals.up.toLocaleString("zh-CN") + '</b></span>' +
+        '<span class="is-stable">→ 保持 <b>' + totals.stable.toLocaleString("zh-CN") + '</b></span>' +
+        '<span class="is-down">↓ 下移 <b>' + totals.down.toLocaleString("zh-CN") + '</b></span>' +
+      '</div>' +
+      '<div class="finance-flow-scroll"><svg class="finance-flow-svg" viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="财务定价区间调前调后迁移流向图">' +
+        '<text class="finance-flow-axis-title" x="4" y="18">调前区间</text>' +
+        '<text class="finance-flow-axis-title" x="' + (width - 4) + '" y="18" text-anchor="end">调后区间</text>' +
+        '<g class="finance-flow-links">' + links + '</g>' +
+        '<g class="finance-flow-nodes">' + model.leftNodes.map(function (node) { return renderNode(node, "left"); }).join("") + model.rightNodes.map(function (node) { return renderNode(node, "right"); }).join("") + '</g>' +
+        emptyMessage +
+      '</svg></div>';
   }
 
   function renderContextMeta(payload) {
