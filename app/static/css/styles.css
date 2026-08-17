@@ -3808,6 +3808,12 @@ body[data-page="price_review"] .price-review-scroll-table {
   background: #f8fbff;
 }
 
+.price-review-filter-panel.is-role-mode .price-review-role-advanced-filters {
+  min-width: 0;
+  margin: 0;
+  border-radius: 0 0 16px 16px;
+}
+
 .price-review-role-filter-chips {
   grid-column: 1 / -1;
   display: flex;

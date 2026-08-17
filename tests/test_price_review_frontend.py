@@ -88,9 +88,9 @@ def test_price_review_scroll_layout_assets_have_fresh_cache_versions():
     base_template = (ROOT / "app" / "templates" / "base.html").read_text(encoding="utf-8")
     page_template = (ROOT / "app" / "templates" / "price_review.html").read_text(encoding="utf-8")
 
-    assert "styles.css') }}?v=20260817roletimelinec" in base_template
-    assert "price_review.js') }}?v=20260817roletimelinec" in page_template
-    assert "price_review_role.js') }}?v=20260817roletimelinec" in page_template
+    assert "styles.css') }}?v=20260817roletimelinec2" in base_template
+    assert "price_review.js') }}?v=20260817roletimelinec2" in page_template
+    assert "price_review_role.js') }}?v=20260817roletimelinec2" in page_template
 
 
 def test_price_review_has_performance_and_station_role_views():
@@ -250,3 +250,14 @@ def test_price_review_releases_global_min_width_on_narrow_screens():
     styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
 
     assert 'body[data-page="price_review"] { min-width: 0; }' in styles
+
+
+def test_station_role_advanced_filters_stay_inside_workbench_border():
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+    selector = ".price-review-filter-panel.is-role-mode .price-review-role-advanced-filters {"
+
+    assert selector in styles
+    rule = styles.split(selector, 1)[1].split("}", 1)[0]
+
+    assert "margin: 0;" in rule
+    assert "border-radius: 0 0 16px 16px;" in rule
