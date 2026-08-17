@@ -3285,6 +3285,1016 @@ body[data-page="price_review"] .price-review-scroll-table {
   scrollbar-gutter: stable;
 }
 
+.price-review-view-tabs {
+  display: inline-flex;
+  gap: 4px;
+  margin: 0 0 18px;
+  padding: 4px;
+  border: 1px solid #d7e2ef;
+  border-radius: 12px;
+  background: #edf4fb;
+}
+
+.price-review-view-tab {
+  min-width: 142px;
+  padding: 9px 18px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #526983;
+  font: inherit;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.price-review-view-tab.active {
+  background: #ffffff;
+  color: #1769e0;
+  box-shadow: 0 4px 12px rgba(30, 64, 110, 0.12);
+}
+
+.price-review-role-view {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  min-width: 0;
+}
+
+.price-review-role-view[hidden] {
+  display: none;
+}
+
+.price-review-role-view.is-loading {
+  opacity: 0.68;
+  pointer-events: none;
+}
+
+.price-review-role-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin: 0 0 14px;
+  padding: 0 2px;
+}
+
+.price-review-role-header[hidden],
+.price-review-filter-fields[hidden],
+.role-filter-workbench[hidden],
+.price-review-role-advanced-filters[hidden] {
+  display: none;
+}
+
+.price-review-role-header h2,
+.price-review-role-header p {
+  margin: 0;
+}
+
+.price-review-role-header h2 {
+  margin-top: 3px;
+  color: #10233b;
+  font-size: 21px;
+}
+
+.price-review-role-header .muted {
+  margin-top: 5px;
+  font-size: 13px;
+}
+
+.price-review-role-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.role-meta-chip {
+  max-width: 480px;
+  padding: 6px 10px;
+  border: 1px solid #d2e1f2;
+  border-radius: 999px;
+  background: #f7faff;
+  color: #526983;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.price-review-filter-fields {
+  display: contents;
+}
+
+.price-review-role-window-compare {
+  grid-column: auto / span 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 70px minmax(0, 1fr);
+  min-height: 76px;
+  overflow: hidden;
+  border: 1px solid #cbdced;
+  border-radius: 12px;
+  background: linear-gradient(90deg, #f1f6ff 0%, #ffffff 48%, #eefaf6 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 6px 18px rgba(31, 75, 119, 0.07);
+}
+
+.role-window-side {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 8px 11px;
+  cursor: pointer;
+}
+
+.role-window-side.is-before { border-left: 3px solid #4d83d1; }
+.role-window-side.is-after { border-right: 3px solid #18a17f; }
+
+.role-window-eyebrow {
+  color: #526983;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+}
+
+.role-window-select-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+}
+
+.role-window-select-row select {
+  width: 68px;
+  height: 28px;
+  padding: 0 7px;
+  border: 1px solid #b9cde3;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #153553;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 850;
+  outline: none;
+}
+
+.role-window-select-row select:focus {
+  border-color: #4d8bd8;
+  box-shadow: 0 0 0 3px rgba(77, 139, 216, 0.13);
+}
+
+.role-window-select-row b {
+  color: #244865;
+  font-size: 12px;
+}
+
+.role-window-side small {
+  overflow: hidden;
+  color: #75869a;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.role-window-pivot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  color: #60738a;
+  text-align: center;
+}
+
+.role-window-pivot::before {
+  position: absolute;
+  inset: 9px 0;
+  border-right: 1px dashed #c8d5e3;
+  border-left: 1px dashed #c8d5e3;
+  content: "";
+}
+
+.role-window-arrow {
+  position: relative;
+  z-index: 1;
+  margin-top: -4px;
+  color: #3479c7;
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.role-window-pivot strong,
+.role-window-pivot small {
+  position: relative;
+  z-index: 1;
+}
+
+.role-window-pivot strong { margin-top: 2px; font-size: 10px; }
+.role-window-pivot small { margin-top: 1px; color: #8a98a8; font-size: 8px; }
+
+@media (min-width: 1321px) {
+  .price-review-filter-panel.is-role-mode .filters-grid.price-review-filters {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+  }
+}
+
+.role-filter-workbench {
+  display: contents;
+}
+
+.role-filter-field-eyebrow small {
+  display: none;
+}
+
+.price-review-filter-panel.is-role-mode {
+  padding: 0;
+  border-color: #cddbea;
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 18px 42px rgba(28, 62, 104, 0.09);
+}
+
+.price-review-filter-panel.is-role-mode .filters-grid.price-review-filters {
+  grid-template-columns: 210px minmax(520px, 720px) minmax(300px, 1fr);
+  gap: 0;
+  align-items: stretch;
+  margin: 0;
+}
+
+.price-review-filter-panel.is-role-mode .role-filter-date-block {
+  grid-column: 1;
+  min-width: 0;
+  justify-content: center;
+  gap: 9px;
+  padding: 17px 20px;
+  border-right: 1px solid #dce6f1;
+  background: linear-gradient(145deg, #edf5ff 0%, #f8fbff 100%);
+}
+
+.price-review-filter-panel.is-role-mode .role-filter-field-eyebrow > span {
+  display: none;
+}
+
+.price-review-filter-panel.is-role-mode .role-filter-field-eyebrow small {
+  display: block;
+  color: #6d84a0;
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+}
+
+.price-review-filter-panel.is-role-mode .price-review-date-control,
+.price-review-filter-panel.is-role-mode .snapshot-date-trigger {
+  width: 100%;
+}
+
+.price-review-filter-panel.is-role-mode .snapshot-date-trigger {
+  height: 42px;
+  padding: 0 12px;
+  border-color: #bfd3ea;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #155ca8;
+  font-size: 15px;
+  box-shadow: 0 5px 14px rgba(48, 97, 151, 0.07);
+}
+
+.role-filter-timeline {
+  grid-column: 2;
+  min-width: 0;
+  background: linear-gradient(110deg, #eff6ff 0%, #ffffff 50%, #eefaf7 100%);
+}
+
+.role-filter-timeline .price-review-role-window-compare {
+  grid-column: auto;
+  grid-template-columns: minmax(150px, 1fr) 84px minmax(150px, 1fr);
+  height: 100%;
+  min-height: 102px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.role-filter-timeline .role-window-side {
+  position: relative;
+  gap: 5px;
+  padding: 17px 22px;
+}
+
+.role-filter-timeline .role-window-side.is-before,
+.role-filter-timeline .role-window-side.is-after {
+  border: 0;
+}
+
+.role-filter-timeline .role-window-side.is-before::after,
+.role-filter-timeline .role-window-side.is-after::before {
+  position: absolute;
+  z-index: 0;
+  top: 50%;
+  width: 42px;
+  height: 1px;
+  background: #b9cce2;
+  content: "";
+}
+
+.role-filter-timeline .role-window-side.is-before::after { right: -42px; }
+.role-filter-timeline .role-window-side.is-after::before { left: -42px; }
+
+.role-filter-timeline .role-window-eyebrow {
+  color: #6d83a0;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+}
+
+.role-filter-timeline .role-window-select-row {
+  position: relative;
+  z-index: 1;
+}
+
+.role-filter-timeline .role-window-select-row select {
+  width: 76px;
+  height: 32px;
+  border-color: #bed1e7;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.role-filter-timeline .role-window-side.is-after .role-window-select-row select {
+  border-color: #a9d8ca;
+  color: #087a66;
+}
+
+.role-filter-timeline .role-window-side small {
+  color: #8293a8;
+  font-size: 10px;
+}
+
+.role-filter-timeline .role-window-pivot {
+  z-index: 1;
+  align-self: center;
+  width: 62px;
+  height: 62px;
+  justify-self: center;
+  border: 5px solid rgba(255, 255, 255, 0.92);
+  border-radius: 50%;
+  background: #2d75d3;
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgba(45, 117, 211, 0.2);
+}
+
+.role-filter-timeline .role-window-pivot::before {
+  display: none;
+}
+
+.role-filter-timeline .role-window-arrow {
+  display: none;
+}
+
+.role-filter-timeline .role-window-pivot strong {
+  margin: 0;
+  font-size: 10px;
+}
+
+.role-filter-timeline .role-window-pivot small {
+  margin-top: 2px;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 8px;
+}
+
+.role-filter-data-status {
+  grid-column: 3;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 15px 18px;
+  border-left: 1px solid #dce8e5;
+  background: linear-gradient(145deg, #f8fcfb 0%, #eef9f6 100%);
+}
+
+.role-filter-data-status .role-filter-status-label {
+  color: #6f8d87;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+}
+
+.role-filter-data-status strong {
+  overflow: hidden;
+  color: #285c55;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.role-filter-data-status > span:not(.role-filter-status-label) {
+  overflow: hidden;
+  color: #738a87;
+  font-size: 9px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.role-filter-scope-bar {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(150px, 0.8fr) minmax(150px, 0.8fr) minmax(240px, 1.25fr) auto;
+  gap: 12px;
+  align-items: end;
+  padding: 12px 16px 14px;
+  border-top: 1px solid #e1e9f2;
+  background: #ffffff;
+}
+
+.role-filter-scope-bar .filter-control {
+  gap: 6px;
+}
+
+.role-filter-scope-bar .filter-control > span {
+  color: #6a7d94;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.role-filter-scope-bar .filter-control select,
+.role-filter-scope-bar .filter-control input {
+  height: 40px;
+  border-color: #d5e0ec;
+  border-radius: 10px;
+  background: #fbfcfe;
+}
+
+.role-filter-scope-bar .filter-control select:hover,
+.role-filter-scope-bar .filter-control input:hover {
+  border-color: #afc5dd;
+}
+
+.price-review-filter-panel.is-role-mode .role-filter-scope-bar .price-review-role-filter-actions {
+  grid-column: auto;
+  display: flex;
+  min-height: 40px;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+
+.price-review-filter-panel.is-role-mode .role-filter-scope-bar .price-review-role-filter-actions button {
+  height: 40px;
+  min-width: 96px;
+  padding: 0 15px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+.price-review-filter-panel.is-role-mode .role-filter-scope-bar #applyRoleFiltersBtn {
+  min-width: 104px;
+  box-shadow: 0 8px 18px rgba(23, 105, 224, 0.2);
+}
+
+.role-filter-reset-button {
+  min-width: auto !important;
+  padding: 0 6px !important;
+  border: 0;
+  background: transparent;
+  color: #8593a5;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.role-filter-reset-button:hover {
+  color: #1769e0;
+}
+
+.price-review-role-filter-actions {
+  grid-column: auto / span 2;
+  flex-wrap: nowrap;
+}
+
+.price-review-role-filter-actions .role-advanced-filter-button {
+  min-width: 118px;
+}
+
+.role-advanced-filter-button.is-active {
+  border-color: #8db9ee;
+  background: #edf6ff;
+  color: #1769e0;
+}
+
+.filter-count-badge {
+  min-width: 18px;
+  height: 18px;
+  margin-left: 5px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #1769e0;
+  color: #fff;
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.price-review-role-advanced-filters {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  gap: 12px;
+  margin: 2px -4px -4px;
+  padding: 14px;
+  border-top: 1px solid #e1e9f2;
+  border-radius: 10px;
+  background: #f8fbff;
+}
+
+.price-review-role-filter-chips {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  min-height: 26px;
+}
+
+.role-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 8px 5px 10px;
+  border: 1px solid #c9dcf2;
+  border-radius: 999px;
+  background: #f4f9ff;
+  color: #2d5f93;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.role-filter-chip:hover {
+  border-color: #82afe3;
+  background: #eaf4ff;
+}
+
+.role-filter-chip b {
+  color: #6685a6;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.price-review-role-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.role-kpi-card {
+  appearance: none;
+  width: 100%;
+  min-height: 92px;
+  padding: 16px 18px;
+  border: 1px solid #d9e3ef;
+  border-left: 4px solid #7a8ca3;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 8px 22px rgba(26, 58, 96, 0.06);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.role-kpi-card:hover {
+  transform: translateY(-1px);
+  border-color: #b8cce3;
+  box-shadow: 0 10px 24px rgba(26, 58, 96, 0.1);
+}
+
+.role-kpi-card span {
+  display: block;
+  color: #64778f;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.role-kpi-card strong {
+  display: block;
+  margin-top: 8px;
+  color: #10233b;
+  font-size: 25px;
+}
+
+.role-kpi-card small {
+  display: block;
+  margin-top: 5px;
+  color: #7a899a;
+  font-size: 11px;
+}
+
+.role-kpi-card.role-tone-up { border-left-color: #16a085; }
+.role-kpi-card.role-tone-down { border-left-color: #e05a5a; }
+.role-kpi-card.role-tone-stable { border-left-color: #4d7fc7; }
+.role-kpi-card.role-tone-pending { border-left-color: #e6a23c; }
+
+.price-review-role-analysis-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.role-migration-matrix-wrap,
+.finance-migration-list {
+  overflow: auto;
+}
+
+.role-migration-matrix,
+.finance-migration-list table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 6px;
+}
+
+.role-migration-matrix th,
+.finance-migration-list th {
+  padding: 8px;
+  color: #526983;
+  font-size: 12px;
+  font-weight: 850;
+  text-align: left;
+}
+
+.role-migration-matrix td {
+  min-width: 86px;
+  padding: 0;
+}
+
+.role-matrix-cell {
+  width: 100%;
+  min-height: 62px;
+  border: 1px solid #dbe5f0;
+  border-radius: 9px;
+  background: #f5f8fc;
+  color: #2c435d;
+  cursor: pointer;
+}
+
+.role-matrix-cell span {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 750;
+  opacity: 0.78;
+}
+
+.role-matrix-cell:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.role-matrix-cell:hover {
+  border-color: #4d8bd8;
+  box-shadow: 0 0 0 3px rgba(77, 139, 216, 0.12);
+}
+
+.role-matrix-cell strong { font-size: 18px; }
+.role-matrix-cell.is-up { background: #eaf8f3; color: #08795f; }
+.role-matrix-cell.is-down { background: #fff0f0; color: #b33b3b; }
+.role-matrix-cell.is-stable { background: #edf4ff; color: #275eac; }
+
+.price-review-role-insights {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.role-migration-insight-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.role-insight-primary {
+  min-width: 0;
+  padding: 13px 14px;
+  border: 1px solid #dbe6f2;
+  border-radius: 10px;
+  background: #f7faff;
+}
+
+.role-insight-primary.is-risk {
+  background: #fff8f7;
+}
+
+.role-insight-primary span,
+.role-insight-primary small {
+  display: block;
+  color: #728298;
+  font-size: 11px;
+}
+
+.role-insight-primary strong {
+  display: block;
+  overflow: hidden;
+  margin: 6px 0 4px;
+  color: #18314e;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.role-insight-status-grid {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.role-insight-status {
+  padding: 10px;
+  border-radius: 9px;
+  background: #f5f7fa;
+  text-align: center;
+}
+
+.role-insight-status span {
+  display: block;
+  color: #6d7d91;
+  font-size: 10px;
+}
+
+.role-insight-status strong {
+  display: block;
+  margin-top: 3px;
+  color: #20364f;
+  font-size: 16px;
+}
+
+.role-insight-status.is-up { background: #ebf8f3; }
+.role-insight-status.is-down { background: #fff1f1; }
+.role-insight-status.is-pending { background: #fff7e5; }
+
+.finance-migration-section {
+  margin-top: 14px;
+  padding-top: 13px;
+  border-top: 1px solid #e1e8f0;
+}
+
+.finance-migration-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 7px;
+}
+
+.finance-migration-heading strong {
+  display: block;
+  margin-top: 2px;
+  color: #2b425d;
+  font-size: 13px;
+}
+
+.text-button {
+  padding: 4px 6px;
+  border: 0;
+  background: transparent;
+  color: #1769e0;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.finance-migration-list {
+  display: grid;
+  gap: 3px;
+  overflow: visible;
+}
+
+.finance-path-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 9px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #2c435d;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.finance-path-row:hover {
+  background: #f2f7fd;
+}
+
+.finance-path-row span {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.finance-path-row strong,
+.finance-path-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.finance-path-row small {
+  color: #718197;
+  font-size: 11px;
+}
+
+.finance-path-row b {
+  min-width: 32px;
+  color: #1c4f84;
+  font-size: 13px;
+  text-align: right;
+}
+
+.price-review-role-linked-filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: -4px 0 12px;
+  padding: 9px 12px;
+  border: 1px solid #cfe0f3;
+  border-radius: 9px;
+  background: #f4f9ff;
+  color: #2e5e8e;
+  font-size: 12px;
+}
+
+.price-review-role-linked-filter[hidden] {
+  display: none;
+}
+
+.filter-context-label {
+  margin-right: 9px;
+  color: #718298;
+  font-weight: 750;
+}
+
+.price-review-role-table-wrap {
+  max-height: 560px;
+  overflow: auto;
+  border: 1px solid #d9e3ef;
+  border-radius: 10px;
+}
+
+.price-review-role-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.price-review-role-table th {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  min-width: 104px;
+  padding: 11px 12px;
+  border-bottom: 1px solid #cfdae7;
+  background: #f6f9fd;
+  color: #354b65;
+  font-size: 12px;
+  font-weight: 850;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.price-review-role-table td {
+  padding: 11px 12px;
+  border-bottom: 1px solid #e3e9f0;
+  color: #20364f;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.price-review-role-table tbody tr:hover td { background: #f4f9ff; }
+.price-review-role-table .number-cell { text-align: right; font-variant-numeric: tabular-nums; }
+.price-review-role-table .role-window-cell { min-width: 310px; color: #62758c; font-size: 12px; }
+
+.role-badge,
+.role-change-badge,
+.role-status-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #edf3fa;
+  color: #355675;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.role-change-badge.is-up { background: #e7f7f1; color: #08795f; }
+.role-change-badge.is-down { background: #fff0f0; color: #b33b3b; }
+.role-change-badge.is-stable { background: #edf4ff; color: #275eac; }
+.role-status-badge.is-pending { background: #fff6df; color: #966400; }
+.role-status-badge.is-source_incomplete { background: #f2f3f5; color: #687583; }
+
+@media (max-width: 1280px) {
+  .price-review-role-analysis-grid { grid-template-columns: 1fr; }
+  .price-review-role-advanced-filters { grid-template-columns: repeat(3, minmax(150px, 1fr)); }
+  .price-review-filter-panel.is-role-mode .filters-grid.price-review-filters {
+    grid-template-columns: 190px minmax(420px, 1fr);
+  }
+  .price-review-filter-panel.is-role-mode .role-filter-date-block { grid-column: 1; }
+  .role-filter-timeline { grid-column: 2; }
+  .role-filter-data-status {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: 90px minmax(180px, 1.4fr) minmax(180px, 1fr) minmax(150px, 0.8fr);
+    align-items: center;
+    gap: 8px 14px;
+    padding: 10px 18px;
+    border-top: 1px solid #dce8e5;
+    border-left: 0;
+  }
+  .role-filter-data-status #roleWindowMeta { display: none; }
+}
+
+@media (max-width: 900px) {
+  body[data-page="price_review"] { min-width: 0; }
+  .price-review-filter-panel.is-role-mode .filters-grid.price-review-filters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .price-review-filter-panel.is-role-mode .role-filter-date-block,
+  .role-filter-timeline,
+  .role-filter-data-status,
+  .role-filter-scope-bar {
+    grid-column: 1;
+  }
+  .price-review-filter-panel.is-role-mode .role-filter-date-block {
+    padding: 14px 16px;
+    border-right: 0;
+    border-bottom: 1px solid #dce6f1;
+  }
+  .price-review-filter-panel.is-role-mode .role-filter-field-eyebrow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .role-filter-timeline .price-review-role-window-compare {
+    min-height: 98px;
+  }
+  .role-filter-data-status {
+    grid-template-columns: minmax(100px, 0.6fr) minmax(180px, 1.4fr) minmax(160px, 1fr);
+  }
+  .role-filter-data-status #roleFinanceSnapshotMeta { display: none; }
+  .role-filter-scope-bar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .role-filter-scope-bar .role-filter-keyword,
+  .price-review-filter-panel.is-role-mode .role-filter-scope-bar .price-review-role-filter-actions {
+    grid-column: 1 / -1;
+  }
+  .price-review-filter-panel.is-role-mode .role-filter-scope-bar .price-review-role-filter-actions {
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 760px) {
+  .price-review-view-tabs { display: flex; }
+  .price-review-view-tab { min-width: 0; flex: 1; padding-inline: 10px; }
+  .price-review-role-header { align-items: flex-start; flex-direction: column; }
+  .price-review-role-meta { justify-content: flex-start; }
+  .role-meta-chip { max-width: 100%; }
+  .price-review-role-window-compare { grid-column: 1 / -1; }
+  .price-review-role-advanced-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .price-review-role-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .role-insight-status-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 620px) {
+  .role-filter-timeline .price-review-role-window-compare {
+    grid-template-columns: minmax(0, 1fr) 64px minmax(0, 1fr);
+  }
+  .role-filter-timeline .role-window-side { padding: 14px 12px; }
+  .role-filter-timeline .role-window-pivot { width: 56px; height: 56px; }
+  .role-filter-data-status { grid-template-columns: 1fr; }
+  .role-filter-data-status #roleCacheStatusMeta { display: none; }
+  .role-filter-scope-bar { grid-template-columns: minmax(0, 1fr); }
+  .role-filter-scope-bar .role-filter-keyword,
+  .price-review-filter-panel.is-role-mode .role-filter-scope-bar .price-review-role-filter-actions {
+    grid-column: 1;
+  }
+  .price-review-filter-panel.is-role-mode .role-filter-scope-bar .price-review-role-filter-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+}
+
 .ag-grid-shell.compact .kanban-ag-grid {
   --ag-row-height: 44px;
   --ag-header-height: 42px;
