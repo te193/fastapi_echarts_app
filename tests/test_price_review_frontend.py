@@ -88,7 +88,7 @@ def test_price_review_scroll_layout_assets_have_fresh_cache_versions():
     base_template = (ROOT / "app" / "templates" / "base.html").read_text(encoding="utf-8")
     page_template = (ROOT / "app" / "templates" / "price_review.html").read_text(encoding="utf-8")
 
-    assert "styles.css') }}?v=20260817roletimelinec2" in base_template
+    assert "styles.css') }}?v=20260817rolefilterscompact1" in base_template
     assert "price_review.js') }}?v=20260817roletimelinec2" in page_template
     assert "price_review_role.js') }}?v=20260817roletimelinec2" in page_template
 
@@ -261,3 +261,31 @@ def test_station_role_advanced_filters_stay_inside_workbench_border():
 
     assert "margin: 0;" in rule
     assert "border-radius: 0 0 16px 16px;" in rule
+
+
+def test_station_role_primary_bar_promotes_role_filters_and_uses_more_filters_copy():
+    template = (ROOT / "app" / "templates" / "price_review.html").read_text(encoding="utf-8")
+    primary_start = template.index('<div class="role-filter-scope-bar">')
+    advanced_start = template.index('<div id="roleAdvancedFilters"')
+    chips_start = template.index('<div id="roleActiveFilterChips"')
+    primary = template[primary_start:advanced_start]
+    advanced = template[advanced_start:chips_start]
+
+    for control_id in ("roleBeforeSelect", "roleAfterSelect", "roleChangeSelect"):
+        assert f'id="{control_id}"' in primary
+        assert f'id="{control_id}"' not in advanced
+    for control_id in ("financeChangeSelect", "roleDataStatusSelect"):
+        assert f'id="{control_id}"' in advanced
+        assert f'id="{control_id}"' not in primary
+    assert "更多筛选" in primary
+    assert "高级筛选" not in primary
+
+
+def test_station_role_primary_bar_has_compact_role_columns_and_two_column_more_filters():
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+    scope_rule = styles.split(".role-filter-scope-bar {", 1)[1].split("}", 1)[0]
+    advanced_rule = styles.split(".price-review-role-advanced-filters {", 1)[1].split("}", 1)[0]
+
+    assert "repeat(3, minmax(130px, 0.72fr))" in scope_rule
+    assert "minmax(220px, 1.15fr)" in scope_rule
+    assert "repeat(2, minmax(150px, 1fr))" in advanced_rule
