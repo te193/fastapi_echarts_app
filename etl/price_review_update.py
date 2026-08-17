@@ -9,8 +9,15 @@ from typing import Iterable
 
 import pymysql
 
+from app.services.station_sales_role import build_station_role_tracking_row
+from etl.station_sales_role_cache import station_role_recent_cache_ddl, sync_recent_station_role_cache
+from etl.station_sales_role_drift_check import run_station_sales_role_drift_check
+
 
 TRACKING_PERIODS = (7, 14, 28)
+STATION_ROLE_TRACKING_PERIODS = (3, 7, 14, 28)
+STATION_ROLE_COMPARISON_MODES = ("decision_30d", "equal_window")
+STATION_ROLE_HISTORY_START = date(2026, 8, 1)
 DEFAULT_LOOKBACK_DAYS = 80
 DEFAULT_QUEUE_LOOKBACK_DAYS = 20
 
@@ -178,6 +185,70 @@ def with_price_review_comments(sql: str) -> str:
     return rendered
 
 
+def _station_role_tracking_ddl(target_schema: str) -> str:
+    return f"""
+        create table if not exists {target_table(target_schema, "price_review_station_role_tracking")} (
+            adjust_date date not null,
+            post_period_days int not null,
+            comparison_mode varchar(32) not null,
+            country varchar(64) not null,
+            station_store varchar(255) not null,
+            store varchar(128) not null,
+            msku varchar(128) not null,
+            local_sku varchar(128) null,
+            product_name varchar(512) null,
+            currency varchar(32) null,
+            price_before decimal(18,4) null,
+            price_after decimal(18,4) null,
+            drop_ratio decimal(10,6) null,
+            pre_period_days int not null,
+            pre_period_start date not null,
+            pre_period_end date not null,
+            post_period_start date not null,
+            post_period_end date not null,
+            pre_seen_days int not null default 0,
+            post_seen_days int not null default 0,
+            pre_sales_qty decimal(18,4) not null default 0,
+            post_sales_qty decimal(18,4) not null default 0,
+            pre_sales_amount decimal(18,4) not null default 0,
+            post_sales_amount decimal(18,4) not null default 0,
+            pre_order_profit decimal(18,4) not null default 0,
+            post_order_profit decimal(18,4) not null default 0,
+            pre_daily_sales decimal(18,6) not null default 0,
+            post_daily_sales decimal(18,6) not null default 0,
+            pre_margin_rate decimal(18,6) null,
+            post_margin_rate decimal(18,6) null,
+            pre_small_rank int null,
+            post_small_rank int null,
+            pre_small_rank_date date null,
+            post_small_rank_date date null,
+            role_before_code varchar(32) null,
+            role_before_label varchar(32) null,
+            role_before_rank int null,
+            role_after_code varchar(32) null,
+            role_after_label varchar(32) null,
+            role_after_rank int null,
+            role_change varchar(32) not null,
+            data_status varchar(32) not null,
+            data_message varchar(255) null,
+            finance_snapshot_date date null,
+            finance_band_before_code varchar(32) not null,
+            finance_band_before_label varchar(32) not null,
+            finance_band_after_code varchar(32) not null,
+            finance_band_after_label varchar(32) not null,
+            finance_change varchar(32) not null,
+            station_sales_role_rule_version varchar(64) not null,
+            station_sales_role_rule_source varchar(255) not null,
+            created_at datetime not null default current_timestamp,
+            updated_at datetime not null default current_timestamp on update current_timestamp,
+            primary key (adjust_date, post_period_days, comparison_mode, country, station_store, msku),
+            key idx_station_role_filter (adjust_date, post_period_days, comparison_mode, country, store),
+            key idx_station_role_change (adjust_date, post_period_days, comparison_mode, role_change),
+            key idx_station_role_msku (msku)
+        ) engine=InnoDB default charset=utf8mb4;
+    """
+
+
 def ensure_price_review_tables(conn, target_schema: str) -> None:
     ddl = [
         f"""
@@ -329,6 +400,8 @@ def ensure_price_review_tables(conn, target_schema: str) -> None:
             key idx_msku (msku)
         ) engine=InnoDB default charset=utf8mb4;
         """,
+        station_role_recent_cache_ddl(target_schema),
+        _station_role_tracking_ddl(target_schema),
     ]
     with conn.cursor() as cursor:
         for statement in ddl:
@@ -447,6 +520,13 @@ def execute_price_review_source_load(
                 affected += _copy_rows(source_cursor, target_cursor, insert_sql, batch_size)
             current_day += timedelta(days=1)
     target_conn.commit()
+    cache_result = sync_recent_station_role_cache(
+        source_conn,
+        target_conn,
+        target_schema,
+        batch_size=batch_size,
+    )
+    affected += cache_result.row_count
     return affected
 
 
@@ -484,6 +564,229 @@ def _select_price_review_adjustment_source_sql(queue_table: str) -> str:
           and store_name is not null
           and store_name <> ''
     """
+
+
+STATION_ROLE_TRACKING_COLUMNS = (
+    "adjust_date", "post_period_days", "comparison_mode", "country", "station_store", "store",
+    "msku", "local_sku", "product_name", "currency", "price_before", "price_after", "drop_ratio",
+    "pre_period_days", "pre_period_start", "pre_period_end", "post_period_start", "post_period_end",
+    "pre_seen_days", "post_seen_days", "pre_sales_qty", "post_sales_qty", "pre_sales_amount",
+    "post_sales_amount", "pre_order_profit", "post_order_profit", "pre_daily_sales", "post_daily_sales",
+    "pre_margin_rate", "post_margin_rate", "pre_small_rank", "post_small_rank", "pre_small_rank_date",
+    "post_small_rank_date", "role_before_code", "role_before_label", "role_before_rank", "role_after_code",
+    "role_after_label", "role_after_rank", "role_change", "data_status", "data_message",
+    "finance_snapshot_date", "finance_band_before_code", "finance_band_before_label",
+    "finance_band_after_code", "finance_band_after_label", "finance_change",
+    "station_sales_role_rule_version", "station_sales_role_rule_source",
+)
+
+
+def _station_role_adjust_start(adjust_start: date) -> date:
+    return max(adjust_start, STATION_ROLE_HISTORY_START)
+
+
+def _station_role_metrics_sql(target_schema: str) -> str:
+    adjustments = target_table(target_schema, "price_review_adjustment_source")
+    performance = target_table(target_schema, "dashboard_product_performance_daily")
+    return f"""
+    select
+        a.adjust_date,
+        coalesce(a.country, '') as country,
+        a.store as station_store,
+        coalesce(a.seller_name_new, substring_index(a.store, '-', 1), '') as store,
+        a.msku,
+        a.local_sku,
+        a.product_name,
+        a.currency,
+        a.price_before,
+        a.price_after,
+        a.drop_ratio,
+        count(distinct case
+            when p.dt_date between date_sub(a.adjust_date, interval %(pre_days)s day)
+                               and date_sub(a.adjust_date, interval 1 day)
+            then p.dt_date end) as pre_seen_days,
+        count(distinct case
+            when p.dt_date between date_add(a.adjust_date, interval 1 day)
+                               and date_add(a.adjust_date, interval %(post_days)s day)
+            then p.dt_date end) as post_seen_days,
+        coalesce(sum(case when p.dt_date between date_sub(a.adjust_date, interval %(pre_days)s day)
+                                             and date_sub(a.adjust_date, interval 1 day)
+                          then p.sales_qty else 0 end), 0) as pre_sales_qty,
+        coalesce(sum(case when p.dt_date between date_add(a.adjust_date, interval 1 day)
+                                             and date_add(a.adjust_date, interval %(post_days)s day)
+                          then p.sales_qty else 0 end), 0) as post_sales_qty,
+        coalesce(sum(case when p.dt_date between date_sub(a.adjust_date, interval %(pre_days)s day)
+                                             and date_sub(a.adjust_date, interval 1 day)
+                          then p.sales_amount else 0 end), 0) as pre_sales_amount,
+        coalesce(sum(case when p.dt_date between date_add(a.adjust_date, interval 1 day)
+                                             and date_add(a.adjust_date, interval %(post_days)s day)
+                          then p.sales_amount else 0 end), 0) as post_sales_amount,
+        coalesce(sum(case when p.dt_date between date_sub(a.adjust_date, interval %(pre_days)s day)
+                                             and date_sub(a.adjust_date, interval 1 day)
+                          then p.order_gross_profit else 0 end), 0) as pre_order_profit,
+        coalesce(sum(case when p.dt_date between date_add(a.adjust_date, interval 1 day)
+                                             and date_add(a.adjust_date, interval %(post_days)s day)
+                          then p.order_gross_profit else 0 end), 0) as post_order_profit,
+        cast(nullif(substring_index(group_concat(case
+            when p.dt_date between date_sub(a.adjust_date, interval %(pre_days)s day)
+                               and date_sub(a.adjust_date, interval 1 day)
+             and p.ranking > 0 then p.ranking end order by p.dt_date desc, p.ranking asc separator ','), ',', 1), '') as unsigned)
+            as pre_small_rank,
+        cast(nullif(substring_index(group_concat(case
+            when p.dt_date between date_add(a.adjust_date, interval 1 day)
+                               and date_add(a.adjust_date, interval %(post_days)s day)
+             and p.ranking > 0 then p.ranking end order by p.dt_date desc, p.ranking asc separator ','), ',', 1), '') as unsigned)
+            as post_small_rank,
+        max(case when p.dt_date between date_sub(a.adjust_date, interval %(pre_days)s day)
+                                      and date_sub(a.adjust_date, interval 1 day)
+                  and p.ranking > 0 then p.dt_date end) as pre_small_rank_date,
+        max(case when p.dt_date between date_add(a.adjust_date, interval 1 day)
+                                       and date_add(a.adjust_date, interval %(post_days)s day)
+                  and p.ranking > 0 then p.dt_date end) as post_small_rank_date
+    from {adjustments} a
+    left join {performance} p
+      on p.seller_name = a.store
+     and p.country = a.country
+     and p.seller_sku_adj = a.msku
+     and p.dt_date between date_sub(a.adjust_date, interval %(pre_days)s day)
+                       and date_add(a.adjust_date, interval %(post_days)s day)
+     and p.dt_date <> a.adjust_date
+    where a.adjust_date between %(adjust_start)s and %(adjust_end)s
+    group by a.adjust_date, a.store, a.msku, a.country, a.seller_name_new, a.local_sku,
+             a.product_name, a.currency, a.price_before, a.price_after, a.drop_ratio
+    """
+
+
+def _station_role_finance_sql(target_schema: str) -> str:
+    adjustments = target_table(target_schema, "price_review_adjustment_source")
+    finance_table = target_table(target_schema, "dashboard_limit_price_daily_snapshot")
+    return f"""
+    with adjustment_keys as (
+        select distinct
+            a.adjust_date,
+            a.country,
+            a.store as station_store,
+            a.seller_name_new,
+            a.msku,
+            a.local_sku,
+            a.currency
+        from {adjustments} a
+        where a.adjust_date between %(adjust_start)s and %(adjust_end)s
+    ), finance_dates as (
+        select
+            a.adjust_date,
+            a.country,
+            a.station_store,
+            a.msku,
+            max(fd.snapshot_date) as finance_snapshot_date
+        from adjustment_keys a
+        left join (
+            select distinct snapshot_date
+            from {finance_table}
+        ) fd on fd.snapshot_date <= a.adjust_date
+        group by a.adjust_date, a.country, a.station_store, a.msku
+    )
+    select
+        a.adjust_date,
+        a.country,
+        a.station_store,
+        a.msku,
+        max(d.finance_snapshot_date) as finance_snapshot_date,
+        count(distinct concat_ws('|', f.margin_price_0, f.margin_price_5, f.margin_price_10,
+            f.margin_price_15, f.margin_price_20, f.margin_price_25, f.margin_price_30, f.margin_price_35))
+            as finance_ladder_variants,
+        max(f.margin_price_0) as margin_price_0,
+        max(f.margin_price_5) as margin_price_5,
+        max(f.margin_price_10) as margin_price_10,
+        max(f.margin_price_15) as margin_price_15,
+        max(f.margin_price_20) as margin_price_20,
+        max(f.margin_price_25) as margin_price_25,
+        max(f.margin_price_30) as margin_price_30,
+        max(f.margin_price_35) as margin_price_35
+    from adjustment_keys a
+    left join finance_dates d
+     on d.adjust_date = a.adjust_date
+     and d.country = a.country
+     and d.station_store = a.station_store
+     and d.msku = a.msku
+    left join {finance_table} f
+      on f.snapshot_date = d.finance_snapshot_date
+     and f.seller_name_new = a.seller_name_new
+     and f.country = a.country
+     and f.seller_sku = a.msku
+     and (a.local_sku is null or a.local_sku = '' or f.local_sku = a.local_sku)
+     and (
+            a.currency is null
+         or a.currency = ''
+         or f.currency = case a.currency
+                when '€' then 'EUR'
+                when '£' then 'GBP'
+                when '$' then 'USD'
+                when '¥' then 'JPY'
+                else a.currency
+            end
+     )
+    group by a.adjust_date, a.country, a.station_store, a.msku
+    """
+
+
+def _load_station_role_finance(cursor, target_schema: str, adjust_start: date, adjust_end: date) -> dict:
+    cursor.execute(
+        _station_role_finance_sql(target_schema),
+        {"adjust_start": adjust_start, "adjust_end": adjust_end},
+    )
+    return {
+        (row["adjust_date"], row["country"], row["station_store"], row["msku"]): row
+        for row in cursor.fetchall()
+    }
+
+
+def _execute_station_role_tracking(
+    target_conn,
+    target_schema: str,
+    adjust_start: date,
+    adjust_end: date,
+    latest_data_date: date,
+) -> int:
+    tracking_table = target_table(target_schema, "price_review_station_role_tracking")
+    insert_sql = _insert_sql(tracking_table, STATION_ROLE_TRACKING_COLUMNS)
+    affected = 0
+    with target_conn.cursor() as cursor:
+        finance_rows = _load_station_role_finance(cursor, target_schema, adjust_start, adjust_end)
+        for post_days in STATION_ROLE_TRACKING_PERIODS:
+            for comparison_mode in STATION_ROLE_COMPARISON_MODES:
+                pre_days = 30 if comparison_mode == "decision_30d" else post_days
+                params = {
+                    "adjust_start": adjust_start,
+                    "adjust_end": adjust_end,
+                    "pre_days": pre_days,
+                    "post_days": post_days,
+                }
+                cursor.execute(
+                    f"""
+                    delete from {tracking_table}
+                    where adjust_date between %(adjust_start)s and %(adjust_end)s
+                      and post_period_days = %(post_days)s
+                      and comparison_mode = %(comparison_mode)s
+                    """,
+                    {**params, "comparison_mode": comparison_mode},
+                )
+                cursor.execute(_station_role_metrics_sql(target_schema), params)
+                rows = cursor.fetchall()
+                payload = []
+                for raw in rows:
+                    raw.update(
+                        finance_rows.get(
+                            (raw["adjust_date"], raw["country"], raw["station_store"], raw["msku"]),
+                            {},
+                        )
+                    )
+                    built = build_station_role_tracking_row(raw, post_days, comparison_mode, latest_data_date)
+                    payload.append({column: built.get(column) for column in STATION_ROLE_TRACKING_COLUMNS})
+                if payload:
+                    cursor.executemany(insert_sql, payload)
+                    affected += len(payload)
+    return affected
 
 
 def execute_price_review_tracking(target_conn, target_schema: str, params: dict[str, object]) -> int:
@@ -551,6 +854,13 @@ def execute_price_review_tracking(target_conn, target_schema: str, params: dict[
                     "local_max_data_date": local_max_data_date,
                 },
             )
+        affected += _execute_station_role_tracking(
+            target_conn,
+            target_schema,
+            _station_role_adjust_start(adjust_start),
+            adjust_end,
+            local_max_data_date,
+        )
     target_conn.commit()
     return affected
 
@@ -954,6 +1264,23 @@ def execute_price_review_step(
             )
         elif step.name == "price_review_tracking":
             affected_rows = execute_price_review_tracking(target_conn, target_schema, params)
+            if source_conn is not None:
+                try:
+                    drift = run_station_sales_role_drift_check(
+                        source_conn,
+                        target_conn,
+                        target_schema,
+                        sample_limit=int(os.getenv("DASHBOARD_STATION_ROLE_DRIFT_SAMPLE", "4000")),
+                        match_threshold=float(os.getenv("DASHBOARD_STATION_ROLE_DRIFT_THRESHOLD", "0.95")),
+                    )
+                    prefix = "success" if drift["status"] == "ok" else "warn"
+                    print(
+                        f"[{prefix}] station_role_drift: data_date={drift['data_date']} "
+                        f"sample={drift['sample_count']} match_rate={drift['match_rate']:.2%} "
+                        f"missing_rate={drift['missing_rate']:.2%}"
+                    )
+                except Exception as exc:
+                    print(f"[warn] station_role_drift check failed: {exc}", file=os.sys.stderr)
         else:
             raise RuntimeError(f"Unknown price review step: {step.name}")
         log_task(target_conn, step.name, params, "success", affected_rows, started_at)
