@@ -41,11 +41,24 @@
   </div>
 </section>
 
-<!-- Unified filter panel -->
-<section class="panel price-review-filter-panel" style="margin-bottom: 18px;">
+<nav class="price-review-view-tabs" aria-label="调价复盘视图">
+  <button class="price-review-view-tab active" type="button" data-price-review-view="performance" aria-selected="true">经营效果</button>
+  <button class="price-review-view-tab" type="button" data-price-review-view="role-migration" aria-selected="false">角色与定价迁移</button>
+</nav>
+
+<header id="priceReviewRoleHeader" class="price-review-role-header" hidden>
+  <div>
+    <p class="section-kicker">站点销售角色</p>
+    <h2>调价前后角色与财务定价区间迁移</h2>
+    <p class="muted">按国家 + 店铺 + MSKU 计算，调价当天不进入调前或调后窗口。</p>
+  </div>
+</header>
+
+<!-- Single filter surface; its fields switch with the active page tab. -->
+<section id="priceReviewFilterPanel" class="panel price-review-filter-panel" style="margin-bottom: 18px;">
   <div class="filters-grid price-review-filters">
-    <label class="filter-control">
-      <span>调价日期</span>
+    <label class="filter-control role-filter-date-block">
+      <span class="role-filter-field-eyebrow"><span>调价日期</span><small>本次调价批次</small></span>
       <div class="snapshot-date-control price-review-date-control">
         <button id="adjustDateButton" class="snapshot-date-trigger" type="button" aria-label="调价日期" aria-expanded="false" aria-controls="adjustCalendarPanel">
           <span id="adjustDateValue">--</span>
@@ -55,6 +68,7 @@
         <div id="adjustCalendarPanel" class="snapshot-calendar-panel" hidden></div>
       </div>
     </label>
+    <div id="priceReviewPerformanceFilters" class="price-review-filter-fields">
     <label class="filter-control">
       <span>对比周期</span>
       <select id="compareDaysSelect">
@@ -95,9 +109,58 @@
       <button id="applyFiltersBtn" class="primary-button" type="button">应用筛选</button>
       <button id="resetFiltersBtn" class="ghost-button" type="button">重置</button>
     </div>
+    </div>
+
+    <div id="priceReviewRoleFilters" class="role-filter-workbench" hidden>
+      <div class="role-filter-timeline">
+        <div class="price-review-role-window-compare" aria-label="调价前后角色观察窗口">
+          <label class="role-window-side is-before">
+            <span class="role-window-eyebrow">调前角色基准</span>
+            <span class="role-window-select-row"><select id="rolePreDaysSelect" aria-label="调前观察周期"><option value="3">3天</option><option value="7">7天</option><option value="14">14天</option><option value="30" selected>30天</option><option value="90">90天</option></select><b>角色</b></span>
+            <small id="rolePreWindowText">截至调价前一天</small>
+          </label>
+          <div class="role-window-pivot" aria-hidden="true">
+            <span class="role-window-arrow">→</span>
+            <strong>调价日</strong>
+            <small>当天不计入</small>
+          </div>
+          <label class="role-window-side is-after">
+            <span class="role-window-eyebrow">调后角色表现</span>
+            <span class="role-window-select-row"><select id="rolePostDaysSelect" aria-label="调后观察周期"><option value="3" selected>3天</option><option value="7">7天</option><option value="14">14天</option><option value="30">30天</option><option value="90">90天</option></select><b>角色</b></span>
+            <small id="rolePostWindowText">从调价后一天开始</small>
+          </label>
+        </div>
+      </div>
+      <aside class="role-filter-data-status" aria-label="本次计算信息">
+        <span class="role-filter-status-label">数据口径</span>
+        <strong id="roleRuleVersion">规则加载中</strong>
+        <span id="roleWindowMeta">计算窗口 —</span>
+        <span id="roleCacheStatusMeta">角色快照 —</span>
+        <span id="roleFinanceSnapshotMeta">财务快照 —</span>
+      </aside>
+      <div class="role-filter-scope-bar">
+        <label class="filter-control"><span>国家</span><select id="roleCountrySelect"><option value="all">全部国家</option></select></label>
+        <label class="filter-control"><span>店铺</span><select id="roleStoreSelect"><option value="all">全部店铺</option></select></label>
+        <label class="filter-control role-filter-keyword"><span>关键词</span><input id="roleKeywordInput" type="search" placeholder="搜索 MSKU / 品名 / 店铺"></label>
+        <div class="filter-control filter-actions price-review-role-filter-actions">
+          <button id="roleAdvancedFiltersBtn" class="ghost-button role-advanced-filter-button" type="button" aria-expanded="false" aria-controls="roleAdvancedFilters">高级筛选 <span id="roleAdvancedFilterCount" class="filter-count-badge" hidden>0</span></button>
+          <button id="applyRoleFiltersBtn" class="primary-button" type="button">查看结果</button>
+          <button id="resetRoleFiltersBtn" class="role-filter-reset-button" type="button">重置条件</button>
+        </div>
+      </div>
+      <div id="roleAdvancedFilters" class="price-review-role-advanced-filters" hidden>
+        <label class="filter-control"><span>调前角色</span><select id="roleBeforeSelect"><option value="all">全部角色</option></select></label>
+        <label class="filter-control"><span>调后角色</span><select id="roleAfterSelect"><option value="all">全部角色</option></select></label>
+        <label class="filter-control"><span>角色变化</span><select id="roleChangeSelect"><option value="all">全部变化</option><option value="up">上升</option><option value="stable">保持</option><option value="down">下降</option></select></label>
+        <label class="filter-control"><span>财务区间变化</span><select id="financeChangeSelect"><option value="all">全部变化</option><option value="up">上移</option><option value="stable">保持</option><option value="down">下移</option><option value="unavailable">无法归类</option></select></label>
+        <label class="filter-control"><span>数据状态</span><select id="roleDataStatusSelect"><option value="all">全部状态</option><option value="complete">已成熟</option><option value="pending">待观察</option><option value="source_incomplete">数据不足</option></select></label>
+      </div>
+      <div id="roleActiveFilterChips" class="price-review-role-filter-chips" aria-live="polite" hidden></div>
+    </div>
   </div>
 </section>
 
+<div id="priceReviewPerformanceView">
 <section class="kpi-section">
   <div class="section-head">
     <div>
@@ -282,6 +345,38 @@
     </div>
   </div>
 </section>
+</div>
+
+<section id="priceReviewRoleMigrationView" class="price-review-role-view" hidden>
+  <div id="roleMigrationKpis" class="price-review-role-kpis"></div>
+
+  <div class="price-review-role-analysis-grid">
+    <article class="panel">
+      <div class="panel-head"><div><p class="section-kicker">角色迁移</p><h3>调前角色 → 调后角色</h3></div><span class="muted">点击格子筛选明细</span></div>
+      <div id="roleMigrationMatrix" class="role-migration-matrix-wrap"></div>
+    </article>
+    <article class="panel price-review-role-insights">
+      <div class="panel-head"><div><p class="section-kicker">变化摘要</p><h3>本次调价角色表现</h3></div></div>
+      <div id="roleMigrationInsights" class="role-migration-insight-list"></div>
+      <div class="finance-migration-section">
+        <div class="finance-migration-heading"><div><span class="section-kicker">财务区间</span><strong>主要迁移路径</strong></div><button id="financeMigrationToggleBtn" class="text-button" type="button" aria-expanded="false">查看全部</button></div>
+      <div id="financeMigrationMatrix" class="finance-migration-list"></div>
+      </div>
+    </article>
+  </div>
+
+  <section class="panel table-section price-review-role-detail-panel">
+    <div class="panel-head"><div><p class="section-kicker">SKU明细</p><h2>站点角色与定价区间明细</h2></div><span id="roleMigrationCount" class="muted"></span></div>
+    <div id="roleLinkedFilterBar" class="price-review-role-linked-filter" hidden><div><span class="filter-context-label">当前联动筛选</span><span id="roleLinkedFilterText"></span></div><button id="clearRoleLinkedFiltersBtn" class="text-button" type="button">清除联动条件</button></div>
+    <div class="table-wrap price-review-role-table-wrap">
+      <table class="price-review-role-table">
+        <thead><tr><th>国家</th><th>店铺</th><th>MSKU</th><th>调前角色</th><th>调后角色</th><th>变化</th><th>调前日销</th><th>调后日销</th><th>调前毛利率</th><th>调后毛利率</th><th>调前财务区间</th><th>调后财务区间</th><th>财务变化</th><th>数据状态</th><th>实际窗口</th></tr></thead>
+        <tbody id="roleMigrationTableBody"></tbody>
+      </table>
+    </div>
+    <div class="pagination-bar"><div id="rolePaginationInfo" class="pagination-info"></div><div class="pagination-controls"><button id="rolePrevPageBtn" class="ghost-button" type="button">上一页</button><div id="rolePaginationNumbers" class="pagination-numbers"></div><button id="roleNextPageBtn" class="ghost-button" type="button">下一页</button></div></div>
+  </section>
+</section>
 {% endblock %}
 
 {% block overlay %}
@@ -300,5 +395,6 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', path='js/price_review.js') }}?v=20260817tablescroll1"></script>
+<script src="{{ url_for('static', path='js/price_review.js') }}?v=20260817roletimelinec"></script>
+<script src="{{ url_for('static', path='js/price_review_role.js') }}?v=20260817roletimelinec"></script>
 {% endblock %}
