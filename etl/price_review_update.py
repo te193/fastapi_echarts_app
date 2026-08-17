@@ -9,14 +9,16 @@ from typing import Iterable
 
 import pymysql
 
-from app.services.station_sales_role import build_station_role_tracking_row
+from app.services.station_sales_role import (
+    SUPPORTED_ROLE_PERIODS,
+    build_station_role_tracking_row,
+    normalize_remote_role_snapshot,
+)
 from etl.station_sales_role_cache import station_role_recent_cache_ddl, sync_recent_station_role_cache
 from etl.station_sales_role_drift_check import run_station_sales_role_drift_check
 
 
 TRACKING_PERIODS = (7, 14, 28)
-STATION_ROLE_TRACKING_PERIODS = (3, 7, 14, 28)
-STATION_ROLE_COMPARISON_MODES = ("decision_30d", "equal_window")
 STATION_ROLE_HISTORY_START = date(2026, 8, 1)
 DEFAULT_LOOKBACK_DAYS = 80
 DEFAULT_QUEUE_LOOKBACK_DAYS = 20
@@ -193,7 +195,7 @@ def _station_role_tracking_ddl(target_schema: str) -> str:
             comparison_mode varchar(32) not null,
             country varchar(64) not null,
             station_store varchar(255) not null,
-            store varchar(128) not null,
+            store varchar(255) not null,
             msku varchar(128) not null,
             local_sku varchar(128) null,
             product_name varchar(512) null,
@@ -229,6 +231,14 @@ def _station_role_tracking_ddl(target_schema: str) -> str:
             role_after_label varchar(32) null,
             role_after_rank int null,
             role_change varchar(32) not null,
+            pre_role_source varchar(32) not null default 'unavailable',
+            post_role_source varchar(32) not null default 'unavailable',
+            pre_source_freshness varchar(16) not null default 'fresh',
+            post_source_freshness varchar(16) not null default 'fresh',
+            pre_source_data_date date null,
+            post_source_data_date date null,
+            pre_source_created_time datetime null,
+            post_source_created_time datetime null,
             data_status varchar(32) not null,
             data_message varchar(255) null,
             finance_snapshot_date date null,
@@ -241,12 +251,51 @@ def _station_role_tracking_ddl(target_schema: str) -> str:
             station_sales_role_rule_source varchar(255) not null,
             created_at datetime not null default current_timestamp,
             updated_at datetime not null default current_timestamp on update current_timestamp,
-            primary key (adjust_date, post_period_days, comparison_mode, country, station_store, msku),
-            key idx_station_role_filter (adjust_date, post_period_days, comparison_mode, country, store),
-            key idx_station_role_change (adjust_date, post_period_days, comparison_mode, role_change),
+            primary key (adjust_date, pre_period_days, post_period_days, country, station_store, msku),
+            key idx_station_role_filter (adjust_date, pre_period_days, post_period_days, country, store),
+            key idx_station_role_change (adjust_date, pre_period_days, post_period_days, role_change),
             key idx_station_role_msku (msku)
         ) engine=InnoDB default charset=utf8mb4;
     """
+
+
+STATION_ROLE_SOURCE_COLUMN_DDL = {
+    "pre_role_source": "varchar(32) not null default 'unavailable'",
+    "post_role_source": "varchar(32) not null default 'unavailable'",
+    "pre_source_freshness": "varchar(16) not null default 'fresh'",
+    "post_source_freshness": "varchar(16) not null default 'fresh'",
+    "pre_source_data_date": "date null",
+    "post_source_data_date": "date null",
+    "pre_source_created_time": "datetime null",
+    "post_source_created_time": "datetime null",
+}
+STATION_ROLE_PRIMARY_COLUMNS = (
+    "adjust_date",
+    "pre_period_days",
+    "post_period_days",
+    "country",
+    "station_store",
+    "msku",
+)
+
+
+def _ensure_station_role_tracking_schema(cursor, target_schema: str) -> None:
+    table = target_table(target_schema, "price_review_station_role_tracking")
+    for column, definition in STATION_ROLE_SOURCE_COLUMN_DDL.items():
+        cursor.execute(f"show columns from {table} like %s", (column,))
+        if not cursor.fetchone():
+            cursor.execute(f"alter table {table} add column `{column}` {definition}")
+
+    cursor.execute(f"show index from {table} where Key_name = 'PRIMARY'")
+    primary_rows = cursor.fetchall()
+    primary_columns = tuple(
+        row["Column_name"]
+        for row in sorted(primary_rows, key=lambda item: int(item["Seq_in_index"]))
+    )
+    if primary_columns != STATION_ROLE_PRIMARY_COLUMNS:
+        cursor.execute(f"delete from {table}")
+        columns = ", ".join(STATION_ROLE_PRIMARY_COLUMNS)
+        cursor.execute(f"alter table {table} drop primary key, add primary key ({columns})")
 
 
 def ensure_price_review_tables(conn, target_schema: str) -> None:
@@ -430,6 +479,7 @@ def ensure_price_review_tables(conn, target_schema: str) -> None:
                 add index idx_store_msku_date (store, msku, adjust_date)
                 """
             )
+        _ensure_station_role_tracking_schema(cursor, target_schema)
     conn.commit()
 
 
@@ -574,7 +624,9 @@ STATION_ROLE_TRACKING_COLUMNS = (
     "post_sales_amount", "pre_order_profit", "post_order_profit", "pre_daily_sales", "post_daily_sales",
     "pre_margin_rate", "post_margin_rate", "pre_small_rank", "post_small_rank", "pre_small_rank_date",
     "post_small_rank_date", "role_before_code", "role_before_label", "role_before_rank", "role_after_code",
-    "role_after_label", "role_after_rank", "role_change", "data_status", "data_message",
+    "role_after_label", "role_after_rank", "role_change", "pre_role_source", "post_role_source",
+    "pre_source_freshness", "post_source_freshness", "pre_source_data_date", "post_source_data_date",
+    "pre_source_created_time", "post_source_created_time", "data_status", "data_message",
     "finance_snapshot_date", "finance_band_before_code", "finance_band_before_label",
     "finance_band_after_code", "finance_band_after_label", "finance_change",
     "station_sales_role_rule_version", "station_sales_role_rule_source",
@@ -585,6 +637,122 @@ def _station_role_adjust_start(adjust_start: date) -> date:
     return max(adjust_start, STATION_ROLE_HISTORY_START)
 
 
+def _station_role_period_pairs() -> tuple[tuple[int, int], ...]:
+    return tuple(
+        (pre_days, post_days)
+        for pre_days in SUPPORTED_ROLE_PERIODS
+        for post_days in SUPPORTED_ROLE_PERIODS
+    )
+
+
+def _station_role_cached_roles_sql(target_schema: str) -> str:
+    adjustments = target_table(target_schema, "price_review_adjustment_source")
+    cache = target_table(target_schema, "station_sales_role_recent_cache")
+    cached_columns = """
+        c.data_date, c.period_days, c.label_period, c.country,
+        c.station_store, c.msku, c.label_id, c.role_code, c.role_label,
+        c.evidence_json, c.rule_version, c.source_created_time as created_time
+    """
+    return f"""
+        select 'pre' as role_side, a.adjust_date, {cached_columns}
+        from {adjustments} a
+        join {cache} c
+          on c.country = a.country
+         and c.station_store = coalesce(a.seller_name_new, substring_index(a.store, '-', 1))
+         and c.msku = a.msku
+         and c.period_days = %(pre_days)s
+         and c.data_date = date_sub(a.adjust_date, interval 1 day)
+        where a.adjust_date between %(adjust_start)s and %(adjust_end)s
+          and %(pre_days)s in (7, 14, 30, 90)
+        union all
+        select 'post' as role_side, a.adjust_date, {cached_columns}
+        from {adjustments} a
+        join {cache} c
+          on c.country = a.country
+         and c.station_store = coalesce(a.seller_name_new, substring_index(a.store, '-', 1))
+         and c.msku = a.msku
+         and c.period_days = %(post_days)s
+         and c.data_date = date_add(a.adjust_date, interval %(post_days)s day)
+        where a.adjust_date between %(adjust_start)s and %(adjust_end)s
+          and %(post_days)s in (7, 14, 30, 90)
+    """
+
+
+def _load_cached_station_roles(
+    cursor,
+    target_schema: str,
+    adjust_start: date,
+    adjust_end: date,
+    pre_days: int,
+    post_days: int,
+) -> dict[tuple, dict]:
+    cursor.execute(
+        _station_role_cached_roles_sql(target_schema),
+        {
+            "adjust_start": adjust_start,
+            "adjust_end": adjust_end,
+            "pre_days": pre_days,
+            "post_days": post_days,
+        },
+    )
+    snapshots = {}
+    for row in cursor.fetchall():
+        snapshot = normalize_remote_role_snapshot(row)
+        key = (
+            row["role_side"],
+            row["adjust_date"],
+            row["country"],
+            row["station_store"],
+            row["msku"],
+        )
+        snapshots[key] = snapshot
+    return snapshots
+
+
+def _should_refresh_station_role_tracking(
+    existing: dict | None,
+    recent_cache_dates: set[date],
+) -> bool:
+    if not existing or existing.get("data_status") != "complete":
+        return True
+    return any(
+        existing.get(f"{side}_role_source") == "remote_dws"
+        and existing.get(f"{side}_source_data_date") in recent_cache_dates
+        for side in ("pre", "post")
+    )
+
+
+def _load_existing_station_role_rows(
+    cursor,
+    target_schema: str,
+    adjust_start: date,
+    adjust_end: date,
+    pre_days: int,
+    post_days: int,
+) -> dict[tuple, dict]:
+    cursor.execute(
+        f"""
+        select adjust_date, country, station_store, msku, data_status,
+               pre_role_source, post_role_source,
+               pre_source_data_date, post_source_data_date
+        from {target_table(target_schema, 'price_review_station_role_tracking')}
+        where adjust_date between %(adjust_start)s and %(adjust_end)s
+          and pre_period_days = %(pre_days)s
+          and post_period_days = %(post_days)s
+        """,
+        {
+            "adjust_start": adjust_start,
+            "adjust_end": adjust_end,
+            "pre_days": pre_days,
+            "post_days": post_days,
+        },
+    )
+    return {
+        (row["adjust_date"], row["country"], row["station_store"], row["msku"]): row
+        for row in cursor.fetchall()
+    }
+
+
 def _station_role_metrics_sql(target_schema: str) -> str:
     adjustments = target_table(target_schema, "price_review_adjustment_source")
     performance = target_table(target_schema, "dashboard_product_performance_daily")
@@ -592,8 +760,8 @@ def _station_role_metrics_sql(target_schema: str) -> str:
     select
         a.adjust_date,
         coalesce(a.country, '') as country,
-        a.store as station_store,
-        coalesce(a.seller_name_new, substring_index(a.store, '-', 1), '') as store,
+        coalesce(a.seller_name_new, substring_index(a.store, '-', 1), '') as station_store,
+        a.store as store,
         a.msku,
         a.local_sku,
         a.product_name,
@@ -645,7 +813,7 @@ def _station_role_metrics_sql(target_schema: str) -> str:
                   and p.ranking > 0 then p.dt_date end) as post_small_rank_date
     from {adjustments} a
     left join {performance} p
-      on p.seller_name = a.store
+      on p.seller_name_new = coalesce(a.seller_name_new, substring_index(a.store, '-', 1))
      and p.country = a.country
      and p.seller_sku_adj = a.msku
      and p.dt_date between date_sub(a.adjust_date, interval %(pre_days)s day)
@@ -665,7 +833,7 @@ def _station_role_finance_sql(target_schema: str) -> str:
         select distinct
             a.adjust_date,
             a.country,
-            a.store as station_store,
+            coalesce(a.seller_name_new, substring_index(a.store, '-', 1)) as station_store,
             a.seller_name_new,
             a.msku,
             a.local_sku,
@@ -753,39 +921,63 @@ def _execute_station_role_tracking(
     affected = 0
     with target_conn.cursor() as cursor:
         finance_rows = _load_station_role_finance(cursor, target_schema, adjust_start, adjust_end)
-        for post_days in STATION_ROLE_TRACKING_PERIODS:
-            for comparison_mode in STATION_ROLE_COMPARISON_MODES:
-                pre_days = 30 if comparison_mode == "decision_30d" else post_days
-                params = {
-                    "adjust_start": adjust_start,
-                    "adjust_end": adjust_end,
-                    "pre_days": pre_days,
-                    "post_days": post_days,
-                }
-                cursor.execute(
-                    f"""
-                    delete from {tracking_table}
-                    where adjust_date between %(adjust_start)s and %(adjust_end)s
-                      and post_period_days = %(post_days)s
-                      and comparison_mode = %(comparison_mode)s
-                    """,
-                    {**params, "comparison_mode": comparison_mode},
+        cursor.execute(
+            f"select distinct data_date from {target_table(target_schema, 'station_sales_role_recent_cache')}"
+        )
+        recent_cache_dates = {row["data_date"] for row in cursor.fetchall()}
+        for pre_days, post_days in _station_role_period_pairs():
+            params = {
+                "adjust_start": adjust_start,
+                "adjust_end": adjust_end,
+                "pre_days": pre_days,
+                "post_days": post_days,
+            }
+            cached_roles = _load_cached_station_roles(
+                cursor,
+                target_schema,
+                adjust_start,
+                adjust_end,
+                pre_days,
+                post_days,
+            )
+            existing_rows = _load_existing_station_role_rows(
+                cursor,
+                target_schema,
+                adjust_start,
+                adjust_end,
+                pre_days,
+                post_days,
+            )
+            cursor.execute(_station_role_metrics_sql(target_schema), params)
+            rows = cursor.fetchall()
+            payload = []
+            for raw in rows:
+                business_key = (
+                    raw["adjust_date"],
+                    raw["country"],
+                    raw["station_store"],
+                    raw["msku"],
                 )
-                cursor.execute(_station_role_metrics_sql(target_schema), params)
-                rows = cursor.fetchall()
-                payload = []
-                for raw in rows:
-                    raw.update(
-                        finance_rows.get(
-                            (raw["adjust_date"], raw["country"], raw["station_store"], raw["msku"]),
-                            {},
-                        )
-                    )
-                    built = build_station_role_tracking_row(raw, post_days, comparison_mode, latest_data_date)
-                    payload.append({column: built.get(column) for column in STATION_ROLE_TRACKING_COLUMNS})
-                if payload:
-                    cursor.executemany(insert_sql, payload)
-                    affected += len(payload)
+                if not _should_refresh_station_role_tracking(
+                    existing_rows.get(business_key),
+                    recent_cache_dates,
+                ):
+                    continue
+                raw.update(finance_rows.get(business_key, {}))
+                pre_snapshot = cached_roles.get(("pre", *business_key))
+                post_snapshot = cached_roles.get(("post", *business_key))
+                built = build_station_role_tracking_row(
+                    raw,
+                    pre_days,
+                    post_days,
+                    latest_data_date,
+                    pre_snapshot=pre_snapshot,
+                    post_snapshot=post_snapshot,
+                )
+                payload.append({column: built.get(column) for column in STATION_ROLE_TRACKING_COLUMNS})
+            if payload:
+                cursor.executemany(insert_sql, payload)
+                affected += len(payload)
     return affected
 
 
