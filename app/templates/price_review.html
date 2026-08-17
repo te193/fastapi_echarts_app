@@ -138,7 +138,7 @@
       <div id="secondAdjustGapChart" class="chart-host chart-host-echarts"></div>
     </article>
   </div>
-  <div class="table-wrap ag-grid-shell price-review-grid-shell compact" style="margin-top: 18px;">
+  <div class="table-wrap ag-grid-shell price-review-grid-shell compact price-review-scroll-grid price-review-scroll-grid--compact" style="margin-top: 18px;">
     <div id="secondAdjustGrid"></div>
   </div>
 </section>
@@ -183,7 +183,7 @@
     </div>
     <div id="countryChart" class="chart-host chart-host-echarts"></div>
   </article>
-  <div class="table-wrap price-review-country-table-wrap" style="margin-top: 18px;">
+  <div class="table-wrap price-review-country-table-wrap price-review-scroll-table" style="margin-top: 18px;">
     <table class="price-review-country-table">
       <thead>
         <tr>
@@ -252,7 +252,7 @@
       <button id="exportTopListBtn" class="ghost-button" type="button">导出当前榜单</button>
     </div>
   </div>
-  <div class="table-wrap ag-grid-shell price-review-grid-shell">
+  <div class="table-wrap ag-grid-shell price-review-grid-shell price-review-scroll-grid price-review-scroll-grid--top">
     <div id="topListGrid"></div>
   </div>
 </section>
@@ -269,7 +269,7 @@
     </div>
   </div>
 
-  <div class="table-wrap ag-grid-shell">
+  <div class="table-wrap ag-grid-shell price-review-scroll-grid price-review-scroll-grid--detail">
     <div id="priceReviewSkuGrid"></div>
   </div>
 
@@ -300,5 +300,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', path='js/price_review.js') }}?v=20260714calendar3"></script>
+<script src="{{ url_for('static', path='js/price_review.js') }}?v=20260817tablescroll1"></script>
 {% endblock %}

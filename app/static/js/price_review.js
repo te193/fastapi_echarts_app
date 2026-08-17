@@ -1313,6 +1313,7 @@
     if (!elements.secondAdjustGrid) return;
     window.kanbanGrid.makeGrid("secondAdjustGrid", {
       rowData: items || [],
+      domLayout: "normal",
       overlayNoRowsTemplate: '<span class="ag-empty-copy">当前筛选条件下没有二次调价数据</span>',
       rowHeight: 44,
       columnDefs: [
@@ -1340,6 +1341,7 @@
     if (!elements.topListGrid) return;
     window.kanbanGrid.makeGrid("topListGrid", {
       rowData: items,
+      domLayout: "normal",
       overlayNoRowsTemplate: '<span class="ag-empty-copy">暂无数据</span>',
       columnDefs: [
         { headerName: "国家", field: "country", pinned: "left", width: 110 },
@@ -1574,6 +1576,7 @@
     if (!elements.priceReviewSkuGrid) return;
     window.kanbanGrid.makeGrid("priceReviewSkuGrid", {
       rowData: rows || [],
+      domLayout: "normal",
       overlayNoRowsTemplate: '<span class="ag-empty-copy">当前筛选条件下无数据</span>',
       columnDefs: [
         { headerName: "国家", field: "country", pinned: "left", width: 110, sort: skuColSort("country") },

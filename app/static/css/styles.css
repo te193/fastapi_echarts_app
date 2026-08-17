@@ -3257,6 +3257,34 @@ span.flatpickr-weekday {
   width: 100%;
 }
 
+body[data-page="price_review"] .price-review-scroll-grid {
+  height: var(--price-review-grid-height, clamp(360px, 56vh, 620px));
+  overflow: hidden;
+}
+
+body[data-page="price_review"] .price-review-scroll-grid > .kanban-ag-grid {
+  height: 100%;
+  min-height: 0;
+}
+
+body[data-page="price_review"] .price-review-scroll-grid--compact {
+  --price-review-grid-height: clamp(320px, 50vh, 560px);
+}
+
+body[data-page="price_review"] .price-review-scroll-grid--top {
+  --price-review-grid-height: clamp(360px, 56vh, 620px);
+}
+
+body[data-page="price_review"] .price-review-scroll-grid--detail {
+  --price-review-grid-height: clamp(420px, 62vh, 680px);
+}
+
+body[data-page="price_review"] .price-review-scroll-table {
+  max-height: clamp(360px, 56vh, 620px);
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
 .ag-grid-shell.compact .kanban-ag-grid {
   --ag-row-height: 44px;
   --ag-header-height: 42px;

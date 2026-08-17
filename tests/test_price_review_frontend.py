@@ -55,3 +55,38 @@ def test_price_review_date_picker_loads_all_history_separately_from_recent_summa
     assert 'app.apiGet("/api/price-adjustments/daily-counts?include_all=true")' in script
     assert "renderCalendar(recentItems)" in script
     assert "adjustCalendarItems = allItems" in script
+
+
+def test_price_review_main_tables_use_scoped_scroll_containers():
+    template = (ROOT / "app" / "templates" / "price_review.html").read_text(encoding="utf-8")
+
+    assert 'class="table-wrap ag-grid-shell price-review-grid-shell compact price-review-scroll-grid price-review-scroll-grid--compact"' in template
+    assert 'class="table-wrap price-review-country-table-wrap price-review-scroll-table"' in template
+    assert 'class="table-wrap ag-grid-shell price-review-grid-shell price-review-scroll-grid price-review-scroll-grid--top"' in template
+    assert 'class="table-wrap ag-grid-shell price-review-scroll-grid price-review-scroll-grid--detail"' in template
+
+
+def test_price_review_main_tables_use_fixed_viewports_and_sticky_headers():
+    script = (ROOT / "app" / "static" / "js" / "price_review.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+
+    assert script.count('domLayout: "normal"') == 3
+    assert 'body[data-page="price_review"] .price-review-scroll-grid' in styles
+    assert 'body[data-page="price_review"] .price-review-scroll-grid--compact' in styles
+    assert 'body[data-page="price_review"] .price-review-scroll-grid--top' in styles
+    assert 'body[data-page="price_review"] .price-review-scroll-grid--detail' in styles
+    assert 'body[data-page="price_review"] .price-review-scroll-table' in styles
+    country_scroll_rule = styles.split(
+        'body[data-page="price_review"] .price-review-scroll-table', 1
+    )[1].split("}", 1)[0]
+    assert "overflow: auto;" in country_scroll_rule
+    country_header_rule = styles.split(".price-review-country-table th {", 1)[1].split("}", 1)[0]
+    assert "position: sticky;" in country_header_rule
+
+
+def test_price_review_scroll_layout_assets_have_fresh_cache_versions():
+    base_template = (ROOT / "app" / "templates" / "base.html").read_text(encoding="utf-8")
+    page_template = (ROOT / "app" / "templates" / "price_review.html").read_text(encoding="utf-8")
+
+    assert "styles.css') }}?v=20260817tablescroll1" in base_template
+    assert "price_review.js') }}?v=20260817tablescroll1" in page_template
