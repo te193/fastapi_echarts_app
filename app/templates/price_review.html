@@ -142,16 +142,16 @@
         <label class="filter-control"><span>国家</span><select id="roleCountrySelect"><option value="all">全部国家</option></select></label>
         <label class="filter-control"><span>店铺</span><select id="roleStoreSelect"><option value="all">全部店铺</option></select></label>
         <label class="filter-control role-filter-keyword"><span>关键词</span><input id="roleKeywordInput" type="search" placeholder="搜索 MSKU / 品名 / 店铺"></label>
+        <label class="filter-control role-filter-role"><span>调前角色</span><select id="roleBeforeSelect"><option value="all">全部角色</option></select></label>
+        <label class="filter-control role-filter-role"><span>调后角色</span><select id="roleAfterSelect"><option value="all">全部角色</option></select></label>
+        <label class="filter-control role-filter-role"><span>角色变化</span><select id="roleChangeSelect"><option value="all">全部变化</option><option value="up">上升</option><option value="stable">保持</option><option value="down">下降</option></select></label>
         <div class="filter-control filter-actions price-review-role-filter-actions">
-          <button id="roleAdvancedFiltersBtn" class="ghost-button role-advanced-filter-button" type="button" aria-expanded="false" aria-controls="roleAdvancedFilters">高级筛选 <span id="roleAdvancedFilterCount" class="filter-count-badge" hidden>0</span></button>
+          <button id="roleAdvancedFiltersBtn" class="ghost-button role-advanced-filter-button" type="button" aria-expanded="false" aria-controls="roleAdvancedFilters">更多筛选 <span id="roleAdvancedFilterCount" class="filter-count-badge" hidden>0</span></button>
           <button id="applyRoleFiltersBtn" class="primary-button" type="button">查看结果</button>
           <button id="resetRoleFiltersBtn" class="role-filter-reset-button" type="button">重置条件</button>
         </div>
       </div>
       <div id="roleAdvancedFilters" class="price-review-role-advanced-filters" hidden>
-        <label class="filter-control"><span>调前角色</span><select id="roleBeforeSelect"><option value="all">全部角色</option></select></label>
-        <label class="filter-control"><span>调后角色</span><select id="roleAfterSelect"><option value="all">全部角色</option></select></label>
-        <label class="filter-control"><span>角色变化</span><select id="roleChangeSelect"><option value="all">全部变化</option><option value="up">上升</option><option value="stable">保持</option><option value="down">下降</option></select></label>
         <label class="filter-control"><span>财务区间变化</span><select id="financeChangeSelect"><option value="all">全部变化</option><option value="up">上移</option><option value="stable">保持</option><option value="down">下移</option><option value="unavailable">无法归类</option></select></label>
         <label class="filter-control"><span>数据状态</span><select id="roleDataStatusSelect"><option value="all">全部状态</option><option value="complete">已成熟</option><option value="pending">待观察</option><option value="source_incomplete">数据不足</option></select></label>
       </div>

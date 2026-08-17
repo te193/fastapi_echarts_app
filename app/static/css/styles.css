@@ -3700,7 +3700,12 @@ body[data-page="price_review"] .price-review-scroll-table {
 .role-filter-scope-bar {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: minmax(150px, 0.8fr) minmax(150px, 0.8fr) minmax(240px, 1.25fr) auto;
+  grid-template-columns:
+    minmax(120px, 0.65fr)
+    minmax(140px, 0.75fr)
+    minmax(220px, 1.15fr)
+    repeat(3, minmax(130px, 0.72fr))
+    auto;
   gap: 12px;
   align-items: end;
   padding: 12px 16px 14px;
@@ -3709,6 +3714,7 @@ body[data-page="price_review"] .price-review-scroll-table {
 }
 
 .role-filter-scope-bar .filter-control {
+  min-width: 0;
   gap: 6px;
 }
 
@@ -3775,7 +3781,7 @@ body[data-page="price_review"] .price-review-scroll-table {
 }
 
 .price-review-role-filter-actions .role-advanced-filter-button {
-  min-width: 118px;
+  min-width: 108px;
 }
 
 .role-advanced-filter-button.is-active {
@@ -3799,7 +3805,7 @@ body[data-page="price_review"] .price-review-scroll-table {
 .price-review-role-advanced-filters {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  grid-template-columns: repeat(2, minmax(150px, 1fr));
   gap: 12px;
   margin: 2px -4px -4px;
   padding: 14px;
@@ -4211,7 +4217,7 @@ body[data-page="price_review"] .price-review-scroll-table {
 
 @media (max-width: 1280px) {
   .price-review-role-analysis-grid { grid-template-columns: 1fr; }
-  .price-review-role-advanced-filters { grid-template-columns: repeat(3, minmax(150px, 1fr)); }
+  .price-review-role-advanced-filters { grid-template-columns: repeat(2, minmax(150px, 1fr)); }
   .price-review-filter-panel.is-role-mode .filters-grid.price-review-filters {
     grid-template-columns: 190px minmax(420px, 1fr);
   }
@@ -4228,6 +4234,13 @@ body[data-page="price_review"] .price-review-scroll-table {
     border-left: 0;
   }
   .role-filter-data-status #roleWindowMeta { display: none; }
+  .role-filter-scope-bar {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .price-review-filter-panel.is-role-mode .role-filter-scope-bar .price-review-role-filter-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
 }
 
 @media (max-width: 900px) {
@@ -4291,6 +4304,7 @@ body[data-page="price_review"] .price-review-scroll-table {
   .role-filter-data-status { grid-template-columns: 1fr; }
   .role-filter-data-status #roleCacheStatusMeta { display: none; }
   .role-filter-scope-bar { grid-template-columns: minmax(0, 1fr); }
+  .price-review-role-advanced-filters { grid-template-columns: minmax(0, 1fr); }
   .role-filter-scope-bar .role-filter-keyword,
   .price-review-filter-panel.is-role-mode .role-filter-scope-bar .price-review-role-filter-actions {
     grid-column: 1;
