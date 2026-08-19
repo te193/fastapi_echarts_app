@@ -707,6 +707,17 @@ class LabelHubDataTests(unittest.TestCase):
             {"role_missing": 0.5, "history_coverage_insufficient": 0.5},
             {item["code"]: item["share"] for item in payload["insufficient_reasons"]},
         )
+        self.assertEqual(
+            [
+                {
+                    "code": "history_data_insufficient",
+                    "label": "历史数据不足",
+                    "count": 1,
+                    "share": 0.5,
+                }
+            ],
+            payload["display_insufficient_breakdown"],
+        )
 
     def test_stockout_operating_status_fetches_compressed_evidence_from_local_snapshot(self):
         executed = {}
