@@ -773,6 +773,24 @@ class LabelHubDataService:
                 for code, label in STOCKOUT_EVIDENCE_REASON_LABELS.items()
                 if insufficient_reason_keys[code]
             ],
+            "display_insufficient_breakdown": (
+                [
+                    {
+                        "code": "history_data_insufficient",
+                        "label": "历史数据不足",
+                        "count": len(insufficient_reason_keys["history_coverage_insufficient"]),
+                        "share": round(
+                            len(insufficient_reason_keys["history_coverage_insufficient"])
+                            / insufficient_count,
+                            4,
+                        )
+                        if insufficient_count
+                        else 0,
+                    }
+                ]
+                if insufficient_reason_keys["history_coverage_insufficient"]
+                else []
+            ),
             "coverage": {
                 "evaluable_count": evaluable_count,
                 "evaluable_rate": round(evaluable_count / total, 4) if total else 0,

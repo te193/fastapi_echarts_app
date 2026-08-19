@@ -2356,13 +2356,14 @@
     var statuses = payload.statuses || [];
     var notEvaluableRows = statuses.filter(function (status) { return status.group === "not_evaluable"; });
     var evaluableRows = statuses.filter(function (status) { return status.group === "evaluable"; });
-    var reasons = payload.insufficient_reasons || [];
-    var reasonDetails = reasons.length
-      ? '<div class="label-hub-stockout-status-reasons"><b>依据不足原因</b><div>' + reasons.map(function (reason) {
-        return '<span>' + app.escapeHtml(reason.label || reason.code || "-") + ' <strong>' + formatNumber(reason.count || 0) + '</strong> 条</span>';
+    var breakdown = payload.display_insufficient_breakdown || [];
+    var breakdownDetails = breakdown.length
+      ? '<div class="label-hub-stockout-status-breakdown"><b>断货前依据不足细分</b><div class="label-hub-stockout-role-list">' + breakdown.map(function (item) {
+        var share = Math.max(0, Math.min(1, Number(item.share || 0)));
+        return '<div class="label-hub-stockout-role-row status-history-data-insufficient"><span><b>' + app.escapeHtml(item.label || "历史数据不足") + '</b><small>占依据不足 ' + formatPercent(share) + '</small></span><i><em style="width:' + (share * 100).toFixed(1) + '%"></em></i><strong>' + formatNumber(item.count || 0) + '<small> 条</small></strong></div>';
       }).join("") + '</div></div>'
       : "";
-    var groups = '<section class="label-hub-stockout-status-group not-evaluable"><header><b>暂不评价经营表现</b><span>' + formatNumber(coverage.non_evaluable_count || 0) + ' 条 · 占全部 ' + formatPercent(coverage.non_evaluable_rate || 0) + '</span></header><div class="label-hub-stockout-role-list">' + renderRows(notEvaluableRows) + '</div>' + reasonDetails + '</section>' +
+    var groups = '<section class="label-hub-stockout-status-group not-evaluable"><header><b>暂不评价经营表现</b><span>' + formatNumber(coverage.non_evaluable_count || 0) + ' 条 · 占全部 ' + formatPercent(coverage.non_evaluable_rate || 0) + '</span></header><div class="label-hub-stockout-role-list">' + renderRows(notEvaluableRows) + '</div>' + breakdownDetails + '</section>' +
       '<section class="label-hub-stockout-status-group evaluable"><header><b>可评价经营表现</b><span>' + formatNumber(coverage.evaluable_count || 0) + ' 条 · 占全部 ' + formatPercent(coverage.evaluable_rate || 0) + '</span></header><div class="label-hub-stockout-role-list">' + renderRows(evaluableRows) + '</div></section>';
     content.innerHTML = '<div class="label-hub-stockout-role-summary"><span>当前断货 <strong>' + formatNumber(total) + '</strong> 条</span><span>暂不评价 <strong>' + formatNumber(coverage.non_evaluable_count || 0) + '</strong> 条（' + formatPercent(coverage.non_evaluable_rate || 0) + '）</span><span>可评价 <strong>' + formatNumber(coverage.evaluable_count || 0) + '</strong> 条（' + formatPercent(coverage.evaluable_rate || 0) + '）</span></div>' + groups + '<p class="label-hub-stockout-status-note">低量库存边界：当前 FBA 在途 + 本地/采购合计严格小于 ' + formatNumber((payload.supply || {}).low_supply_threshold || 5) + '；等于 5 时继续评价断货前表现。</p>';
   }
