@@ -837,6 +837,19 @@
 
   function selectParent(parentId) {
     state.parent_label_id = parentId;
+    if (Number(parentId) !== 3) {
+      stockoutRoleState.open = false;
+      stockoutRoleState.requestToken += 1;
+      stockoutOperatingStatusState.open = false;
+      stockoutOperatingStatusState.rulesOpen = false;
+      stockoutOperatingStatusState.breakdownOpen = false;
+      stockoutOperatingStatusState.problemBreakdownOpen = false;
+      stockoutOperatingStatusState.requestToken += 1;
+      ["#labelHubStockoutRolePanel", "#labelHubStockoutOperatingStatusPanel"].forEach(function (selector) {
+        var panel = elements.labelHubCategoryDetail.querySelector(selector);
+        if (panel) panel.remove();
+      });
+    }
     syncDiagnosticsVisibility();
     state.compare_parent_id = defaultCompareCategory();
     state.label_period = defaultLabelPeriod(parentId);
