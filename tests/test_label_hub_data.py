@@ -719,6 +719,47 @@ class LabelHubDataTests(unittest.TestCase):
             payload["display_insufficient_breakdown"],
         )
 
+    def test_stockout_operating_status_members_reuse_the_summary_classification(self):
+        stockout = {"metrics": {"fba_available": 0, "fba_in_transit": 5, "local_quantity": 0}}
+        complete_role = {
+            "type": "pre_oos_sales_role",
+            "metrics": {"daily_sales": 1, "period_sales_qty": 30, "tag_margin_rate": 20},
+            "oos": {"history_start_date": "2026-07-01", "oos_start_date": "2026-08-01"},
+            "window": {"period": "30d", "days": 30, "start": "2026-07-01", "end": "2026-07-30"},
+            "calculation": {"mode": "historical_backtrack", "status": "matched"},
+        }
+        short_history_role = {
+            **complete_role,
+            "oos": {"history_start_date": "2026-07-15", "oos_start_date": "2026-08-01"},
+        }
+
+        def fact(msku, label_id, evidence):
+            return {
+                "country_category": "欧洲站", "store": "StoreA", "msku": msku,
+                "label_id": label_id, "label_period": "current" if label_id == 304 else "30d",
+                "evidence_json": evidence,
+            }
+
+        facts = [
+            fact("STAR", 304, stockout),
+            fact("SHORT", 304, stockout),
+            fact("STAR", 2001, complete_role),
+            fact("SHORT", 2001, short_history_role),
+        ]
+        self.service.get_meta = lambda: {"default_data_date": "2026-08-01"}
+        self.service._fetch_stockout_operating_status_facts = lambda data_date: facts
+
+        star_members = self.service.get_stockout_operating_status_members(
+            data_date="2026-08-01", role_period="30d", status_code="star"
+        )
+        history_members = self.service.get_stockout_operating_status_members(
+            data_date="2026-08-01", role_period="30d",
+            status_code="pre_oos_evidence_insufficient", reason_code="history_data_insufficient",
+        )
+
+        self.assertEqual({("欧洲站", "StoreA", "STAR")}, star_members)
+        self.assertEqual({("欧洲站", "StoreA", "SHORT")}, history_members)
+
     def test_stockout_operating_status_fetches_compressed_evidence_from_local_snapshot(self):
         executed = {}
 

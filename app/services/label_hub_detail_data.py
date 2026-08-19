@@ -39,6 +39,11 @@ CURRENT_STOCKOUT_PARENT_ID = 3
 CURRENT_STOCKOUT_CHILD_ID = 304
 STOCKOUT_BEFORE_ROLE_IDS = {2001, 2002, 2003, 2004}
 STOCKOUT_BEFORE_ROLE_PERIODS = {"7d", "14d", "30d", "90d"}
+STOCKOUT_OPERATING_STATUS_CODES = {
+    "low_inventory_edge", "pre_oos_evidence_insufficient", "full_period_zero_sales",
+    "star", "potential", "dog", "loss_issue", "low_margin_issue",
+}
+STOCKOUT_INSUFFICIENT_REASON_CODES = {"history_data_insufficient"}
 COUNTRY_STOCKOUT_BEFORE_ROLE_LABELS = {
     2101: "明星产品",
     2102: "潜力产品",
@@ -240,6 +245,21 @@ class LabelHubDetailDataService:
             raise ValueError("断货前角色筛选包含无效标签")
         if stockout_before_role_ids and not stockout_before_role_period:
             raise ValueError("断货前角色筛选必须指定周期")
+        stockout_operating_status_period = str(filters.get("stockout_operating_status_period") or "")
+        stockout_operating_status = str(filters.get("stockout_operating_status") or "")
+        stockout_insufficient_reason = str(filters.get("stockout_insufficient_reason") or "")
+        if stockout_operating_status_period and stockout_operating_status_period not in STOCKOUT_BEFORE_ROLE_PERIODS:
+            raise ValueError("断货经营状态周期不存在")
+        if stockout_operating_status and stockout_operating_status not in STOCKOUT_OPERATING_STATUS_CODES:
+            raise ValueError("断货经营状态不存在")
+        if stockout_operating_status and not stockout_operating_status_period:
+            raise ValueError("断货经营状态筛选必须指定周期")
+        if stockout_insufficient_reason not in STOCKOUT_INSUFFICIENT_REASON_CODES | {""}:
+            raise ValueError("断货前依据不足细分不存在")
+        if stockout_insufficient_reason and stockout_operating_status != "pre_oos_evidence_insufficient":
+            raise ValueError("断货前依据不足细分必须搭配断货前依据不足状态")
+        if stockout_operating_status and detail_view != "business_unit":
+            raise ValueError("断货经营状态筛选仅支持店铺商品记录明细")
         current_stockout_only = bool(filters.get("current_stockout_only"))
         global_conditions = self._condition_parser(str(filters.get("conditions") or ""))
         detail_conditions = self._condition_parser(str(filters.get("detail_conditions") or ""))
@@ -247,7 +267,7 @@ class LabelHubDetailDataService:
             CURRENT_STOCKOUT_CHILD_ID in conditions.get(CURRENT_STOCKOUT_PARENT_ID, set())
             for conditions in (global_conditions, detail_conditions)
         )
-        evidence_role_period = stockout_before_role_period or (
+        evidence_role_period = stockout_before_role_period or stockout_operating_status_period or (
             "30d" if current_stockout_only or stockout_label_selected else ""
         )
 
@@ -268,6 +288,9 @@ class LabelHubDetailDataService:
             label_period=filters.get("label_period", "all"),
             analysis_parent_ids="|".join(map(str, analysis_parent_ids)),
             analysis_periods="|".join(map(str, analysis_periods)),
+            stockout_operating_status_period=stockout_operating_status_period,
+            stockout_operating_status=stockout_operating_status,
+            stockout_insufficient_reason=stockout_insufficient_reason,
         )
         provider_result = self._business_rows(provider_kwargs)
         if isinstance(provider_result, Mapping):
@@ -290,6 +313,7 @@ class LabelHubDetailDataService:
             or filters.get("sales_trends") or filters.get("daily_sales_bands")
             or filters.get("margin_bands") or filters.get("problems")
             or current_stockout_only or stockout_before_role_period or stockout_before_role_ids
+            or stockout_operating_status
             or (detail_view == "country" and ranking_bands)
         )
         use_country_summary = (
@@ -559,6 +583,9 @@ class LabelHubDetailDataService:
             ("current_stockout_only", False),
             ("stockout_before_role_period", ""),
             ("stockout_before_role_ids", []),
+            ("stockout_operating_status_period", ""),
+            ("stockout_operating_status", ""),
+            ("stockout_insufficient_reason", ""),
             ("detail_conditions", ""), ("problem_mode", "any"),
         )}
         applied.update({
@@ -575,6 +602,9 @@ class LabelHubDetailDataService:
             "current_stockout_only": current_stockout_only,
             "stockout_before_role_period": stockout_before_role_period,
             "stockout_before_role_ids": sorted(stockout_before_role_ids),
+            "stockout_operating_status_period": stockout_operating_status_period,
+            "stockout_operating_status": stockout_operating_status,
+            "stockout_insufficient_reason": stockout_insufficient_reason,
         })
         return {
             "rows": rows, "counts": counts,
