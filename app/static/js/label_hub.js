@@ -48,7 +48,7 @@
   var STOCKOUT_OPERATING_STATUS_LABELS = {
     low_inventory_edge: "低量库存边缘断货", pre_oos_evidence_insufficient: "断货前依据不足",
     full_period_zero_sales: "完整周期零销量", star: "明星产品", potential: "潜力产品",
-    dog: "瘦狗产品", loss_issue: "亏损问题", low_margin_issue: "低毛利问题"
+    dog: "瘦狗产品", problem: "问题产品", loss_issue: "亏损问题", low_margin_issue: "低毛利问题"
   };
   var stockoutRoleState = {
     open: false,
@@ -61,6 +61,7 @@
     open: false,
     rulesOpen: false,
     breakdownOpen: false,
+    problemBreakdownOpen: false,
     period: normalizeStockoutRolePeriod(state.metric_period),
     payload: null,
     requestKey: "",
@@ -278,6 +279,7 @@
       var stockoutOperatingStatusPeriod = event.target.closest("[data-stockout-operating-status-period]");
       var stockoutOperatingStatusRules = event.target.closest("[data-stockout-operating-status-rules]");
       var stockoutOperatingStatusBreakdown = event.target.closest("[data-stockout-operating-status-breakdown]");
+      var stockoutProblemBreakdown = event.target.closest("[data-stockout-problem-breakdown]");
       var stockoutOperatingStatus = event.target.closest("[data-stockout-operating-status-code]");
       var stockoutInsufficientReason = event.target.closest("[data-stockout-insufficient-reason]");
       var ruleButton = event.target.closest("[data-view-rules]");
@@ -293,6 +295,8 @@
         toggleStockoutOperatingStatusRules();
       } else if (stockoutOperatingStatusBreakdown) {
         toggleStockoutOperatingStatusBreakdown();
+      } else if (stockoutProblemBreakdown) {
+        toggleStockoutProblemBreakdown();
       } else if (stockoutInsufficientReason) {
         openStockoutOperatingStatusDetails("pre_oos_evidence_insufficient", stockoutInsufficientReason.dataset.stockoutInsufficientReason || "");
       } else if (stockoutOperatingStatus) {
@@ -2380,17 +2384,36 @@
     function renderRows(statuses) {
       return statuses.map(function (status) {
         var share = Math.max(0, Math.min(1, Number(status.group_share || 0)));
-        var hasBreakdown = status.code === "pre_oos_evidence_insufficient" && (payload.display_insufficient_breakdown || []).length;
+        var isInsufficient = status.code === "pre_oos_evidence_insufficient";
+        var isProblem = status.code === "problem";
+        var hasBreakdown = (isInsufficient && (payload.display_insufficient_breakdown || []).length) || isProblem;
+        var breakdownOpen = isProblem ? stockoutOperatingStatusState.problemBreakdownOpen : stockoutOperatingStatusState.breakdownOpen;
+        var breakdownAttribute = isProblem ? "data-stockout-problem-breakdown" : "data-stockout-operating-status-breakdown";
+        var breakdownControls = isProblem ? "labelHubStockoutProblemBreakdown" : "labelHubStockoutStatusBreakdown";
         var detailButton = hasBreakdown
-          ? '<button type="button" class="label-hub-stockout-status-breakdown-toggle" data-stockout-operating-status-breakdown aria-expanded="' + stockoutOperatingStatusState.breakdownOpen + '" aria-controls="labelHubStockoutStatusBreakdown">' + (stockoutOperatingStatusState.breakdownOpen ? "收起明细" : "明细") + '</button>'
+          ? '<button type="button" class="label-hub-stockout-status-breakdown-toggle" ' + breakdownAttribute + ' aria-expanded="' + breakdownOpen + '" aria-controls="' + breakdownControls + '">' + (breakdownOpen ? "收起明细" : "明细") + '</button>'
           : "";
-        var active = detailState.stockout_operating_status === status.code && detailState.stockout_operating_status_period === stockoutOperatingStatusState.period;
+        var selectedStatus = detailState.stockout_operating_status;
+        var active = (selectedStatus === status.code || (isProblem && ["loss_issue", "low_margin_issue"].indexOf(selectedStatus) >= 0)) && detailState.stockout_operating_status_period === stockoutOperatingStatusState.period;
         return '<div class="label-hub-stockout-status-row-wrap' + (hasBreakdown ? " has-breakdown" : "") + '"><button type="button" class="label-hub-stockout-role-row status-' + app.escapeHtml(status.code || "unknown") + (active ? " active" : "") + '" data-stockout-operating-status-code="' + app.escapeHtml(status.code || "") + '" aria-label="筛选下方经营明细：' + app.escapeHtml(status.label || status.code || "") + '"><span><b>' + app.escapeHtml(status.label || status.code || "-") + '</b><small>占本组 ' + formatPercent(share) + '</small></span><i><em style="width:' + (share * 100).toFixed(1) + '%"></em></i><strong>' + formatNumber(status.business_unit_count) + '<small> 条</small></strong></button>' + detailButton + '</div>';
       }).join("");
     }
     var statuses = payload.statuses || [];
     var notEvaluableRows = statuses.filter(function (status) { return status.group === "not_evaluable"; });
-    var evaluableRows = statuses.filter(function (status) { return status.group === "evaluable"; });
+    var lossIssue = statuses.find(function (status) { return status.code === "loss_issue"; }) || {};
+    var lowMarginIssue = statuses.find(function (status) { return status.code === "low_margin_issue"; }) || {};
+    var problemCount = Number(lossIssue.business_unit_count || 0) + Number(lowMarginIssue.business_unit_count || 0);
+    var evaluableCount = Number(coverage.evaluable_count || 0);
+    var problemStatus = {
+      code: "problem",
+      label: "问题产品",
+      group: "evaluable",
+      business_unit_count: problemCount,
+      group_share: evaluableCount ? problemCount / evaluableCount : 0
+    };
+    var evaluableRows = statuses.filter(function (status) {
+      return status.group === "evaluable" && ["loss_issue", "low_margin_issue"].indexOf(status.code) < 0;
+    }).concat([problemStatus]);
     var breakdown = payload.display_insufficient_breakdown || [];
     var breakdownDetails = stockoutOperatingStatusState.breakdownOpen && breakdown.length
       ? '<div id="labelHubStockoutStatusBreakdown" class="label-hub-stockout-status-breakdown"><b>断货前依据不足细分</b><div class="label-hub-stockout-role-list">' + breakdown.map(function (item) {
@@ -2399,8 +2422,16 @@
         return '<button type="button" class="label-hub-stockout-role-row status-history-data-insufficient' + (active ? " active" : "") + '" data-stockout-insufficient-reason="' + app.escapeHtml(item.code || "") + '" aria-label="筛选下方经营明细：' + app.escapeHtml(item.label || "历史数据不足") + '"><span><b>' + app.escapeHtml(item.label || "历史数据不足") + '</b><small>占依据不足 ' + formatPercent(share) + '</small></span><i><em style="width:' + (share * 100).toFixed(1) + '%"></em></i><strong>' + formatNumber(item.count || 0) + '<small> 条</small></strong></button>';
       }).join("") + '</div></div>'
       : "";
+    var problemBreakdown = [lossIssue, lowMarginIssue].filter(function (item) { return item.code; });
+    var problemBreakdownDetails = stockoutOperatingStatusState.problemBreakdownOpen && problemBreakdown.length
+      ? '<div id="labelHubStockoutProblemBreakdown" class="label-hub-stockout-status-breakdown problem-breakdown"><b>问题产品明细</b><div class="label-hub-stockout-role-list">' + problemBreakdown.map(function (item) {
+        var share = problemCount ? Number(item.business_unit_count || 0) / problemCount : 0;
+        var active = detailState.stockout_operating_status === item.code && detailState.stockout_operating_status_period === stockoutOperatingStatusState.period;
+        return '<button type="button" class="label-hub-stockout-role-row status-' + app.escapeHtml(item.code || "unknown") + (active ? " active" : "") + '" data-stockout-operating-status-code="' + app.escapeHtml(item.code || "") + '" aria-label="筛选下方经营明细：' + app.escapeHtml(item.label || item.code || "") + '"><span><b>' + app.escapeHtml(item.label || item.code || "-") + '</b><small>占问题产品 ' + formatPercent(share) + '</small></span><i><em style="width:' + (share * 100).toFixed(1) + '%"></em></i><strong>' + formatNumber(item.business_unit_count || 0) + '<small> 条</small></strong></button>';
+      }).join("") + '</div></div>'
+      : "";
     var groups = '<section class="label-hub-stockout-status-group not-evaluable"><header><b>暂不评价经营表现</b><span>' + formatNumber(coverage.non_evaluable_count || 0) + ' 条 · 占全部 ' + formatPercent(coverage.non_evaluable_rate || 0) + '</span></header><div class="label-hub-stockout-role-list">' + renderRows(notEvaluableRows) + '</div>' + breakdownDetails + '</section>' +
-      '<section class="label-hub-stockout-status-group evaluable"><header><b>可评价经营表现</b><span>' + formatNumber(coverage.evaluable_count || 0) + ' 条 · 占全部 ' + formatPercent(coverage.evaluable_rate || 0) + '</span></header><div class="label-hub-stockout-role-list">' + renderRows(evaluableRows) + '</div></section>';
+      '<section class="label-hub-stockout-status-group evaluable"><header><b>可评价经营表现</b><span>' + formatNumber(coverage.evaluable_count || 0) + ' 条 · 占全部 ' + formatPercent(coverage.evaluable_rate || 0) + '</span></header><div class="label-hub-stockout-role-list">' + renderRows(evaluableRows) + '</div>' + problemBreakdownDetails + '</section>';
     content.innerHTML = '<div class="label-hub-stockout-role-summary"><span>当前断货 <strong>' + formatNumber(total) + '</strong> 条</span><span>暂不评价 <strong>' + formatNumber(coverage.non_evaluable_count || 0) + '</strong> 条（' + formatPercent(coverage.non_evaluable_rate || 0) + '）</span><span>可评价 <strong>' + formatNumber(coverage.evaluable_count || 0) + '</strong> 条（' + formatPercent(coverage.evaluable_rate || 0) + '）</span></div>' + groups + '<p class="label-hub-stockout-status-note">低量库存边界：当前 FBA 在途 + 本地/采购合计严格小于 ' + formatNumber((payload.supply || {}).low_supply_threshold || 5) + '；等于 5 时继续评价断货前表现。</p>';
   }
 
@@ -2439,6 +2470,7 @@
     if (!stockoutOperatingStatusState.open) {
       stockoutOperatingStatusState.rulesOpen = false;
       stockoutOperatingStatusState.breakdownOpen = false;
+      stockoutOperatingStatusState.problemBreakdownOpen = false;
     }
     if (stockoutOperatingStatusState.open && !stockoutOperatingStatusState.payload) stockoutOperatingStatusState.period = normalizeStockoutRolePeriod(state.metric_period);
     if (lastPayload) renderCategoryDetail(lastPayload);
@@ -2454,9 +2486,15 @@
     renderStockoutOperatingStatusPanelContent();
   }
 
+  function toggleStockoutProblemBreakdown() {
+    stockoutOperatingStatusState.problemBreakdownOpen = !stockoutOperatingStatusState.problemBreakdownOpen;
+    renderStockoutOperatingStatusPanelContent();
+  }
+
   function selectStockoutOperatingStatusPeriod(period) {
     stockoutOperatingStatusState.period = normalizeStockoutRolePeriod(period);
     stockoutOperatingStatusState.breakdownOpen = false;
+    stockoutOperatingStatusState.problemBreakdownOpen = false;
     stockoutOperatingStatusState.payload = null;
     stockoutOperatingStatusState.requestKey = "";
     if (lastPayload) renderCategoryDetail(lastPayload);

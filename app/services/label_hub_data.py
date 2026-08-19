@@ -1843,7 +1843,7 @@ class LabelHubDataService:
         role_period = str(filters.get("role_period") or "30d").lower()
         status_code = str(filters.get("status_code") or "")
         reason_code = str(filters.get("reason_code") or "")
-        valid_status_codes = {code for code, _, _ in STOCKOUT_OPERATING_STATUS_DEFINITIONS}
+        valid_status_codes = {code for code, _, _ in STOCKOUT_OPERATING_STATUS_DEFINITIONS} | {"problem"}
         if status_code not in valid_status_codes:
             raise ValueError("断货经营状态不存在")
         if reason_code and (
@@ -1872,6 +1872,10 @@ class LabelHubDataService:
         )
         if reason_code == "history_data_insufficient":
             return set(payload["_insufficient_reason_members"]["history_coverage_insufficient"])
+        if status_code == "problem":
+            return set(payload["_status_members"]["loss_issue"]) | set(
+                payload["_status_members"]["low_margin_issue"]
+            )
         return set(payload["_status_members"][status_code])
 
     def get_diagnostic_base_rows(self, **filters: Any) -> list[dict[str, Any]]:

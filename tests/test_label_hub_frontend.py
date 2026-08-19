@@ -170,7 +170,7 @@ def test_country_detail_uses_country_scoped_stockout_role_evidence():
     assert 'row.stockout_before_role' in script
     assert 'class="label-hub-stockout-country-role"' in script
     assert ".label-hub-stockout-country-role" in styles
-    assert "js/label_hub.js') }}?v=20260819preooslinkage1" in template
+    assert "js/label_hub.js') }}?v=20260819problemgroup1" in template
 
 
 def test_stockout_evidence_summary_keeps_long_calculation_mode_inside_its_cell():
@@ -208,7 +208,7 @@ def test_stockout_evidence_shows_only_start_date_and_elapsed_days():
     assert summary_rule is not None
     assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in summary_rule.group("body")
     assert "css/styles.css') }}?v=20260814simpleoostime1" in template
-    assert "js/label_hub.js') }}?v=20260819preooslinkage1" in template
+    assert "js/label_hub.js') }}?v=20260819problemgroup1" in template
 
 
 def test_label_hub_detail_workbench_uses_independent_post_flow_and_dual_views():
@@ -261,7 +261,7 @@ def test_label_hub_detail_export_uses_current_filters_and_downloads_csv_blob():
     assert "URL.revokeObjectURL" in script
     assert "function setDetailExportLoading(isLoading)" in script
     assert 'elements.labelHubDetailExport.textContent = isLoading ? "导出中…" : "导出 CSV";' in script
-    assert "js/label_hub.js') }}?v=20260819preooslinkage1" in template
+    assert "js/label_hub.js') }}?v=20260819problemgroup1" in template
 
 
 def test_detail_role_reason_filter_replaces_sales_trend_and_follows_detail_scope():
@@ -1010,7 +1010,7 @@ def test_current_category_detail_uses_period_scoped_distribution():
     assert "distributionById" in script
     assert 'cache: "no-store"' in common
     assert "js/common.js') }}?v=20260818labeltimeout1" in base
-    assert "js/label_hub.js') }}?v=20260819preooslinkage1" in template
+    assert "js/label_hub.js') }}?v=20260819problemgroup1" in template
 
 
 def test_country_detail_overview_matches_label_hub_information_structure():
