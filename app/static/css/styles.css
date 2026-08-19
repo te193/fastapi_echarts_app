@@ -15351,6 +15351,12 @@ body[data-page="label_hub"] {
 .label-hub-stockout-role-toggle i { font-size: 10px; font-style: normal; font-weight: 500; }
 .label-hub-stockout-role-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 .label-hub-stockout-status-note { margin: 8px 0 0; color: var(--muted); font-size: 11px; }
+.label-hub-stockout-status-rules-trigger { align-items: center; background: #eaf3ff; border: 1px solid #8fbbea; border-radius: 50%; color: #1266bd; cursor: pointer; display: inline-flex; font-size: 10px; font-weight: 800; height: 16px; justify-content: center; line-height: 1; margin-left: 3px; padding: 0; vertical-align: 1px; width: 16px; }
+.label-hub-stockout-status-rules-trigger:hover { background: #dcecff; border-color: #4d91d5; }
+.label-hub-stockout-status-rules { background: #f4f8ff; border: 1px solid #d3e2f5; border-radius: 7px; color: #48637c; font-size: 11px; line-height: 1.55; padding: 8px 10px; }
+.label-hub-stockout-status-rules b { color: #183e65; display: block; font-size: 11px; margin-bottom: 3px; }
+.label-hub-stockout-status-rules ol { margin: 0; padding-left: 18px; }
+.label-hub-stockout-status-rules li + li { margin-top: 2px; }
 
 .label-hub-stockout-role-panel {
   background: #fff;
@@ -15449,6 +15455,7 @@ body[data-page="label_hub"] {
 }
 
 .label-hub-stockout-role-toggle:focus-visible,
+.label-hub-stockout-status-rules-trigger:focus-visible,
 .label-hub-stockout-role-periods button:focus-visible,
 .label-hub-stockout-role-row:focus-visible,
 .label-hub-stockout-role-all:focus-visible { outline: 2px solid #1b73cb; outline-offset: 2px; }
