@@ -610,6 +610,21 @@ class LabelHubDataTests(unittest.TestCase):
         )
         self.assertEqual(6, payload["coverage"]["evaluable_count"])
         self.assertEqual(2, payload["coverage"]["non_evaluable_count"])
+        self.assertEqual(0.75, payload["coverage"]["evaluable_rate"])
+        self.assertEqual(0.25, payload["coverage"]["non_evaluable_rate"])
+        self.assertEqual(
+            {
+                "low_inventory_edge": 0.5,
+                "pre_oos_evidence_insufficient": 0.5,
+                "full_period_zero_sales": 0.1667,
+                "star": 0.1667,
+                "potential": 0.1667,
+                "dog": 0.1667,
+                "loss_issue": 0.1667,
+                "low_margin_issue": 0.1667,
+            },
+            {item["code"]: item["group_share"] for item in payload["statuses"]},
+        )
         self.assertEqual(8, sum(item["business_unit_count"] for item in payload["statuses"]))
 
     def test_stockout_operating_status_uses_strict_less_than_five_inventory_boundary(self):
@@ -687,6 +702,10 @@ class LabelHubDataTests(unittest.TestCase):
         self.assertEqual(
             {"role_missing": 1, "history_coverage_insufficient": 1},
             {item["code"]: item["count"] for item in payload["insufficient_reasons"]},
+        )
+        self.assertEqual(
+            {"role_missing": 0.5, "history_coverage_insufficient": 0.5},
+            {item["code"]: item["share"] for item in payload["insufficient_reasons"]},
         )
 
     def test_stockout_operating_status_fetches_compressed_evidence_from_local_snapshot(self):

@@ -734,6 +734,12 @@ class LabelHubDataService:
 
         total = len(stockout_by_key)
         evaluable_count = sum(len(status_keys[code]) for code in evaluable_codes)
+        non_evaluable_count = total - evaluable_count
+        group_totals = {
+            "evaluable": evaluable_count,
+            "not_evaluable": non_evaluable_count,
+        }
+        insufficient_count = len(status_keys["pre_oos_evidence_insufficient"])
         return {
             "role_period": role_period,
             "available_periods": list(STOCKOUT_BEFORE_ROLE_PERIODS),
@@ -750,6 +756,9 @@ class LabelHubDataService:
                     "group": group,
                     "business_unit_count": len(status_keys[code]),
                     "share": round(len(status_keys[code]) / total, 4) if total else 0,
+                    "group_share": round(len(status_keys[code]) / group_totals[group], 4)
+                    if group_totals[group]
+                    else 0,
                 }
                 for code, label, group in STOCKOUT_OPERATING_STATUS_DEFINITIONS
             ],
@@ -758,6 +767,9 @@ class LabelHubDataService:
                     "code": code,
                     "label": label,
                     "count": len(insufficient_reason_keys[code]),
+                    "share": round(len(insufficient_reason_keys[code]) / insufficient_count, 4)
+                    if insufficient_count
+                    else 0,
                 }
                 for code, label in STOCKOUT_EVIDENCE_REASON_LABELS.items()
                 if insufficient_reason_keys[code]
@@ -765,7 +777,8 @@ class LabelHubDataService:
             "coverage": {
                 "evaluable_count": evaluable_count,
                 "evaluable_rate": round(evaluable_count / total, 4) if total else 0,
-                "non_evaluable_count": total - evaluable_count,
+                "non_evaluable_count": non_evaluable_count,
+                "non_evaluable_rate": round(non_evaluable_count / total, 4) if total else 0,
             },
         }
 
