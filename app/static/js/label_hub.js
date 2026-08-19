@@ -2349,16 +2349,22 @@
     var coverage = payload.coverage || {};
     function renderRows(statuses) {
       return statuses.map(function (status) {
-        var share = Math.max(0, Math.min(1, Number(status.share || 0)));
-        return '<div class="label-hub-stockout-role-row"><span><b>' + app.escapeHtml(status.label || status.code || "-") + '</b><small>' + formatPercent(share) + '</small></span><i><em style="width:' + (share * 100).toFixed(1) + '%"></em></i><strong>' + formatNumber(status.business_unit_count) + '<small> 条</small></strong></div>';
+        var share = Math.max(0, Math.min(1, Number(status.group_share || 0)));
+        return '<div class="label-hub-stockout-role-row status-' + app.escapeHtml(status.code || "unknown") + '"><span><b>' + app.escapeHtml(status.label || status.code || "-") + '</b><small>占本组 ' + formatPercent(share) + '</small></span><i><em style="width:' + (share * 100).toFixed(1) + '%"></em></i><strong>' + formatNumber(status.business_unit_count) + '<small> 条</small></strong></div>';
       }).join("");
     }
     var statuses = payload.statuses || [];
     var notEvaluableRows = statuses.filter(function (status) { return status.group === "not_evaluable"; });
     var evaluableRows = statuses.filter(function (status) { return status.group === "evaluable"; });
-    var groups = '<section class="label-hub-stockout-status-group"><header><b>暂不评价经营表现</b><span>' + formatNumber(coverage.non_evaluable_count || 0) + ' 条</span></header><div class="label-hub-stockout-role-list">' + renderRows(notEvaluableRows) + '</div></section>' +
-      '<section class="label-hub-stockout-status-group"><header><b>可评价经营表现</b><span>' + formatNumber(coverage.evaluable_count || 0) + ' 条</span></header><div class="label-hub-stockout-role-list">' + renderRows(evaluableRows) + '</div></section>';
-    content.innerHTML = '<div class="label-hub-stockout-role-summary"><span>当前断货 <strong>' + formatNumber(total) + '</strong> 条</span><span>可评价 <strong>' + formatNumber(coverage.evaluable_count || 0) + '</strong> 条</span><span>暂不评价 <strong>' + formatNumber(coverage.non_evaluable_count || 0) + '</strong> 条</span></div>' + groups + '<p class="label-hub-stockout-status-note">低量库存边界：当前 FBA 在途 + 本地/采购合计严格小于 ' + formatNumber((payload.supply || {}).low_supply_threshold || 5) + '；等于 5 时继续评价断货前表现。</p>';
+    var reasons = payload.insufficient_reasons || [];
+    var reasonDetails = reasons.length
+      ? '<div class="label-hub-stockout-status-reasons"><b>依据不足原因</b><div>' + reasons.map(function (reason) {
+        return '<span>' + app.escapeHtml(reason.label || reason.code || "-") + ' <strong>' + formatNumber(reason.count || 0) + '</strong> 条</span>';
+      }).join("") + '</div></div>'
+      : "";
+    var groups = '<section class="label-hub-stockout-status-group not-evaluable"><header><b>暂不评价经营表现</b><span>' + formatNumber(coverage.non_evaluable_count || 0) + ' 条 · 占全部 ' + formatPercent(coverage.non_evaluable_rate || 0) + '</span></header><div class="label-hub-stockout-role-list">' + renderRows(notEvaluableRows) + '</div>' + reasonDetails + '</section>' +
+      '<section class="label-hub-stockout-status-group evaluable"><header><b>可评价经营表现</b><span>' + formatNumber(coverage.evaluable_count || 0) + ' 条 · 占全部 ' + formatPercent(coverage.evaluable_rate || 0) + '</span></header><div class="label-hub-stockout-role-list">' + renderRows(evaluableRows) + '</div></section>';
+    content.innerHTML = '<div class="label-hub-stockout-role-summary"><span>当前断货 <strong>' + formatNumber(total) + '</strong> 条</span><span>暂不评价 <strong>' + formatNumber(coverage.non_evaluable_count || 0) + '</strong> 条（' + formatPercent(coverage.non_evaluable_rate || 0) + '）</span><span>可评价 <strong>' + formatNumber(coverage.evaluable_count || 0) + '</strong> 条（' + formatPercent(coverage.evaluable_rate || 0) + '）</span></div>' + groups + '<p class="label-hub-stockout-status-note">低量库存边界：当前 FBA 在途 + 本地/采购合计严格小于 ' + formatNumber((payload.supply || {}).low_supply_threshold || 5) + '；等于 5 时继续评价断货前表现。</p>';
   }
 
   function renderStockoutOperatingStatusPanelError(error) {
