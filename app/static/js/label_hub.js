@@ -2331,7 +2331,7 @@
     if (!stockoutOperatingStatusState.open) return "";
     var rulesOpen = stockoutOperatingStatusState.rulesOpen;
     var rules = rulesOpen
-      ? '<div id="labelHubStockoutOperatingStatusRules" class="label-hub-stockout-status-rules" data-stockout-operating-status-rules-panel role="note"><b>判断顺序（前项命中即停止）</b><ol><li>历史不可判：无对应周期角色，或缺少日销/窗口；日销 = 0 且历史起始为空或晚于周期起始。</li><li>低量补给待观察：FBA 在途 + 本地/采购补给 ≤ 5。</li><li>补给与动销不一致：补给 > 5 且日销 = 0。</li><li>明星 / 潜力 / 瘦狗：其余有日销产品，沿用该周期断货前角色。</li><li>亏损问题：问题产品且毛利率 < 0；其余问题产品归入低毛利问题。</li></ol></div>'
+      ? '<div id="labelHubStockoutOperatingStatusRules" class="label-hub-stockout-status-rules" data-stockout-operating-status-rules-panel role="note"><b>判断顺序（前项命中即停止）</b><ol><li>历史不可判：无对应周期角色，或缺少日销、周期起止；日销 = 0 且历史未覆盖完整周期。</li><li>低量补给待观察：历史可判断，且 FBA 在途 + 本地/采购补给 ≤ 5。</li><li>补给与动销不一致：历史完整、日销 = 0、补给总量 > 5。</li><li>明星 / 潜力 / 瘦狗：有销量、补给总量 > 5，沿用该周期断货前角色。</li><li>亏损问题：问题产品且毛利率 < 0；低毛利问题：问题产品且毛利率为 0%–5%。</li></ol></div>'
       : "";
     return '<section id="labelHubStockoutOperatingStatusPanel" class="label-hub-stockout-role-panel label-hub-stockout-status-panel" aria-label="断货经营状态汇总">' +
       '<header><div><strong>断货经营状态 <button type="button" class="label-hub-stockout-status-rules-trigger" data-stockout-operating-status-rules aria-expanded="' + rulesOpen + '" aria-controls="labelHubStockoutOperatingStatusRules" aria-label="查看断货经营状态判断条件">?</button></strong><span>结合断货前表现与当前补给证据，仅统计断货中产品</span></div>' +
