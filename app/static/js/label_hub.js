@@ -54,6 +54,7 @@
   var stockoutOperatingStatusState = {
     open: false,
     rulesOpen: false,
+    breakdownOpen: false,
     period: normalizeStockoutRolePeriod(state.metric_period),
     payload: null,
     requestKey: "",
@@ -270,6 +271,7 @@
       var stockoutOperatingStatusToggle = event.target.closest("[data-stockout-operating-status-toggle]");
       var stockoutOperatingStatusPeriod = event.target.closest("[data-stockout-operating-status-period]");
       var stockoutOperatingStatusRules = event.target.closest("[data-stockout-operating-status-rules]");
+      var stockoutOperatingStatusBreakdown = event.target.closest("[data-stockout-operating-status-breakdown]");
       var ruleButton = event.target.closest("[data-view-rules]");
       var stockoutFormula = event.target.closest("[data-operating-stockout-formula]");
       var returnAttribution = event.target.closest("[data-return-attribution]");
@@ -281,6 +283,8 @@
         toggleStockoutOperatingStatusPanel();
       } else if (stockoutOperatingStatusRules) {
         toggleStockoutOperatingStatusRules();
+      } else if (stockoutOperatingStatusBreakdown) {
+        toggleStockoutOperatingStatusBreakdown();
       } else if (stockoutRolePeriod) {
         selectStockoutRolePeriod(stockoutRolePeriod.dataset.stockoutRolePeriod);
       } else if (stockoutOperatingStatusPeriod) {
@@ -2350,15 +2354,19 @@
     function renderRows(statuses) {
       return statuses.map(function (status) {
         var share = Math.max(0, Math.min(1, Number(status.group_share || 0)));
-        return '<div class="label-hub-stockout-role-row status-' + app.escapeHtml(status.code || "unknown") + '"><span><b>' + app.escapeHtml(status.label || status.code || "-") + '</b><small>占本组 ' + formatPercent(share) + '</small></span><i><em style="width:' + (share * 100).toFixed(1) + '%"></em></i><strong>' + formatNumber(status.business_unit_count) + '<small> 条</small></strong></div>';
+        var hasBreakdown = status.code === "pre_oos_evidence_insufficient" && (payload.display_insufficient_breakdown || []).length;
+        var detailButton = hasBreakdown
+          ? '<button type="button" class="label-hub-stockout-status-breakdown-toggle" data-stockout-operating-status-breakdown aria-expanded="' + stockoutOperatingStatusState.breakdownOpen + '" aria-controls="labelHubStockoutStatusBreakdown">' + (stockoutOperatingStatusState.breakdownOpen ? "收起明细" : "明细") + '</button>'
+          : "";
+        return '<div class="label-hub-stockout-role-row status-' + app.escapeHtml(status.code || "unknown") + (hasBreakdown ? " has-breakdown" : "") + '"><span><b>' + app.escapeHtml(status.label || status.code || "-") + '</b><small>占本组 ' + formatPercent(share) + '</small></span><i><em style="width:' + (share * 100).toFixed(1) + '%"></em></i><strong>' + formatNumber(status.business_unit_count) + '<small> 条</small></strong>' + detailButton + '</div>';
       }).join("");
     }
     var statuses = payload.statuses || [];
     var notEvaluableRows = statuses.filter(function (status) { return status.group === "not_evaluable"; });
     var evaluableRows = statuses.filter(function (status) { return status.group === "evaluable"; });
     var breakdown = payload.display_insufficient_breakdown || [];
-    var breakdownDetails = breakdown.length
-      ? '<div class="label-hub-stockout-status-breakdown"><b>断货前依据不足细分</b><div class="label-hub-stockout-role-list">' + breakdown.map(function (item) {
+    var breakdownDetails = stockoutOperatingStatusState.breakdownOpen && breakdown.length
+      ? '<div id="labelHubStockoutStatusBreakdown" class="label-hub-stockout-status-breakdown"><b>断货前依据不足细分</b><div class="label-hub-stockout-role-list">' + breakdown.map(function (item) {
         var share = Math.max(0, Math.min(1, Number(item.share || 0)));
         return '<div class="label-hub-stockout-role-row status-history-data-insufficient"><span><b>' + app.escapeHtml(item.label || "历史数据不足") + '</b><small>占依据不足 ' + formatPercent(share) + '</small></span><i><em style="width:' + (share * 100).toFixed(1) + '%"></em></i><strong>' + formatNumber(item.count || 0) + '<small> 条</small></strong></div>';
       }).join("") + '</div></div>'
@@ -2400,7 +2408,10 @@
 
   function toggleStockoutOperatingStatusPanel() {
     stockoutOperatingStatusState.open = !stockoutOperatingStatusState.open;
-    if (!stockoutOperatingStatusState.open) stockoutOperatingStatusState.rulesOpen = false;
+    if (!stockoutOperatingStatusState.open) {
+      stockoutOperatingStatusState.rulesOpen = false;
+      stockoutOperatingStatusState.breakdownOpen = false;
+    }
     if (stockoutOperatingStatusState.open && !stockoutOperatingStatusState.payload) stockoutOperatingStatusState.period = normalizeStockoutRolePeriod(state.metric_period);
     if (lastPayload) renderCategoryDetail(lastPayload);
   }
@@ -2410,8 +2421,14 @@
     if (lastPayload) renderCategoryDetail(lastPayload);
   }
 
+  function toggleStockoutOperatingStatusBreakdown() {
+    stockoutOperatingStatusState.breakdownOpen = !stockoutOperatingStatusState.breakdownOpen;
+    renderStockoutOperatingStatusPanelContent();
+  }
+
   function selectStockoutOperatingStatusPeriod(period) {
     stockoutOperatingStatusState.period = normalizeStockoutRolePeriod(period);
+    stockoutOperatingStatusState.breakdownOpen = false;
     stockoutOperatingStatusState.payload = null;
     stockoutOperatingStatusState.requestKey = "";
     if (lastPayload) renderCategoryDetail(lastPayload);
