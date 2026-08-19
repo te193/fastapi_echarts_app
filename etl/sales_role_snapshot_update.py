@@ -10,7 +10,7 @@ SALES_ROLE_RULE_VERSION = "label_id_1_20260702_v1"
 
 
 CREATE_SALES_ROLE_PERIOD_SNAPSHOT_SQL = """
-create table if not exists etl_datasync.dashboard_sales_role_period_snapshot (
+create table if not exists etl_datasync_test.dashboard_sales_role_period_snapshot (
     id bigint unsigned not null auto_increment comment '自增主键',
     snapshot_date date not null comment '快照日期，通常为统计周期结束日的下一天',
     period_code varchar(16) not null comment '统计周期编码：7d/14d/30d/90d',
@@ -69,7 +69,7 @@ create table if not exists etl_datasync.dashboard_sales_role_period_snapshot (
 
 
 DELETE_SALES_ROLE_PERIOD_SNAPSHOT_SQL = """
-delete from etl_datasync.dashboard_sales_role_period_snapshot
+delete from etl_datasync_test.dashboard_sales_role_period_snapshot
 where snapshot_date = %(snapshot_date)s
   and period_code = %(period_code)s
   and period_start = %(period_start)s
@@ -78,7 +78,7 @@ where snapshot_date = %(snapshot_date)s
 
 
 INSERT_SALES_ROLE_PERIOD_SNAPSHOT_SQL = """
-insert into etl_datasync.dashboard_sales_role_period_snapshot (
+insert into etl_datasync_test.dashboard_sales_role_period_snapshot (
     snapshot_date, period_code, period_days, period_start, period_end,
     seller_sku_adj, seller_name_new, country_category, local_sku_sample,
     country_count, countries, source_row_count, period_seen_days, sales_days, inventory_days,
@@ -195,7 +195,7 @@ from (
             sum(p.return_count) as return_count,
             sum(p.return_amount) as return_amount,
             sum(p.net_amount) as net_amount
-        from etl_datasync.dashboard_product_performance_daily p
+        from etl_datasync_test.dashboard_product_performance_daily p
         where p.dt_date between %(period_start)s and %(period_end)s
           and p.seller_sku_adj is not null
           and p.seller_sku_adj != ''
@@ -220,7 +220,7 @@ def latest_product_date(conn, schemas) -> date:
     with conn.cursor() as cursor:
         cursor.execute(
             render_sql(
-                "select max(dt_date) as max_date from etl_datasync.dashboard_product_performance_daily",
+                "select max(dt_date) as max_date from etl_datasync_test.dashboard_product_performance_daily",
                 schemas,
             )
         )

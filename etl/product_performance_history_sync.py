@@ -113,7 +113,7 @@ def latest_success_at(target_conn, schemas) -> datetime | None:
             render_sql(
                 """
                 select max(finished_at) as finished_at
-                from etl_datasync.dashboard_etl_task_log
+                from etl_datasync_test.dashboard_etl_task_log
                 where task_name = %(task_name)s
                   and status = 'success'
                 """,
@@ -263,7 +263,7 @@ def sync_history(
                     render_sql(
                         """
                         select count(*) as row_count
-                        from etl_datasync.dashboard_product_performance_daily
+                        from etl_datasync_test.dashboard_product_performance_daily
                         where dt_date between %(product_start_date)s and %(product_end_date)s
                         """,
                         schemas,

@@ -6,6 +6,7 @@ import time
 from typing import Any
 
 from .dashboard_db import dashboard_service
+from .label_hub_data import LABEL_DETAIL_TABLE, LABEL_FACT_TABLE
 
 
 SUPPORTED_PERIODS = {"7d", "14d", "30d", "90d"}
@@ -196,7 +197,7 @@ class LabelHubRoleDiagnosticService:
         msku: str,
         diagnostic_period: str,
     ) -> list[dict[str, Any]]:
-        sql = """
+        sql = f"""
             select
                 d.label_id as parent_id,
                 d.sub_label_id,
@@ -204,9 +205,9 @@ class LabelHubRoleDiagnosticService:
                 d.tag_rule,
                 f.country,
                 f.label_period,
-                f.evidence_json
-            from dws_datasync.dws_标签表 f force index (idx_label)
-            inner join dws_datasync.dws_标签详情表 d
+                uncompress(f.evidence_blob) as evidence_json
+            from {LABEL_FACT_TABLE} f force index (idx_label_date)
+            inner join {LABEL_DETAIL_TABLE} d
                 on d.sub_label_id = f.label_id
             where f.label_id between 1501 and 1618
               and f.data_date = %s
@@ -217,7 +218,7 @@ class LabelHubRoleDiagnosticService:
               and d.label_id in (15, 16)
             order by f.label_period, d.label_id, f.country, d.sub_label_id
         """
-        with self._dashboard.source_connect() as connection:
+        with self._dashboard.connect(autocommit=True) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     sql,

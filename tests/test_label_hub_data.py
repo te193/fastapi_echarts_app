@@ -9,6 +9,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.services.label_hub_data import (
     CACHE_SECONDS,
     DIAGNOSTIC_PARENT_IDS,
+    FACT_FETCH_EXCLUDED_PARENT_IDS,
+    SOURCE_CONTENT_CHECK_SECONDS,
     SOURCE_INITIAL_CONTENT_CHECK_DELAY_SECONDS,
     LabelHubDataService,
     _missing_metric_units,
@@ -232,6 +234,22 @@ class LabelHubDataTests(unittest.TestCase):
         service._source_validation_started_at = datetime.now() - timedelta(
             seconds=SOURCE_INITIAL_CONTENT_CHECK_DELAY_SECONDS + 1
         )
+        quick_finished = threading.Event()
+        content_calls = []
+        service._fetch_quick_source_fingerprint = lambda: quick_finished.set() or ("quick",)
+        service._fetch_content_source_fingerprint = lambda: content_calls.append(True) or ("content",)
+
+        service._schedule_source_validation()
+
+        self.assertTrue(quick_finished.wait(1))
+        self.assertEqual([], content_calls)
+        self.assertIsNotNone(service._source_content_checked_at)
+
+    def test_source_validation_runs_deep_scan_after_content_interval(self):
+        service = LabelHubDataService()
+        service._source_content_checked_at = datetime.now() - timedelta(
+            seconds=SOURCE_CONTENT_CHECK_SECONDS + 1
+        )
         content_finished = threading.Event()
         service._fetch_quick_source_fingerprint = lambda: ("quick",)
         service._fetch_content_source_fingerprint = lambda: content_finished.set() or ("content",)
@@ -240,6 +258,61 @@ class LabelHubDataTests(unittest.TestCase):
 
         self.assertTrue(content_finished.wait(1))
         self.assertEqual(("content",), service._source_content_fingerprint)
+
+    def test_cached_facts_fetches_diagnostic_labels_in_the_main_query(self):
+        service = LabelHubDataService()
+        calls = []
+        service._fetch_facts = lambda data_date, **kwargs: calls.append(
+            (data_date, kwargs)
+        ) or [{"label_id": 1502}]
+        service._cached_diagnostic_facts = lambda *args, **kwargs: self.fail(
+            "main fact loading must not issue separate diagnostic scans"
+        )
+
+        facts = service._cached_facts("2026-08-17")
+
+        self.assertEqual([{"label_id": 1502}], facts)
+        self.assertEqual(
+            [(
+                "2026-08-17",
+                {"excluded_parent_ids": FACT_FETCH_EXCLUDED_PARENT_IDS},
+            )],
+            calls,
+        )
+
+    def test_cached_facts_shares_one_inflight_load_between_threads(self):
+        service = LabelHubDataService()
+        fetch_started = threading.Event()
+        release_fetch = threading.Event()
+        calls = []
+
+        def fetch(data_date, **kwargs):
+            calls.append((data_date, kwargs))
+            fetch_started.set()
+            self.assertTrue(release_fetch.wait(1))
+            return [{"label_id": 1502}]
+
+        service._fetch_facts = fetch
+        results = []
+        first = threading.Thread(
+            target=lambda: results.append(service._cached_facts("2026-08-17"))
+        )
+        second = threading.Thread(
+            target=lambda: results.append(service._cached_facts("2026-08-17"))
+        )
+
+        first.start()
+        self.assertTrue(fetch_started.wait(1))
+        second.start()
+        release_fetch.set()
+        first.join(1)
+        second.join(1)
+
+        self.assertEqual(1, len(calls))
+        self.assertEqual(
+            [[{"label_id": 1502}], [{"label_id": 1502}]],
+            results,
+        )
 
     def test_public_payload_reuses_the_same_filter_result(self):
         service = LabelHubDataService()
@@ -1310,7 +1383,8 @@ class LabelHubDataTests(unittest.TestCase):
         self.assertEqual([101, 201], [item["label_id"] for item in facts])
         self.assertIn("group_concat", connection.cursor_instance.sql.lower())
         self.assertIn("group by data_date, country, country_category, store, msku", connection.cursor_instance.sql.lower())
-        self.assertIn("dws_标签详情表", connection.cursor_instance.sql)
+        self.assertIn("dashboard_label_detail_snapshot", connection.cursor_instance.sql)
+        self.assertIn("dashboard_label_fact_snapshot", connection.cursor_instance.sql)
         self.assertIn("select sub_label_id", connection.cursor_instance.sql.lower())
         self.assertNotIn("not in (4, 7, 13", connection.cursor_instance.sql.lower())
 

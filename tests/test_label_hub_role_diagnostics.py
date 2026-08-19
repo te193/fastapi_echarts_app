@@ -230,7 +230,8 @@ def test_fetches_all_supported_periods_through_existing_label_index():
             return Cursor()
 
     class Dashboard:
-        def source_connect(self):
+        def connect(self, autocommit=False):
+            assert autocommit is True
             return Connection()
 
     service = LabelHubRoleDiagnosticService(dashboard=Dashboard())
@@ -242,7 +243,9 @@ def test_fetches_all_supported_periods_through_existing_label_index():
         diagnostic_period="30d",
     )
 
-    assert "force index (idx_label)" in executed["sql"]
+    assert "force index (idx_label_date)" in executed["sql"]
+    assert "dashboard_label_fact_snapshot" in executed["sql"]
+    assert "dashboard_label_detail_snapshot" in executed["sql"]
     assert "f.label_id between 1501 and 1618" in executed["sql"]
     assert "f.label_period in ('7d', '14d', '30d', '90d')" in executed["sql"]
     assert executed["params"] == (

@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_label_hub_uses_url_conditions_and_profile_drawer_contract():
     script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
 
-    assert 'app.apiGet("/api/label-hub/meta")' in script
+    assert 'app.apiGet("/api/label-hub/meta", null, META_REQUEST_OPTIONS)' in script
     assert 'app.apiGet("/api/label-hub", buildParams())' in script
     assert 'app.writeQueryState(state);' in script
     assert 'conditions: serializeConditions(state.conditions)' in script
@@ -23,6 +23,21 @@ def test_label_hub_uses_url_conditions_and_profile_drawer_contract():
     assert 'margin_bands: serializeCodes(state.margin_bands)' in script
     assert 'class="label-hub-breakdown-rules"' in script
     assert "panel.rules" in script
+
+
+def test_label_hub_change_requests_allow_remote_cold_cache_to_finish():
+    common = (ROOT / "app" / "static" / "js" / "common.js").read_text(encoding="utf-8")
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+
+    assert "function apiGet(path, params, options)" in common
+    assert "Object.assign({ timeoutMs: 45000 }, options || {})" in common
+    assert "}, settings.timeoutMs);" in common
+    assert "var META_REQUEST_OPTIONS = { timeoutMs: 120000 };" in script
+    assert "var CHANGE_REQUEST_OPTIONS = { timeoutMs: 90000 };" in script
+    assert script.count('"/api/label-hub/changes"') == script.count(
+        '"/api/label-hub/changes",'
+    )
+    assert script.count("CHANGE_REQUEST_OPTIONS") >= 4
 
 
 def test_operation_cards_render_active_return_attribution_and_linked_filter():
@@ -99,7 +114,7 @@ def test_country_detail_uses_country_scoped_stockout_role_evidence():
     assert 'row.stockout_before_role' in script
     assert 'class="label-hub-stockout-country-role"' in script
     assert ".label-hub-stockout-country-role" in styles
-    assert "js/label_hub.js') }}?v=20260814simpleoostime1" in template
+    assert "js/label_hub.js') }}?v=20260818labeltimeout2" in template
 
 
 def test_stockout_evidence_summary_keeps_long_calculation_mode_inside_its_cell():
@@ -137,7 +152,7 @@ def test_stockout_evidence_shows_only_start_date_and_elapsed_days():
     assert summary_rule is not None
     assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in summary_rule.group("body")
     assert "css/styles.css') }}?v=20260814simpleoostime1" in template
-    assert "js/label_hub.js') }}?v=20260814simpleoostime1" in template
+    assert "js/label_hub.js') }}?v=20260818labeltimeout2" in template
 
 
 def test_label_hub_detail_workbench_uses_independent_post_flow_and_dual_views():
@@ -190,7 +205,7 @@ def test_label_hub_detail_export_uses_current_filters_and_downloads_csv_blob():
     assert "URL.revokeObjectURL" in script
     assert "function setDetailExportLoading(isLoading)" in script
     assert 'elements.labelHubDetailExport.textContent = isLoading ? "导出中…" : "导出 CSV";' in script
-    assert "js/label_hub.js') }}?v=20260814simpleoostime1" in template
+    assert "js/label_hub.js') }}?v=20260818labeltimeout2" in template
 
 
 def test_detail_role_reason_filter_replaces_sales_trend_and_follows_detail_scope():
@@ -938,8 +953,8 @@ def test_current_category_detail_uses_period_scoped_distribution():
     assert "payload.distribution || []" in script
     assert "distributionById" in script
     assert 'cache: "no-store"' in common
-    assert "js/common.js') }}?v=20260715cache2" in base
-    assert "js/label_hub.js') }}?v=20260814simpleoostime1" in template
+    assert "js/common.js') }}?v=20260818labeltimeout1" in base
+    assert "js/label_hub.js') }}?v=20260818labeltimeout2" in template
 
 
 def test_country_detail_overview_matches_label_hub_information_structure():

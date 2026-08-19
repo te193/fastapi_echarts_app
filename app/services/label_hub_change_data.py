@@ -15,6 +15,7 @@ from .label_hub_data import (
     LOCAL_VALUE_PRIORITY,
     METRIC_PERIODS,
     REMOTE_PARENT_CHILD_PRIORITY,
+    LABEL_FACT_TABLE,
     _business_unit_key,
     _parse_code_pipe,
     _parse_int_pipe,
@@ -23,7 +24,7 @@ from .label_hub_data import (
 )
 
 
-EVIDENCE_TABLE = "etl_datasync.dashboard_label_rule_evidence_snapshot"
+EVIDENCE_TABLE = "etl_datasync_test.dashboard_label_rule_evidence_snapshot"
 CHANGE_TYPES = {"all", "added", "removed", "changed", "unchanged"}
 CHANGE_SORT_FIELDS = {"change_type", "msku", "previous_label", "current_label", "business_unit_count"}
 ROLE_LABELS = {101: "明星产品", 102: "潜力产品", 103: "瘦狗产品", 104: "问题产品"}
@@ -160,12 +161,13 @@ class LabelHubChangeDataService:
                 cursor.execute(
                     f"""
                     select f.data_date, f.country_category, f.store, f.msku,
-                           f.label_id as sub_label_id, f.label_period, f.evidence_json
-                    from dws_datasync.dws_标签表 f
+                           f.label_id as sub_label_id, f.label_period,
+                           uncompress(f.evidence_blob) as evidence_json
+                    from {LABEL_FACT_TABLE} f
                     where f.data_date in (%(current_date)s, %(previous_date)s)
                       and f.label_id in ({", ".join(child_placeholders)})
                       and f.msku not like 'Amazon.Found.%%'
-                      and f.evidence_json is not null
+                      and f.evidence_blob is not null
                       {period_sql}
                       {unit_sql}
                     """,

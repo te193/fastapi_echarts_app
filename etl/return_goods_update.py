@@ -23,7 +23,7 @@ def source_history_start_date(snapshot_date: date, lookback_days: int) -> date:
     return min(RETURN_HISTORY_START_DATE, snapshot_date)
 
 CREATE_RETURN_EVENTS_SQL = """
-create table if not exists etl_datasync.dashboard_return_goods_events (
+create table if not exists etl_datasync_test.dashboard_return_goods_events (
     snapshot_date date not null,
     return_event_id varchar(40) not null,
     item_key varchar(512) not null,
@@ -77,7 +77,7 @@ create table if not exists etl_datasync.dashboard_return_goods_events (
 """
 
 CREATE_STOCKOUT_POOL_SQL = """
-create table if not exists etl_datasync.dashboard_return_goods_stockout_pool (
+create table if not exists etl_datasync_test.dashboard_return_goods_stockout_pool (
     snapshot_date date not null,
     item_key varchar(512) not null,
     seller_name_new varchar(128) not null,
@@ -96,7 +96,7 @@ create table if not exists etl_datasync.dashboard_return_goods_stockout_pool (
 """
 
 CREATE_STAGE_DAILY_SUMMARY_SQL = """
-create table if not exists etl_datasync.dashboard_return_goods_stage_daily_summary (
+create table if not exists etl_datasync_test.dashboard_return_goods_stage_daily_summary (
     snapshot_date date not null,
     stage_key varchar(32) not null,
     segment_key varchar(32) not null,
@@ -118,7 +118,7 @@ create table if not exists etl_datasync.dashboard_return_goods_stage_daily_summa
 """
 
 CREATE_COUNTRY_METRICS_SQL = """
-create table if not exists etl_datasync.dashboard_return_goods_country_metrics (
+create table if not exists etl_datasync_test.dashboard_return_goods_country_metrics (
     snapshot_date date not null,
     return_event_id varchar(40) not null,
     item_key varchar(512) not null,
@@ -159,27 +159,27 @@ create table if not exists etl_datasync.dashboard_return_goods_country_metrics (
 """
 
 DELETE_RETURN_EVENTS_SQL = """
-delete from etl_datasync.dashboard_return_goods_events
+delete from etl_datasync_test.dashboard_return_goods_events
 where snapshot_date = %(snapshot_date)s;
 """
 
 DELETE_STOCKOUT_POOL_SQL = """
-delete from etl_datasync.dashboard_return_goods_stockout_pool
+delete from etl_datasync_test.dashboard_return_goods_stockout_pool
 where snapshot_date = %(snapshot_date)s;
 """
 
 DELETE_STAGE_DAILY_SUMMARY_SQL = """
-delete from etl_datasync.dashboard_return_goods_stage_daily_summary
+delete from etl_datasync_test.dashboard_return_goods_stage_daily_summary
 where snapshot_date = %(snapshot_date)s;
 """
 
 DELETE_COUNTRY_METRICS_SQL = """
-delete from etl_datasync.dashboard_return_goods_country_metrics
+delete from etl_datasync_test.dashboard_return_goods_country_metrics
 where snapshot_date = %(snapshot_date)s;
 """
 
 INSERT_STOCKOUT_POOL_SQL = """
-insert into etl_datasync.dashboard_return_goods_stockout_pool (
+insert into etl_datasync_test.dashboard_return_goods_stockout_pool (
     snapshot_date, item_key, seller_name_new, country_category, seller_sku_adj,
     local_sku, first_stockout_date, last_stockout_date, stockout_days, period_sales_qty
 )
@@ -203,7 +203,7 @@ from (
         max(local_sku) as local_sku,
         max(coalesce(afn_fulfillable_quantity, 0)) as fba_sellable,
         sum(coalesce(sales_qty, 0)) as sales_qty
-    from etl_datasync.dashboard_product_performance_daily
+    from etl_datasync_test.dashboard_product_performance_daily
     where dt_date between %(source_start_date)s and %(snapshot_date)s
       and seller_name_new is not null and seller_name_new <> ''
       and country_category is not null and country_category <> ''
@@ -216,7 +216,7 @@ having stockout_days > 0;
 """
 
 INSERT_STAGE_DAILY_SUMMARY_SQL = """
-insert into etl_datasync.dashboard_return_goods_stage_daily_summary (
+insert into etl_datasync_test.dashboard_return_goods_stage_daily_summary (
     snapshot_date, stage_key, segment_key, segment_name, stage_day, return_day,
     observable_msku, ordered_msku, cumulative_ordered_msku, sales_qty,
     cumulative_sales_qty, fba_sellable, not_ordered_msku
@@ -235,8 +235,8 @@ latest_events as (
                 partition by e.item_key
                 order by e.return_start_date desc, e.return_round desc
             ) as latest_rank
-        from etl_datasync.dashboard_return_goods_events e
-        inner join etl_datasync.dashboard_return_goods_stockout_pool p
+        from etl_datasync_test.dashboard_return_goods_events e
+        inner join etl_datasync_test.dashboard_return_goods_stockout_pool p
                 on p.snapshot_date = e.snapshot_date
                and p.item_key = e.item_key
         where e.snapshot_date = %(snapshot_date)s
@@ -255,7 +255,7 @@ daily_msku as (
         seller_sku_adj,
         sum(coalesce(sales_qty, 0)) as sales_qty,
         max(coalesce(afn_fulfillable_quantity, 0)) as fba_sellable
-    from etl_datasync.dashboard_product_performance_daily
+    from etl_datasync_test.dashboard_product_performance_daily
     where dt_date between %(source_start_date)s and %(snapshot_date)s
       and seller_name_new is not null and seller_name_new <> ''
       and country_category is not null and country_category <> ''
@@ -398,7 +398,7 @@ with product_daily as (
         sum(coalesce(sales_amount, 0)) as sales_amount,
         sum(coalesce(order_gross_profit, 0)) as order_gross_profit,
         max(coalesce(afn_fulfillable_quantity, 0)) as product_fba_sellable
-    from etl_datasync.dashboard_product_performance_daily
+    from etl_datasync_test.dashboard_product_performance_daily
     where dt_date between %(source_start_date)s and %(snapshot_date)s
       and seller_name_new is not null and seller_name_new <> ''
       and country_category is not null and country_category <> ''
@@ -408,7 +408,7 @@ with product_daily as (
 ),
 latest_inventory as (
     select max(snapshot_date) as snapshot_date
-    from etl_datasync.dashboard_inventory_daily_snapshot
+    from etl_datasync_test.dashboard_inventory_daily_snapshot
     where snapshot_date <= %(snapshot_date)s
 )
 select
@@ -425,7 +425,7 @@ select
     coalesce(i.stock_up_num, 0) as fba_inbound_quantity
 from product_daily p
 cross join latest_inventory li
-left join etl_datasync.dashboard_inventory_daily_snapshot i
+left join etl_datasync_test.dashboard_inventory_daily_snapshot i
        on i.snapshot_date = li.snapshot_date
       and i.seller_name_new = p.seller_name_new
       and i.country_category = p.country_category
@@ -434,7 +434,7 @@ order by p.item_key, p.dt_date;
 """
 
 INSERT_COUNTRY_METRICS_SQL = """
-insert into etl_datasync.dashboard_return_goods_country_metrics (
+insert into etl_datasync_test.dashboard_return_goods_country_metrics (
     snapshot_date, return_event_id, item_key, seller_name_new, country_category, seller_sku_adj,
     country, local_sku_list, metric_window_days, pre_window_start, pre_window_end,
     post_window_start, post_window_end, pre_sales_qty, pre_sales_amount, pre_order_gross_profit,
@@ -450,7 +450,7 @@ with event_windows as (
         date_sub(e.stockout_date, interval 1 day) as pre_window_end,
         e.return_start_date as post_window_start,
         date_add(e.return_start_date, interval greatest(1, coalesce(e.recovery_window_days, least(e.return_days, 21))) - 1 day) as post_window_end
-    from etl_datasync.dashboard_return_goods_events e
+    from etl_datasync_test.dashboard_return_goods_events e
     where e.snapshot_date = %(snapshot_date)s
 ),
 daily_by_country as (
@@ -470,7 +470,7 @@ daily_by_country as (
         sum(coalesce(ad_sales, 0)) as ad_sales,
         sum(coalesce(ad_clicks, 0)) as ad_clicks,
         sum(coalesce(ad_impressions, 0)) as ad_impressions
-    from etl_datasync.dashboard_product_performance_daily
+    from etl_datasync_test.dashboard_product_performance_daily
     where dt_date between %(source_start_date)s and %(snapshot_date)s
       and seller_name_new is not null and seller_name_new <> ''
       and country_category is not null and country_category <> ''
@@ -575,7 +575,7 @@ from aggregated;
 """
 
 INSERT_RETURN_EVENT_SQL = """
-insert into etl_datasync.dashboard_return_goods_events (
+insert into etl_datasync_test.dashboard_return_goods_events (
     snapshot_date, return_event_id, item_key, seller_name_new, country_category,
     seller_sku_adj, local_sku, return_round, stockout_date, return_start_date,
     exit_date, exit_reason, return_days, stage, pre_7d_sales_qty, pre_7d_sales_avg, pre_7d_gross_margin_rate,
@@ -984,10 +984,10 @@ def ensure_return_events_schema(cursor, schemas) -> None:
     ]
     for column_name, alter_sql in migrations:
         cursor.execute(
-            render_sql(f"show columns from etl_datasync.dashboard_return_goods_events like '{column_name}'", schemas)
+            render_sql(f"show columns from etl_datasync_test.dashboard_return_goods_events like '{column_name}'", schemas)
         )
         if not cursor.fetchone():
-            cursor.execute(render_sql(f"alter table etl_datasync.dashboard_return_goods_events {alter_sql}", schemas))
+            cursor.execute(render_sql(f"alter table etl_datasync_test.dashboard_return_goods_events {alter_sql}", schemas))
 
 
 def rebuild_stockout_pool(cursor, schemas, snapshot_date: date, lookback_days: int) -> int:
@@ -1050,7 +1050,7 @@ def latest_product_date() -> date:
     schemas = build_schema_config()
     with connect_target() as conn:
         with conn.cursor() as cursor:
-            cursor.execute(render_sql("select max(dt_date) as dt_date from etl_datasync.dashboard_product_performance_daily", schemas))
+            cursor.execute(render_sql("select max(dt_date) as dt_date from etl_datasync_test.dashboard_product_performance_daily", schemas))
             row = cursor.fetchone() or {}
     if not row.get("dt_date"):
         raise SystemExit("dashboard_product_performance_daily has no data")

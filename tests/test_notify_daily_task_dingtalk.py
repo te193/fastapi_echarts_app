@@ -1,8 +1,10 @@
 import json
 import os
 from pathlib import Path
+from urllib.error import URLError
+from unittest.mock import Mock, patch
 
-from scripts.notify_daily_task_dingtalk import build_markdown, build_signed_webhook
+from scripts.notify_daily_task_dingtalk import build_markdown, build_signed_webhook, send_markdown
 
 
 def test_build_signed_webhook_adds_timestamp_and_signature():
@@ -15,6 +17,31 @@ def test_build_signed_webhook_adds_timestamp_and_signature():
     assert "access_token=abc" in url
     assert "timestamp=1234567890" in url
     assert "sign=" in url
+
+
+def test_send_markdown_falls_back_to_curl_after_python_ssl_retries():
+    curl_result = Mock(returncode=0, stdout='{"errcode":0,"errmsg":"ok"}', stderr="")
+
+    with (
+        patch(
+            "scripts.notify_daily_task_dingtalk.request.urlopen",
+            side_effect=URLError("SSL: UNEXPECTED_EOF_WHILE_READING"),
+        ) as urlopen,
+        patch("scripts.notify_daily_task_dingtalk.time.sleep"),
+        patch("scripts.notify_daily_task_dingtalk.shutil.which", return_value="curl.exe"),
+        patch("scripts.notify_daily_task_dingtalk.subprocess.run", return_value=curl_result) as run,
+    ):
+        send_markdown(
+            "https://oapi.dingtalk.com/robot/send?access_token=abc",
+            '{"msgtype":"markdown"}',
+            "SECtest",
+        )
+
+    assert urlopen.call_count == 3
+    run.assert_called_once()
+    command = run.call_args.args[0]
+    assert command[0] == "curl.exe"
+    assert "--data-binary" in command
 
 
 def test_build_success_markdown_uses_business_result_template(tmp_path):

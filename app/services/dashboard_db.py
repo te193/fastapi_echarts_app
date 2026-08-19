@@ -28,13 +28,13 @@ SALES_GOAL_BUFFER = 1.01
 MARGIN_GOAL = 0.20
 DEFAULT_DASHBOARD_DAYS = int(os.getenv("DASHBOARD_DEFAULT_PERIOD_DAYS", "90"))
 MATRIX_ALL_VALUE = "__ALL__"
-MATRIX_PERIOD_TABLE = "etl_datasync.dashboard_product_matrix_period_snapshot"
-ALERT_COMPARISON_TABLE = "etl_datasync.dashboard_alert_comparison_snapshot"
-ALERT_MONTHLY_METRIC_TABLE = "etl_datasync.dashboard_alert_monthly_metric_snapshot"
-OPPORTUNITY_COMPARISON_TABLE = "etl_datasync.dashboard_opportunity_comparison_snapshot"
+MATRIX_PERIOD_TABLE = "etl_datasync_test.dashboard_product_matrix_period_snapshot"
+ALERT_COMPARISON_TABLE = "etl_datasync_test.dashboard_alert_comparison_snapshot"
+ALERT_MONTHLY_METRIC_TABLE = "etl_datasync_test.dashboard_alert_monthly_metric_snapshot"
+OPPORTUNITY_COMPARISON_TABLE = "etl_datasync_test.dashboard_opportunity_comparison_snapshot"
 ALERT_DAY_COMPARISONS = {7: "d7", 14: "d14", 30: "d30", 60: "d60", 90: "d90"}
 MARGIN_TRANSITION_LAYERS = ["\u65e0\u6bdb\u5229", "<0%", "0-10%", "10-15%", "15-25%", "25-35%", ">35%"]
-SALES_ROLE_PERIOD_TABLE = "etl_datasync.dashboard_sales_role_period_snapshot"
+SALES_ROLE_PERIOD_TABLE = "etl_datasync_test.dashboard_sales_role_period_snapshot"
 SALES_ROLE_PERIODS = {"3d", "7d", "14d", "30d", "90d"}
 SALES_ROLE_SNAPSHOT_CODE_MAP = {
     "star": "star",
@@ -57,8 +57,8 @@ SALES_ROLE_MARGIN_5 = Decimal("0.05")
 SALES_ROLE_MARGIN_10 = Decimal("0.10")
 SALES_ROLE_MARGIN_15 = Decimal("0.15")
 SALES_ROLE_MARGIN_25 = Decimal("0.25")
-LIFECYCLE_DETAIL_TABLE = "dws_datasync.dws_标签详情表"
-LIFECYCLE_TAG_TABLE = "dws_datasync.dws_标签表"
+LIFECYCLE_DETAIL_TABLE = "etl_datasync_test.dashboard_label_detail_snapshot"
+LIFECYCLE_TAG_TABLE = "etl_datasync_test.dashboard_label_fact_snapshot"
 LIFECYCLE_PARENT_LABEL_ID = 2
 LIFECYCLE_LABEL_IDS = [201, 202, 203, 204, 205]
 LIFECYCLE_WINDOW_BY_ID = {
@@ -129,7 +129,7 @@ class PeriodWindow:
     start_date: date
     end_date: date
     snapshot_date: date
-    period_table: str = "etl_datasync.dashboard_product_period_90d_snapshot"
+    period_table: str = "etl_datasync_test.dashboard_product_period_90d_snapshot"
     period_code: str = "last_90_days"
 
     @property
@@ -1072,7 +1072,7 @@ class DashboardDbService:
         ]
 
     def _inventory_weekly_table(self) -> str:
-        return render_sql("etl_datasync.dashboard_inventory_weekly_snapshot", self.schemas)
+        return render_sql("etl_datasync_test.dashboard_inventory_weekly_snapshot", self.schemas)
 
     def _inventory_weekly_where(
         self,
@@ -1935,22 +1935,10 @@ class DashboardDbService:
         rows: list[dict[str, Any]] = []
         try:
             rows = self._query_lifecycle_options(conn)
-        except pymysql.err.OperationalError as exc:
-            if not (exc.args and exc.args[0] == 1049):
+        except (pymysql.err.OperationalError, pymysql.err.ProgrammingError) as exc:
+            if not (exc.args and exc.args[0] in {1049, 1146}):
                 raise
-            with self.source_connect() as source_conn:
-                rows = self._query_lifecycle_options(source_conn)
-        except pymysql.err.ProgrammingError as exc:
-            if exc.args and exc.args[0] == 1146:
-                try:
-                    with self.source_connect() as source_conn:
-                        rows = self._query_lifecycle_options(source_conn)
-                except pymysql.err.ProgrammingError as source_exc:
-                    if source_exc.args and source_exc.args[0] == 1146:
-                        return list(defaults.values())
-                    raise
-            else:
-                raise
+            return list(defaults.values())
 
         for row in rows:
             label_id = to_int(row.get("sub_label_id"))
@@ -1992,21 +1980,10 @@ class DashboardDbService:
     def _latest_lifecycle_data_date(self, conn) -> date | None:
         try:
             return self._query_latest_lifecycle_data_date(conn)
-        except pymysql.err.OperationalError as exc:
-            if not (exc.args and exc.args[0] == 1049):
+        except (pymysql.err.OperationalError, pymysql.err.ProgrammingError) as exc:
+            if not (exc.args and exc.args[0] in {1049, 1146}):
                 raise
-            with self.source_connect() as source_conn:
-                return self._query_latest_lifecycle_data_date(source_conn)
-        except pymysql.err.ProgrammingError as exc:
-            if exc.args and exc.args[0] == 1146:
-                try:
-                    with self.source_connect() as source_conn:
-                        return self._query_latest_lifecycle_data_date(source_conn)
-                except pymysql.err.ProgrammingError as source_exc:
-                    if source_exc.args and source_exc.args[0] == 1146:
-                        return None
-                    raise
-            raise
+            return None
 
     def _query_latest_lifecycle_data_date(self, conn) -> date | None:
         try:
@@ -2058,7 +2035,7 @@ class DashboardDbService:
         where_sql, params = self._lifecycle_filter_sql(country_category, seller_name_new, keyword)
         params.update({"data_date": lifecycle_date, "label_ids": tuple(LIFECYCLE_LABEL_IDS)})
         try:
-            with self.source_connect() as conn:
+            with self.connect(autocommit=True) as conn:
                 with conn.cursor() as cursor:
                     cursor.execute(
                         f"""
@@ -2232,8 +2209,8 @@ class DashboardDbService:
 
     def _lifecycle_metric_table(self, metric_days: int) -> str:
         if metric_days == 30:
-            return "etl_datasync.dashboard_product_period_30d_snapshot"
-        return "etl_datasync.dashboard_product_period_90d_snapshot"
+            return "etl_datasync_test.dashboard_product_period_30d_snapshot"
+        return "etl_datasync_test.dashboard_product_period_90d_snapshot"
 
     def _period_snapshot_window(
         self,

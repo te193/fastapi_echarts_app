@@ -46,31 +46,31 @@ DEFAULT_STEP_ORDER = [
 ]
 
 REPLENISHMENT_WORK_TABLES = {
-    "tmp_pur_plan_candidate_keys": "etl_datasync.dashboard_replenishment_work_candidate_keys_v3",
-    "tmp_pur_plan_candidate_asins": "etl_datasync.dashboard_replenishment_work_candidate_asins_v3",
-    "tmp_pur_plan_follow_listing_asins": "etl_datasync.dashboard_replenishment_work_follow_listing_asins_v3",
-    "tmp_prod_perf_sku_asin_metrics": "etl_datasync.dashboard_replenishment_work_sku_asin_metrics_v3",
-    "tmp_prod_perf_sku_metrics": "etl_datasync.dashboard_replenishment_work_sku_metrics_v3",
-    "tmp_asin_origin_sales_fallback": "etl_datasync.dashboard_replenishment_work_asin_origin_sales_fallback_v3",
-    "tmp_prod_perf_follow_origin": "etl_datasync.dashboard_replenishment_work_follow_origin_v3",
-    "tmp_prod_perf_sku_follow_metrics": "etl_datasync.dashboard_replenishment_work_sku_follow_metrics_v3",
-    "tmp_followed_origin_links": "etl_datasync.dashboard_replenishment_work_followed_origin_links_v3",
-    "tmp_pur_plan_fba_current": "etl_datasync.dashboard_replenishment_work_fba_current_v3",
-    "tmp_pur_plan_replenish_sug_current": "etl_datasync.dashboard_replenishment_work_restock_current_v3",
-    "tmp_pur_plan_future_history_stat": "etl_datasync.dashboard_replenishment_work_future_history_stat_v3",
-    "tmp_pur_plan_prev_history_stat": "etl_datasync.dashboard_replenishment_work_prev_history_stat_v3",
-    "tmp_pur_plan_sales_change_rate": "etl_datasync.dashboard_replenishment_work_sales_change_rate_v3",
-    "tmp_pur_plan_support_metric_base": "etl_datasync.dashboard_replenishment_work_support_metric_base_v3",
-    "tmp_pur_plan_support_calc_base": "etl_datasync.dashboard_replenishment_work_support_calc_base_v3",
-    "tmp_pur_plan_support_layer_all": "etl_datasync.dashboard_replenishment_work_support_layer_all_v3",
-    "tmp_pur_plan_replenish_calc": "etl_datasync.dashboard_replenishment_work_replenish_calc_v3",
-    "tmp_asin_merge_groups": "etl_datasync.dashboard_replenishment_work_asin_merge_groups_v3",
-    "tmp_asin_merge_latest_performance": "etl_datasync.dashboard_replenishment_work_asin_latest_performance_v1",
-    "tmp_asin_merge_targets": "etl_datasync.dashboard_replenishment_work_asin_merge_targets_v3",
-    "tmp_asin_merge_assignments": "etl_datasync.dashboard_replenishment_work_asin_merge_assignments_v3",
-    "tmp_asin_merge_purchase_fields": "etl_datasync.dashboard_replenishment_work_asin_merge_purchase_fields_v3",
-    "tmp_replenishment_country_listing_price": "etl_datasync.dashboard_replenishment_work_country_listing_price_v3",
-    "tmp_replenishment_moq_gate": "etl_datasync.dashboard_replenishment_work_moq_gate_v1",
+    "tmp_pur_plan_candidate_keys": "etl_datasync_test.dashboard_replenishment_work_candidate_keys_v3",
+    "tmp_pur_plan_candidate_asins": "etl_datasync_test.dashboard_replenishment_work_candidate_asins_v3",
+    "tmp_pur_plan_follow_listing_asins": "etl_datasync_test.dashboard_replenishment_work_follow_listing_asins_v3",
+    "tmp_prod_perf_sku_asin_metrics": "etl_datasync_test.dashboard_replenishment_work_sku_asin_metrics_v3",
+    "tmp_prod_perf_sku_metrics": "etl_datasync_test.dashboard_replenishment_work_sku_metrics_v3",
+    "tmp_asin_origin_sales_fallback": "etl_datasync_test.dashboard_replenishment_work_asin_origin_sales_fallback_v3",
+    "tmp_prod_perf_follow_origin": "etl_datasync_test.dashboard_replenishment_work_follow_origin_v3",
+    "tmp_prod_perf_sku_follow_metrics": "etl_datasync_test.dashboard_replenishment_work_sku_follow_metrics_v3",
+    "tmp_followed_origin_links": "etl_datasync_test.dashboard_replenishment_work_followed_origin_links_v3",
+    "tmp_pur_plan_fba_current": "etl_datasync_test.dashboard_replenishment_work_fba_current_v3",
+    "tmp_pur_plan_replenish_sug_current": "etl_datasync_test.dashboard_replenishment_work_restock_current_v3",
+    "tmp_pur_plan_future_history_stat": "etl_datasync_test.dashboard_replenishment_work_future_history_stat_v3",
+    "tmp_pur_plan_prev_history_stat": "etl_datasync_test.dashboard_replenishment_work_prev_history_stat_v3",
+    "tmp_pur_plan_sales_change_rate": "etl_datasync_test.dashboard_replenishment_work_sales_change_rate_v3",
+    "tmp_pur_plan_support_metric_base": "etl_datasync_test.dashboard_replenishment_work_support_metric_base_v3",
+    "tmp_pur_plan_support_calc_base": "etl_datasync_test.dashboard_replenishment_work_support_calc_base_v3",
+    "tmp_pur_plan_support_layer_all": "etl_datasync_test.dashboard_replenishment_work_support_layer_all_v3",
+    "tmp_pur_plan_replenish_calc": "etl_datasync_test.dashboard_replenishment_work_replenish_calc_v3",
+    "tmp_asin_merge_groups": "etl_datasync_test.dashboard_replenishment_work_asin_merge_groups_v3",
+    "tmp_asin_merge_latest_performance": "etl_datasync_test.dashboard_replenishment_work_asin_latest_performance_v1",
+    "tmp_asin_merge_targets": "etl_datasync_test.dashboard_replenishment_work_asin_merge_targets_v3",
+    "tmp_asin_merge_assignments": "etl_datasync_test.dashboard_replenishment_work_asin_merge_assignments_v3",
+    "tmp_asin_merge_purchase_fields": "etl_datasync_test.dashboard_replenishment_work_asin_merge_purchase_fields_v3",
+    "tmp_replenishment_country_listing_price": "etl_datasync_test.dashboard_replenishment_work_country_listing_price_v3",
+    "tmp_replenishment_moq_gate": "etl_datasync_test.dashboard_replenishment_work_moq_gate_v1",
 }
 
 
@@ -155,7 +155,7 @@ def apply_database_ini_env(config_path: Path = Path("config/database.ini")) -> N
 
 
 CREATE_SALABLE_DAYS_STAT_SQL = """
-create table if not exists etl_datasync.pur_plan_prod_perf_salable_days_stat (
+create table if not exists etl_datasync_test.pur_plan_prod_perf_salable_days_stat (
     sta_dt date not null,
     country_category varchar(64) not null,
     seller_name_new varchar(128) not null,
@@ -179,7 +179,7 @@ create table if not exists etl_datasync.pur_plan_prod_perf_salable_days_stat (
 """
 
 CREATE_HISTORY_DAILY_SYNC_SQL = """
-create table if not exists etl_datasync.dashboard_replenishment_history_daily_sync (
+create table if not exists etl_datasync_test.dashboard_replenishment_history_daily_sync (
     dt_date date not null,
     country_category varchar(64) not null,
     seller_name_new varchar(128) not null,
@@ -193,7 +193,7 @@ create table if not exists etl_datasync.dashboard_replenishment_history_daily_sy
 """
 
 CREATE_SELF_ASIN_SYNC_SQL = """
-create table if not exists etl_datasync.dashboard_replenishment_self_asin_sync (
+create table if not exists etl_datasync_test.dashboard_replenishment_self_asin_sync (
     seller_name_new varchar(128) not null,
     seller_brand varchar(128) not null,
     asin varchar(64) not null,
@@ -204,7 +204,7 @@ create table if not exists etl_datasync.dashboard_replenishment_self_asin_sync (
 """
 
 CREATE_LISTING_BASIC_SYNC_SQL = """
-create table if not exists etl_datasync.dashboard_replenishment_listing_basic_sync (
+create table if not exists etl_datasync_test.dashboard_replenishment_listing_basic_sync (
     country_category varchar(64) not null,
     seller_name_new varchar(128) not null,
     seller_sku varchar(128) not null,
@@ -237,7 +237,7 @@ create table if not exists etl_datasync.dashboard_replenishment_listing_basic_sy
 """
 
 CREATE_FBA_SHIPMENT_SYNC_SQL = """
-create table if not exists etl_datasync.dashboard_replenishment_fba_shipment_sync (
+create table if not exists etl_datasync_test.dashboard_replenishment_fba_shipment_sync (
     country_category varchar(64) not null,
     seller_name_new varchar(128) not null,
     msku varchar(128) not null,
@@ -255,7 +255,7 @@ create table if not exists etl_datasync.dashboard_replenishment_fba_shipment_syn
 """
 
 CREATE_ORDER_PROFIT_SOURCE_SYNC_SQL = """
-create table if not exists etl_datasync.dashboard_replenishment_order_profit_source (
+create table if not exists etl_datasync_test.dashboard_replenishment_order_profit_source (
     seller_name_new varchar(100) not null,
     seller_sku_adj varchar(100) not null,
     country_category varchar(20) not null,
@@ -269,7 +269,7 @@ create table if not exists etl_datasync.dashboard_replenishment_order_profit_sou
 """
 
 CREATE_SUPPLIER_MOQ_SYNC_SQL = """
-create table if not exists etl_datasync.dashboard_replenishment_supplier_moq_sync (
+create table if not exists etl_datasync_test.dashboard_replenishment_supplier_moq_sync (
     snapshot_date date not null,
     sku varchar(500) not null,
     supplier_moq decimal(18,4) null,
@@ -280,7 +280,7 @@ create table if not exists etl_datasync.dashboard_replenishment_supplier_moq_syn
 """
 
 CREATE_REPLENISHMENT_RESULT_SQL = """
-create table if not exists etl_datasync.dashboard_pur_plan_replenish_data (
+create table if not exists etl_datasync_test.dashboard_pur_plan_replenish_data (
     cur_date date not null,
     new_old_product varchar(64) null,
     seller_sku_adj varchar(128) not null,
@@ -444,7 +444,7 @@ create table if not exists etl_datasync.dashboard_pur_plan_replenish_data (
 """
 
 CREATE_COUNTRY_METRICS_SQL = """
-create table if not exists etl_datasync.dashboard_replenishment_country_metrics (
+create table if not exists etl_datasync_test.dashboard_replenishment_country_metrics (
     snapshot_date date not null,
     period_days int not null,
     period_start date not null,
@@ -526,7 +526,7 @@ LISTING_BASIC_COLUMNS = (
 SUPPLIER_MOQ_COLUMNS = ("snapshot_date", "sku", "supplier_moq")
 
 DELETE_SUPPLIER_MOQ_SYNC_SQL = """
-delete from etl_datasync.dashboard_replenishment_supplier_moq_sync
+delete from etl_datasync_test.dashboard_replenishment_supplier_moq_sync
 where snapshot_date = %(snapshot_date)s
 """
 
@@ -542,7 +542,7 @@ where is_primary = '是'
 group by sku
 """
 
-DELETE_LISTING_BASIC_SYNC_SQL = "delete from etl_datasync.dashboard_replenishment_listing_basic_sync;"
+DELETE_LISTING_BASIC_SYNC_SQL = "delete from etl_datasync_test.dashboard_replenishment_listing_basic_sync;"
 
 SELECT_LISTING_BASIC_SYNC_SQL = """
 select
@@ -705,7 +705,7 @@ SELF_ASIN_COLUMNS = (
     "asin",
 )
 
-DELETE_SELF_ASIN_SYNC_SQL = "delete from etl_datasync.dashboard_replenishment_self_asin_sync;"
+DELETE_SELF_ASIN_SYNC_SQL = "delete from etl_datasync_test.dashboard_replenishment_self_asin_sync;"
 
 SELECT_SELF_ASIN_SYNC_SQL = """
 select distinct
@@ -734,7 +734,7 @@ FBA_SHIPMENT_COLUMNS = (
     "delivery_time_range",
 )
 
-DELETE_FBA_SHIPMENT_SYNC_SQL = "delete from etl_datasync.dashboard_replenishment_fba_shipment_sync;"
+DELETE_FBA_SHIPMENT_SYNC_SQL = "delete from etl_datasync_test.dashboard_replenishment_fba_shipment_sync;"
 
 SELECT_FBA_SHIPMENT_SYNC_SQL = """
 select
@@ -819,7 +819,7 @@ ORDER_PROFIT_SOURCE_COLUMNS = (
 )
 
 DELETE_ORDER_PROFIT_SOURCE_SYNC_SQL = (
-    "delete from etl_datasync.dashboard_replenishment_order_profit_source;"
+    "delete from etl_datasync_test.dashboard_replenishment_order_profit_source;"
 )
 
 SELECT_ORDER_PROFIT_SOURCE_SYNC_SQL = """
@@ -948,7 +948,7 @@ HISTORY_SOURCE_TABLES = {
     2026: "etl_datasync.etl_dispose_lx_statistics_product_performance_2026",
 }
 
-DELETE_HISTORY_DAILY_SYNC_SQL = "delete from etl_datasync.dashboard_replenishment_history_daily_sync;"
+DELETE_HISTORY_DAILY_SYNC_SQL = "delete from etl_datasync_test.dashboard_replenishment_history_daily_sync;"
 
 SELECT_HISTORY_DAILY_SYNC_SQL = """
 select
@@ -966,20 +966,20 @@ group by start_date, country_category, seller_name_new, seller_sku_adj
 CHECK_DAILY_SNAPSHOTS_SQL = """
 select
     (select count(*)
-     from etl_datasync.dashboard_inventory_daily_snapshot
+     from etl_datasync_test.dashboard_inventory_daily_snapshot
      where snapshot_date = %(snapshot_date)s) as inventory_rows,
     (select count(*)
-     from etl_datasync.dashboard_restock_daily_snapshot
+     from etl_datasync_test.dashboard_restock_daily_snapshot
      where snapshot_date = %(snapshot_date)s) as restock_rows;
 """
 
 DELETE_SALABLE_DAYS_SQL = """
-delete from etl_datasync.pur_plan_prod_perf_salable_days_stat
+delete from etl_datasync_test.pur_plan_prod_perf_salable_days_stat
 where sta_dt = %(biz_date)s;
 """
 
 INSERT_SALABLE_DAYS_SQL = """
-insert into etl_datasync.pur_plan_prod_perf_salable_days_stat (
+insert into etl_datasync_test.pur_plan_prod_perf_salable_days_stat (
     sta_dt,
     country_category,
     seller_name_new,
@@ -1000,7 +1000,7 @@ with candidate_keys as (
         country_category,
         seller_name_new,
         seller_sku_adj
-    from etl_datasync.dashboard_product_performance_daily
+    from etl_datasync_test.dashboard_product_performance_daily
     where dt_date between %(candidate_start_date)s and %(biz_date)s
       and seller_sku_adj is not null
       and seller_sku_adj <> ''
@@ -1014,7 +1014,7 @@ product_daily as (
         p.seller_sku_adj,
         sum(coalesce(p.sales_qty, 0)) as sales_qty,
         max(coalesce(p.afn_fulfillable_quantity, 0)) as afn_fulfillable_quantity
-    from etl_datasync.dashboard_product_performance_daily p
+    from etl_datasync_test.dashboard_product_performance_daily p
     inner join candidate_keys c
             on p.country_category = c.country_category
            and p.seller_name_new = c.seller_name_new
@@ -1054,7 +1054,7 @@ inventory_current as (
         seller_name_new,
         seller_sku_adj,
         sum(coalesce(available_total, 0)) as available_total
-    from etl_datasync.dashboard_inventory_daily_snapshot
+    from etl_datasync_test.dashboard_inventory_daily_snapshot
     where snapshot_date = %(snapshot_date)s
     group by country_category, seller_name_new, seller_sku_adj
 )
@@ -1085,7 +1085,7 @@ left join inventory_current i
 """
 
 REPLENISHMENT_RESULT_SQL = """
-delete from etl_datasync.dashboard_pur_plan_replenish_data
+delete from etl_datasync_test.dashboard_pur_plan_replenish_data
 where cur_date = %(snapshot_date)s;
 
 drop temporary table if exists tmp_pur_plan_candidate_keys;
@@ -1096,7 +1096,7 @@ select
     seller_sku_adj,
     max(local_sku) as max_sku,
     group_concat(distinct seller_name separator ',') as seller_name_concat
-from etl_datasync.dashboard_product_performance_daily
+from etl_datasync_test.dashboard_product_performance_daily
 where dt_date between %(candidate_start_date)s and %(biz_date)s
   and seller_sku_adj is not null
   and seller_sku_adj <> ''
@@ -1108,7 +1108,7 @@ select distinct
     candidate.country_category,
     listing.max_asin
 from tmp_pur_plan_candidate_keys candidate
-inner join etl_datasync.dashboard_replenishment_listing_basic_sync listing
+inner join etl_datasync_test.dashboard_replenishment_listing_basic_sync listing
         on candidate.country_category = listing.country_category
        and candidate.seller_name_new = listing.seller_name_new
        and candidate.seller_sku_adj = listing.seller_sku
@@ -1121,10 +1121,10 @@ select
     candidate_asin.country_category,
     candidate_asin.max_asin
 from tmp_pur_plan_candidate_asins candidate_asin
-inner join etl_datasync.dashboard_replenishment_listing_basic_sync listing
+inner join etl_datasync_test.dashboard_replenishment_listing_basic_sync listing
         on candidate_asin.country_category = listing.country_category
        and candidate_asin.max_asin = listing.max_asin
-left join etl_datasync.dashboard_replenishment_self_asin_sync self_asin
+left join etl_datasync_test.dashboard_replenishment_self_asin_sync self_asin
        on listing.seller_name_new = self_asin.seller_name_new
       and listing.max_asin = self_asin.asin
 group by candidate_asin.country_category, candidate_asin.max_asin
@@ -1145,7 +1145,7 @@ select
     listing.seller_sku as seller_sku_adj,
     coalesce(nullif(max(listing.max_sku), ''), listing.seller_sku) as max_sku,
     max(listing.seller_name_concat) as seller_name_concat
-from etl_datasync.dashboard_replenishment_listing_basic_sync listing
+from etl_datasync_test.dashboard_replenishment_listing_basic_sync listing
 inner join tmp_pur_plan_follow_listing_asins follow_asin
         on listing.country_category = follow_asin.country_category
        and listing.max_asin = follow_asin.max_asin
@@ -1153,7 +1153,7 @@ left join tmp_pur_plan_candidate_keys existing
        on listing.country_category = existing.country_category
       and listing.seller_name_new = existing.seller_name_new
       and listing.seller_sku = existing.seller_sku_adj
-left join etl_datasync.dashboard_replenishment_self_asin_sync listing_self
+left join etl_datasync_test.dashboard_replenishment_self_asin_sync listing_self
        on listing.seller_name_new = listing_self.seller_name_new
       and listing.max_asin = listing_self.asin
 where existing.seller_sku_adj is null
@@ -1189,12 +1189,12 @@ select
     sum(case when p.dt_date >= date_sub(%(biz_date)s, interval 13 day) then coalesce(p.order_gross_profit, 0) else 0 end) as pprofit_14,
     sum(case when p.dt_date >= date_sub(%(biz_date)s, interval 6 day) then coalesce(p.order_gross_profit, 0) else 0 end) as pprofit_7,
     sum(case when p.dt_date >= date_sub(%(biz_date)s, interval 2 day) then coalesce(p.order_gross_profit, 0) else 0 end) as pprofit_3
-from etl_datasync.dashboard_product_performance_daily p
+from etl_datasync_test.dashboard_product_performance_daily p
 inner join tmp_pur_plan_candidate_keys c
         on p.country_category = c.country_category
        and p.seller_name_new = c.seller_name_new
        and p.seller_sku_adj = c.seller_sku_adj
-left join etl_datasync.dashboard_replenishment_listing_basic_sync l
+left join etl_datasync_test.dashboard_replenishment_listing_basic_sync l
        on p.country_category = l.country_category
       and p.seller_name_new = l.seller_name_new
       and p.seller_sku_adj = l.seller_sku
@@ -1300,19 +1300,19 @@ from (
                 origin.seller_sku_adj
         ) as rn
     from tmp_prod_perf_sku_asin_metrics origin
-    left join etl_datasync.dashboard_replenishment_self_asin_sync self_asin
+    left join etl_datasync_test.dashboard_replenishment_self_asin_sync self_asin
            on origin.seller_name_new = self_asin.seller_name_new
           and origin.asin = self_asin.asin
     left join tmp_prod_perf_sku_metrics metrics
            on origin.country_category = metrics.country_category
           and origin.seller_name_new = metrics.seller_name_new
           and origin.seller_sku_adj = metrics.seller_sku_adj
-    left join etl_datasync.pur_plan_prod_perf_salable_days_stat origin_ks
+    left join etl_datasync_test.pur_plan_prod_perf_salable_days_stat origin_ks
            on origin_ks.sta_dt = %(biz_date)s
           and origin.country_category = origin_ks.country_category
           and origin.seller_name_new = origin_ks.seller_name_new
           and origin.seller_sku_adj = origin_ks.seller_sku_adj
-    left join etl_datasync.dashboard_replenishment_listing_basic_sync origin_listing
+    left join etl_datasync_test.dashboard_replenishment_listing_basic_sync origin_listing
            on origin.country_category = origin_listing.country_category
           and origin.seller_name_new = origin_listing.seller_name_new
           and origin.seller_sku_adj = origin_listing.seller_sku
@@ -1428,7 +1428,7 @@ select
     max(case when self_asin.asin is null and not (bridge.seller_name_new = fallback.origin_seller_name_new and bridge.seller_sku_adj = fallback.origin_seller_sku_adj) then fallback.origin_principal else null end) as origin_principal,
     max(case when self_asin.asin is null and not (bridge.seller_name_new = fallback.origin_seller_name_new and bridge.seller_sku_adj = fallback.origin_seller_sku_adj) then fallback.origin_sales_team_1 else null end) as origin_sales_team_1
 from tmp_prod_perf_sku_asin_metrics bridge
-left join etl_datasync.dashboard_replenishment_self_asin_sync self_asin
+left join etl_datasync_test.dashboard_replenishment_self_asin_sync self_asin
        on bridge.seller_name_new = self_asin.seller_name_new
       and bridge.asin = self_asin.asin
 left join tmp_asin_origin_sales_fallback fallback
@@ -1513,17 +1513,17 @@ select
         separator ' | '
     ) as followed_by_links
 from tmp_prod_perf_sku_asin_metrics origin
-inner join etl_datasync.dashboard_replenishment_self_asin_sync origin_self
+inner join etl_datasync_test.dashboard_replenishment_self_asin_sync origin_self
         on origin.seller_name_new = origin_self.seller_name_new
        and origin.asin = origin_self.asin
-inner join etl_datasync.dashboard_replenishment_listing_basic_sync follower
+inner join etl_datasync_test.dashboard_replenishment_listing_basic_sync follower
         on follower.country_category = origin.country_category
        and follower.max_asin = origin.asin
        and not (
             follower.seller_name_new = origin.seller_name_new
         and follower.seller_sku = origin.seller_sku_adj
        )
-left join etl_datasync.dashboard_replenishment_self_asin_sync follower_self
+left join etl_datasync_test.dashboard_replenishment_self_asin_sync follower_self
        on follower.seller_name_new = follower_self.seller_name_new
       and follower.max_asin = follower_self.asin
 where origin.asin is not null
@@ -1545,7 +1545,7 @@ select
     sum(coalesce(stock_up_num, 0)) as stock_up_num,
     sum(coalesce(stock_up_num_price, 0)) as stock_up_num_price,
     sum(coalesce(afn_unsellable_quantity, 0)) as afn_unsellable_quantity
-from etl_datasync.dashboard_inventory_daily_snapshot
+from etl_datasync_test.dashboard_inventory_daily_snapshot
 where snapshot_date = %(snapshot_date)s
 group by country_category, seller_name_new, seller_sku_adj;
 
@@ -1560,7 +1560,7 @@ select
     sum(coalesce(purchase_plan_quantity, 0)) as sc_quantity_purchase_plan,
     sum(coalesce(local_valid_quantity, 0)) as sc_quantity_local_valid,
     sum(coalesce(local_qc_quantity, 0)) as sc_quantity_local_qc
-from etl_datasync.dashboard_restock_daily_snapshot
+from etl_datasync_test.dashboard_restock_daily_snapshot
 where snapshot_date = %(snapshot_date)s
 group by country_category, seller_name_new, seller_sku_adj;
 
@@ -1572,7 +1572,7 @@ select
     h.seller_sku_adj,
     sum(case when h.afn_fulfillable_quantity <> 0 then 1 else 0 end) as future_instock_days,
     sum(case when h.afn_fulfillable_quantity <> 0 then h.day_volume else 0 end) as future_instock_sales
-from etl_datasync.dashboard_replenishment_history_daily_sync h
+from etl_datasync_test.dashboard_replenishment_history_daily_sync h
 inner join tmp_pur_plan_candidate_keys c
         on h.country_category = c.country_category
        and h.seller_name_new = c.seller_name_new
@@ -1589,7 +1589,7 @@ select
     h.seller_sku_adj,
     sum(case when h.afn_fulfillable_quantity <> 0 then 1 else 0 end) as prev_instock_days,
     sum(case when h.afn_fulfillable_quantity <> 0 then h.day_volume else 0 end) as prev_matched_sales
-from etl_datasync.dashboard_replenishment_history_daily_sync h
+from etl_datasync_test.dashboard_replenishment_history_daily_sync h
 inner join tmp_pur_plan_candidate_keys c
         on h.country_category = c.country_category
        and h.seller_name_new = c.seller_name_new
@@ -1891,15 +1891,15 @@ from (
            on c.country_category = r.country_category
           and c.seller_name_new = r.seller_name_new
           and c.seller_sku_adj = r.seller_sku_adj
-    left join etl_datasync.dashboard_replenishment_listing_basic_sync l
+    left join etl_datasync_test.dashboard_replenishment_listing_basic_sync l
            on c.country_category = l.country_category
           and c.seller_name_new = l.seller_name_new
           and c.seller_sku_adj = l.seller_sku
-    left join etl_datasync.dashboard_replenishment_fba_shipment_sync fs
+    left join etl_datasync_test.dashboard_replenishment_fba_shipment_sync fs
            on c.country_category = fs.country_category
           and c.seller_name_new = fs.seller_name_new
           and c.seller_sku_adj = fs.msku
-    left join etl_datasync.pur_plan_prod_perf_salable_days_stat ks
+    left join etl_datasync_test.pur_plan_prod_perf_salable_days_stat ks
            on ks.sta_dt = %(biz_date)s
           and c.country_category = ks.country_category
           and c.seller_name_new = ks.seller_name_new
@@ -1908,7 +1908,7 @@ from (
            on c.country_category = scr.country_category
           and c.seller_name_new = scr.seller_name_new
           and c.seller_sku_adj = scr.seller_sku_adj
-    left join etl_datasync.dashboard_replenishment_order_profit_source gp
+    left join etl_datasync_test.dashboard_replenishment_order_profit_source gp
            on c.country_category = gp.country_category
           and c.seller_name_new = gp.seller_name_new
           and c.seller_sku_adj = gp.seller_sku_adj
@@ -2206,7 +2206,7 @@ select
     calc.seller_sku_adj,
     max(perf.dt_date) as max_perf_date
 from tmp_pur_plan_replenish_calc calc
-left join etl_datasync.dashboard_product_performance_daily perf
+left join etl_datasync_test.dashboard_product_performance_daily perf
        on calc.country_category = perf.country_category
       and calc.seller_name_new = perf.seller_name_new
       and calc.seller_sku_adj = perf.seller_sku_adj
@@ -2345,7 +2345,7 @@ from (
 ) ranked
 where ranked.rn = 1;
 
-insert into etl_datasync.dashboard_pur_plan_replenish_data (
+insert into etl_datasync_test.dashboard_pur_plan_replenish_data (
     cur_date, new_old_product, seller_sku_adj, max_fnsku, max_asin, max_sku,
     marketplace_status, seller_name_concat, onsale_sites, unsale_sites, sales_status,
     marketplace_concat, global_tags, seller_name_copy, seller_name_ue, seller_name_new, country_category,
@@ -2788,14 +2788,14 @@ from (
                    * (coalesce(r.max_cg_price, 0) + coalesce(r.max_cg_transport_costs, 0))
             else coalesce(r.replenish_cost, 0)
         end as calculated_replenish_cost
-    from etl_datasync.dashboard_pur_plan_replenish_data r
-    left join etl_datasync.dashboard_replenishment_supplier_moq_sync m
+    from etl_datasync_test.dashboard_pur_plan_replenish_data r
+    left join etl_datasync_test.dashboard_replenishment_supplier_moq_sync m
            on m.snapshot_date = r.cur_date
           and binary m.sku = binary r.max_sku
     where r.cur_date = %(snapshot_date)s
 ) base;
 
-update etl_datasync.dashboard_pur_plan_replenish_data r
+update etl_datasync_test.dashboard_pur_plan_replenish_data r
 inner join tmp_replenishment_moq_gate g
         on g.cur_date = r.cur_date
        and g.country_category = r.country_category
@@ -2814,7 +2814,7 @@ where r.cur_date = %(snapshot_date)s;
 """
 
 DELETE_COUNTRY_METRICS_SQL = """
-delete from etl_datasync.dashboard_replenishment_country_metrics
+delete from etl_datasync_test.dashboard_replenishment_country_metrics
 where snapshot_date = %(snapshot_date)s
 """
 
@@ -2847,13 +2847,13 @@ select
     country,
     seller_sku,
     max(price) as price
-from etl_datasync.dashboard_listing_price_daily_snapshot
+from etl_datasync_test.dashboard_listing_price_daily_snapshot
 where snapshot_date = %(snapshot_date)s
 group by country_category, seller_name_new, country, seller_sku
 """
 
 BUILD_COUNTRY_METRICS_SQL = """
-insert into etl_datasync.dashboard_replenishment_country_metrics (
+insert into etl_datasync_test.dashboard_replenishment_country_metrics (
     snapshot_date,
     period_days,
     period_start,
@@ -2926,10 +2926,10 @@ from (
     union all select 90
     union all select 180
 ) period_def
-inner join etl_datasync.dashboard_product_performance_daily p
+inner join etl_datasync_test.dashboard_product_performance_daily p
         on p.dt_date between date_sub(%(biz_date)s, interval period_def.period_days - 1 day)
                          and %(biz_date)s
-inner join etl_datasync.dashboard_pur_plan_replenish_data r
+inner join etl_datasync_test.dashboard_pur_plan_replenish_data r
         on r.cur_date = %(snapshot_date)s
        and r.country_category = p.country_category
        and r.seller_name_new = p.seller_name_new
@@ -2944,7 +2944,7 @@ group by
 """
 
 UPDATE_COUNTRY_METRICS_LISTING_PRICE_SQL = """
-update etl_datasync.dashboard_replenishment_country_metrics m
+update etl_datasync_test.dashboard_replenishment_country_metrics m
 left join tmp_replenishment_country_listing_price lp
        on lp.country_category = m.country_category
       and lp.seller_name_new = m.seller_name_new
@@ -2959,42 +2959,42 @@ STEPS = {
         "listing_basic_sync",
         DELETE_LISTING_BASIC_SYNC_SQL,
         SELECT_LISTING_BASIC_SYNC_SQL,
-        "etl_datasync.dashboard_replenishment_listing_basic_sync",
+        "etl_datasync_test.dashboard_replenishment_listing_basic_sync",
         LISTING_BASIC_COLUMNS,
     ),
     "self_asin_sync": SourceLoadStep(
         "self_asin_sync",
         DELETE_SELF_ASIN_SYNC_SQL,
         SELECT_SELF_ASIN_SYNC_SQL,
-        "etl_datasync.dashboard_replenishment_self_asin_sync",
+        "etl_datasync_test.dashboard_replenishment_self_asin_sync",
         SELF_ASIN_COLUMNS,
     ),
     "fba_shipment_sync": SourceLoadStep(
         "fba_shipment_sync",
         DELETE_FBA_SHIPMENT_SYNC_SQL,
         SELECT_FBA_SHIPMENT_SYNC_SQL,
-        "etl_datasync.dashboard_replenishment_fba_shipment_sync",
+        "etl_datasync_test.dashboard_replenishment_fba_shipment_sync",
         FBA_SHIPMENT_COLUMNS,
     ),
     "order_profit_source_sync": SourceLoadStep(
         "order_profit_source_sync",
         DELETE_ORDER_PROFIT_SOURCE_SYNC_SQL,
         SELECT_ORDER_PROFIT_SOURCE_SYNC_SQL,
-        "etl_datasync.dashboard_replenishment_order_profit_source",
+        "etl_datasync_test.dashboard_replenishment_order_profit_source",
         ORDER_PROFIT_SOURCE_COLUMNS,
     ),
     "supplier_moq_sync": SourceLoadStep(
         "supplier_moq_sync",
         DELETE_SUPPLIER_MOQ_SYNC_SQL,
         SELECT_SUPPLIER_MOQ_SYNC_SQL,
-        "etl_datasync.dashboard_replenishment_supplier_moq_sync",
+        "etl_datasync_test.dashboard_replenishment_supplier_moq_sync",
         SUPPLIER_MOQ_COLUMNS,
     ),
     "history_daily_sync": SourceLoadStep(
         "history_daily_sync",
         DELETE_HISTORY_DAILY_SYNC_SQL,
         SELECT_HISTORY_DAILY_SYNC_SQL,
-        "etl_datasync.dashboard_replenishment_history_daily_sync",
+        "etl_datasync_test.dashboard_replenishment_history_daily_sync",
         HISTORY_DAILY_COLUMNS,
     ),
     "check_daily_snapshots": ReplenishmentStep("check_daily_snapshots", (CHECK_DAILY_SNAPSHOTS_SQL,)),
@@ -3078,6 +3078,7 @@ def build_params(args: argparse.Namespace) -> dict[str, object]:
 
 def render_replenishment_sql(sql: str, schemas: SchemaConfig) -> str:
     rendered = render_sql(sql, schemas)
+    rendered = rendered.replace("etl_datasync_test.pur_plan_", f"{schemas.target_schema}.pur_plan_")
     rendered = rendered.replace("etl_datasync.pur_plan_", f"{schemas.target_schema}.pur_plan_")
     return rendered
 
@@ -3278,7 +3279,7 @@ def validate_replenishment_result(
             render_replenishment_sql(
                 """
                 select count(*) as row_count
-                from etl_datasync.dashboard_pur_plan_replenish_data
+                from etl_datasync_test.dashboard_pur_plan_replenish_data
                 where cur_date = %(snapshot_date)s
                 """,
                 schemas,

@@ -563,7 +563,7 @@ class CountryLabelHubDataService:
             self._country_detail_metrics_cache.move_to_end(cache_key)
             return cached[1]
         data_date, metric_period, country_category, store, keyword, identifiers = cache_key
-        table = render_sql("etl_datasync.dashboard_product_performance_daily", self._shared._dashboard.schemas)
+        table = render_sql("etl_datasync_test.dashboard_product_performance_daily", self._shared._dashboard.schemas)
         where = ["dt_date between %(query_start)s and %(period_end)s"]
         params: dict[str, Any] = {"data_date": data_date}
         if country_category != "all":
@@ -1215,7 +1215,7 @@ class CountryLabelHubDataService:
         cached = self._country_profile_metrics_cache.get(cache_key)
         if cached and (datetime.now() - cached[0]).total_seconds() < CACHE_SECONDS:
             return cached[1]
-        table = render_sql("etl_datasync.dashboard_product_performance_daily", self._shared._dashboard.schemas)
+        table = render_sql("etl_datasync_test.dashboard_product_performance_daily", self._shared._dashboard.schemas)
         with self._shared._dashboard.connect() as conn, conn.cursor() as cursor:
             cursor.execute(
                 f"""
@@ -1303,7 +1303,7 @@ class CountryLabelHubDataService:
         cached = self._listing_price_cache.get(cache_key)
         if cached and (datetime.now() - cached[0]).total_seconds() < CACHE_SECONDS:
             return cached[1], cached[2]
-        table = render_sql("etl_datasync.dashboard_listing_price_daily_snapshot", self._shared._dashboard.schemas)
+        table = render_sql("etl_datasync_test.dashboard_listing_price_daily_snapshot", self._shared._dashboard.schemas)
         with self._shared._dashboard.connect() as conn, conn.cursor() as cursor:
             cursor.execute(f"select max(snapshot_date) as snapshot_date from {table}")
             snapshot_row = cursor.fetchone() or {}
@@ -1348,7 +1348,7 @@ class CountryLabelHubDataService:
         cached = self._limit_price_cache.get(cache_key)
         if cached and (datetime.now() - cached[0]).total_seconds() < CACHE_SECONDS:
             return cached[1], cached[2]
-        table = render_sql("etl_datasync.dashboard_limit_price_daily_snapshot", self._shared._dashboard.schemas)
+        table = render_sql("etl_datasync_test.dashboard_limit_price_daily_snapshot", self._shared._dashboard.schemas)
         with self._shared._dashboard.connect() as conn, conn.cursor() as cursor:
             cursor.execute(f"select max(snapshot_date) as snapshot_date from {table}")
             snapshot_date = (cursor.fetchone() or {}).get("snapshot_date")

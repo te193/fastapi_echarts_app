@@ -37,6 +37,22 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy_windows.ps1
 .\scripts\run_daily_update_task.ps1
 ```
 
+PowerShell 启动脚本不可用时，可使用独立的 Python 汇总调度入口：
+
+```powershell
+python -m etl.daily_update_runner
+```
+
+只做流程验证，不写业务结果表、不发送钉钉通知：
+
+```powershell
+python -m etl.daily_update_runner --dry-run
+```
+
+Python 调度器不执行 PowerShell 脚本，会独立加载看板环境配置，依次运行
+远端预检、总 ETL、产品表现历史、销售角色、标签证据、补货、补货追踪汇总
+和返厂品，并为每一步生成独立日志。
+
 启动局域网看板服务：
 
 ```powershell
@@ -79,6 +95,7 @@ cd .worktrees\dashboard-test
 - `scripts\dashboard_env.test.example.ps1`：测试版环境变量覆盖示例
 - `scripts\deploy_windows.ps1`：Windows 部署入口
 - `scripts\run_daily_update_task.ps1`：定时任务执行入口
+- `etl\daily_update_runner.py`：不依赖 PowerShell 的每日 ETL 汇总调度入口
 - `scripts\run_web_server.ps1`：局域网服务启动入口
 - `scripts\run_web_server_test.ps1`：测试版服务启动入口，默认端口 `8001`
 - `scripts\setup_test_worktree.ps1`：创建隔离测试工作区

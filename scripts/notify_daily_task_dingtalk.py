@@ -10,6 +10,8 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
+import subprocess
 import sys
 import time
 from typing import Iterable
@@ -848,17 +850,7 @@ def build_markdown(
     )
 
 
-def send_markdown(webhook: str, payload: str, secret: str | None = None) -> None:
-    signed_webhook = build_signed_webhook(webhook, secret)
-    req = request.Request(
-        signed_webhook,
-        data=payload.encode("utf-8"),
-        headers={"Content-Type": "application/json; charset=utf-8"},
-        method="POST",
-    )
-    with request.urlopen(req, timeout=15) as response:
-        body = response.read().decode("utf-8", errors="replace")
-
+def _validate_dingtalk_response(body: str) -> None:
     try:
         result = json.loads(body)
     except json.JSONDecodeError as exc:
@@ -866,6 +858,69 @@ def send_markdown(webhook: str, payload: str, secret: str | None = None) -> None
 
     if result.get("errcode") != 0:
         raise RuntimeError(f"DingTalk send failed: {result}")
+
+
+def _send_markdown_with_curl(signed_webhook: str, payload: str) -> None:
+    curl_executable = shutil.which("curl.exe") or shutil.which("curl")
+    if not curl_executable:
+        raise RuntimeError("DingTalk Python transport failed and curl was not found.")
+
+    result = subprocess.run(
+        [
+            curl_executable,
+            "-sS",
+            "--connect-timeout",
+            "10",
+            "--max-time",
+            "30",
+            "-X",
+            "POST",
+            "-H",
+            "Content-Type: application/json; charset=utf-8",
+            "--data-binary",
+            payload,
+            signed_webhook,
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=35,
+        check=False,
+    )
+    if result.returncode != 0:
+        reason = result.stderr.strip() or f"exit code {result.returncode}"
+        raise RuntimeError(f"DingTalk curl transport failed: {reason}")
+    _validate_dingtalk_response(result.stdout)
+
+
+def send_markdown(webhook: str, payload: str, secret: str | None = None) -> None:
+    signed_webhook = build_signed_webhook(webhook, secret)
+    last_transport_error: Exception | None = None
+
+    for attempt in range(3):
+        req = request.Request(
+            signed_webhook,
+            data=payload.encode("utf-8"),
+            headers={"Content-Type": "application/json; charset=utf-8"},
+            method="POST",
+        )
+        try:
+            with request.urlopen(req, timeout=15) as response:
+                body = response.read().decode("utf-8", errors="replace")
+            _validate_dingtalk_response(body)
+            return
+        except (OSError, TimeoutError) as exc:
+            last_transport_error = exc
+            if attempt < 2:
+                time.sleep(attempt + 1)
+
+    try:
+        _send_markdown_with_curl(signed_webhook, payload)
+    except Exception as curl_exc:
+        raise RuntimeError(
+            f"DingTalk transports failed; Python: {last_transport_error}; curl: {curl_exc}"
+        ) from curl_exc
 
 
 def print_utf8(text: str) -> None:

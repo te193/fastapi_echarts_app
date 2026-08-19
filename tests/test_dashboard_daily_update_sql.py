@@ -5,6 +5,7 @@ from datetime import date
 from etl.dashboard_daily_update import (
     AD_BUDGET_COLUMNS,
     CREATE_AD_BUDGET_SNAPSHOT_SQL,
+    CREATE_SCHEMA_SQL,
     DEFAULT_STEP_ORDER,
     DELETE_AD_BUDGET_SNAPSHOT_SQL,
     INSERT_ALERT_COMPARISON_SNAPSHOT_SQL,
@@ -21,11 +22,39 @@ from etl.dashboard_daily_update import (
     SourceLoadStep,
     build_params,
     execute_source_load_step,
+    render_sql,
     validate_product_performance_result,
 )
 
 
 class DashboardDailyUpdateSqlTests(unittest.TestCase):
+    def test_create_schema_sql_uses_canonical_local_target_schema(self):
+        self.assertIn("create schema if not exists etl_datasync_test", CREATE_SCHEMA_SQL)
+
+    def test_render_sql_maps_canonical_local_target_schema(self):
+        schemas = SchemaConfig(
+            target_schema="etl_datasync_replenishment_test",
+            etl_source_schema="etl_datasync",
+            dwd_source_schema="dwd_datasync",
+            pricing_source_schema="temporary_dwd",
+        )
+
+        rendered = render_sql(
+            "select * from etl_datasync_test.dashboard_inventory_daily_snapshot",
+            schemas,
+        )
+
+        self.assertEqual(
+            "select * from etl_datasync_replenishment_test.dashboard_inventory_daily_snapshot",
+            rendered,
+        )
+
+        rendered_create = render_sql(CREATE_SCHEMA_SQL, schemas)
+        self.assertEqual(
+            "create schema if not exists etl_datasync_replenishment_test default character set utf8mb4;",
+            rendered_create,
+        )
+
     def test_product_daily_preserves_profit_for_zero_volume_rows(self):
         self.assertIn("sum(predict_gross_profit) as order_gross_profit", INSERT_PRODUCT_DAILY_SQL)
         self.assertNotIn(

@@ -23,7 +23,7 @@ def test_sales_role_snapshot_table_has_business_comments():
 
 
 def test_sales_role_snapshot_uses_full_daily_pool_and_target_grain():
-    assert "from etl_datasync.dashboard_product_performance_daily p" in INSERT_SALES_ROLE_PERIOD_SNAPSHOT_SQL
+    assert "from etl_datasync_test.dashboard_product_performance_daily p" in INSERT_SALES_ROLE_PERIOD_SNAPSHOT_SQL
     assert "filter_flag" not in INSERT_SALES_ROLE_PERIOD_SNAPSHOT_SQL
     assert "p.seller_sku_adj,\n            p.seller_name_new,\n            p.country_category" in INSERT_SALES_ROLE_PERIOD_SNAPSHOT_SQL
     assert "p.dt_date between %(period_start)s and %(period_end)s" in INSERT_SALES_ROLE_PERIOD_SNAPSHOT_SQL

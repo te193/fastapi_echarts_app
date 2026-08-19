@@ -1,5 +1,50 @@
 $ErrorActionPreference = "Stop"
 
+function Disable-CurrentConsoleQuickEdit {
+    if (-not ([System.Management.Automation.PSTypeName]"DashboardConsoleMode").Type) {
+        Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+public static class DashboardConsoleMode
+{
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern IntPtr GetStdHandle(int nStdHandle);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
+}
+"@
+    }
+
+    $StdInputHandle = -10
+    $EnableQuickEditMode = [uint32]0x0040
+    $EnableExtendedFlags = [uint32]0x0080
+    $ConsoleHandle = [DashboardConsoleMode]::GetStdHandle($StdInputHandle)
+    $ConsoleMode = [uint32]0
+
+    if (
+        $ConsoleHandle -eq [IntPtr]::Zero -or
+        -not [DashboardConsoleMode]::GetConsoleMode($ConsoleHandle, [ref]$ConsoleMode)
+    ) {
+        Write-Warning "Unable to read the current console mode; QuickEdit protection was not applied."
+        return
+    }
+
+    $UpdatedConsoleMode = [uint32](($ConsoleMode -band (-bnot $EnableQuickEditMode)) -bor $EnableExtendedFlags)
+    if (-not [DashboardConsoleMode]::SetConsoleMode($ConsoleHandle, $UpdatedConsoleMode)) {
+        Write-Warning "Unable to disable QuickEdit for the current console."
+        return
+    }
+
+    Write-Host "QuickEdit disabled for this ETL console."
+}
+
+Disable-CurrentConsoleQuickEdit
+
 . "$PSScriptRoot\dashboard_env.ps1"
 
 $ProjectRoot = Get-DashboardProjectRoot
@@ -26,6 +71,8 @@ $ReplenishmentTrackingStderrLog = Join-Path $LogDir "etl_replenishment_tracking_
 $ReturnGoodsStdoutLog = Join-Path $LogDir "etl_return_goods_run_$RunStamp.log"
 $ReturnGoodsStderrLog = Join-Path $LogDir "etl_return_goods_run_$RunStamp.err.log"
 $DingTalkNotifyScript = Join-Path $ProjectRoot "scripts\notify_daily_task_dingtalk.py"
+$DingTalkStdoutLog = Join-Path $LogDir "dingtalk_notify_run_$RunStamp.log"
+$DingTalkStderrLog = Join-Path $LogDir "dingtalk_notify_run_$RunStamp.err.log"
 
 Set-Location $ProjectRoot
 
@@ -76,13 +123,13 @@ function Send-DashboardDingTalkNotification {
 
     $PreviousNativeExitCode = $global:LASTEXITCODE
     try {
-        & $PythonExe @NotifyArgs | Out-Null
+        & $PythonExe @NotifyArgs > $DingTalkStdoutLog 2> $DingTalkStderrLog
         $NotifyExitCode = $LASTEXITCODE
         if ($NotifyExitCode -ne 0) {
-            Write-Warning "DingTalk notification failed with exit code $NotifyExitCode."
+            Write-Warning "DingTalk notification failed with exit code $NotifyExitCode. See $DingTalkStdoutLog and $DingTalkStderrLog."
         }
     } catch {
-        Write-Warning "DingTalk notification failed: $($_.Exception.Message)"
+        Write-Warning "DingTalk notification failed: $($_.Exception.Message). See $DingTalkStdoutLog and $DingTalkStderrLog."
     } finally {
         $global:LASTEXITCODE = $PreviousNativeExitCode
     }
