@@ -27,6 +27,10 @@ class FakeLabelHubService:
         self.calls.append(("stockout_before_roles", kwargs))
         return {"ok": True, "roles": []}
 
+    def get_stockout_operating_status_summary(self, **kwargs):
+        self.calls.append(("stockout_operating_status", kwargs))
+        return {"ok": True, "statuses": []}
+
     def get_stockout_before_role_evidence(self, **kwargs):
         self.calls.append(("stockout_before_role_evidence", kwargs))
         return {"role": {"id": 2001, "label": "明星产品"}, "evidence": {"schema_version": "1.0"}}
@@ -152,6 +156,33 @@ class LabelHubApiTests(unittest.TestCase):
                 {
                     "data_date": "2026-08-13",
                     "role_period": "30d",
+                    "country_category": "欧洲站",
+                    "store": "StoreA",
+                    "keyword": "M1",
+                },
+            ),
+            service.calls[0],
+        )
+
+    def test_stockout_operating_status_api_passes_scope_and_period(self):
+        service = FakeLabelHubService()
+
+        with patch("app.main.label_hub_service", service):
+            payload = main.api_label_hub_stockout_operating_status(
+                data_date="2026-08-13",
+                role_period="14d",
+                country_category="欧洲站",
+                store="StoreA",
+                keyword="M1",
+            )
+
+        self.assertTrue(payload["ok"])
+        self.assertEqual(
+            (
+                "stockout_operating_status",
+                {
+                    "data_date": "2026-08-13",
+                    "role_period": "14d",
                     "country_category": "欧洲站",
                     "store": "StoreA",
                     "keyword": "M1",

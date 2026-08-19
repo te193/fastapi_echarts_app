@@ -47,6 +47,17 @@ STOCKOUT_BEFORE_ROLE_LABELS = {
     2003: "瘦狗产品",
     2004: "问题产品",
 }
+STOCKOUT_OPERATING_STATUS_DEFINITIONS = (
+    ("history_insufficient", "历史不可判"),
+    ("low_supply", "低量补给待观察"),
+    ("supply_demand_mismatch", "补给与动销不一致"),
+    ("star", "明星产品"),
+    ("potential", "潜力产品"),
+    ("dog", "瘦狗产品"),
+    ("loss_issue", "亏损问题"),
+    ("low_margin_issue", "低毛利问题"),
+)
+STOCKOUT_LOW_SUPPLY_THRESHOLD = 5
 COUNTRY_STOCKOUT_BEFORE_ROLE_LABELS = {
     2101: "明星产品",
     2102: "潜力产品",
@@ -123,6 +134,18 @@ def _date_text(value: Any) -> str:
 
 def _number(value: Any) -> float | None:
     return None if value is None or value == "" else float(value)
+
+
+def _evidence_object(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if not value:
+        return {}
+    try:
+        parsed = json.loads(str(value))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def _period_order(value: str) -> tuple[int, str]:
@@ -554,6 +577,97 @@ class LabelHubDataService:
                 "missing_count": len(missing_keys),
                 "conflict_count": len(conflict_keys),
                 "rate": round(identified_count / total, 4) if total else 0,
+            },
+        }
+
+    def build_stockout_operating_status_summary(
+        self,
+        *,
+        facts: list[dict[str, Any]],
+        role_period: str,
+    ) -> dict[str, Any]:
+        if role_period not in STOCKOUT_BEFORE_ROLE_PERIODS:
+            raise ValueError("断货经营状态周期不存在")
+
+        stockout_by_key = {
+            _business_unit_key(fact): fact
+            for fact in facts
+            if int(fact.get("label_id") or 0) == CURRENT_STOCKOUT_CHILD_ID
+            and str(fact.get("label_period") or "") == "current"
+        }
+        role_by_key = {
+            _business_unit_key(fact): fact
+            for fact in facts
+            if int(fact.get("label_id") or 0) in STOCKOUT_BEFORE_ROLE_IDS
+            and str(fact.get("label_period") or "") == role_period
+        }
+        status_keys = {code: set() for code, _ in STOCKOUT_OPERATING_STATUS_DEFINITIONS}
+        evaluable_codes = {"star", "potential", "dog", "loss_issue", "low_margin_issue"}
+
+        for key, stockout_fact in stockout_by_key.items():
+            stockout_metrics = _evidence_object(stockout_fact.get("evidence_json")).get("metrics") or {}
+            supply_total = max(0, _number(stockout_metrics.get("fba_in_transit")) or 0) + max(
+                0, _number(stockout_metrics.get("local_quantity")) or 0
+            )
+            role_fact = role_by_key.get(key)
+            if not role_fact:
+                status_keys["history_insufficient"].add(key)
+                continue
+            evidence = _evidence_object(role_fact.get("evidence_json"))
+            metrics = evidence.get("metrics") or {}
+            oos = evidence.get("oos") or {}
+            window = evidence.get("window") or {}
+            daily_sales = _number(metrics.get("daily_sales"))
+            margin_rate = _number(metrics.get("tag_margin_rate"))
+            history_start = str(oos.get("history_start_date") or "")
+            window_start = str(window.get("start") or "")
+            window_end = str(window.get("end") or "")
+            history_insufficient = (
+                daily_sales is None
+                or not window_start
+                or not window_end
+                or (daily_sales == 0 and (not history_start or history_start > window_start))
+            )
+            if history_insufficient:
+                status_code = "history_insufficient"
+            elif supply_total <= STOCKOUT_LOW_SUPPLY_THRESHOLD:
+                status_code = "low_supply"
+            elif daily_sales == 0:
+                status_code = "supply_demand_mismatch"
+            else:
+                role_id = int(role_fact.get("label_id") or 0)
+                if role_id == 2001:
+                    status_code = "star"
+                elif role_id == 2002:
+                    status_code = "potential"
+                elif role_id == 2003:
+                    status_code = "dog"
+                elif (margin_rate or 0) < 0:
+                    status_code = "loss_issue"
+                else:
+                    status_code = "low_margin_issue"
+            status_keys[status_code].add(key)
+
+        total = len(stockout_by_key)
+        evaluable_count = sum(len(status_keys[code]) for code in evaluable_codes)
+        return {
+            "role_period": role_period,
+            "available_periods": list(STOCKOUT_BEFORE_ROLE_PERIODS),
+            "scope": {"business_unit_count": total, "unique_msku_count": len({key[2] for key in stockout_by_key})},
+            "supply": {"low_supply_threshold": STOCKOUT_LOW_SUPPLY_THRESHOLD},
+            "statuses": [
+                {
+                    "code": code,
+                    "label": label,
+                    "business_unit_count": len(status_keys[code]),
+                    "share": round(len(status_keys[code]) / total, 4) if total else 0,
+                }
+                for code, label in STOCKOUT_OPERATING_STATUS_DEFINITIONS
+            ],
+            "coverage": {
+                "evaluable_count": evaluable_count,
+                "evaluable_rate": round(evaluable_count / total, 4) if total else 0,
+                "non_evaluable_count": total - evaluable_count,
             },
         }
 
@@ -1407,6 +1521,25 @@ class LabelHubDataService:
                 with self._facts_load_lock:
                     self._facts_load_events.pop(data_date, None)
 
+    def _fetch_stockout_operating_status_facts(self, data_date: str) -> list[dict[str, Any]]:
+        relevant_ids = (CURRENT_STOCKOUT_CHILD_ID, *STOCKOUT_BEFORE_ROLE_IDS)
+        with self._source_connection() as conn, conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                select data_date, country_category, store, msku, label_id, label_period, evidence_json
+                from {LABEL_FACT_TABLE}
+                where data_date = %(data_date)s
+                  and msku not like %(refund_prefix)s
+                  and label_id in ({','.join(str(item) for item in relevant_ids)})
+                  and (
+                    (label_id = {CURRENT_STOCKOUT_CHILD_ID} and label_period = 'current')
+                    or (label_id in ({','.join(str(item) for item in STOCKOUT_BEFORE_ROLE_IDS)}) and label_period in ({','.join(repr(item) for item in STOCKOUT_BEFORE_ROLE_PERIODS)}))
+                  )
+                """,
+                {"data_date": data_date, "refund_prefix": f"{REFUND_MSKU_PREFIX}%"},
+            )
+            return list(cursor.fetchall())
+
     def _cached_diagnostic_facts(self, data_date: str, parent_id: int) -> list[dict[str, Any]]:
         cache_key = (data_date, parent_id)
         cached = self._diagnostic_facts_cache.get(cache_key)
@@ -1554,6 +1687,21 @@ class LabelHubDataService:
             role_period=role_period,
         )
         return {"data_date": data_date, **payload}
+
+    def get_stockout_operating_status_summary(self, **filters: Any) -> dict[str, Any]:
+        meta = self.get_meta()
+        data_date = str(filters.get("data_date") or meta["default_data_date"])
+        role_period = str(filters.get("role_period") or "30d").lower()
+        country_category = str(filters.get("country_category") or "all")
+        store = str(filters.get("store") or "all")
+        keyword = str(filters.get("keyword") or "").strip().casefold()
+        facts = [
+            fact for fact in self._fetch_stockout_operating_status_facts(data_date)
+            if (country_category == "all" or str(fact.get("country_category") or "") == country_category)
+            and (store == "all" or str(fact.get("store") or "") == store)
+            and (not keyword or keyword in str(fact.get("msku") or "").casefold() or keyword in str(fact.get("store") or "").casefold())
+        ]
+        return {"data_date": data_date, **self.build_stockout_operating_status_summary(facts=facts, role_period=role_period)}
 
     def get_diagnostic_base_rows(self, **filters: Any) -> list[dict[str, Any]]:
         meta = self.get_meta()

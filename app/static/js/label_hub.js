@@ -51,6 +51,13 @@
     requestKey: "",
     requestToken: 0
   };
+  var stockoutOperatingStatusState = {
+    open: false,
+    period: normalizeStockoutRolePeriod(state.metric_period),
+    payload: null,
+    requestKey: "",
+    requestToken: 0
+  };
   var stockoutEvidenceState = {
     row: null,
     payload: null,
@@ -259,6 +266,8 @@
       var stockoutRoleToggle = event.target.closest("[data-stockout-role-toggle]");
       var stockoutRolePeriod = event.target.closest("[data-stockout-role-period]");
       var stockoutRole = event.target.closest("[data-stockout-role-id]");
+      var stockoutOperatingStatusToggle = event.target.closest("[data-stockout-operating-status-toggle]");
+      var stockoutOperatingStatusPeriod = event.target.closest("[data-stockout-operating-status-period]");
       var ruleButton = event.target.closest("[data-view-rules]");
       var stockoutFormula = event.target.closest("[data-operating-stockout-formula]");
       var returnAttribution = event.target.closest("[data-return-attribution]");
@@ -266,8 +275,12 @@
       var parent = event.target.closest("[data-overview-parent]");
       if (stockoutRoleToggle) {
         toggleStockoutRolePanel();
+      } else if (stockoutOperatingStatusToggle) {
+        toggleStockoutOperatingStatusPanel();
       } else if (stockoutRolePeriod) {
         selectStockoutRolePeriod(stockoutRolePeriod.dataset.stockoutRolePeriod);
+      } else if (stockoutOperatingStatusPeriod) {
+        selectStockoutOperatingStatusPeriod(stockoutOperatingStatusPeriod.dataset.stockoutOperatingStatusPeriod);
       } else if (stockoutRole) {
         openStockoutRoleDetails(stockoutRole.dataset.stockoutRoleId || "");
       } else if (stockoutFormula) {
@@ -499,7 +512,7 @@
     });
   }
 
-  function resetPageAndRender() { state.page = 1; stockoutRoleState.payload = null; stockoutRoleState.requestKey = ""; populateControls(); render(); }
+  function resetPageAndRender() { state.page = 1; stockoutRoleState.payload = null; stockoutRoleState.requestKey = ""; stockoutOperatingStatusState.payload = null; stockoutOperatingStatusState.requestKey = ""; populateControls(); render(); }
   function firstAvailableCategory() { var item = (meta.categories || []).find(function (category) { return category.state === "available"; }); return item ? item.id : ((meta.categories || [])[0] || {}).id || 0; }
   function defaultCompareCategory() { return state.parent_label_id !== 2 && categoryById(2) ? 2 : (((meta.categories || []).find(function (item) { return item.id !== state.parent_label_id; }) || {}).id || 0); }
   function categoryById(id) { return (meta.categories || []).find(function (item) { return item.id === Number(id); }); }
@@ -2306,6 +2319,76 @@
     if (lastPayload) renderCategoryDetail(lastPayload);
   }
 
+  function stockoutOperatingStatusScopeKey() {
+    return [state.data_date, state.country_category, state.store, state.keyword, stockoutOperatingStatusState.period].join("|");
+  }
+
+  function stockoutOperatingStatusPanelShell() {
+    if (!stockoutOperatingStatusState.open) return "";
+    return '<section id="labelHubStockoutOperatingStatusPanel" class="label-hub-stockout-role-panel label-hub-stockout-status-panel" aria-label="断货经营状态汇总">' +
+      '<header><div><strong>断货经营状态</strong><span>结合断货前表现与当前补给证据，仅统计断货中产品</span></div>' +
+      '<div class="label-hub-stockout-role-periods" aria-label="经营状态周期">' + STOCKOUT_ROLE_PERIODS.map(function (period) {
+        var active = period === stockoutOperatingStatusState.period;
+        return '<button type="button" data-stockout-operating-status-period="' + period + '" class="' + (active ? "active" : "") + '" aria-pressed="' + active + '">' + stockoutRolePeriodLabel(period) + '</button>';
+      }).join("") + '</div></header><div data-stockout-operating-status-content class="label-hub-stockout-role-content"><div class="label-hub-stockout-role-loading">正在加载经营状态分布…</div></div></section>';
+  }
+
+  function renderStockoutOperatingStatusPanelContent() {
+    var content = elements.labelHubCategoryDetail.querySelector("[data-stockout-operating-status-content]");
+    if (!content || !stockoutOperatingStatusState.payload) return;
+    var payload = stockoutOperatingStatusState.payload;
+    var total = Number((payload.scope || {}).business_unit_count || 0);
+    var coverage = payload.coverage || {};
+    var rows = (payload.statuses || []).map(function (status) {
+      var share = Math.max(0, Math.min(1, Number(status.share || 0)));
+      return '<div class="label-hub-stockout-role-row"><span><b>' + app.escapeHtml(status.label || status.code || "-") + '</b><small>' + formatPercent(share) + '</small></span><i><em style="width:' + (share * 100).toFixed(1) + '%"></em></i><strong>' + formatNumber(status.business_unit_count) + '<small> 条</small></strong></div>';
+    }).join("");
+    content.innerHTML = '<div class="label-hub-stockout-role-summary"><span>当前断货 <strong>' + formatNumber(total) + '</strong> 条</span><span>可评价 <strong>' + formatNumber(coverage.evaluable_count || 0) + '</strong> 条</span><span>不可直接评价 <strong>' + formatNumber(coverage.non_evaluable_count || 0) + '</strong> 条</span></div><div class="label-hub-stockout-role-list">' + rows + '</div><p class="label-hub-stockout-status-note">低量补给：当前 FBA 在途 + 本地/采购补给总量 ≤ ' + formatNumber((payload.supply || {}).low_supply_threshold || 5) + '。</p>';
+  }
+
+  function renderStockoutOperatingStatusPanelError(error) {
+    var content = elements.labelHubCategoryDetail.querySelector("[data-stockout-operating-status-content]");
+    if (!content) return;
+    content.innerHTML = '<div class="label-hub-stockout-role-error">经营状态汇总暂不可用：' + app.escapeHtml((error && error.message) || "请稍后重试") + '<button type="button" data-stockout-operating-status-period="' + stockoutOperatingStatusState.period + '">重试</button></div>';
+  }
+
+  function loadStockoutOperatingStatus() {
+    if (!stockoutOperatingStatusState.open) return;
+    var key = stockoutOperatingStatusScopeKey();
+    if (stockoutOperatingStatusState.payload && stockoutOperatingStatusState.requestKey === key) {
+      renderStockoutOperatingStatusPanelContent();
+      return;
+    }
+    var token = ++stockoutOperatingStatusState.requestToken;
+    stockoutOperatingStatusState.requestKey = key;
+    app.apiGet("/api/label-hub/stockout-operating-status", {
+      data_date: state.data_date,
+      role_period: stockoutOperatingStatusState.period,
+      country_category: state.country_category,
+      store: state.store,
+      keyword: state.keyword
+    }).then(function (payload) {
+      if (token !== stockoutOperatingStatusState.requestToken || !stockoutOperatingStatusState.open) return;
+      stockoutOperatingStatusState.payload = payload;
+      renderStockoutOperatingStatusPanelContent();
+    }).catch(function (error) {
+      if (token === stockoutOperatingStatusState.requestToken && stockoutOperatingStatusState.open) renderStockoutOperatingStatusPanelError(error);
+    });
+  }
+
+  function toggleStockoutOperatingStatusPanel() {
+    stockoutOperatingStatusState.open = !stockoutOperatingStatusState.open;
+    if (stockoutOperatingStatusState.open && !stockoutOperatingStatusState.payload) stockoutOperatingStatusState.period = normalizeStockoutRolePeriod(state.metric_period);
+    if (lastPayload) renderCategoryDetail(lastPayload);
+  }
+
+  function selectStockoutOperatingStatusPeriod(period) {
+    stockoutOperatingStatusState.period = normalizeStockoutRolePeriod(period);
+    stockoutOperatingStatusState.payload = null;
+    stockoutOperatingStatusState.requestKey = "";
+    if (lastPayload) renderCategoryDetail(lastPayload);
+  }
+
   function openStockoutRoleDetails(roleId) {
     detailState.detail_view = "business_unit";
     detailState.identifiers = []; detailState.country_categories = []; detailState.stores = []; detailState.countries = [];
@@ -2344,14 +2427,15 @@
         ? '<button type="button" class="label-hub-return-attribution" data-return-attribution data-operation-child="' + child.id + '" title="查看当前运营状态中仍处于观察期、运营干预期或持续干预期的 MSKU"><span>' + app.escapeHtml(attributionCopy) + '</span><strong>' + formatNumber(attributionCount) + '</strong></button>'
         : "";
       var roleAction = Number(item.id) === 3 && Number(child.id) === 304
-        ? '<button type="button" class="label-hub-stockout-role-toggle" data-stockout-role-toggle aria-expanded="' + stockoutRoleState.open + '" aria-controls="labelHubStockoutRolePanel"><span>查看断货前角色</span><i aria-hidden="true">' + (stockoutRoleState.open ? "收起" : "展开") + '</i></button>'
+        ? '<div class="label-hub-stockout-role-actions"><button type="button" class="label-hub-stockout-role-toggle" data-stockout-role-toggle aria-expanded="' + stockoutRoleState.open + '" aria-controls="labelHubStockoutRolePanel"><span>查看断货前角色</span><i aria-hidden="true">' + (stockoutRoleState.open ? "收起" : "展开") + '</i></button><button type="button" class="label-hub-stockout-role-toggle" data-stockout-operating-status-toggle aria-expanded="' + stockoutOperatingStatusState.open + '" aria-controls="labelHubStockoutOperatingStatusPanel"><span>断货经营状态</span><i aria-hidden="true">' + (stockoutOperatingStatusState.open ? "收起" : "展开") + '</i></button></div>'
         : "";
       return '<article class="label-hub-child' + (checked ? " selected" : "") + '"><button type="button" class="label-hub-child-main" data-overview-child="' + child.id + '" data-parent-id="' + item.id + '" aria-pressed="' + checked + '" title="' + app.escapeHtml(child.rule || child.definition || child.label) + '"><span><b>' + app.escapeHtml(child.label) + '</b><small>' + formatPercent(scoped.share) + '</small></span><strong>' + formatNumber(scoped.count) + '<small> 条记录</small></strong></button>' + attribution + roleAction + '</article>';
     }).join("");
     var periods = (item.periods || []).join(" / ") || "无周期";
     var note = item.mutual_exclusion ? "同周期互斥" : "允许标签共现";
-    elements.labelHubCategoryDetail.innerHTML = '<header><div><span class="section-kicker">当前分析标签</span><h3>' + app.escapeHtml(item.label) + '</h3></div><p>' + app.escapeHtml(periods) + " · " + app.escapeHtml(note) + '</p></header><div class="label-hub-children">' + children + "</div>" + stockoutRolePanelShell() + renderOperatingStockoutRate(payload, item);
+    elements.labelHubCategoryDetail.innerHTML = '<header><div><span class="section-kicker">当前分析标签</span><h3>' + app.escapeHtml(item.label) + '</h3></div><p>' + app.escapeHtml(periods) + " · " + app.escapeHtml(note) + '</p></header><div class="label-hub-children">' + children + "</div>" + stockoutRolePanelShell() + stockoutOperatingStatusPanelShell() + renderOperatingStockoutRate(payload, item);
     if (stockoutRoleState.open) loadStockoutBeforeRoles();
+    if (stockoutOperatingStatusState.open) loadStockoutOperatingStatus();
   }
 
   function renderIssueOverview(payload) {
