@@ -3915,6 +3915,98 @@ body[data-page="price_review"] .price-review-scroll-table {
   align-items: stretch;
 }
 
+.price-review-role-matrix-panel {
+  min-width: 0;
+}
+
+.role-performance-trend-section {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #e1e8f0;
+}
+
+.role-performance-trend-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.role-performance-trend-heading h3 {
+  margin: 3px 0 0;
+}
+
+.role-performance-trend-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 13px 0 4px;
+}
+
+.role-performance-trend-stat {
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid #dce7f2;
+  border-radius: 10px;
+  background: #f7faff;
+}
+
+.role-performance-trend-stat::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: #4d83c7;
+  content: "";
+}
+
+.role-performance-trend-stat.is-after {
+  background: #f3fbf8;
+}
+
+.role-performance-trend-stat.is-after::before {
+  background: #22a486;
+}
+
+.role-performance-trend-stat span,
+.role-performance-trend-stat strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.role-performance-trend-stat span {
+  color: #718399;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.role-performance-trend-stat strong {
+  margin-top: 4px;
+  color: #173a5f;
+  font-size: 17px;
+}
+
+.role-performance-trend-chart {
+  width: 100%;
+  height: 340px;
+}
+
+.role-performance-trend-chart .empty-state {
+  display: grid;
+  height: 100%;
+  place-items: center;
+}
+
+.role-performance-trend-coverage {
+  margin: -2px 0 0;
+  color: #8191a4;
+  font-size: 10px;
+  text-align: right;
+}
+
 .role-migration-matrix-wrap,
 .finance-migration-list {
   overflow: auto;
@@ -4205,45 +4297,143 @@ body[data-page="price_review"] .price-review-scroll-table {
 }
 
 .price-review-role-table-wrap {
-  max-height: 560px;
-  overflow: auto;
-  border: 1px solid #d9e3ef;
-  border-radius: 10px;
+  overflow: hidden;
+  border-radius: 14px;
 }
 
-.price-review-role-table {
-  width: max-content;
-  min-width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
+.price-review-role-grid {
+  height: clamp(440px, 56vh, 560px);
 }
 
-.price-review-role-table th {
-  position: sticky;
-  z-index: 2;
-  top: 0;
-  min-width: 104px;
-  padding: 11px 12px;
-  border-bottom: 1px solid #cfdae7;
-  background: #f6f9fd;
-  color: #354b65;
-  font-size: 12px;
-  font-weight: 850;
-  text-align: left;
-  white-space: nowrap;
+.price-review-role-grid .ag-row {
+  cursor: pointer;
 }
 
-.price-review-role-table td {
-  padding: 11px 12px;
-  border-bottom: 1px solid #e3e9f0;
-  color: #20364f;
+.price-review-role-grid .ag-row.is-detail-active .ag-cell {
+  background: #eaf3ff;
+}
+
+.price-review-role-pagination {
+  padding: 0 2px;
+}
+
+.role-page-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
   font-size: 13px;
-  white-space: nowrap;
+  font-weight: 800;
 }
 
-.price-review-role-table tbody tr:hover td { background: #f4f9ff; }
-.price-review-role-table .number-cell { text-align: right; font-variant-numeric: tabular-nums; }
-.price-review-role-table .role-window-cell { min-width: 310px; color: #62758c; font-size: 12px; }
+.role-page-size select {
+  min-width: 82px;
+  height: 40px;
+  padding: 0 30px 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--text);
+  font: inherit;
+}
+
+.role-detail-msku-button {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #163a61;
+  font: inherit;
+  cursor: pointer;
+}
+
+.role-detail-msku-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.role-msku-copy-button {
+  position: relative;
+  display: inline-grid;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: #66809d;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-3px);
+  transition: color 0.16s ease, background 0.16s ease, border-color 0.16s ease, opacity 0.16s ease, transform 0.16s ease;
+}
+
+.role-msku-copy-button svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.role-msku-copy-button:hover,
+.role-msku-copy-button:focus-visible {
+  border-color: #bfd7f4;
+  background: #edf6ff;
+  color: #1769c5;
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
+  outline: none;
+}
+
+.price-review-role-grid .ag-row:hover .role-msku-copy-button,
+.price-review-role-grid .ag-row:focus-within .role-msku-copy-button {
+  opacity: 0.82;
+  pointer-events: auto;
+  transform: translateX(0);
+}
+
+.role-msku-copy-button[data-copy-state="success"] {
+  border-color: #b8e5d3;
+  background: #eaf8f2;
+  color: #07825e;
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
+}
+
+.role-msku-copy-button[data-copy-state="success"] svg { visibility: hidden; }
+.role-msku-copy-button[data-copy-state="success"]::after {
+  content: "✓";
+  position: absolute;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.role-msku-copy-button[data-copy-state="error"] {
+  border-color: #f3c7c9;
+  background: #fff1f1;
+  color: #c83d43;
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
+}
+
+@media (hover: none) {
+  .role-msku-copy-button {
+    opacity: 0.68;
+    pointer-events: auto;
+    transform: none;
+  }
+}
 
 .role-badge,
 .role-change-badge,
@@ -4290,6 +4480,22 @@ body[data-page="price_review"] .price-review-scroll-table {
   .price-review-filter-panel.is-role-mode .role-filter-scope-bar .price-review-role-filter-actions {
     grid-column: 1 / -1;
     justify-content: flex-end;
+  }
+}
+
+@media (max-width: 720px) {
+  .role-performance-trend-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .role-performance-trend-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .role-performance-trend-chart {
+    height: 300px;
   }
 }
 
@@ -5424,6 +5630,356 @@ body[data-page="matrix"] .matrix-cell-meta {
 
 .price-review-drawer {
   width: min(680px, calc(100vw - 80px));
+}
+
+.role-detail-drawer-mask {
+  z-index: 34;
+  background: rgba(17, 35, 57, 0.42);
+  backdrop-filter: blur(1.5px);
+}
+
+.detail-drawer.role-detail-drawer {
+  z-index: 35;
+  display: flex;
+  flex-direction: column;
+  width: min(900px, calc(100vw - 56px));
+  height: 100dvh;
+  padding: 0;
+  overflow: hidden;
+  border-left: 1px solid #d3deeb;
+  background: #f7faff;
+}
+
+.detail-drawer.role-detail-drawer.hidden {
+  display: none;
+}
+
+.role-detail-drawer-head {
+  position: sticky;
+  z-index: 3;
+  top: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 84px;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid #dae4ef;
+  background: rgba(255, 255, 255, 0.98);
+}
+
+.role-detail-drawer-head h2 {
+  margin: 4px 0 0;
+  color: #102b49;
+  font-size: 22px;
+}
+
+.role-detail-drawer-head .drawer-subtitle {
+  max-width: 760px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.role-detail-drawer-content {
+  display: grid;
+  flex: 1 1 auto;
+  grid-auto-rows: max-content;
+  align-content: start;
+  gap: 14px;
+  min-height: 0;
+  padding: 16px 20px 24px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.role-detail-loading {
+  display: grid;
+  min-height: 260px;
+  place-items: center;
+  align-content: center;
+  gap: 12px;
+  color: #60758e;
+  font-size: 13px;
+}
+
+.role-detail-loading span {
+  width: 28px;
+  height: 28px;
+  border: 3px solid #d5e3f3;
+  border-top-color: #2673d7;
+  border-radius: 50%;
+  animation: role-detail-spin 0.8s linear infinite;
+}
+
+@keyframes role-detail-spin { to { transform: rotate(360deg); } }
+
+.role-detail-identity {
+  display: grid;
+  grid-template-columns: 0.8fr 1fr 1fr 1fr;
+  gap: 8px 18px;
+  padding: 14px 16px;
+  border: 1px solid #d6e2ef;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.role-detail-identity > div:not(.role-detail-role-transition) span,
+.role-detail-finance > div span {
+  display: block;
+  margin-bottom: 4px;
+  color: #76889e;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.role-detail-identity > div strong,
+.role-detail-finance > div strong {
+  color: #183654;
+  font-size: 13px;
+}
+
+.role-detail-role-transition {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding-top: 9px;
+  border-top: 1px solid #edf1f6;
+  color: #64778e;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.role-detail-role-transition b {
+  color: #2d76cf;
+  font-size: 18px;
+}
+
+.role-detail-checkpoint-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 0.84fr 1fr;
+  gap: 14px;
+}
+
+.role-detail-checkpoint-grid::before {
+  position: absolute;
+  z-index: 0;
+  top: 50%;
+  right: 20%;
+  left: 20%;
+  height: 2px;
+  background: #76a8e4;
+  content: "";
+}
+
+.role-detail-checkpoint {
+  position: relative;
+  z-index: 1;
+  padding: 14px;
+  border: 1px solid #d4e0ec;
+  border-radius: 11px;
+  background: #ffffff;
+}
+
+.role-detail-checkpoint.is-adjustment {
+  border-color: #b9d3f4;
+  background: #f0f6ff;
+  text-align: center;
+}
+
+.role-detail-checkpoint.is-after {
+  border-color: #cce9df;
+  background: #f5fcf9;
+}
+
+.role-detail-checkpoint > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e8eef5;
+}
+
+.role-detail-checkpoint > div strong { color: #173754; font-size: 13px; }
+.role-detail-checkpoint.is-adjustment > div strong { color: #1d6bd1; }
+.role-detail-checkpoint > div span { color: #74869b; font-size: 10px; }
+
+.role-detail-checkpoint > section {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding-top: 11px;
+}
+
+.role-detail-checkpoint.is-adjustment > section { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.role-detail-checkpoint section div { min-width: 0; text-align: center; }
+.role-detail-checkpoint section span { display: block; color: #72849a; font-size: 9px; }
+.role-detail-checkpoint section strong { display: block; margin-top: 4px; color: #173654; font-size: 14px; font-variant-numeric: tabular-nums; }
+
+.role-detail-evidence-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 24px minmax(0, 1fr);
+  align-items: stretch;
+  gap: 8px;
+}
+
+.role-detail-evidence-arrow {
+  display: grid;
+  place-items: center;
+  color: #67a5ee;
+  font-size: 26px;
+  font-weight: 800;
+}
+
+.role-detail-evidence-card {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #d4e0ed;
+  border-radius: 11px;
+  background: #ffffff;
+}
+
+.role-detail-evidence-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid #dce6f0;
+  background: #f8fbff;
+}
+
+.role-detail-evidence-card header span { color: #5d718a; font-size: 11px; font-weight: 750; }
+.role-detail-evidence-card header strong { color: #1769cc; font-size: 14px; }
+.role-detail-evidence-table-wrap { overflow-x: auto; }
+.role-detail-evidence-card table { width: 100%; min-width: 390px; border-collapse: collapse; }
+.role-detail-evidence-card th,
+.role-detail-evidence-card td { padding: 8px 10px; border-bottom: 1px solid #e5ebf2; color: #435b75; font-size: 10px; text-align: left; vertical-align: top; }
+.role-detail-evidence-card th { color: #718399; background: #fbfdff; font-weight: 800; white-space: nowrap; }
+
+.role-evidence-state {
+  display: inline-flex;
+  padding: 3px 7px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.role-evidence-state.is-match { background: #e5f7ef; color: #087b5f; }
+.role-evidence-state.is-miss { background: #fff0f0; color: #b84545; }
+.role-detail-evidence-card footer { padding: 9px 12px; background: #edf7ff; color: #2670c7; font-size: 10px; font-weight: 800; }
+.role-detail-evidence-card footer.is-unqualified { background: #fff2f2; color: #b84242; }
+
+.role-detail-finance {
+  display: grid;
+  grid-template-columns: minmax(210px, 1.6fr) repeat(5, minmax(92px, 0.7fr));
+  align-items: center;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid #d5e1ee;
+  border-radius: 11px;
+  background: #ffffff;
+}
+
+.role-detail-finance > div {
+  min-width: 0;
+  padding: 12px 14px;
+  border-left: 1px solid #e4ebf3;
+}
+
+.role-detail-finance > div:first-child { border-left: 0; }
+.role-detail-finance-title small { display: block; overflow: hidden; margin-top: 5px; color: #778aa0; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+
+.role-detail-trend-card {
+  overflow: hidden;
+  border: 1px solid #d5e1ed;
+  border-radius: 11px;
+  background: #ffffff;
+}
+
+.role-detail-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px 8px;
+  border-bottom: 1px solid #e4ebf3;
+}
+
+.role-detail-section-head span,
+.role-detail-section-head strong { display: block; }
+.role-detail-section-head span { color: #183654; font-size: 13px; font-weight: 850; }
+.role-detail-section-head strong { margin-top: 3px; color: #60748d; font-size: 10px; }
+.role-detail-section-head small { color: #788ba0; font-size: 10px; }
+.role-detail-trend-controls {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid #d8e3ef;
+  border-radius: 9px;
+  background: #f3f7fb;
+}
+
+.role-detail-trend-controls button {
+  min-height: 28px;
+  padding: 5px 11px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #647990;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.role-detail-trend-controls button:hover { color: #1769e0; }
+.role-detail-trend-controls button:focus-visible { outline: 2px solid rgba(23, 105, 224, 0.28); outline-offset: 1px; }
+.role-detail-trend-controls button.is-active {
+  background: #ffffff;
+  color: #1769e0;
+  box-shadow: 0 2px 7px rgba(34, 83, 133, 0.13);
+}
+.role-detail-trend-chart { width: 100%; height: 270px; }
+
+.role-detail-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0 0;
+  color: #78899e;
+  font-size: 10px;
+}
+
+body.role-detail-open { overflow: hidden; }
+
+@media (max-width: 980px) {
+  .role-detail-drawer { width: min(760px, calc(100vw - 24px)); }
+  .role-detail-evidence-grid { grid-template-columns: 1fr; }
+  .role-detail-evidence-arrow { display: none; }
+  .role-detail-finance { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .role-detail-finance-title { grid-column: 1 / -1; border-bottom: 1px solid #e4ebf3; }
+}
+
+@media (max-width: 680px) {
+  .role-detail-drawer { width: 100%; }
+  .role-detail-drawer-content { padding: 12px; }
+  .role-detail-identity { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .role-detail-checkpoint-grid { grid-template-columns: 1fr; }
+  .role-detail-checkpoint-grid::before { display: none; }
+  .role-detail-finance { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .role-detail-section-head { align-items: flex-start; flex-wrap: wrap; }
+  .role-detail-trend-controls { width: 100%; }
+  .role-detail-trend-controls button { flex: 1 1 0; }
+  .role-detail-trend-chart { height: 240px; }
 }
 
 .drawer-subtitle {

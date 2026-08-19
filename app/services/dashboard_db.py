@@ -35,7 +35,7 @@ OPPORTUNITY_COMPARISON_TABLE = "etl_datasync_test.dashboard_opportunity_comparis
 ALERT_DAY_COMPARISONS = {7: "d7", 14: "d14", 30: "d30", 60: "d60", 90: "d90"}
 MARGIN_TRANSITION_LAYERS = ["\u65e0\u6bdb\u5229", "<0%", "0-10%", "10-15%", "15-25%", "25-35%", ">35%"]
 SALES_ROLE_PERIOD_TABLE = "etl_datasync_test.dashboard_sales_role_period_snapshot"
-SALES_ROLE_PERIODS = {"7d", "14d", "30d", "90d"}
+SALES_ROLE_PERIODS = {"3d", "7d", "14d", "30d", "90d"}
 SALES_ROLE_SNAPSHOT_CODE_MAP = {
     "star": "star",
     "potential": "potential",
@@ -434,6 +434,7 @@ class DashboardDbService:
         return {
             "default_period": default_period,
             "periods": [
+                {"key": "3d", "label": "3天"},
                 {"key": "7d", "label": "7天"},
                 {"key": "14d", "label": "14天"},
                 {"key": "30d", "label": "30天"},

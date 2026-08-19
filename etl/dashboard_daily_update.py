@@ -257,6 +257,7 @@ create table if not exists etl_datasync_test.dashboard_product_performance_daily
     key idx_day_country (dt_date, country),
     key idx_period_group (dt_date, seller_name_new, seller_sku_adj, country_category, country, local_sku),
     key idx_price_review_lookup (seller_name, seller_sku_adj, dt_date),
+    key idx_station_role_lookup (seller_name_new, country, seller_sku_adj, dt_date),
     key idx_sku (seller_sku_adj)
 ) engine=InnoDB default charset=utf8mb4;
 """
@@ -2269,7 +2270,7 @@ select
     sum(amount) as sales_amount,
     sum(amount_ex_tax) as sales_amount_ex_tax,
     sum(predict_gross_profit) as raw_order_gross_profit,
-    sum(case when volume = 0 then 0 else predict_gross_profit end) as order_gross_profit,
+    sum(predict_gross_profit) as order_gross_profit,
     sum(case when (volume = 0 and predict_gross_profit != 0) or (amount < abs(predict_gross_profit)) then 1 else 0 end) as abnormal_flag_count,
     sum(gross_profit) as settlement_gross_profit,
     max(afn_fulfillable_quantity) as afn_fulfillable_quantity,

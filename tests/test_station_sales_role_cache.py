@@ -72,19 +72,35 @@ class SourceCursor:
     def __init__(self, rows):
         self.rows = rows
         self.result = []
+        self.offset = 0
+        self.is_detail_query = False
         self.executions = []
 
     def execute(self, sql, params=None):
         self.executions.append((sql, params))
         if "select distinct data_date" in sql.lower():
+            self.is_detail_query = False
             self.result = [{"data_date": date(2026, 8, 16)}, {"data_date": date(2026, 8, 15)}]
         else:
+            self.is_detail_query = True
+            normalized_sql = " ".join(sql.lower().split())
+            assert "json_object" in normalized_sql
+            assert "$.metrics" in normalized_sql
+            assert "$.rule_version" in normalized_sql
             assert set(params["label_ids"]) == {1301, 1302, 1303, 1304}
             assert set(params["periods"]) == {"7d", "14d", "30d", "90d"}
             self.result = self.rows
+        self.offset = 0
 
     def fetchall(self):
+        if self.is_detail_query:
+            raise AssertionError("detail query must be consumed in bounded batches")
         return list(self.result)
+
+    def fetchmany(self, size):
+        batch = self.result[self.offset:self.offset + size]
+        self.offset += len(batch)
+        return list(batch)
 
     def __enter__(self):
         return self
@@ -155,3 +171,25 @@ def test_sync_recent_cache_replaces_only_after_complete_validation():
     statements = " ".join(sql.lower() for sql, _ in target.cursor_instance.executions)
     assert "delete from `etl_datasync_test`.`station_sales_role_recent_cache`" in statements
     assert "insert into `etl_datasync_test`.`station_sales_role_recent_cache`" in statements
+
+
+def test_sync_recent_cache_keeps_live_cache_when_stream_is_incomplete():
+    rows = [
+        row for row in complete_rows()
+        if not (row["data_date"] == date(2026, 8, 15) and row["label_period"] == "90d")
+    ]
+    source = SourceConnection(rows)
+    target = TargetConnection()
+
+    with pytest.raises(ValueError, match="missing periods"):
+        cache_module().sync_recent_station_role_cache(
+            source,
+            target,
+            "etl_datasync_test",
+            batch_size=3,
+        )
+
+    statements = " ".join(sql.lower() for sql, _ in target.cursor_instance.executions)
+    assert "delete from `etl_datasync_test`.`station_sales_role_recent_cache`" not in statements
+    assert target.commits == 0
+    assert target.rollbacks == 1

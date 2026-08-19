@@ -50,7 +50,7 @@
   <div>
     <p class="section-kicker">站点销售角色</p>
     <h2>调价前后角色与财务定价区间迁移</h2>
-    <p class="muted">按国家 + 店铺 + MSKU 计算，调价当天不进入调前或调后窗口。</p>
+    <p class="muted">按国家 + 店铺 + MSKU 计算，调价当天计入调前窗口。</p>
   </div>
 </header>
 
@@ -72,8 +72,9 @@
     <label class="filter-control">
       <span>对比周期</span>
       <select id="compareDaysSelect">
+        <option value="3" selected>调价前后 3 天</option>
         <option value="7">调价前后 7 天</option>
-        <option value="14" selected>调价前后 14 天</option>
+        <option value="14">调价前后 14 天</option>
         <option value="28">调价前后 28 天</option>
       </select>
     </label>
@@ -122,7 +123,7 @@
           <div class="role-window-pivot" aria-hidden="true">
             <span class="role-window-arrow">→</span>
             <strong>调价日</strong>
-            <small>当天不计入</small>
+            <small>当天计入调前</small>
           </div>
           <label class="role-window-side is-after">
             <span class="role-window-eyebrow">调后角色表现</span>
@@ -351,9 +352,18 @@
   <div id="roleMigrationKpis" class="price-review-role-kpis"></div>
 
   <div class="price-review-role-analysis-grid">
-    <article class="panel">
+    <article class="panel price-review-role-matrix-panel">
       <div class="panel-head"><div><p class="section-kicker">角色迁移</p><h3>调前角色 → 调后角色</h3></div><span class="muted">点击格子筛选明细</span></div>
       <div id="roleMigrationMatrix" class="role-migration-matrix-wrap"></div>
+      <div class="role-performance-trend-section">
+        <div class="role-performance-trend-heading">
+          <div><p class="section-kicker">经营走势</p><h3>本批产品销量与毛利率</h3></div>
+          <span class="muted">调价日标记并计入调前汇总</span>
+        </div>
+        <div id="rolePerformanceTrendSummary" class="role-performance-trend-summary"></div>
+        <div id="rolePerformanceTrendChart" class="role-performance-trend-chart" role="img" aria-label="调价前后销量与毛利率趋势"></div>
+        <p id="rolePerformanceTrendCoverage" class="role-performance-trend-coverage"></p>
+      </div>
     </article>
     <article class="panel price-review-role-insights">
       <div class="panel-head"><div><p class="section-kicker">变化摘要</p><h3>本次调价角色表现</h3></div></div>
@@ -368,13 +378,20 @@
   <section class="panel table-section price-review-role-detail-panel">
     <div class="panel-head"><div><p class="section-kicker">SKU明细</p><h2>站点角色与定价区间明细</h2></div><span id="roleMigrationCount" class="muted"></span></div>
     <div id="roleLinkedFilterBar" class="price-review-role-linked-filter" hidden><div><span class="filter-context-label">当前联动筛选</span><span id="roleLinkedFilterText"></span></div><button id="clearRoleLinkedFiltersBtn" class="text-button" type="button">清除联动条件</button></div>
-    <div class="table-wrap price-review-role-table-wrap">
-      <table class="price-review-role-table">
-        <thead><tr><th>国家</th><th>店铺</th><th>MSKU</th><th>调前角色</th><th>调后角色</th><th>变化</th><th>调前日销</th><th>调后日销</th><th>调前毛利率</th><th>调后毛利率</th><th>调前财务区间</th><th>调后财务区间</th><th>财务变化</th><th>数据状态</th><th>实际窗口</th></tr></thead>
-        <tbody id="roleMigrationTableBody"></tbody>
-      </table>
+    <div class="price-review-role-table-wrap ag-grid-shell">
+      <div id="roleMigrationGrid" class="price-review-role-grid"></div>
     </div>
-    <div class="pagination-bar"><div id="rolePaginationInfo" class="pagination-info"></div><div class="pagination-controls"><button id="rolePrevPageBtn" class="ghost-button" type="button">上一页</button><div id="rolePaginationNumbers" class="pagination-numbers"></div><button id="roleNextPageBtn" class="ghost-button" type="button">下一页</button></div></div>
+    <div class="pagination-bar price-review-role-pagination">
+      <div id="rolePaginationInfo" class="pagination-info"></div>
+      <div class="pagination-controls">
+        <label class="role-page-size" for="rolePageSizeSelect">每页
+          <select id="rolePageSizeSelect"><option value="20">20条</option><option value="50">50条</option><option value="100">100条</option></select>
+        </label>
+        <button id="rolePrevPageBtn" class="ghost-button" type="button">上一页</button>
+        <div id="rolePaginationNumbers" class="pagination-numbers"></div>
+        <button id="roleNextPageBtn" class="ghost-button" type="button">下一页</button>
+      </div>
+    </div>
   </section>
 </section>
 {% endblock %}
@@ -392,10 +409,30 @@
   </div>
   <div id="priceReviewDrawerContent" class="drawer-content"></div>
 </aside>
+<div id="roleDetailDrawerMask" class="drawer-mask role-detail-drawer-mask hidden"></div>
+<aside id="roleDetailDrawer" class="detail-drawer role-detail-drawer hidden" aria-hidden="true" aria-labelledby="roleDetailTitle">
+  <div class="role-detail-drawer-head">
+    <div>
+      <p class="section-kicker">SKU 诊断</p>
+      <h2 id="roleDetailTitle">单品调价诊断</h2>
+      <p id="roleDetailSubtitle" class="drawer-subtitle">选择明细行查看调价前后证据</p>
+    </div>
+    <button id="closeRoleDetailDrawerBtn" class="icon-button" type="button" aria-label="关闭单品调价诊断">×</button>
+  </div>
+  <div id="roleDetailDrawerContent" class="role-detail-drawer-content">
+    <div class="empty-state compact">请选择一个 SKU</div>
+    <div id="roleDetailTrendChart" hidden></div>
+  </div>
+</aside>
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', path='js/price_review.js') }}?v=20260817roletimelinec2"></script>
+<script src="{{ url_for('static', path='js/price_review_period.js') }}?v=20260818period3"></script>
+<script src="{{ url_for('static', path='js/price_review.js') }}?v=20260818period3"></script>
 <script src="{{ url_for('static', path='js/price_review_finance_flow.js') }}?v=20260817financeflow1"></script>
-<script src="{{ url_for('static', path='js/price_review_role.js') }}?v=20260817financeflow1"></script>
+<script src="{{ url_for('static', path='js/price_review_role_trend.js') }}?v=20260818roletrend2"></script>
+<script src="{{ url_for('static', path='js/price_review_role_detail_chart.js') }}?v=20260818roledetailsplit2"></script>
+<script src="{{ url_for('static', path='js/price_review_role_copy.js') }}?v=20260818rolecopyhover1"></script>
+<script src="{{ url_for('static', path='js/price_review_role_grid.js') }}?v=20260818rolegrid2"></script>
+<script src="{{ url_for('static', path='js/price_review_role.js') }}?v=20260818rolegrid2"></script>
 {% endblock %}

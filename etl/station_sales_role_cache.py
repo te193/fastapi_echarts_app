@@ -146,8 +146,15 @@ def sync_recent_station_role_cache(
 ) -> CacheSyncResult:
     if batch_size < 1:
         raise ValueError("batch_size must be positive")
-    with source_conn.cursor() as cursor:
-        cursor.execute(
+    sync_batch_id = uuid4().hex
+    target = _target_table(target_schema)
+    temporary = "`tmp_station_sales_role_recent_cache`"
+    columns = ", ".join(f"`{column}`" for column in CACHE_COLUMNS)
+    values = ", ".join(f"%({column})s" for column in CACHE_COLUMNS)
+    row_count = 0
+    try:
+        with source_conn.cursor() as source_cursor:
+            source_cursor.execute(
             """
             select distinct data_date
             from dws_datasync.`dws_标签表`
@@ -157,47 +164,68 @@ def sync_recent_station_role_cache(
             """,
             {"label_ids": REMOTE_ROLE_LABEL_IDS},
         )
-        data_dates = tuple(sorted(row["data_date"] for row in cursor.fetchall()))
-        if not data_dates:
-            raise ValueError("No remote station role data dates")
-        cursor.execute(
-            """
-            select data_date, country, store, msku, label_id, label_period,
-                   created_time, evidence_json
-            from dws_datasync.`dws_标签表`
-            where label_id in %(label_ids)s
-              and label_period in %(periods)s
-              and data_date in %(data_dates)s
-            """,
-            {
-                "label_ids": REMOTE_ROLE_LABEL_IDS,
-                "periods": REMOTE_ROLE_PERIOD_LABELS,
-                "data_dates": data_dates,
-            },
-        )
-        remote_rows = validate_remote_rows(cursor.fetchall(), data_dates)
+            data_dates = tuple(sorted(row["data_date"] for row in source_cursor.fetchall()))
+            if not data_dates:
+                raise ValueError("No remote station role data dates")
 
-    sync_batch_id = uuid4().hex
-    payload = [_cache_payload(row, sync_batch_id) for row in remote_rows]
-    target = _target_table(target_schema)
-    temporary = "`tmp_station_sales_role_recent_cache`"
-    columns = ", ".join(f"`{column}`" for column in CACHE_COLUMNS)
-    values = ", ".join(f"%({column})s" for column in CACHE_COLUMNS)
-    try:
-        with target_conn.cursor() as cursor:
-            cursor.execute(station_role_recent_cache_ddl(target_schema))
-            cursor.execute(f"drop temporary table if exists {temporary}")
-            cursor.execute(f"create temporary table {temporary} like {target}")
-            insert_temp = f"insert into {temporary} ({columns}) values ({values})"
-            for batch in _chunks(payload, batch_size):
-                cursor.executemany(insert_temp, batch)
-            cursor.execute(f"delete from {target}")
-            cursor.execute(
-                f"insert into {target} ({columns}) select {columns} from {temporary}"
+            source_cursor.execute(
+                """
+                select data_date, country, store, msku, label_id, label_period,
+                       created_time,
+                       json_object(
+                           'metrics', json_extract(evidence_json, '$.metrics'),
+                           'rule_version', json_extract(evidence_json, '$.rule_version')
+                       ) as evidence_json
+                from dws_datasync.`dws_标签表`
+                where label_id in %(label_ids)s
+                  and label_period in %(periods)s
+                  and data_date in %(data_dates)s
+                """,
+                {
+                    "label_ids": REMOTE_ROLE_LABEL_IDS,
+                    "periods": REMOTE_ROLE_PERIOD_LABELS,
+                    "data_dates": data_dates,
+                },
             )
-            cursor.execute(f"drop temporary table {temporary}")
+            periods_by_date: dict[date, set[int]] = {item: set() for item in data_dates}
+            with target_conn.cursor() as target_cursor:
+                target_cursor.execute(station_role_recent_cache_ddl(target_schema))
+                target_cursor.execute(f"drop temporary table if exists {temporary}")
+                target_cursor.execute(f"create temporary table {temporary} like {target}")
+                insert_temp = f"insert into {temporary} ({columns}) values ({values})"
+                while True:
+                    remote_batch = source_cursor.fetchmany(batch_size)
+                    if not remote_batch:
+                        break
+                    payload = []
+                    for row in remote_batch:
+                        row_date = row.get("data_date")
+                        if row_date not in periods_by_date:
+                            raise ValueError(f"Unexpected remote station role date: {row_date!r}")
+                        country = str(row.get("country") or "").strip()
+                        store = str(row.get("store") or row.get("station_store") or "").strip()
+                        msku = str(row.get("msku") or "").strip()
+                        if not country or not store or not msku:
+                            raise ValueError("Remote station role business key is incomplete")
+                        periods_by_date[row_date].add(_period_days(row))
+                        payload.append(_cache_payload(row, sync_batch_id))
+                    target_cursor.executemany(insert_temp, payload)
+                    row_count += len(payload)
+
+                required = set(REMOTE_ROLE_PERIODS)
+                for row_date, actual in periods_by_date.items():
+                    if actual != required:
+                        raise ValueError(
+                            f"Remote station role missing periods for {row_date}: "
+                            f"{sorted(required - actual)}"
+                        )
+                target_cursor.execute(f"delete from {target}")
+                target_cursor.execute(
+                    f"insert into {target} ({columns}) select {columns} from {temporary}"
+                )
+                target_cursor.execute(f"drop temporary table {temporary}")
         target_conn.commit()
     except Exception:
         target_conn.rollback()
         raise
-    return CacheSyncResult(data_dates=data_dates, row_count=len(payload), sync_batch_id=sync_batch_id)
+    return CacheSyncResult(data_dates=data_dates, row_count=row_count, sync_batch_id=sync_batch_id)

@@ -1,4 +1,8 @@
+import json
+import threading
+import time
 from datetime import date
+from datetime import datetime, timedelta
 
 from app.services.ad_budget_data import (
     AdBudgetService,
@@ -290,6 +294,56 @@ def test_default_sort_puts_highest_priority_anomaly_first(monkeypatch):
     assert [row["seller_sku_adj"] for row in payload["rows"]] == ["config", "overspend", "normal"]
 
 
+def test_column_filters_apply_before_server_pagination(monkeypatch):
+    service = AdBudgetService()
+    rows = [
+        {
+            "seller_sku_adj": "LAMP-01",
+            "product_name": "露营灯",
+            "monthly_ad_budget_cny": 180,
+            "anomalies": [],
+        },
+        {
+            "seller_sku_adj": "LAMP-02",
+            "product_name": "小夜灯",
+            "monthly_ad_budget_cny": 80,
+            "anomalies": [],
+        },
+        {
+            "seller_sku_adj": "BOX-01",
+            "product_name": "收纳箱",
+            "monthly_ad_budget_cny": 220,
+            "anomalies": [],
+        },
+    ]
+    monkeypatch.setattr(service, "_load_rows", lambda: (rows, date(2026, 8, 11), date(2026, 8, 12)))
+    column_filters = json.dumps(
+        {
+            "product_name": {"filterType": "text", "type": "contains", "filter": "灯"},
+            "monthly_ad_budget_cny": {"filterType": "number", "type": "greaterThan", "filter": 100},
+        },
+        ensure_ascii=False,
+    )
+
+    payload = service.get_payload(column_filters=column_filters, page=1, page_size=20)
+
+    assert payload["total"] == 1
+    assert [row["seller_sku_adj"] for row in payload["rows"]] == ["LAMP-01"]
+
+
+def test_server_sort_supports_text_columns(monkeypatch):
+    service = AdBudgetService()
+    rows = [
+        {"seller_sku_adj": "SKU-B", "product_name": "Beta", "anomalies": []},
+        {"seller_sku_adj": "SKU-A", "product_name": "alpha", "anomalies": []},
+    ]
+    monkeypatch.setattr(service, "_load_rows", lambda: (rows, date(2026, 8, 11), date(2026, 8, 12)))
+
+    payload = service.get_payload(sort_field="product_name", sort_dir="asc")
+
+    assert [row["seller_sku_adj"] for row in payload["rows"]] == ["SKU-A", "SKU-B"]
+
+
 def test_month_start_scan_includes_the_full_seven_day_window():
     service = AdBudgetService()
 
@@ -334,3 +388,81 @@ def test_tacos_uses_month_ad_spend_over_product_sales_amount():
     assert rows[0]["acos"] == 0.4
     assert rows[0]["tacos"] == 0.2
     assert rows[1]["tacos"] is None
+
+
+def test_meta_uses_lightweight_options_without_loading_full_product_rows():
+    class LightweightMetaService(AdBudgetService):
+        def _load_rows(self, force=False):
+            raise AssertionError("meta must not trigger the full product aggregation")
+
+        def _load_meta_options(self):
+            return (
+                [
+                    {
+                        "country_category": "欧洲站",
+                        "country": "德国",
+                        "seller_name_new": "Store-A",
+                        "product_type": "老品",
+                    }
+                ],
+                date(2026, 8, 11),
+                date(2026, 8, 12),
+            )
+
+    meta = LightweightMetaService().get_meta()
+
+    assert meta["budget_date"] == "2026-08-11"
+    assert meta["performance_date"] == "2026-08-12"
+    assert meta["country_categories"] == ["欧洲站"]
+    assert meta["countries"] == ["德国"]
+    assert meta["stores"] == ["Store-A"]
+    assert meta["product_types"] == ["老品"]
+
+
+def test_five_minute_product_cache_is_reused_without_database_access():
+    service = AdBudgetService()
+    cached_rows = [{"seller_sku_adj": "SKU-CACHED"}]
+    service._cache_rows = cached_rows
+    service._cache_dates = (date(2026, 8, 11), date(2026, 8, 12))
+    service._cache_at = datetime.now() - timedelta(minutes=5)
+
+    def fail_connect():
+        raise AssertionError("a five-minute cache entry should still be fresh")
+
+    service.connect = fail_connect
+
+    rows, budget_date, performance_date = service._load_rows()
+
+    assert rows == cached_rows
+    assert rows is not cached_rows
+    assert budget_date == date(2026, 8, 11)
+    assert performance_date == date(2026, 8, 12)
+
+
+def test_expired_product_cache_returns_immediately_while_refreshing_in_background():
+    refresh_started = threading.Event()
+    release_refresh = threading.Event()
+
+    class SlowRefreshService(AdBudgetService):
+        def _refresh_rows(self, force=False):
+            refresh_started.set()
+            release_refresh.wait(timeout=1)
+            return ([{"seller_sku_adj": "SKU-NEW"}], date(2026, 8, 12), date(2026, 8, 13))
+
+    service = SlowRefreshService()
+    service._cache_rows = [{"seller_sku_adj": "SKU-STALE"}]
+    service._cache_dates = (date(2026, 8, 11), date(2026, 8, 12))
+    service._cache_at = datetime.now() - timedelta(minutes=11)
+
+    started_at = time.perf_counter()
+    rows, budget_date, performance_date = service._load_rows()
+    elapsed = time.perf_counter() - started_at
+
+    try:
+        assert elapsed < 0.2
+        assert rows == [{"seller_sku_adj": "SKU-STALE"}]
+        assert budget_date == date(2026, 8, 11)
+        assert performance_date == date(2026, 8, 12)
+        assert refresh_started.wait(timeout=0.2)
+    finally:
+        release_refresh.set()

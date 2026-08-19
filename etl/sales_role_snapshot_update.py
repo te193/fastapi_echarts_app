@@ -5,7 +5,7 @@ from etl.dashboard_daily_update import build_schema_config, connect_target, rend
 from etl.replenishment_update import apply_database_ini_env
 
 
-DEFAULT_PERIODS = (7, 14, 30, 90)
+DEFAULT_PERIODS = (3, 7, 14, 30, 90)
 SALES_ROLE_RULE_VERSION = "label_id_1_20260702_v1"
 
 

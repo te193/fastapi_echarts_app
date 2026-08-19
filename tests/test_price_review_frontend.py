@@ -88,10 +88,15 @@ def test_price_review_scroll_layout_assets_have_fresh_cache_versions():
     base_template = (ROOT / "app" / "templates" / "base.html").read_text(encoding="utf-8")
     page_template = (ROOT / "app" / "templates" / "price_review.html").read_text(encoding="utf-8")
 
-    assert "styles.css') }}?v=20260817financeflow1" in base_template
-    assert "price_review.js') }}?v=20260817roletimelinec2" in page_template
+    assert "styles.css') }}?v=20260818rolegrid1" in base_template
+    assert "price_review_period.js') }}?v=20260818period3" in page_template
+    assert "price_review.js') }}?v=20260818period3" in page_template
     assert "price_review_finance_flow.js') }}?v=20260817financeflow1" in page_template
-    assert "price_review_role.js') }}?v=20260817financeflow1" in page_template
+    assert "price_review_role_trend.js') }}?v=20260818roletrend2" in page_template
+    assert "price_review_role_detail_chart.js') }}?v=20260818roledetailsplit2" in page_template
+    assert "price_review_role_copy.js') }}?v=20260818rolecopyhover1" in page_template
+    assert "price_review_role_grid.js') }}?v=20260818rolegrid2" in page_template
+    assert "price_review_role.js') }}?v=20260818rolegrid2" in page_template
 
 
 def test_price_review_has_performance_and_station_role_views():
@@ -107,10 +112,10 @@ def test_price_review_has_performance_and_station_role_views():
     assert 'value="90">90天</option>' in template
     assert '30天 → 调后N天' not in template
     assert 'id="roleMigrationMatrix"' in template
-    assert 'id="roleMigrationTableBody"' in template
+    assert 'id="roleMigrationGrid"' in template
 
 
-def test_station_role_view_loads_api_and_renders_fixed_scroll_table():
+def test_station_role_view_loads_api_and_renders_paginated_ag_grid():
     script = (ROOT / "app" / "static" / "js" / "price_review_role.js").read_text(encoding="utf-8")
     styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
     template = (ROOT / "app" / "templates" / "price_review.html").read_text(encoding="utf-8")
@@ -119,11 +124,46 @@ def test_station_role_view_loads_api_and_renders_fixed_scroll_table():
     assert "renderRoleMatrix" in script
     assert "renderFinanceMatrix" in script
     assert "renderRoleDetails" in script
-    assert 'class="table-wrap price-review-role-table-wrap"' in template
-    role_scroll_rule = styles.split('.price-review-role-table-wrap {', 1)[1].split('}', 1)[0]
-    assert "overflow: auto;" in role_scroll_rule
-    role_header_rule = styles.split('.price-review-role-table th {', 1)[1].split('}', 1)[0]
-    assert "position: sticky;" in role_header_rule
+    assert 'id="roleMigrationGrid"' in template
+    assert 'id="rolePageSizeSelect"' in template
+    assert 'id="roleMigrationTableBody"' not in template
+    assert "实际窗口" not in template
+    assert 'window.kanbanGrid.makeGrid("roleMigrationGrid"' in script
+    assert "PriceReviewRoleGrid.buildPaginationModel" in script
+    assert ".price-review-role-grid" in styles
+
+
+def test_station_role_detail_uses_a_right_diagnostic_drawer():
+    template = (ROOT / "app" / "templates" / "price_review.html").read_text(encoding="utf-8")
+    script = (ROOT / "app" / "static" / "js" / "price_review_role.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+
+    assert 'id="roleDetailDrawer"' in template
+    assert 'id="roleDetailDrawerMask"' in template
+    assert 'id="roleDetailTrendChart"' in template
+    assert 'app.apiGet("/api/price-review/role-migration/detail"' in script
+    assert "_roleDetailKey" in script
+    assert "openRoleDetail" in script
+    assert ".role-detail-drawer" in styles
+    assert ".detail-drawer.role-detail-drawer" in styles
+    assert 'typeof actual === "string"' in script
+
+
+def test_station_role_detail_trend_exposes_sales_margin_and_rank_views():
+    script = (ROOT / "app" / "static" / "js" / "price_review_role.js").read_text(encoding="utf-8")
+
+    assert 'data-role-detail-trend-view="sales_margin"' in script
+    assert 'data-role-detail-trend-view="rank"' in script
+    assert 'chartApi.buildOption(payload, roleDetailTrendView)' in script
+
+
+def test_station_role_detail_drawer_keeps_content_scrollable():
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+
+    assert ".detail-drawer.role-detail-drawer.hidden" in styles
+    assert "flex-direction: column;" in styles
+    assert "grid-auto-rows: max-content;" in styles
+    assert "overflow-y: auto;" in styles
 
 
 def test_station_role_view_reuses_the_single_page_filter_surface():
@@ -305,3 +345,18 @@ def test_station_finance_migration_renders_all_pricing_bands_as_a_flow_diagram()
     assert "model.leftNodes" in script
     assert "model.rightNodes" in script
     assert "items.slice(0, 5)" not in script
+
+
+def test_station_role_matrix_panel_includes_filtered_sales_and_margin_trend():
+    template = (ROOT / "app" / "templates" / "price_review.html").read_text(encoding="utf-8")
+    script = (ROOT / "app" / "static" / "js" / "price_review_role.js").read_text(encoding="utf-8")
+
+    matrix_position = template.index('id="roleMigrationMatrix"')
+    trend_position = template.index('id="rolePerformanceTrendChart"')
+    insight_position = template.index('class="panel price-review-role-insights"')
+    assert matrix_position < trend_position < insight_position
+    assert 'id="rolePerformanceTrendSummary"' in template
+    assert template.index("price_review_role_trend.js") < template.index("price_review_role.js")
+    assert "renderRolePerformanceTrend(payload.performance_trend" in script
+    assert "当天计入调前" in template
+    assert "当天不计入" not in template

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block extra_head %}
-<link rel="stylesheet" href="{{ url_for('static', path='css/ad_budget.css') }}?v=20260813k">
+<link rel="stylesheet" href="{{ url_for('static', path='css/ad_budget.css') }}?v=20260814d">
 {% endblock %}
 
 {% block content %}
@@ -18,7 +18,7 @@
   </header>
 
   <section class="ad-budget-filters" aria-label="筛选条件">
-    <label>市场<select id="ab-market"><option value="all">全部市场</option></select></label>
+    <label>国家类别<select id="ab-market"><option value="all">全部国家类别</option></select></label>
     <label>国家<select id="ab-country"><option value="all">全部国家</option></select></label>
     <label>店铺<select id="ab-store"><option value="all">全部店铺</option></select></label>
     <label>产品阶段<select id="ab-product-type"><option value="all">全部阶段</option></select></label>
@@ -36,12 +36,17 @@
   </section>
 
   <div id="ab-stale" class="ad-budget-stale" hidden></div>
-  <section id="ab-kpis" class="ad-budget-kpis" aria-label="预算概览"></section>
+  <section id="ab-kpis" class="ad-budget-kpis" aria-label="预算概览" aria-busy="true">
+    <article class="ab-skeleton ab-skeleton-kpi"><i></i><b></b><small></small></article>
+    <article class="ab-skeleton ab-skeleton-kpi"><i></i><b></b><small></small></article>
+    <article class="ab-skeleton ab-skeleton-kpi"><i></i><b></b><small></small></article>
+    <article class="ab-skeleton ab-skeleton-kpi"><i></i><b></b><small></small></article>
+  </section>
 
   <section class="ad-budget-insights">
     <article class="ad-budget-panel">
       <header><div><span>预算执行</span><h2>国家预算与花费</h2></div><small>点击国家筛选明细</small></header>
-      <div id="ab-country-chart" class="ad-budget-chart" role="img" aria-label="各国家月预算与本月广告花费"></div>
+      <div id="ab-country-chart" class="ad-budget-chart" role="img" aria-label="各国家月预算与本月广告花费"><div class="ab-skeleton ab-skeleton-chart"><i></i><i></i><i></i><i></i><i></i></div></div>
     </article>
     <article class="ad-budget-panel">
       <header>
@@ -70,7 +75,7 @@
           </div>
         </div>
       </header>
-      <div id="ab-anomaly-chart" class="ad-budget-chart" role="img" aria-label="广告预算异常类型分布"></div>
+      <div id="ab-anomaly-chart" class="ad-budget-chart" role="img" aria-label="广告预算异常类型分布"><div class="ab-skeleton ab-skeleton-chart ab-skeleton-ring"><i></i></div></div>
     </article>
   </section>
 
@@ -79,7 +84,7 @@
       <div><span>站点产品明细</span><h2>预算与投放表现</h2></div>
       <p id="ab-table-count">正在加载…</p>
     </header>
-    <div id="ab-grid" class="ad-budget-grid" aria-label="广告预算产品明细表格"></div>
+    <div id="ab-grid" class="ad-budget-grid" aria-label="广告预算产品明细表格" aria-busy="true"><div class="ab-grid-loading"><span></span><span></span><span></span><span></span><span></span></div></div>
     <footer class="ad-budget-pagination">
       <span id="ab-page-summary">共 0 条，第 1 / 1 页</span>
       <div class="ad-budget-page-controls">
@@ -107,5 +112,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', path='js/ad-budget.js') }}?v=20260813k"></script>
+<script src="{{ url_for('static', path='js/ad-budget.js') }}?v=20260814f"></script>
 {% endblock %}

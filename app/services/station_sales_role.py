@@ -92,8 +92,8 @@ def tracking_windows(adjust_date: date, pre_days: int, post_days: int) -> Tracki
     if pre_days not in SUPPORTED_ROLE_PERIODS or post_days not in SUPPORTED_ROLE_PERIODS:
         raise ValueError("Unsupported station role period")
     return TrackingWindows(
-        pre_start=adjust_date - timedelta(days=pre_days),
-        pre_end=adjust_date - timedelta(days=1),
+        pre_start=adjust_date - timedelta(days=pre_days - 1),
+        pre_end=adjust_date,
         post_start=adjust_date + timedelta(days=1),
         post_end=adjust_date + timedelta(days=post_days),
         pre_days=pre_days,
