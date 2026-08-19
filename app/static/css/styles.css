@@ -15421,6 +15421,11 @@ body[data-page="label_hub"] {
 .label-hub-stockout-role-summary strong { color: #315270; font-size: 11px; font-variant-numeric: tabular-nums; }
 .label-hub-stockout-role-list { display: grid; gap: 7px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
+.label-hub-stockout-status-group { display: grid; gap: 7px; }
+.label-hub-stockout-status-group > header { align-items: center; display: flex; justify-content: space-between; }
+.label-hub-stockout-status-group > header b { color: #315270; font-size: 11px; }
+.label-hub-stockout-status-group > header span { color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+
 .label-hub-stockout-role-row {
   align-items: center;
   background: #f8fafd;

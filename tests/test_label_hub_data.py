@@ -537,7 +537,7 @@ class LabelHubDataTests(unittest.TestCase):
             {item["id"]: item["business_unit_count"] for item in payload["roles"]},
         )
 
-    def test_stockout_operating_status_separates_uncertain_supply_and_evaluable_roles(self):
+    def test_stockout_operating_status_partitions_current_stockout_into_eight_exclusive_labels(self):
         def fact(msku, label_id, label_period, evidence=None):
             return {
                 "country_category": "欧洲站",
@@ -548,48 +548,146 @@ class LabelHubDataTests(unittest.TestCase):
                 "evidence_json": evidence or {},
             }
 
-        def stockout_evidence(in_transit, local_quantity):
-            return {"metrics": {"fba_in_transit": in_transit, "local_quantity": local_quantity}}
-
-        def role_evidence(daily_sales, margin_rate, history_start, window_start="2026-07-01", window_end="2026-07-30"):
+        def stockout_evidence(in_transit, local_quantity, fba_available=0):
             return {
-                "metrics": {"daily_sales": daily_sales, "tag_margin_rate": margin_rate},
-                "oos": {"history_start_date": history_start},
-                "window": {"start": window_start, "end": window_end},
+                "metrics": {
+                    "fba_available": fba_available,
+                    "fba_in_transit": in_transit,
+                    "local_quantity": local_quantity,
+                }
+            }
+
+        def role_evidence(sales_qty, margin_rate=10, history_start="2026-07-01"):
+            return {
+                "type": "pre_oos_sales_role",
+                "metrics": {
+                    "daily_sales": sales_qty / 30,
+                    "period_sales_qty": sales_qty,
+                    "tag_margin_rate": margin_rate,
+                },
+                "oos": {"history_start_date": history_start, "oos_start_date": "2026-08-01"},
+                "window": {
+                    "period": "30d",
+                    "days": 30,
+                    "start": "2026-07-01",
+                    "end": "2026-07-30",
+                },
+                "calculation": {"mode": "historical_backtrack", "status": "matched"},
             }
 
         facts = [
-            fact("LOW", 304, "current", stockout_evidence(1, 0)),
-            fact("NO_HISTORY", 304, "current", stockout_evidence(20, 0)),
-            fact("MISMATCH", 304, "current", stockout_evidence(20, 0)),
-            fact("POTENTIAL", 304, "current", stockout_evidence(20, 0)),
-            fact("LOSS", 304, "current", stockout_evidence(20, 0)),
-            fact("MARGIN", 304, "current", stockout_evidence(20, 0)),
-            fact("LOW", 2001, "30d", role_evidence(8, 20, "2026-06-01")),
-            fact("NO_HISTORY", 2004, "30d", role_evidence(0, 0, "2026-08-01")),
-            fact("MISMATCH", 2004, "30d", role_evidence(0, 0, "2026-06-01")),
-            fact("POTENTIAL", 2002, "30d", role_evidence(3, 15, "2026-06-01")),
-            fact("LOSS", 2004, "30d", role_evidence(2, -3, "2026-06-01")),
-            fact("MARGIN", 2004, "30d", role_evidence(2, 3, "2026-06-01")),
+            fact("LOW", 304, "current", stockout_evidence(2, 2)),
+            fact("NO_ROLE", 304, "current", stockout_evidence(5, 0)),
+            fact("ZERO", 304, "current", stockout_evidence(5, 0)),
+            fact("STAR", 304, "current", stockout_evidence(5, 0)),
+            fact("POTENTIAL", 304, "current", stockout_evidence(5, 0)),
+            fact("DOG", 304, "current", stockout_evidence(5, 0)),
+            fact("LOSS", 304, "current", stockout_evidence(5, 0)),
+            fact("MARGIN", 304, "current", stockout_evidence(5, 0)),
+            fact("ZERO", 2004, "30d", role_evidence(0, 0)),
+            fact("STAR", 2001, "30d", role_evidence(30, 20)),
+            fact("POTENTIAL", 2002, "30d", role_evidence(20, 12)),
+            fact("DOG", 2003, "30d", role_evidence(10, 8)),
+            fact("LOSS", 2004, "30d", role_evidence(15, -3)),
+            fact("MARGIN", 2004, "30d", role_evidence(15, 3)),
         ]
 
         payload = self.service.build_stockout_operating_status_summary(facts=facts, role_period="30d")
 
-        self.assertEqual(6, payload["scope"]["business_unit_count"])
+        self.assertEqual(8, payload["scope"]["business_unit_count"])
         self.assertEqual(
             {
-                "history_insufficient": 1,
-                "low_supply": 1,
-                "supply_demand_mismatch": 1,
-                "star": 0,
+                "low_inventory_edge": 1,
+                "pre_oos_evidence_insufficient": 1,
+                "full_period_zero_sales": 1,
+                "star": 1,
                 "potential": 1,
-                "dog": 0,
+                "dog": 1,
                 "loss_issue": 1,
                 "low_margin_issue": 1,
             },
             {item["code"]: item["business_unit_count"] for item in payload["statuses"]},
         )
-        self.assertEqual(3, payload["coverage"]["evaluable_count"])
+        self.assertEqual(6, payload["coverage"]["evaluable_count"])
+        self.assertEqual(2, payload["coverage"]["non_evaluable_count"])
+        self.assertEqual(8, sum(item["business_unit_count"] for item in payload["statuses"]))
+
+    def test_stockout_operating_status_uses_strict_less_than_five_inventory_boundary(self):
+        def fact(msku, label_id, evidence):
+            return {
+                "country_category": "欧洲站",
+                "store": "StoreA",
+                "msku": msku,
+                "label_id": label_id,
+                "label_period": "current" if label_id == 304 else "30d",
+                "evidence_json": evidence,
+            }
+
+        role_evidence = {
+            "type": "pre_oos_sales_role",
+            "metrics": {"daily_sales": 1, "period_sales_qty": 30, "tag_margin_rate": 20},
+            "oos": {"history_start_date": "2026-07-01", "oos_start_date": "2026-08-01"},
+            "window": {"period": "30d", "days": 30, "start": "2026-07-01", "end": "2026-07-30"},
+            "calculation": {"mode": "historical_backtrack", "status": "matched"},
+        }
+        facts = [
+            fact("FOUR", 304, {"metrics": {"fba_available": 0, "fba_in_transit": 1, "local_quantity": 3}}),
+            fact("FIVE", 304, {"metrics": {"fba_available": 0, "fba_in_transit": 2, "local_quantity": 3}}),
+            fact("FOUR", 2001, role_evidence),
+            fact("FIVE", 2001, role_evidence),
+        ]
+
+        payload = self.service.build_stockout_operating_status_summary(facts=facts, role_period="30d")
+        counts = {item["code"]: item["business_unit_count"] for item in payload["statuses"]}
+
+        self.assertEqual(1, counts["low_inventory_edge"])
+        self.assertEqual(1, counts["star"])
+        self.assertEqual("<", payload["supply"]["threshold_operator"])
+
+    def test_stockout_operating_status_tracks_insufficient_evidence_reasons_and_accepts_frozen_previous_day_role(self):
+        def fact(msku, label_id, evidence):
+            return {
+                "country_category": "欧洲站",
+                "store": "StoreA",
+                "msku": msku,
+                "label_id": label_id,
+                "label_period": "current" if label_id == 304 else "30d",
+                "evidence_json": evidence,
+            }
+
+        stockout = {"metrics": {"fba_available": 0, "fba_in_transit": 5, "local_quantity": 0}}
+        short_history = {
+            "type": "pre_oos_sales_role",
+            "metrics": {"daily_sales": 1, "period_sales_qty": 30, "tag_margin_rate": 20},
+            "oos": {"history_start_date": "2026-07-15", "oos_start_date": "2026-08-01"},
+            "window": {"period": "30d", "days": 30, "start": "2026-07-01", "end": "2026-07-30"},
+            "calculation": {"mode": "historical_backtrack", "status": "matched"},
+        }
+        copied_role = {
+            "type": "pre_oos_sales_role",
+            "metrics": {"daily_sales": 2, "period_sales_qty": 60, "tag_margin_rate": 18},
+            "oos": {"oos_start_date": "2026-08-01"},
+            "window": {"period": "30d", "days": 30, "start": "2026-07-01", "end": "2026-07-30"},
+            "calculation": {"mode": "copy_previous_day_sales_role", "source_role_data_date": "2026-07-30"},
+            "source_sales_role": {"sub_label_id": 101},
+        }
+        facts = [
+            fact("MISSING", 304, stockout),
+            fact("SHORT", 304, stockout),
+            fact("COPIED", 304, stockout),
+            fact("SHORT", 2001, short_history),
+            fact("COPIED", 2001, copied_role),
+        ]
+
+        payload = self.service.build_stockout_operating_status_summary(facts=facts, role_period="30d")
+        counts = {item["code"]: item["business_unit_count"] for item in payload["statuses"]}
+
+        self.assertEqual(2, counts["pre_oos_evidence_insufficient"])
+        self.assertEqual(1, counts["star"])
+        self.assertEqual(
+            {"role_missing": 1, "history_coverage_insufficient": 1},
+            {item["code"]: item["count"] for item in payload["insufficient_reasons"]},
+        )
 
     def test_stockout_operating_status_fetches_compressed_evidence_from_local_snapshot(self):
         executed = {}
