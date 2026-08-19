@@ -2331,10 +2331,10 @@
     if (!stockoutOperatingStatusState.open) return "";
     var rulesOpen = stockoutOperatingStatusState.rulesOpen;
     var rules = rulesOpen
-      ? '<div id="labelHubStockoutOperatingStatusRules" class="label-hub-stockout-status-rules" data-stockout-operating-status-rules-panel role="note"><b>判断顺序（前项命中即停止）</b><ol><li>历史不可判：无对应周期角色，或缺少日销、周期起止；日销 = 0 且历史未覆盖完整周期。</li><li>低量补给待观察：历史可判断，且 FBA 在途 + 本地/采购补给 ≤ 5。</li><li>补给与动销不一致：历史完整、日销 = 0、补给总量 > 5。</li><li>明星 / 潜力 / 瘦狗：有销量、补给总量 > 5，沿用该周期断货前角色。</li><li>亏损问题：问题产品且毛利率 < 0；低毛利问题：问题产品且毛利率为 0%–5%。</li></ol></div>'
+      ? '<div id="labelHubStockoutOperatingStatusRules" class="label-hub-stockout-status-rules" data-stockout-operating-status-rules-panel role="note"><b>判断顺序（前项命中即停止）</b><ol><li>低量库存边缘断货：FBA 可售 = 0，且 FBA 在途 + 本地/采购合计 < 5。</li><li>断货前依据不足：库存或所选周期的远端断货前角色证据缺失、覆盖不足、状态异常或互相冲突。</li><li>完整周期零销量：断货前证据完整，所选周期销量 = 0。</li><li>明星 / 潜力 / 瘦狗：周期销量 > 0，直接沿用远端固定的断货前销售角色。</li><li>亏损问题：问题产品且毛利率 < 0；低毛利问题：问题产品且毛利率为 0%–5%。</li></ol></div>'
       : "";
-    return '<section id="labelHubStockoutOperatingStatusPanel" class="label-hub-stockout-role-panel label-hub-stockout-status-panel" aria-label="断货经营状态汇总">' +
-      '<header><div><strong>断货经营状态 <button type="button" class="label-hub-stockout-status-rules-trigger" data-stockout-operating-status-rules aria-expanded="' + rulesOpen + '" aria-controls="labelHubStockoutOperatingStatusRules" aria-label="查看断货经营状态判断条件">?</button></strong><span>结合断货前表现与当前补给证据，仅统计断货中产品</span></div>' +
+    return '<section id="labelHubStockoutOperatingStatusPanel" class="label-hub-stockout-role-panel label-hub-stockout-status-panel" aria-label="断货前经营表现汇总">' +
+      '<header><div><strong>断货前经营表现（当前断货中） <button type="button" class="label-hub-stockout-status-rules-trigger" data-stockout-operating-status-rules aria-expanded="' + rulesOpen + '" aria-controls="labelHubStockoutOperatingStatusRules" aria-label="查看断货前经营表现判断条件">?</button></strong><span>先拆出暂不适合评价的记录，再按远端固定角色判断断货前表现</span></div>' +
       '<div class="label-hub-stockout-role-periods" aria-label="经营状态周期">' + STOCKOUT_ROLE_PERIODS.map(function (period) {
         var active = period === stockoutOperatingStatusState.period;
         return '<button type="button" data-stockout-operating-status-period="' + period + '" class="' + (active ? "active" : "") + '" aria-pressed="' + active + '">' + stockoutRolePeriodLabel(period) + '</button>';
@@ -2347,11 +2347,18 @@
     var payload = stockoutOperatingStatusState.payload;
     var total = Number((payload.scope || {}).business_unit_count || 0);
     var coverage = payload.coverage || {};
-    var rows = (payload.statuses || []).map(function (status) {
-      var share = Math.max(0, Math.min(1, Number(status.share || 0)));
-      return '<div class="label-hub-stockout-role-row"><span><b>' + app.escapeHtml(status.label || status.code || "-") + '</b><small>' + formatPercent(share) + '</small></span><i><em style="width:' + (share * 100).toFixed(1) + '%"></em></i><strong>' + formatNumber(status.business_unit_count) + '<small> 条</small></strong></div>';
-    }).join("");
-    content.innerHTML = '<div class="label-hub-stockout-role-summary"><span>当前断货 <strong>' + formatNumber(total) + '</strong> 条</span><span>可评价 <strong>' + formatNumber(coverage.evaluable_count || 0) + '</strong> 条</span><span>不可直接评价 <strong>' + formatNumber(coverage.non_evaluable_count || 0) + '</strong> 条</span></div><div class="label-hub-stockout-role-list">' + rows + '</div><p class="label-hub-stockout-status-note">低量补给：当前 FBA 在途 + 本地/采购补给总量 ≤ ' + formatNumber((payload.supply || {}).low_supply_threshold || 5) + '。</p>';
+    function renderRows(statuses) {
+      return statuses.map(function (status) {
+        var share = Math.max(0, Math.min(1, Number(status.share || 0)));
+        return '<div class="label-hub-stockout-role-row"><span><b>' + app.escapeHtml(status.label || status.code || "-") + '</b><small>' + formatPercent(share) + '</small></span><i><em style="width:' + (share * 100).toFixed(1) + '%"></em></i><strong>' + formatNumber(status.business_unit_count) + '<small> 条</small></strong></div>';
+      }).join("");
+    }
+    var statuses = payload.statuses || [];
+    var notEvaluableRows = statuses.filter(function (status) { return status.group === "not_evaluable"; });
+    var evaluableRows = statuses.filter(function (status) { return status.group === "evaluable"; });
+    var groups = '<section class="label-hub-stockout-status-group"><header><b>暂不评价经营表现</b><span>' + formatNumber(coverage.non_evaluable_count || 0) + ' 条</span></header><div class="label-hub-stockout-role-list">' + renderRows(notEvaluableRows) + '</div></section>' +
+      '<section class="label-hub-stockout-status-group"><header><b>可评价经营表现</b><span>' + formatNumber(coverage.evaluable_count || 0) + ' 条</span></header><div class="label-hub-stockout-role-list">' + renderRows(evaluableRows) + '</div></section>';
+    content.innerHTML = '<div class="label-hub-stockout-role-summary"><span>当前断货 <strong>' + formatNumber(total) + '</strong> 条</span><span>可评价 <strong>' + formatNumber(coverage.evaluable_count || 0) + '</strong> 条</span><span>暂不评价 <strong>' + formatNumber(coverage.non_evaluable_count || 0) + '</strong> 条</span></div>' + groups + '<p class="label-hub-stockout-status-note">低量库存边界：当前 FBA 在途 + 本地/采购合计严格小于 ' + formatNumber((payload.supply || {}).low_supply_threshold || 5) + '；等于 5 时继续评价断货前表现。</p>';
   }
 
   function renderStockoutOperatingStatusPanelError(error) {
@@ -2441,7 +2448,7 @@
         ? '<button type="button" class="label-hub-return-attribution" data-return-attribution data-operation-child="' + child.id + '" title="查看当前运营状态中仍处于观察期、运营干预期或持续干预期的 MSKU"><span>' + app.escapeHtml(attributionCopy) + '</span><strong>' + formatNumber(attributionCount) + '</strong></button>'
         : "";
       var roleAction = Number(item.id) === 3 && Number(child.id) === 304
-        ? '<div class="label-hub-stockout-role-actions"><button type="button" class="label-hub-stockout-role-toggle" data-stockout-role-toggle aria-expanded="' + stockoutRoleState.open + '" aria-controls="labelHubStockoutRolePanel"><span>查看断货前角色</span><i aria-hidden="true">' + (stockoutRoleState.open ? "收起" : "展开") + '</i></button><button type="button" class="label-hub-stockout-role-toggle" data-stockout-operating-status-toggle aria-expanded="' + stockoutOperatingStatusState.open + '" aria-controls="labelHubStockoutOperatingStatusPanel"><span>断货经营状态</span><i aria-hidden="true">' + (stockoutOperatingStatusState.open ? "收起" : "展开") + '</i></button></div>'
+        ? '<div class="label-hub-stockout-role-actions"><button type="button" class="label-hub-stockout-role-toggle" data-stockout-role-toggle aria-expanded="' + stockoutRoleState.open + '" aria-controls="labelHubStockoutRolePanel"><span>查看断货前角色</span><i aria-hidden="true">' + (stockoutRoleState.open ? "收起" : "展开") + '</i></button><button type="button" class="label-hub-stockout-role-toggle" data-stockout-operating-status-toggle aria-expanded="' + stockoutOperatingStatusState.open + '" aria-controls="labelHubStockoutOperatingStatusPanel"><span>断货前经营表现</span><i aria-hidden="true">' + (stockoutOperatingStatusState.open ? "收起" : "展开") + '</i></button></div>'
         : "";
       return '<article class="label-hub-child' + (checked ? " selected" : "") + '"><button type="button" class="label-hub-child-main" data-overview-child="' + child.id + '" data-parent-id="' + item.id + '" aria-pressed="' + checked + '" title="' + app.escapeHtml(child.rule || child.definition || child.label) + '"><span><b>' + app.escapeHtml(child.label) + '</b><small>' + formatPercent(scoped.share) + '</small></span><strong>' + formatNumber(scoped.count) + '<small> 条记录</small></strong></button>' + attribution + roleAction + '</article>';
     }).join("");

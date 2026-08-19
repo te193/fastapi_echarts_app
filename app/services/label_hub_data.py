@@ -48,16 +48,25 @@ STOCKOUT_BEFORE_ROLE_LABELS = {
     2004: "问题产品",
 }
 STOCKOUT_OPERATING_STATUS_DEFINITIONS = (
-    ("history_insufficient", "历史不可判"),
-    ("low_supply", "低量补给待观察"),
-    ("supply_demand_mismatch", "补给与动销不一致"),
-    ("star", "明星产品"),
-    ("potential", "潜力产品"),
-    ("dog", "瘦狗产品"),
-    ("loss_issue", "亏损问题"),
-    ("low_margin_issue", "低毛利问题"),
+    ("low_inventory_edge", "低量库存边缘断货", "not_evaluable"),
+    ("pre_oos_evidence_insufficient", "断货前依据不足", "not_evaluable"),
+    ("full_period_zero_sales", "完整周期零销量", "evaluable"),
+    ("star", "明星产品", "evaluable"),
+    ("potential", "潜力产品", "evaluable"),
+    ("dog", "瘦狗产品", "evaluable"),
+    ("loss_issue", "亏损问题", "evaluable"),
+    ("low_margin_issue", "低毛利问题", "evaluable"),
 )
 STOCKOUT_LOW_SUPPLY_THRESHOLD = 5
+STOCKOUT_EVIDENCE_REASON_LABELS = {
+    "inventory_evidence_missing": "库存证据缺失",
+    "inventory_evidence_conflict": "库存证据冲突",
+    "role_missing": "缺少所选周期断货前角色",
+    "role_evidence_incomplete": "断货前角色证据不完整",
+    "history_coverage_insufficient": "断货前历史覆盖不足",
+    "calculation_abnormal": "断货前角色计算状态异常",
+    "role_evidence_conflict": "断货前角色与指标冲突",
+}
 COUNTRY_STOCKOUT_BEFORE_ROLE_LABELS = {
     2101: "明星产品",
     2102: "潜力产品",
@@ -603,51 +612,123 @@ class LabelHubDataService:
             if int(fact.get("label_id") or 0) in STOCKOUT_BEFORE_ROLE_IDS
             and str(fact.get("label_period") or "") == role_period
         }
-        status_keys = {code: set() for code, _ in STOCKOUT_OPERATING_STATUS_DEFINITIONS}
-        evaluable_codes = {"star", "potential", "dog", "loss_issue", "low_margin_issue"}
+        status_keys = {code: set() for code, _, _ in STOCKOUT_OPERATING_STATUS_DEFINITIONS}
+        insufficient_reason_keys = {code: set() for code in STOCKOUT_EVIDENCE_REASON_LABELS}
+        evaluable_codes = {
+            "full_period_zero_sales",
+            "star",
+            "potential",
+            "dog",
+            "loss_issue",
+            "low_margin_issue",
+        }
+        expected_days = int(role_period.removesuffix("d"))
+
+        def mark_insufficient(key: tuple[str, str, str], reason: str) -> None:
+            status_keys["pre_oos_evidence_insufficient"].add(key)
+            insufficient_reason_keys[reason].add(key)
+
+        def parse_iso_date(value: Any) -> date | None:
+            try:
+                return date.fromisoformat(str(value or ""))
+            except ValueError:
+                return None
 
         for key, stockout_fact in stockout_by_key.items():
             stockout_metrics = _evidence_object(stockout_fact.get("evidence_json")).get("metrics") or {}
-            supply_total = max(0, _number(stockout_metrics.get("fba_in_transit")) or 0) + max(
-                0, _number(stockout_metrics.get("local_quantity")) or 0
-            )
+            fba_available = _number(stockout_metrics.get("fba_available"))
+            fba_in_transit = _number(stockout_metrics.get("fba_in_transit"))
+            local_quantity = _number(stockout_metrics.get("local_quantity"))
+            if fba_available is None or fba_in_transit is None or local_quantity is None:
+                mark_insufficient(key, "inventory_evidence_missing")
+                continue
+            if fba_available != 0 or fba_in_transit < 0 or local_quantity < 0:
+                mark_insufficient(key, "inventory_evidence_conflict")
+                continue
+            supply_total = fba_in_transit + local_quantity
+            if supply_total < STOCKOUT_LOW_SUPPLY_THRESHOLD:
+                status_keys["low_inventory_edge"].add(key)
+                continue
+
             role_fact = role_by_key.get(key)
             if not role_fact:
-                status_keys["history_insufficient"].add(key)
+                mark_insufficient(key, "role_missing")
                 continue
+
             evidence = _evidence_object(role_fact.get("evidence_json"))
             metrics = evidence.get("metrics") or {}
             oos = evidence.get("oos") or {}
             window = evidence.get("window") or {}
+            calculation = evidence.get("calculation") or {}
             daily_sales = _number(metrics.get("daily_sales"))
+            period_sales_qty = _number(metrics.get("period_sales_qty"))
             margin_rate = _number(metrics.get("tag_margin_rate"))
-            history_start = str(oos.get("history_start_date") or "")
-            window_start = str(window.get("start") or "")
-            window_end = str(window.get("end") or "")
-            history_insufficient = (
-                daily_sales is None
-                or not window_start
-                or not window_end
-                or (daily_sales == 0 and (not history_start or history_start > window_start))
-            )
-            if history_insufficient:
-                status_code = "history_insufficient"
-            elif supply_total <= STOCKOUT_LOW_SUPPLY_THRESHOLD:
-                status_code = "low_supply"
-            elif daily_sales == 0:
-                status_code = "supply_demand_mismatch"
+            window_start = parse_iso_date(window.get("start"))
+            window_end = parse_iso_date(window.get("end"))
+            oos_start = parse_iso_date(oos.get("oos_start_date"))
+            window_days = _number(window.get("days"))
+            if (
+                evidence.get("type") != "pre_oos_sales_role"
+                or daily_sales is None
+                or period_sales_qty is None
+                or window_start is None
+                or window_end is None
+                or oos_start is None
+                or window_days is None
+            ):
+                mark_insufficient(key, "role_evidence_incomplete")
+                continue
+            if (
+                str(window.get("period") or "") != role_period
+                or int(window_days) != expected_days
+                or window_start > window_end
+                or window_end >= oos_start
+                or daily_sales < 0
+                or period_sales_qty < 0
+            ):
+                mark_insufficient(key, "role_evidence_conflict")
+                continue
+
+            calculation_mode = str(calculation.get("mode") or "")
+            if calculation_mode == "historical_backtrack":
+                if str(calculation.get("status") or "") != "matched":
+                    mark_insufficient(key, "calculation_abnormal")
+                    continue
+                history_start = parse_iso_date(oos.get("history_start_date"))
+                if history_start is None:
+                    mark_insufficient(key, "role_evidence_incomplete")
+                    continue
+                if history_start > window_start:
+                    mark_insufficient(key, "history_coverage_insufficient")
+                    continue
+            elif calculation_mode == "copy_previous_day_sales_role":
+                source_role = evidence.get("source_sales_role") or {}
+                if not calculation.get("source_role_data_date") or not source_role.get("sub_label_id"):
+                    mark_insufficient(key, "role_evidence_incomplete")
+                    continue
             else:
-                role_id = int(role_fact.get("label_id") or 0)
-                if role_id == 2001:
-                    status_code = "star"
-                elif role_id == 2002:
-                    status_code = "potential"
-                elif role_id == 2003:
-                    status_code = "dog"
-                elif (margin_rate or 0) < 0:
-                    status_code = "loss_issue"
-                else:
-                    status_code = "low_margin_issue"
+                mark_insufficient(key, "calculation_abnormal")
+                continue
+
+            role_id = int(role_fact.get("label_id") or 0)
+            if period_sales_qty == 0:
+                status_code = "full_period_zero_sales"
+            elif role_id == 2001:
+                status_code = "star"
+            elif role_id == 2002:
+                status_code = "potential"
+            elif role_id == 2003:
+                status_code = "dog"
+            elif margin_rate is None:
+                mark_insufficient(key, "role_evidence_incomplete")
+                continue
+            elif margin_rate < 0:
+                status_code = "loss_issue"
+            elif margin_rate <= 5:
+                status_code = "low_margin_issue"
+            else:
+                mark_insufficient(key, "role_evidence_conflict")
+                continue
             status_keys[status_code].add(key)
 
         total = len(stockout_by_key)
@@ -656,15 +737,29 @@ class LabelHubDataService:
             "role_period": role_period,
             "available_periods": list(STOCKOUT_BEFORE_ROLE_PERIODS),
             "scope": {"business_unit_count": total, "unique_msku_count": len({key[2] for key in stockout_by_key})},
-            "supply": {"low_supply_threshold": STOCKOUT_LOW_SUPPLY_THRESHOLD},
+            "supply": {
+                "low_supply_threshold": STOCKOUT_LOW_SUPPLY_THRESHOLD,
+                "threshold_operator": "<",
+                "formula": "fba_in_transit + local_quantity",
+            },
             "statuses": [
                 {
                     "code": code,
                     "label": label,
+                    "group": group,
                     "business_unit_count": len(status_keys[code]),
                     "share": round(len(status_keys[code]) / total, 4) if total else 0,
                 }
-                for code, label in STOCKOUT_OPERATING_STATUS_DEFINITIONS
+                for code, label, group in STOCKOUT_OPERATING_STATUS_DEFINITIONS
+            ],
+            "insufficient_reasons": [
+                {
+                    "code": code,
+                    "label": label,
+                    "count": len(insufficient_reason_keys[code]),
+                }
+                for code, label in STOCKOUT_EVIDENCE_REASON_LABELS.items()
+                if insufficient_reason_keys[code]
             ],
             "coverage": {
                 "evaluable_count": evaluable_count,
