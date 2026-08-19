@@ -430,7 +430,7 @@ def test_label_hub_frontend_renders_six_linked_panels_and_structured_profile():
     assert "function toggleLocalCondition(dimension, value)" in script
     assert "profile.tag_profile" in script
     assert "profile.metric_profile" in script
-    assert "profile.navigation_links" in script
+    assert "profile.navigation_links" not in script
     assert 'data-negative="' in script
     assert "rowHeight: 52" in script
 
@@ -998,13 +998,6 @@ def test_main_dashboard_renders_before_change_tracking_request():
     render_block = script[script.index("  function render() {"):script.index("  function buildChangeParams() {")]
 
     assert render_block.index("lastPayload = payload;") < render_block.index("loadChanges();")
-
-
-def test_sales_role_has_label_hub_return_link():
-    script = (ROOT / "app" / "static" / "js" / "sales_role.js").read_text(encoding="utf-8")
-
-    assert 'href = "/label-hub?" + params.toString();' in script
-    assert '查看全部标签' in script
 
 
 def test_detail_advanced_filters_use_balanced_responsive_layout():

@@ -3135,12 +3135,11 @@
       var metricsHtml = metricItems.map(function (item) { var value = item[1]; if (value === null || value === undefined) value = "暂无数据"; else if (item[2] === "currency") value = app.formatCompactCurrency(value); else if (item[2] === "percent") value = app.formatPercent(value); else value = formatNumber(value); return '<div><span>' + item[0] + '</span><strong>' + value + "</strong></div>"; }).join("");
       var identity = profile.identity || {};
       var status = profile.data_status || {};
-      var links = profile.navigation_links || {};
       var metricWindowText = metricWindowLabel(status.metric_window || {});
       var metricStatusText = status.has_local_metric
         ? "经营指标来自本地周期快照"
         : (status.local_metrics_status === "available" ? "该 MSKU 暂无本地经营指标" : (status.local_metrics_status === "no_snapshot" ? "当前日期无本地经营快照" : "本地经营指标暂不可用"));
-      elements.labelHubDrawerContent.innerHTML = '<div class="label-hub-drawer-head"><p class="section-kicker">MSKU 画像</p><h2 id="labelHubDrawerTitle">' + app.escapeHtml(identity.msku || row.msku) + '</h2><p>' + app.escapeHtml(identity.country_category || "") + " · " + app.escapeHtml(identity.store || "") + '</p></div><section><h3>MSKU 口径标签</h3><div class="label-hub-profile-tags">' + analysisTags + '</div></section><section><div class="label-hub-profile-section-head"><h3>本地经营画像</h3><span class="label-hub-profile-period">' + app.escapeHtml(metricWindowText) + '</span></div><p class="summary-hint">' + app.escapeHtml(metricStatusText) + '</p><div class="label-hub-profile-metrics">' + metricsHtml + '</div></section><div class="label-hub-profile-links"><a href="' + app.escapeHtml(links.sales_role || "#") + '">查看销售角色</a><a href="' + app.escapeHtml(links.lifecycle || "#") + '">查看生命周期</a></div>';
+      elements.labelHubDrawerContent.innerHTML = '<div class="label-hub-drawer-head"><p class="section-kicker">MSKU 画像</p><h2 id="labelHubDrawerTitle">' + app.escapeHtml(identity.msku || row.msku) + '</h2><p>' + app.escapeHtml(identity.country_category || "") + " · " + app.escapeHtml(identity.store || "") + '</p></div><section><h3>MSKU 口径标签</h3><div class="label-hub-profile-tags">' + analysisTags + '</div></section><section><div class="label-hub-profile-section-head"><h3>本地经营画像</h3><span class="label-hub-profile-period">' + app.escapeHtml(metricWindowText) + '</span></div><p class="summary-hint">' + app.escapeHtml(metricStatusText) + '</p><div class="label-hub-profile-metrics">' + metricsHtml + '</div></section>';
     }).catch(function (error) { elements.labelHubDrawerContent.innerHTML = '<div class="empty-state compact">画像加载失败：' + app.escapeHtml((error && error.message) || "请稍后重试") + "</div>"; });
   }
 

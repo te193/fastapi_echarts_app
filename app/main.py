@@ -73,6 +73,14 @@ REPLENISHMENT_SALES_CONCENTRATION_FILL = PatternFill(
     fill_type="solid",
     fgColor="FFF2CC",
 )
+REPLENISHMENT_DISABLED_STORE_FILL = PatternFill(
+    fill_type="solid",
+    fgColor="F4CCCC",
+)
+REPLENISHMENT_COMBINED_WARNING_FILL = PatternFill(
+    fill_type="solid",
+    fgColor="F4B183",
+)
 CSV_HEADER_LABELS = {
     "snapshot_date": "快照日期",
     "period_start": "周期开始",
@@ -266,11 +274,26 @@ def is_replenishment_sales_concentrated(row: dict) -> bool:
     return sales_3d * 10 >= sales_7d * 7
 
 
-def build_replenishment_xlsx(payload: dict) -> bytes:
+def is_disabled_replenishment_store_with_qty(row: dict, disabled_stores: set[str]) -> bool:
+    store = str(row.get("seller_name_new") or "").strip().casefold()
+    if not store or store not in disabled_stores:
+        return False
+    try:
+        return Decimal(str(row.get("replenish_qty") or 0)) > 0
+    except (ArithmeticError, TypeError, ValueError):
+        return False
+
+
+def build_replenishment_xlsx(payload: dict, disabled_stores: set[str] | None = None) -> bytes:
     workbook = Workbook()
     worksheet = workbook.active
     worksheet.title = "补货计划"
     columns = payload["columns"]
+    normalized_disabled_stores = {
+        str(store).strip().casefold()
+        for store in (disabled_stores or set())
+        if str(store).strip()
+    }
 
     for column_index, column in enumerate(columns, start=1):
         cell = worksheet.cell(row=1, column=column_index, value=column["label"])
@@ -280,6 +303,17 @@ def build_replenishment_xlsx(payload: dict) -> bytes:
 
     for row_index, row in enumerate(payload["rows"], start=2):
         highlight_row = is_replenishment_sales_concentrated(row)
+        disabled_store_row = is_disabled_replenishment_store_with_qty(
+            row,
+            normalized_disabled_stores,
+        )
+        row_fill = None
+        if highlight_row and disabled_store_row:
+            row_fill = REPLENISHMENT_COMBINED_WARNING_FILL
+        elif disabled_store_row:
+            row_fill = REPLENISHMENT_DISABLED_STORE_FILL
+        elif highlight_row:
+            row_fill = REPLENISHMENT_SALES_CONCENTRATION_FILL
         for column_index, column in enumerate(columns, start=1):
             cell = worksheet.cell(
                 row=row_index,
@@ -288,8 +322,8 @@ def build_replenishment_xlsx(payload: dict) -> bytes:
             )
             if column["name"] in TWO_DECIMAL_EXPORT_COLUMNS and cell.value != "":
                 cell.number_format = "0.00"
-            if highlight_row:
-                cell.fill = REPLENISHMENT_SALES_CONCENTRATION_FILL
+            if row_fill:
+                cell.fill = row_fill
 
     output = io.BytesIO()
     workbook.save(output)
@@ -467,15 +501,6 @@ def return_goods_page(request: Request) -> HTMLResponse:
         request,
         "return_goods.html",
         {"page": "return_goods", "title": "返场品"},
-    )
-
-
-@app.get("/sales-role", response_class=HTMLResponse)
-def sales_role_page(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse(
-        request,
-        "sales_role.html",
-        {"page": "sales_role", "title": "销售角色分析"},
     )
 
 
@@ -1426,7 +1451,8 @@ def api_replenishment_export(
         sort_field=sort_field,
         sort_dir=sort_dir,
     )
-    content = build_replenishment_xlsx(payload)
+    disabled_stores = replenishment_service.get_non_replenishment_stores()
+    content = build_replenishment_xlsx(payload, disabled_stores)
     filename = f"replenishment_{payload.get('snapshot_date') or snapshot_date or date.today().isoformat()}.xlsx"
     headers = {"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"}
     return StreamingResponse(

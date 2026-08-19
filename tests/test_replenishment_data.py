@@ -73,11 +73,35 @@ class RecordingConnection:
         self.queries = []
         self.params = []
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
     def cursor(self):
         return RecordingCursor(self)
 
 
 class ReplenishmentDataServiceTests(unittest.TestCase):
+    def test_non_replenishment_stores_are_loaded_and_normalized(self):
+        service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+        conn = RecordingConnection(
+            [
+                {"store_name": " Tboke "},
+                {"store_name": "LEALONG"},
+                {"store_name": ""},
+                {"store_name": None},
+            ]
+        )
+        service.connect_source = MagicMock(return_value=conn)
+
+        stores = service.get_non_replenishment_stores()
+
+        self.assertEqual({"tboke", "lealong"}, stores)
+        self.assertIn("from opt_db.store_brand_relation", conn.queries[0])
+        self.assertEqual(("\u5426",), conn.params[0])
+
     def test_sales_spike_metadata_is_hidden_from_visible_export_columns(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)
         service.database = "etl_datasync_test"

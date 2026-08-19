@@ -6,7 +6,6 @@ import threading
 from collections import defaultdict
 from datetime import date, datetime
 from typing import Any, Callable
-from urllib.parse import urlencode
 
 from .dashboard_db import dashboard_service
 from .label_hub_local_metrics import METRIC_PERIODS, label_hub_local_metrics_service
@@ -1640,7 +1639,6 @@ class LabelHubDataService:
         sorted_tags = sorted(tags, key=lambda item: (item["parent_id"], item["id"], item["period"]))
         analysis_labels = [item for item in sorted_tags if item["parent_id"] not in EXCLUDED_ANALYSIS_PARENT_IDS]
         site_scope_labels = [item for item in sorted_tags if item["parent_id"] in EXCLUDED_ANALYSIS_PARENT_IDS]
-        query = {"period": metric_period, "country_category": country, "seller_name_new": store, "keyword": msku}
         return {
             "identity": {"data_date": data_date, "country_category": country, "store": store, "msku": msku},
             "tag_profile": {
@@ -1651,10 +1649,6 @@ class LabelHubDataService:
             },
             "metric_profile": metric or {},
             "data_status": {"local_metrics_status": metric_scope.get("status") or "unavailable", "metric_window": metric_scope.get("window") or {}, "has_local_metric": metric is not None},
-            "navigation_links": {
-                "sales_role": f"/sales-role?{urlencode({**query, 'view': 'role'})}",
-                "lifecycle": f"/sales-role?{urlencode({**query, 'view': 'lifecycle'})}",
-            },
         }
 
     def _source_connection(self):

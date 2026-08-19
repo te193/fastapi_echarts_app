@@ -308,6 +308,11 @@ class ReplenishmentDataService:
         self.password = os.getenv("DASHBOARD_DB_PASSWORD", os.getenv("MYSQL_PASSWORD", ""))
         self.database = os.getenv("DASHBOARD_DB_NAME", os.getenv("MYSQL_DATABASE", "etl_datasync_test"))
         self.charset = os.getenv("DASHBOARD_DB_CHARSET", "utf8mb4")
+        self.source_host = os.getenv("DASHBOARD_SOURCE_DB_HOST", self.host)
+        self.source_port = int(os.getenv("DASHBOARD_SOURCE_DB_PORT", str(self.port)))
+        self.source_user = os.getenv("DASHBOARD_SOURCE_DB_USER", self.user)
+        self.source_password = os.getenv("DASHBOARD_SOURCE_DB_PASSWORD", self.password)
+        self.source_charset = os.getenv("DASHBOARD_SOURCE_DB_CHARSET", self.charset)
 
     def connect(self):
         return pymysql.connect(
@@ -320,6 +325,37 @@ class ReplenishmentDataService:
             cursorclass=pymysql.cursors.DictCursor,
             autocommit=True,
         )
+
+    def connect_source(self):
+        return pymysql.connect(
+            host=self.source_host,
+            port=self.source_port,
+            user=self.source_user,
+            password=self.source_password,
+            charset=self.source_charset,
+            cursorclass=pymysql.cursors.DictCursor,
+            autocommit=True,
+        )
+
+    def get_non_replenishment_stores(self) -> set[str]:
+        store_column = "\u5e97\u94fa\u540d"
+        replenish_column = "\u662f\u5426\u8865\u8d27"
+        with self.connect_source() as conn, conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                select distinct `{store_column}` as store_name
+                from opt_db.store_brand_relation
+                where trim(coalesce(`{replenish_column}`, '')) = %s
+                  and trim(coalesce(`{store_column}`, '')) <> ''
+                """,
+                ("\u5426",),
+            )
+            rows = cursor.fetchall()
+        return {
+            str(row.get("store_name") or "").strip().casefold()
+            for row in rows
+            if str(row.get("store_name") or "").strip()
+        }
 
     def get_payload(
         self,
