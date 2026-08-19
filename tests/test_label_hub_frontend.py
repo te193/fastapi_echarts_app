@@ -102,6 +102,19 @@ def test_current_stockout_card_expands_period_role_summary_and_drills_to_details
     assert ".label-hub-stockout-role-row" in styles
 
 
+def test_current_stockout_card_has_a_separate_operating_status_board_with_period_switching():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+
+    for token in (
+        "stockoutOperatingStatusState",
+        "data-stockout-operating-status-toggle",
+        "data-stockout-operating-status-period",
+        'app.apiGet("/api/label-hub/stockout-operating-status"',
+        "断货经营状态",
+    ):
+        assert token in script
+
+
 def test_country_detail_uses_country_scoped_stockout_role_evidence():
     template = (ROOT / "app" / "templates" / "label_hub.html").read_text(encoding="utf-8")
     script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")

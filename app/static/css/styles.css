@@ -15349,6 +15349,8 @@ body[data-page="label_hub"] {
 
 .label-hub-stockout-role-toggle:hover { background: #eaf3ff; }
 .label-hub-stockout-role-toggle i { font-size: 10px; font-style: normal; font-weight: 500; }
+.label-hub-stockout-role-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.label-hub-stockout-status-note { margin: 8px 0 0; color: var(--muted); font-size: 11px; }
 
 .label-hub-stockout-role-panel {
   background: #fff;

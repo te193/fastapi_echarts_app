@@ -532,6 +532,28 @@ def api_label_hub_stockout_before_roles(
         raise HTTPException(status_code=503, detail="断货前销售角色汇总暂不可用，请稍后重试") from exc
 
 
+@app.get("/api/label-hub/stockout-operating-status")
+def api_label_hub_stockout_operating_status(
+    data_date: str = "",
+    role_period: str = "30d",
+    country_category: str = "all",
+    store: str = "all",
+    keyword: str = "",
+) -> dict:
+    try:
+        return label_hub_service.get_stockout_operating_status_summary(
+            data_date=data_date,
+            role_period=role_period,
+            country_category=country_category,
+            store=store,
+            keyword=keyword,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="断货经营状态汇总暂不可用，请稍后重试") from exc
+
+
 @app.get("/api/label-hub/stockout-before-role-evidence")
 def api_label_hub_stockout_before_role_evidence(
     data_date: str,

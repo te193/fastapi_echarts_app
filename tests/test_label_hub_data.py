@@ -531,6 +531,60 @@ class LabelHubDataTests(unittest.TestCase):
             {item["id"]: item["business_unit_count"] for item in payload["roles"]},
         )
 
+    def test_stockout_operating_status_separates_uncertain_supply_and_evaluable_roles(self):
+        def fact(msku, label_id, label_period, evidence=None):
+            return {
+                "country_category": "欧洲站",
+                "store": "StoreA",
+                "msku": msku,
+                "label_id": label_id,
+                "label_period": label_period,
+                "evidence_json": evidence or {},
+            }
+
+        def stockout_evidence(in_transit, local_quantity):
+            return {"metrics": {"fba_in_transit": in_transit, "local_quantity": local_quantity}}
+
+        def role_evidence(daily_sales, margin_rate, history_start, window_start="2026-07-01", window_end="2026-07-30"):
+            return {
+                "metrics": {"daily_sales": daily_sales, "tag_margin_rate": margin_rate},
+                "oos": {"history_start_date": history_start},
+                "window": {"start": window_start, "end": window_end},
+            }
+
+        facts = [
+            fact("LOW", 304, "current", stockout_evidence(1, 0)),
+            fact("NO_HISTORY", 304, "current", stockout_evidence(20, 0)),
+            fact("MISMATCH", 304, "current", stockout_evidence(20, 0)),
+            fact("POTENTIAL", 304, "current", stockout_evidence(20, 0)),
+            fact("LOSS", 304, "current", stockout_evidence(20, 0)),
+            fact("MARGIN", 304, "current", stockout_evidence(20, 0)),
+            fact("LOW", 2001, "30d", role_evidence(8, 20, "2026-06-01")),
+            fact("NO_HISTORY", 2004, "30d", role_evidence(0, 0, "2026-08-01")),
+            fact("MISMATCH", 2004, "30d", role_evidence(0, 0, "2026-06-01")),
+            fact("POTENTIAL", 2002, "30d", role_evidence(3, 15, "2026-06-01")),
+            fact("LOSS", 2004, "30d", role_evidence(2, -3, "2026-06-01")),
+            fact("MARGIN", 2004, "30d", role_evidence(2, 3, "2026-06-01")),
+        ]
+
+        payload = self.service.build_stockout_operating_status_summary(facts=facts, role_period="30d")
+
+        self.assertEqual(6, payload["scope"]["business_unit_count"])
+        self.assertEqual(
+            {
+                "history_insufficient": 1,
+                "low_supply": 1,
+                "supply_demand_mismatch": 1,
+                "star": 0,
+                "potential": 1,
+                "dog": 0,
+                "loss_issue": 1,
+                "low_margin_issue": 1,
+            },
+            {item["code"]: item["business_unit_count"] for item in payload["statuses"]},
+        )
+        self.assertEqual(3, payload["coverage"]["evaluable_count"])
+
     def test_public_business_row_exposes_msku_stockout_before_role(self):
         public = _public_business_row({
             "country_category": "欧洲站",
