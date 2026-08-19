@@ -1,14 +1,26 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 import os
 import random
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import pymysql
+
+from app.services.station_sales_role import (
+    FINANCE_BANDS,
+    ROLE_DEFINITIONS,
+    STATION_ROLE_RULE_VERSION,
+    SUPPORTED_ROLE_PERIODS,
+    classify_station_sales_role,
+)
+
+
+MIN_PRICE_REVIEW_MATURITY_DAYS = 3
 
 
 # ---------------------------------------------------------------------------
@@ -40,6 +52,308 @@ def safe_str(value: Any) -> str:
     if isinstance(value, float) and math.isnan(value):
         return ""
     return str(value)
+
+
+ROLE_MIGRATION_COLUMN_FIELDS = {
+    "country", "station_store", "msku", "role_before_label", "role_after_label",
+    "role_change", "pre_daily_sales", "post_daily_sales", "pre_margin_rate",
+    "post_margin_rate", "finance_band_before_label", "finance_band_after_label",
+    "finance_change", "data_status",
+}
+ROLE_MIGRATION_NUMERIC_FIELDS = {
+    "pre_daily_sales", "post_daily_sales", "pre_margin_rate", "post_margin_rate",
+}
+ROLE_MIGRATION_DISPLAY_LABELS = {
+    "role_change": {"up": "上升", "stable": "保持", "down": "下降", "unavailable": "无法判断"},
+    "finance_change": {"up": "上移", "stable": "保持", "down": "下移", "unavailable": "无法归类"},
+    "data_status": {"complete": "已成熟", "pending": "待观察", "source_incomplete": "数据不足"},
+}
+
+
+def _role_migration_column_value(row: dict[str, Any], field: str) -> Any:
+    if field == "station_store":
+        return row.get("station_store") or row.get("store")
+    value = row.get(field)
+    return ROLE_MIGRATION_DISPLAY_LABELS.get(field, {}).get(safe_str(value), value)
+
+
+def _role_migration_single_filter_match(value: Any, model: dict[str, Any]) -> bool:
+    operation = safe_str(model.get("type") or "contains")
+    if operation == "blank":
+        return value is None or safe_str(value).strip() == ""
+    if operation == "notBlank":
+        return value is not None and safe_str(value).strip() != ""
+
+    if safe_str(model.get("filterType")) == "number":
+        if value is None or safe_str(value).strip() == "":
+            return False
+        actual = safe_float(value)
+        target = safe_float(model.get("filter"))
+        upper = safe_float(model.get("filterTo"))
+        if operation == "equals":
+            return actual == target
+        if operation == "notEqual":
+            return actual != target
+        if operation == "lessThan":
+            return actual < target
+        if operation == "lessThanOrEqual":
+            return actual <= target
+        if operation == "greaterThan":
+            return actual > target
+        if operation == "greaterThanOrEqual":
+            return actual >= target
+        if operation == "inRange":
+            return target <= actual <= upper
+        return True
+
+    actual_text = safe_str(value).lower()
+    target_text = safe_str(model.get("filter")).lower()
+    if operation == "equals":
+        return actual_text == target_text
+    if operation == "notEqual":
+        return actual_text != target_text
+    if operation == "notContains":
+        return target_text not in actual_text
+    if operation == "startsWith":
+        return actual_text.startswith(target_text)
+    if operation == "endsWith":
+        return actual_text.endswith(target_text)
+    return target_text in actual_text
+
+
+def _role_migration_filter_match(value: Any, model: dict[str, Any]) -> bool:
+    conditions = model.get("conditions")
+    if isinstance(conditions, list) and conditions:
+        matches = [_role_migration_single_filter_match(value, item) for item in conditions if isinstance(item, dict)]
+        return all(matches) if safe_str(model.get("operator")).upper() == "AND" else any(matches)
+    return _role_migration_single_filter_match(value, model)
+
+
+def _filter_role_migration_columns(rows: list[dict[str, Any]], raw_model: Any) -> list[dict[str, Any]]:
+    if not raw_model:
+        return rows
+    try:
+        model = json.loads(raw_model) if isinstance(raw_model, str) else raw_model
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return rows
+    if not isinstance(model, dict):
+        return rows
+    return [
+        row for row in rows
+        if all(
+            field not in ROLE_MIGRATION_COLUMN_FIELDS
+            or not isinstance(filter_model, dict)
+            or _role_migration_filter_match(_role_migration_column_value(row, field), filter_model)
+            for field, filter_model in model.items()
+        )
+    ]
+
+
+def _sort_role_migration_rows(rows: list[dict[str, Any]], sort_field: str, sort_dir: str) -> list[dict[str, Any]]:
+    if sort_field not in ROLE_MIGRATION_COLUMN_FIELDS or sort_dir not in {"asc", "desc"}:
+        return sorted(rows, key=lambda row: (row.get("data_status") != "complete", row.get("role_change") or "", row.get("msku") or ""))
+    populated = [row for row in rows if _role_migration_column_value(row, sort_field) not in (None, "")]
+    missing = [row for row in rows if _role_migration_column_value(row, sort_field) in (None, "")]
+    if sort_field in ROLE_MIGRATION_NUMERIC_FIELDS:
+        key = lambda row: safe_float(_role_migration_column_value(row, sort_field))
+    else:
+        key = lambda row: safe_str(_role_migration_column_value(row, sort_field)).lower()
+    populated.sort(key=key, reverse=sort_dir == "desc")
+    return populated + missing
+
+
+def _aggregate_role_source(rows: list[dict[str, Any]], field: str) -> str:
+    source_groups = {
+        "remote_dws": "remote_cache",
+        "remote_cache": "remote_cache",
+        "local_recomputed": "local_recomputed",
+        "local_v47": "local_recomputed",
+    }
+    available_sources = {
+        source
+        for row in rows
+        if (source := safe_str(row.get(field))) in source_groups
+    }
+    if not available_sources:
+        return "unavailable"
+    if len(available_sources) == 1:
+        return available_sources.pop()
+    available_groups = {source_groups[source] for source in available_sources}
+    if len(available_groups) == 1:
+        return available_groups.pop()
+    return "mixed"
+
+
+def _optional_float(value: Any) -> float | None:
+    return None if value is None else safe_float(value)
+
+
+def _build_station_role_evidence(
+    role_code: str,
+    role_label: str,
+    daily_sales: Any,
+    margin_rate: Any,
+    small_rank: Any,
+) -> dict[str, Any]:
+    daily = safe_float(daily_sales)
+    margin = _optional_float(margin_rate)
+    rank = safe_int(small_rank) if small_rank is not None else None
+    valid_rank = rank not in (None, 0, 99999)
+    star_combo = (daily > 3 and margin is not None and margin >= 0.15) or (
+        1 <= daily <= 3 and margin is not None and margin >= 0.25
+    )
+    potential_combo = (daily > 3 and margin is not None and 0.05 <= margin < 0.15) or (
+        1 <= daily <= 3 and margin is not None and 0.10 <= margin < 0.25
+    )
+
+    if role_code == "star":
+        items = [
+            {"metric": "日销与毛利组合", "actual": {"daily_sales": daily, "margin_rate": margin}, "condition": "日销>3且毛利率≥15%，或1≤日销≤3且毛利率≥25%", "matched": star_combo},
+            {"metric": "小类排名", "actual": rank, "condition": "≤50", "matched": valid_rank and rank <= 50},
+        ]
+    elif role_code == "potential":
+        metric_match = potential_combo or (star_combo and valid_rank and 51 <= rank <= 100)
+        items = [
+            {"metric": "日销与毛利组合", "actual": {"daily_sales": daily, "margin_rate": margin}, "condition": "潜力组合，或明星组合且排名51–100", "matched": metric_match},
+            {"metric": "小类排名", "actual": rank, "condition": "≤100", "matched": valid_rank and rank <= 100},
+        ]
+    elif role_code == "problem":
+        triggers = [
+            {"metric": "日销", "actual": daily, "condition": "≤0触发问题产品", "matched": daily <= 0},
+            {"metric": "毛利率", "actual": margin, "condition": "缺失或<5%触发问题产品", "matched": margin is None or margin < 0.05},
+            {"metric": "小类排名", "actual": rank, "condition": "缺失、0或99999触发问题产品", "matched": not valid_rank},
+        ]
+        items = triggers
+    else:
+        items = [
+            {"metric": "基础有效性", "actual": {"daily_sales": daily, "margin_rate": margin, "small_rank": rank}, "condition": "日销>0、毛利率≥5%且排名有效", "matched": daily > 0 and margin is not None and margin >= 0.05 and valid_rank},
+            {"metric": "更高角色条件", "actual": "未命中明星/潜力组合", "condition": "未同时满足明星或潜力产品规则", "matched": not (star_combo and valid_rank and rank <= 50) and not ((potential_combo and valid_rank and rank <= 100) or (star_combo and valid_rank and 51 <= rank <= 100))},
+        ]
+
+    classified = classify_station_sales_role(daily, margin, rank)
+    return {
+        "role_code": role_code,
+        "role_label": role_label,
+        "qualified": classified["code"] == role_code,
+        "items": items,
+    }
+
+
+def _build_role_detail_trend(
+    adjust_date: date,
+    pre_days: int,
+    post_days: int,
+    daily_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    rows_by_date: dict[date, dict[str, Any]] = {}
+    for row in daily_rows:
+        row_date = row.get("dt_date")
+        if isinstance(row_date, datetime):
+            row_date = row_date.date()
+        if isinstance(row_date, str):
+            try:
+                row_date = date.fromisoformat(row_date)
+            except ValueError:
+                continue
+        if isinstance(row_date, date):
+            rows_by_date[row_date] = row
+
+    points = []
+    for offset in range(-(pre_days - 1), post_days + 1):
+        point_date = adjust_date + timedelta(days=offset)
+        row = rows_by_date.get(point_date)
+        revenue = safe_float(row.get("revenue")) if row else 0.0
+        profit = safe_float(row.get("order_profit")) if row else 0.0
+        rank_value = row.get("small_rank") if row else None
+        points.append({
+            "date": point_date.isoformat(),
+            "relative_day": "D" if offset == 0 else f"D{offset:+d}",
+            "period": "before" if offset <= 0 else "after",
+            "sales_qty": safe_float(row.get("sales_qty")) if row else None,
+            "margin_rate": round(profit / revenue, 4) if row and revenue else None,
+            "small_rank": safe_int(rank_value) if rank_value not in (None, 0) else None,
+        })
+    return points
+
+
+def _build_role_performance_trend(
+    adjust_date: date,
+    pre_days: int,
+    post_days: int,
+    daily_rows: list[dict[str, Any]],
+    latest_data_date: date | None,
+    sku_count: int,
+) -> dict[str, Any]:
+    """Build a complete adjustment-centered timeline without inventing future zeroes."""
+    rows_by_date: dict[date, dict[str, Any]] = {}
+    for row in daily_rows:
+        row_date = row.get("dt_date")
+        if isinstance(row_date, datetime):
+            row_date = row_date.date()
+        elif isinstance(row_date, str):
+            try:
+                row_date = date.fromisoformat(row_date)
+            except ValueError:
+                continue
+        if not isinstance(row_date, date):
+            continue
+        rows_by_date[row_date] = row
+
+    if latest_data_date is None and rows_by_date:
+        latest_data_date = max(rows_by_date)
+
+    points: list[dict[str, Any]] = []
+    start_date = adjust_date - timedelta(days=pre_days - 1)
+    end_date = adjust_date + timedelta(days=post_days)
+    current_date = start_date
+    while current_date <= end_date:
+        offset = (current_date - adjust_date).days
+        period = "before" if offset <= 0 else "after"
+        relative_day = "D" if offset == 0 else f"D{offset:+d}"
+        available = latest_data_date is not None and current_date <= latest_data_date
+        row = rows_by_date.get(current_date, {})
+        sales_qty = safe_float(row.get("sales_qty")) if available else None
+        revenue = safe_float(row.get("revenue")) if available else None
+        order_profit = safe_float(row.get("order_profit")) if available else None
+        margin_rate = round(order_profit / revenue, 4) if available and revenue else None
+        points.append({
+            "date": current_date.isoformat(),
+            "relative_day": relative_day,
+            "period": period,
+            "available": available,
+            "sales_qty": round(sales_qty, 2) if sales_qty is not None else None,
+            "revenue": round(revenue, 2) if revenue is not None else None,
+            "order_profit": round(order_profit, 2) if order_profit is not None else None,
+            "margin_rate": margin_rate,
+            "source_rows": safe_int(row.get("source_rows")) if available else 0,
+        })
+        current_date += timedelta(days=1)
+
+    def period_summary(period: str) -> tuple[float, float | None, int]:
+        period_points = [point for point in points if point["period"] == period and point["available"]]
+        sales = round(sum(safe_float(point["sales_qty"]) for point in period_points), 2)
+        revenue = sum(safe_float(point["revenue"]) for point in period_points)
+        profit = sum(safe_float(point["order_profit"]) for point in period_points)
+        margin = round(profit / revenue, 4) if revenue else None
+        return sales, margin, len(period_points)
+
+    sales_before, margin_before, available_pre_days = period_summary("before")
+    sales_after, margin_after, available_post_days = period_summary("after")
+    return {
+        "sku_count": sku_count,
+        "latest_data_date": latest_data_date.isoformat() if latest_data_date else "",
+        "points": points,
+        "summary": {
+            "sales_before": sales_before,
+            "sales_after": sales_after,
+            "margin_before": margin_before,
+            "margin_after": margin_after,
+            "available_pre_days": available_pre_days,
+            "available_post_days": available_post_days,
+            "expected_pre_days": pre_days,
+            "expected_post_days": post_days,
+        },
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -976,6 +1290,489 @@ class PriceReviewService:
         )
         return data
 
+    def get_role_migration_payload(
+        self,
+        adjust_date: date | None = None,
+        pre_days: int = 30,
+        post_days: int = 3,
+        country: str = "",
+        store: str = "",
+        role_before: str = "",
+        role_after: str = "",
+        role_change_filter: str = "",
+        finance_change_filter: str = "",
+        finance_before: str = "",
+        finance_after: str = "",
+        data_status: str = "",
+        keyword: str = "",
+        page: int = 1,
+        page_size: int = 20,
+        sort_field: str = "",
+        sort_dir: str = "",
+        column_filters: Any = "",
+    ) -> dict[str, Any]:
+        pre_days = pre_days if pre_days in SUPPORTED_ROLE_PERIODS else 30
+        post_days = post_days if post_days in SUPPORTED_ROLE_PERIODS else 3
+        adjust_date = adjust_date or self._latest_role_migration_adjust_date(pre_days, post_days)
+        rows = self._load_role_migration_rows(adjust_date, pre_days, post_days) if adjust_date else []
+        context_row = self._normalize_role_migration_row(rows[0]) if rows else {}
+        context = {
+            field: context_row.get(field)
+            for field in (
+                "pre_period_start", "pre_period_end", "post_period_start",
+                "post_period_end", "finance_snapshot_date",
+                "pre_role_source", "post_role_source",
+                "pre_source_data_date", "post_source_data_date",
+                "pre_source_created_time", "post_source_created_time",
+                "pre_source_freshness", "post_source_freshness",
+            )
+            if context_row.get(field) is not None
+        }
+        if rows:
+            context["pre_role_source"] = _aggregate_role_source(rows, "pre_role_source")
+            context["post_role_source"] = _aggregate_role_source(rows, "post_role_source")
+        filter_options = {
+            "countries": sorted({safe_str(row.get("country")) for row in rows if row.get("country")}),
+            "stores": sorted({safe_str(row.get("station_store")) for row in rows if row.get("station_store")}),
+        }
+
+        keyword_lower = safe_str(keyword).strip().lower()
+        filtered = []
+        for row in rows:
+            if country and country != "all" and safe_str(row.get("country")) != country:
+                continue
+            if store and store != "all" and safe_str(row.get("station_store")) != store:
+                continue
+            if role_before and role_before != "all" and safe_str(row.get("role_before_code")) != role_before:
+                continue
+            if role_after and role_after != "all" and safe_str(row.get("role_after_code")) != role_after:
+                continue
+            if role_change_filter and role_change_filter != "all" and safe_str(row.get("role_change")) != role_change_filter:
+                continue
+            if finance_change_filter and finance_change_filter != "all" and safe_str(row.get("finance_change")) != finance_change_filter:
+                continue
+            if finance_before and finance_before != "all" and safe_str(row.get("finance_band_before_code")) != finance_before:
+                continue
+            if finance_after and finance_after != "all" and safe_str(row.get("finance_band_after_code")) != finance_after:
+                continue
+            if data_status and data_status != "all" and safe_str(row.get("data_status")) != data_status:
+                continue
+            if keyword_lower:
+                haystack = " ".join(
+                    safe_str(row.get(field)).lower()
+                    for field in ("msku", "local_sku", "product_name", "country", "store", "station_store")
+                )
+                if keyword_lower not in haystack:
+                    continue
+            filtered.append(self._normalize_role_migration_row(row))
+
+        filtered = _filter_role_migration_columns(filtered, column_filters)
+        summary = self._role_migration_summary(filtered)
+        role_matrix = self._role_migration_matrix(filtered)
+        finance_matrix = self._finance_migration_matrix(filtered)
+        performance_trend = self._load_role_performance_trend(
+            adjust_date,
+            pre_days,
+            post_days,
+            filtered,
+        ) if adjust_date else {"sku_count": 0, "points": [], "summary": {}}
+        filtered = _sort_role_migration_rows(filtered, safe_str(sort_field), safe_str(sort_dir).lower())
+        total = len(filtered)
+        safe_page_size = max(1, min(100, int(page_size or 20)))
+        total_pages = max(1, math.ceil(total / safe_page_size))
+        safe_page = min(max(1, int(page or 1)), total_pages)
+        start = (safe_page - 1) * safe_page_size
+        return {
+            "meta": {
+                "default_pre_days": 30,
+                "default_post_days": 3,
+                "periods": [
+                    {"key": days, "label": f"{days}天"}
+                    for days in SUPPORTED_ROLE_PERIODS
+                ],
+                "roles": [{"key": key, **value} for key, value in ROLE_DEFINITIONS.items()],
+                "finance_bands": [{"key": key, "label": label} for key, label in FINANCE_BANDS],
+                "rule_version": STATION_ROLE_RULE_VERSION,
+                "role_scope": "国家 + 店铺 + MSKU（站点销售角色）",
+            },
+            "adjust_date": adjust_date.isoformat() if adjust_date else "",
+            "pre_days": pre_days,
+            "post_days": post_days,
+            "cache_status": self._load_role_cache_status(),
+            "context": context,
+            "filter_options": filter_options,
+            "summary": summary,
+            "role_matrix": role_matrix,
+            "finance_matrix": finance_matrix,
+            "performance_trend": performance_trend,
+            "rows": filtered[start:start + safe_page_size],
+            "total": total,
+            "page": safe_page,
+            "page_size": safe_page_size,
+            "total_pages": total_pages,
+        }
+
+    def get_role_migration_detail(
+        self,
+        adjust_date: date,
+        pre_days: int,
+        post_days: int,
+        country: str,
+        store: str,
+        msku: str,
+    ) -> dict[str, Any] | None:
+        pre_days = pre_days if pre_days in SUPPORTED_ROLE_PERIODS else 30
+        post_days = post_days if post_days in SUPPORTED_ROLE_PERIODS else 3
+        rows = self._load_role_migration_rows(adjust_date, pre_days, post_days)
+        raw = next((
+            row for row in rows
+            if safe_str(row.get("country")) == country
+            and safe_str(row.get("station_store") or row.get("store")) == store
+            and safe_str(row.get("msku")) == msku
+        ), None)
+        if raw is None:
+            return None
+
+        row = self._normalize_role_migration_row(raw)
+        daily_rows = self._load_role_detail_daily_rows(
+            adjust_date=adjust_date,
+            pre_days=pre_days,
+            post_days=post_days,
+            country=country,
+            store=store,
+            msku=msku,
+        )
+        trend = _build_role_detail_trend(adjust_date, pre_days, post_days, daily_rows)
+        adjustment_point = next((point for point in trend if point["relative_day"] == "D"), {})
+        ladder = self._load_role_detail_finance_ladder(row)
+
+        return {
+            "identity": {
+                "country": country,
+                "store": store,
+                "msku": msku,
+                "local_sku": row.get("local_sku"),
+                "product_name": row.get("product_name"),
+                "adjust_date": adjust_date.isoformat(),
+                "data_status": row.get("data_status"),
+                "role_change": row.get("role_change"),
+                "rule_version": row.get("station_sales_role_rule_version") or STATION_ROLE_RULE_VERSION,
+            },
+            "windows": {
+                "before": {"start": row.get("pre_period_start"), "end": row.get("pre_period_end"), "days": pre_days},
+                "after": {"start": row.get("post_period_start"), "end": row.get("post_period_end"), "days": post_days},
+            },
+            "checkpoints": {
+                "before": {
+                    "daily_sales": _optional_float(row.get("pre_daily_sales")),
+                    "margin_rate": _optional_float(row.get("pre_margin_rate")),
+                    "small_rank": row.get("pre_small_rank"),
+                    "rank_date": row.get("pre_small_rank_date"),
+                },
+                "adjustment": {
+                    "small_rank": adjustment_point.get("small_rank"),
+                    "price_before": _optional_float(row.get("price_before")),
+                    "price_after": _optional_float(row.get("price_after")),
+                },
+                "after": {
+                    "daily_sales": _optional_float(row.get("post_daily_sales")),
+                    "margin_rate": _optional_float(row.get("post_margin_rate")),
+                    "small_rank": row.get("post_small_rank"),
+                    "rank_date": row.get("post_small_rank_date"),
+                },
+            },
+            "roles": {
+                "before": {"code": row.get("role_before_code"), "label": row.get("role_before_label")},
+                "after": {"code": row.get("role_after_code"), "label": row.get("role_after_label")},
+            },
+            "role_evidence": {
+                "before": _build_station_role_evidence(
+                    safe_str(row.get("role_before_code")), safe_str(row.get("role_before_label")),
+                    row.get("pre_daily_sales"), row.get("pre_margin_rate"), row.get("pre_small_rank"),
+                ),
+                "after": _build_station_role_evidence(
+                    safe_str(row.get("role_after_code")), safe_str(row.get("role_after_label")),
+                    row.get("post_daily_sales"), row.get("post_margin_rate"), row.get("post_small_rank"),
+                ),
+            },
+            "finance": {
+                "snapshot_date": row.get("finance_snapshot_date"),
+                "currency": row.get("currency"),
+                "price_before": _optional_float(row.get("price_before")),
+                "price_after": _optional_float(row.get("price_after")),
+                "drop_ratio": _optional_float(row.get("drop_ratio")),
+                "band_before": {"code": row.get("finance_band_before_code"), "label": row.get("finance_band_before_label")},
+                "band_after": {"code": row.get("finance_band_after_code"), "label": row.get("finance_band_after_label")},
+                "change": row.get("finance_change"),
+                "ladder": [{"margin": margin, "price": _optional_float(ladder.get(margin))} for margin in range(0, 36, 5)],
+            },
+            "trend": trend,
+        }
+
+    def _load_role_detail_daily_rows(
+        self,
+        *,
+        adjust_date: date,
+        pre_days: int,
+        post_days: int,
+        country: str,
+        store: str,
+        msku: str,
+    ) -> list[dict[str, Any]]:
+        try:
+            with self.connect() as conn, conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select dt_date,
+                           sum(coalesce(sales_qty, 0)) as sales_qty,
+                           sum(coalesce(sales_amount, 0)) as revenue,
+                           sum(coalesce(order_gross_profit, 0)) as order_profit,
+                           min(nullif(ranking, 0)) as small_rank
+                    from dashboard_product_performance_daily
+                    where dt_date between %(start_date)s and %(end_date)s
+                      and country = %(country)s
+                      and seller_name_new = %(store)s
+                      and seller_sku_adj = %(msku)s
+                    group by dt_date
+                    order by dt_date
+                    """,
+                    {
+                        "start_date": adjust_date - timedelta(days=pre_days - 1),
+                        "end_date": adjust_date + timedelta(days=post_days),
+                        "country": country,
+                        "store": store,
+                        "msku": msku,
+                    },
+                )
+                return list(cursor.fetchall())
+        except pymysql.MySQLError:
+            return []
+
+    def _load_role_detail_finance_ladder(self, row: dict[str, Any]) -> dict[int, Any]:
+        snapshot_date = row.get("finance_snapshot_date")
+        if not snapshot_date:
+            return {}
+        try:
+            with self.connect() as conn, conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select max(margin_price_0) as margin_price_0,
+                           max(margin_price_5) as margin_price_5,
+                           max(margin_price_10) as margin_price_10,
+                           max(margin_price_15) as margin_price_15,
+                           max(margin_price_20) as margin_price_20,
+                           max(margin_price_25) as margin_price_25,
+                           max(margin_price_30) as margin_price_30,
+                           max(margin_price_35) as margin_price_35
+                    from dashboard_limit_price_daily_snapshot
+                    where snapshot_date = %(snapshot_date)s
+                      and country = %(country)s
+                      and seller_name_new = %(store)s
+                      and seller_sku = %(msku)s
+                      and (%(local_sku)s = '' or local_sku = %(local_sku)s)
+                    """,
+                    {
+                        "snapshot_date": snapshot_date,
+                        "country": row.get("country"),
+                        "store": row.get("station_store") or row.get("store"),
+                        "msku": row.get("msku"),
+                        "local_sku": safe_str(row.get("local_sku")),
+                    },
+                )
+                finance_row = cursor.fetchone() or {}
+        except pymysql.MySQLError:
+            return {}
+        return {margin: finance_row.get(f"margin_price_{margin}") for margin in range(0, 36, 5)}
+
+    def _load_role_cache_status(self) -> dict[str, Any]:
+        try:
+            with self.connect() as conn, conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select min(data_date) as earliest_data_date,
+                           max(data_date) as latest_data_date,
+                           max(synced_at) as synced_at,
+                           count(distinct data_date) as cached_dates
+                    from station_sales_role_recent_cache
+                    """
+                )
+                row = cursor.fetchone() or {}
+        except pymysql.MySQLError:
+            return {}
+
+        result: dict[str, Any] = {"cached_dates": safe_int(row.get("cached_dates"))}
+        for field in ("earliest_data_date", "latest_data_date"):
+            value = row.get(field)
+            result[field] = value.isoformat() if isinstance(value, (date, datetime)) else safe_str(value)
+        synced_at = row.get("synced_at")
+        result["synced_at"] = synced_at.isoformat(timespec="seconds") if isinstance(synced_at, datetime) else safe_str(synced_at)
+        return result
+
+    def _latest_role_migration_adjust_date(self, pre_days: int, post_days: int) -> date | None:
+        try:
+            with self.connect() as conn, conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select max(adjust_date) as adjust_date
+                    from price_review_station_role_tracking
+                    where pre_period_days = %(pre_days)s
+                      and post_period_days = %(post_days)s
+                    """,
+                    {"pre_days": pre_days, "post_days": post_days},
+                )
+                return (cursor.fetchone() or {}).get("adjust_date")
+        except pymysql.MySQLError:
+            return None
+
+    def _load_role_migration_rows(
+        self,
+        adjust_date: date,
+        pre_days: int,
+        post_days: int,
+    ) -> list[dict[str, Any]]:
+        try:
+            with self.connect() as conn, conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select *
+                    from price_review_station_role_tracking
+                    where adjust_date = %(adjust_date)s
+                      and pre_period_days = %(pre_days)s
+                      and post_period_days = %(post_days)s
+                    """,
+                    {"adjust_date": adjust_date, "pre_days": pre_days, "post_days": post_days},
+                )
+                return list(cursor.fetchall())
+        except pymysql.MySQLError:
+            return []
+
+    def _load_role_performance_trend(
+        self,
+        adjust_date: date,
+        pre_days: int,
+        post_days: int,
+        rows: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        keys = sorted({
+            (
+                safe_str(row.get("country")),
+                safe_str(row.get("station_store")),
+                safe_str(row.get("msku")),
+            )
+            for row in rows
+            if row.get("country") and row.get("station_store") and row.get("msku")
+        })
+        if not keys:
+            return _build_role_performance_trend(
+                adjust_date, pre_days, post_days, [], None, 0,
+            )
+
+        tuple_placeholders = ", ".join(["(%s, %s, %s)"] * len(keys))
+        params: list[Any] = [
+            adjust_date - timedelta(days=pre_days - 1),
+            adjust_date + timedelta(days=post_days),
+        ]
+        for key in keys:
+            params.extend(key)
+
+        try:
+            with self.connect() as conn, conn.cursor() as cursor:
+                cursor.execute(
+                    "select max(dt_date) as latest_data_date from dashboard_product_performance_daily"
+                )
+                latest_data_date = (cursor.fetchone() or {}).get("latest_data_date")
+                cursor.execute(
+                    f"""
+                    select dt_date,
+                           sum(coalesce(sales_qty, 0)) as sales_qty,
+                           sum(coalesce(sales_amount, 0)) as revenue,
+                           sum(coalesce(order_gross_profit, 0)) as order_profit,
+                           count(*) as source_rows
+                    from dashboard_product_performance_daily
+                    where dt_date between %s and %s
+                      and (country, seller_name_new, seller_sku_adj) in ({tuple_placeholders})
+                    group by dt_date
+                    order by dt_date
+                    """,
+                    params,
+                )
+                daily_rows = list(cursor.fetchall())
+        except pymysql.MySQLError:
+            daily_rows = []
+            latest_data_date = None
+
+        return _build_role_performance_trend(
+            adjust_date=adjust_date,
+            pre_days=pre_days,
+            post_days=post_days,
+            daily_rows=daily_rows,
+            latest_data_date=latest_data_date,
+            sku_count=len(keys),
+        )
+
+    def _normalize_role_migration_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        result = dict(row)
+        for field in (
+            "adjust_date", "pre_period_start", "pre_period_end", "post_period_start",
+            "post_period_end", "pre_small_rank_date", "post_small_rank_date",
+            "finance_snapshot_date", "pre_source_data_date", "post_source_data_date",
+            "pre_source_created_time", "post_source_created_time",
+        ):
+            value = result.get(field)
+            if isinstance(value, (date, datetime)):
+                result[field] = value.isoformat()
+        for field in ("price_before", "price_after", "drop_ratio", "pre_sales_qty", "post_sales_qty", "pre_sales_amount", "post_sales_amount", "pre_order_profit", "post_order_profit", "pre_daily_sales", "post_daily_sales", "pre_margin_rate", "post_margin_rate"):
+            if result.get(field) is not None:
+                result[field] = safe_float(result[field])
+        return result
+
+    def _role_migration_summary(self, rows: list[dict[str, Any]]) -> dict[str, int]:
+        complete = [row for row in rows if row.get("data_status") == "complete"]
+        return {
+            "total": len(rows),
+            "valid": len(complete),
+            "up": sum(row.get("role_change") == "up" for row in complete),
+            "down": sum(row.get("role_change") == "down" for row in complete),
+            "stable": sum(row.get("role_change") == "stable" for row in complete),
+            "pending": sum(row.get("data_status") == "pending" for row in rows),
+            "source_incomplete": sum(row.get("data_status") == "source_incomplete" for row in rows),
+            "finance_up": sum(row.get("finance_change") == "up" for row in complete),
+            "finance_down": sum(row.get("finance_change") == "down" for row in complete),
+            "finance_stable": sum(row.get("finance_change") == "stable" for row in complete),
+            "finance_unavailable": sum(row.get("finance_change") == "unavailable" for row in complete),
+        }
+
+    def _role_migration_matrix(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        complete = [row for row in rows if row.get("data_status") == "complete"]
+        return [
+            {
+                "before": before,
+                "before_label": ROLE_DEFINITIONS[before]["label"],
+                "after": after,
+                "after_label": ROLE_DEFINITIONS[after]["label"],
+                "count": sum(row.get("role_before_code") == before and row.get("role_after_code") == after for row in complete),
+            }
+            for before in ROLE_DEFINITIONS
+            for after in ROLE_DEFINITIONS
+        ]
+
+    def _finance_migration_matrix(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        counts: dict[tuple[str, str, str, str], int] = {}
+        for row in rows:
+            if row.get("data_status") != "complete" or row.get("finance_change") == "unavailable":
+                continue
+            key = (
+                safe_str(row.get("finance_band_before_code")),
+                safe_str(row.get("finance_band_before_label")),
+                safe_str(row.get("finance_band_after_code")),
+                safe_str(row.get("finance_band_after_label")),
+            )
+            counts[key] = counts.get(key, 0) + 1
+        return [
+            {"before": key[0], "before_label": key[1], "after": key[2], "after_label": key[3], "count": count}
+            for key, count in counts.items()
+        ]
+
     def _load_skus_from_db(self, adjust_date: date, compare_days: int) -> list[dict[str, Any]]:
         latest = self._latest_product_data_date()
         if latest and latest < adjust_date + timedelta(days=compare_days):
@@ -1522,7 +2319,11 @@ class PriceReviewService:
         for i in range(result_days - 1, -1, -1):
             d = today - timedelta(days=i)
             count = counts.get(d, 0)
-            clickable = bool(count and latest_data_date and latest_data_date >= d + timedelta(days=7))
+            clickable = bool(
+                count
+                and latest_data_date
+                and latest_data_date >= d + timedelta(days=MIN_PRICE_REVIEW_MATURITY_DAYS)
+            )
             result.append({
                 "date": d.isoformat(),
                 "display_date": f"{d.month}月{d.day}日",

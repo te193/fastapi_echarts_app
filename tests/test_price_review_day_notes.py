@@ -100,6 +100,16 @@ class PriceReviewDayNotesTests(unittest.TestCase):
         self.assertEqual(by_date["2026-06-02"]["note"], "")
         self.assertEqual(by_date["2026-06-04"]["note"], "")
 
+    def test_daily_adjustment_counts_become_clickable_after_three_days(self):
+        self.connection.counts[date(2026, 6, 1)] = 35
+
+        with patch.object(price_review_data, "date", FakeDate):
+            items = self.service.get_daily_adjustment_counts(days=4)
+
+        by_date = {item["date"]: item for item in items}
+        self.assertTrue(by_date["2026-06-01"]["clickable"])
+        self.assertFalse(by_date["2026-06-02"]["clickable"])
+
     def test_daily_adjustment_counts_include_saved_note_for_matching_date(self):
         self.connection.notes[date(2026, 6, 3)] = "促销前统一下调"
 

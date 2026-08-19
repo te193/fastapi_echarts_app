@@ -37,19 +37,19 @@ def test_station_role_v47_boundaries(daily_sales, margin_rate, rank, expected):
 def test_tracking_windows_accept_independent_pre_and_post_periods():
     windows = tracking_windows(date(2026, 8, 10), 14, 3)
 
-    assert windows.pre_start == date(2026, 7, 27)
-    assert windows.pre_end == date(2026, 8, 9)
+    assert windows.pre_start == date(2026, 7, 28)
+    assert windows.pre_end == date(2026, 8, 10)
     assert windows.post_start == date(2026, 8, 11)
     assert windows.post_end == date(2026, 8, 13)
     assert windows.pre_days == 14
     assert windows.post_days == 3
 
 
-def test_tracking_windows_use_equal_period_without_including_adjustment_day():
+def test_tracking_windows_include_adjustment_day_in_pre_period():
     windows = tracking_windows(date(2026, 8, 10), 7, 7)
 
-    assert windows.pre_start == date(2026, 8, 3)
-    assert windows.pre_end == date(2026, 8, 9)
+    assert windows.pre_start == date(2026, 8, 4)
+    assert windows.pre_end == date(2026, 8, 10)
     assert windows.post_start == date(2026, 8, 11)
     assert windows.post_end == date(2026, 8, 17)
 

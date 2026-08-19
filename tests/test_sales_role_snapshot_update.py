@@ -2,11 +2,16 @@ from datetime import date
 
 from etl.sales_role_snapshot_update import (
     CREATE_SALES_ROLE_PERIOD_SNAPSHOT_SQL,
+    DEFAULT_PERIODS,
     INSERT_SALES_ROLE_PERIOD_SNAPSHOT_SQL,
     SALES_ROLE_RULE_VERSION,
     parse_periods,
     period_params,
 )
+
+
+def test_sales_role_snapshot_defaults_include_three_days():
+    assert DEFAULT_PERIODS == (3, 7, 14, 30, 90)
 
 
 def test_sales_role_snapshot_table_has_business_comments():

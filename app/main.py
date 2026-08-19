@@ -1,5 +1,6 @@
 import csv
 import io
+from contextlib import asynccontextmanager
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -158,7 +159,13 @@ CSV_HEADER_LABELS = {
     "updated_at": "更新时间",
 }
 
-app = FastAPI(title="产品分层看板", version="1.0.0")
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    ad_budget_service.warm_cache()
+    yield
+
+
+app = FastAPI(title="产品分层看板", version="1.0.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
@@ -383,6 +390,7 @@ def api_ad_budget(
     page_size: int = Query(default=50, ge=20, le=200),
     sort_field: str = "anomaly_priority",
     sort_dir: Literal["asc", "desc"] = "desc",
+    column_filters: str = "",
 ) -> dict:
     return ad_budget_service.get_payload(
         country_category=country_category,
@@ -396,6 +404,7 @@ def api_ad_budget(
         page_size=page_size,
         sort_field=sort_field,
         sort_dir=sort_dir,
+        column_filters=column_filters,
     )
 
 
@@ -1771,7 +1780,7 @@ def api_price_adjustments_daily_note(
 
 def price_review_filters(
     adjust_date: Optional[str] = Query(default=None),
-    compare_days: int = Query(default=14, ge=7, le=28),
+    compare_days: int = Query(default=3, ge=3, le=28),
     country: str = Query(default=""),
     drop_range: str = Query(default=""),
     risk_level: str = Query(default=""),
@@ -1849,6 +1858,80 @@ def api_price_review_skus(
         sort_dir=sort_dir,
         **filters,
     )
+
+
+@app.get("/api/price-review/role-migration")
+def api_price_review_role_migration(
+    adjust_date: Optional[str] = Query(default=None),
+    pre_days: Optional[int] = Query(default=None),
+    post_days: int = Query(default=3),
+    comparison_mode: Optional[str] = Query(default=None),
+    country: str = Query(default=""),
+    store: str = Query(default=""),
+    role_before: str = Query(default=""),
+    role_after: str = Query(default=""),
+    role_change: str = Query(default=""),
+    finance_change: str = Query(default=""),
+    finance_before: str = Query(default=""),
+    finance_after: str = Query(default=""),
+    data_status: str = Query(default=""),
+    keyword: str = Query(default=""),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    sort_field: str = Query(default=""),
+    sort_dir: str = Query(default=""),
+    column_filters: str = Query(default=""),
+) -> dict:
+    # Compatibility for previously shared links. New clients always send
+    # pre_days explicitly; old equal-window links map N to both sides.
+    resolved_pre_days = pre_days
+    if resolved_pre_days is None:
+        resolved_pre_days = post_days if comparison_mode == "equal_window" else 30
+    return price_review_service.get_role_migration_payload(
+        adjust_date=_parse_date(adjust_date),
+        pre_days=resolved_pre_days,
+        post_days=post_days,
+        country=country,
+        store=store,
+        role_before=role_before,
+        role_after=role_after,
+        role_change_filter=role_change,
+        finance_change_filter=finance_change,
+        finance_before=finance_before,
+        finance_after=finance_after,
+        data_status=data_status,
+        keyword=keyword,
+        page=page,
+        page_size=page_size,
+        sort_field=sort_field,
+        sort_dir=sort_dir,
+        column_filters=column_filters,
+    )
+
+
+@app.get("/api/price-review/role-migration/detail")
+def api_price_review_role_migration_detail(
+    adjust_date: str = Query(...),
+    pre_days: int = Query(default=30),
+    post_days: int = Query(default=3),
+    country: str = Query(...),
+    store: str = Query(...),
+    msku: str = Query(...),
+) -> dict:
+    parsed_date = _parse_date(adjust_date)
+    if parsed_date is None:
+        raise HTTPException(status_code=400, detail="调价日期格式无效")
+    payload = price_review_service.get_role_migration_detail(
+        adjust_date=parsed_date,
+        pre_days=pre_days,
+        post_days=post_days,
+        country=country,
+        store=store,
+        msku=msku,
+    )
+    if payload is None:
+        raise HTTPException(status_code=404, detail="未找到该站点 SKU 的角色迁移记录")
+    return payload
 
 
 _TOP_LIST_COLUMNS = [

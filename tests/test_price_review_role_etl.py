@@ -4,21 +4,34 @@ from etl import price_review_update
 from etl.station_sales_role_cache import CacheSyncResult
 
 
+def test_business_tracking_periods_include_three_day_first_observation():
+    assert price_review_update.TRACKING_PERIODS == (3, 7, 14, 28)
+
+
 def test_station_role_tracking_never_backfills_before_august_2026():
     assert price_review_update._station_role_adjust_start(date(2026, 4, 23)) == date(2026, 8, 1)
     assert price_review_update._station_role_adjust_start(date(2026, 8, 10)) == date(2026, 8, 10)
 
 
-def test_role_metrics_sql_uses_country_normalized_station_and_excludes_adjustment_day():
+def test_role_metrics_sql_uses_country_normalized_station_and_includes_adjustment_day_in_pre_period():
     sql = " ".join(price_review_update._station_role_metrics_sql("etl_datasync_test").split())
 
     assert "p.seller_name_new = coalesce(a.seller_name_new, substring_index(a.store, '-', 1))" in sql
     assert "p.country = a.country" in sql
     assert "p.seller_sku_adj = a.msku" in sql
-    assert "p.dt_date <> a.adjust_date" in sql
-    assert "sum(case when p.dt_date between date_sub(a.adjust_date, interval %(pre_days)s day) and date_sub(a.adjust_date, interval 1 day)" in sql
+    assert "p.dt_date <> a.adjust_date" not in sql
+    assert "sum(case when p.dt_date between date_sub(a.adjust_date, interval (%(pre_days)s - 1) day) and a.adjust_date" in sql
     assert "sum(case when p.dt_date between date_add(a.adjust_date, interval 1 day) and date_add(a.adjust_date, interval %(post_days)s day)" in sql
     assert "dashboard_limit_price_daily_snapshot" not in sql
+
+
+def test_role_performance_lookup_index_matches_station_join_dimensions():
+    sql = " ".join(
+        price_review_update._station_role_performance_index_sql("etl_datasync_test").split()
+    )
+
+    assert "dashboard_product_performance_daily" in sql
+    assert "seller_name_new, country, seller_sku_adj, dt_date" in sql
 
 
 def test_finance_ladders_are_loaded_by_a_separate_reusable_query():
@@ -61,7 +74,7 @@ def test_cached_role_sql_only_joins_exact_adjustment_products_and_anchor_dates()
     assert "c.country = a.country" in sql
     assert "c.station_store = coalesce(a.seller_name_new, substring_index(a.store, '-', 1))" in sql
     assert "c.msku = a.msku" in sql
-    assert "c.data_date = date_sub(a.adjust_date, interval 1 day)" in sql
+    assert "c.data_date = a.adjust_date" in sql
     assert "c.data_date = date_add(a.adjust_date, interval %(post_days)s day)" in sql
 
 
@@ -87,10 +100,53 @@ def test_complete_solidified_rows_only_refresh_while_remote_source_is_in_recent_
             "post_source_data_date": date(2026, 8, 19),
         },
         recent_dates,
+        pre_days=7,
+        post_days=7,
+    )
+    assert not price_review_update._should_refresh_station_role_tracking(
+        {
+            "data_status": "complete",
+            "pre_role_source": "local_recomputed",
+            "post_role_source": "local_recomputed",
+            "pre_source_data_date": date(2026, 8, 16),
+            "post_source_data_date": date(2026, 8, 16),
+        },
+        recent_dates,
+        pre_days=3,
+        post_days=3,
+    )
+    assert price_review_update._should_refresh_station_role_tracking(
+        {
+            "data_status": "complete",
+            "pre_role_source": "local_recomputed",
+            "post_role_source": "local_recomputed",
+            "pre_source_data_date": date(2026, 8, 16),
+            "post_source_data_date": date(2026, 8, 19),
+        },
+        recent_dates,
+        pre_days=7,
+        post_days=7,
     )
     assert price_review_update._should_refresh_station_role_tracking(
         {"data_status": "pending"},
         recent_dates,
+    )
+
+
+def test_existing_rows_with_old_pre_window_are_refreshed_for_adjustment_day_migration():
+    assert price_review_update._should_refresh_station_role_tracking(
+        {
+            "adjust_date": date(2026, 8, 10),
+            "pre_period_end": date(2026, 8, 9),
+            "data_status": "complete",
+            "pre_role_source": "local_recomputed",
+            "post_role_source": "local_recomputed",
+            "pre_source_data_date": date(2026, 8, 9),
+            "post_source_data_date": date(2026, 8, 17),
+        },
+        set(),
+        pre_days=7,
+        post_days=7,
     )
 
 

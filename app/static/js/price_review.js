@@ -1,5 +1,9 @@
 (function () {
   var app = window.kanbanApp;
+  var periodConfig = window.PriceReviewPeriod || {
+    defaultDays: "3",
+    isSupported: function (value) { return ["3", "7", "14", "28"].indexOf(String(value || "")) >= 0; }
+  };
   var charts = {};
   var elements = {};
   var topListData = {};
@@ -12,7 +16,7 @@
   // Global filter state — passed to every API call
   var filterState = {
     adjust_date: "",
-    compare_days: "7",
+    compare_days: periodConfig.defaultDays,
     country: "all",
     store: "all",
     drop_range: "all",
@@ -54,7 +58,7 @@
       filterState.adjust_date = urlAdjustDate;
       initializedFromUrl = true;
     }
-    if (["7", "14", "28"].indexOf(urlCompareDays) >= 0) {
+    if (periodConfig.isSupported(urlCompareDays)) {
       filterState.compare_days = urlCompareDays;
     }
   }
@@ -241,7 +245,7 @@
         if (elements.adjustDateInput) elements.adjustDateInput.value = defaultAdjustDate;
         setAdjustDateLabel(defaultAdjustDate);
         renderAdjustCalendar();
-        if (elements.compareDaysSelect) elements.compareDaysSelect.value = "7";
+        if (elements.compareDaysSelect) elements.compareDaysSelect.value = periodConfig.defaultDays;
         if (elements.countrySelect) elements.countrySelect.value = "all";
         if (elements.storeSelect) elements.storeSelect.value = "all";
         if (elements.dropRangeSelect) elements.dropRangeSelect.value = "all";
@@ -251,7 +255,7 @@
         if (elements.keywordInput) elements.keywordInput.value = "";
 
         filterState.adjust_date = defaultAdjustDate;
-        filterState.compare_days = "7";
+        filterState.compare_days = periodConfig.defaultDays;
         filterState.country = "all";
         filterState.store = "all";
         filterState.drop_range = "all";

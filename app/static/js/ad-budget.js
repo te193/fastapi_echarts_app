@@ -7,7 +7,7 @@
       return [20, 50, 100, 200].indexOf(saved) >= 0 ? saved : 50;
     } catch (error) { return 50; }
   }
-  var state = { page: 1, pageSize: savedPageSize(), total: 0, meta: null, countryChart: null, anomalyChart: null, detailChart: null };
+  var state = { page: 1, pageSize: savedPageSize(), total: 0, sortField: "anomaly_priority", sortDir: "asc", columnFilters: {}, gridReady: false, meta: null, countryChart: null, anomalyChart: null, detailChart: null };
   var ids = {
     market: "ab-market", country: "ab-country", store: "ab-store", productType: "ab-product-type",
     inventory: "ab-inventory", anomaly: "ab-anomaly", keyword: "ab-keyword"
@@ -28,8 +28,9 @@
       seller_name_new: el(ids.store).value, product_type: el(ids.productType).value,
       inventory_status: el(ids.inventory).value, anomaly: el(ids.anomaly).value,
       keyword: el(ids.keyword).value.trim(), page: String(state.page), page_size: String(state.pageSize),
-      sort_field: "anomaly_priority", sort_dir: "desc"
+      sort_field: state.sortField || "anomaly_priority", sort_dir: state.sortDir || "asc"
     });
+    if(Object.keys(state.columnFilters).length)params.set("column_filters",JSON.stringify(state.columnFilters));
     return params.toString();
   }
 
@@ -44,11 +45,12 @@
   function renderKpis(data) {
     var o = data.overview || {};
     el("ab-kpis").innerHTML = [
-      kpi("市场库存池总预算", money(o.market_pool_budget), "按市场 / 店铺 / MSKU 去重", "#287b8f"),
+      kpi("广告总预算", money(o.market_pool_budget), "按国家类别 / 店铺 / MSKU 去重", "#287b8f"),
       kpi("站点总预算", money(o.site_total_budget), "各国家站点额度合计", "#0f766e"),
       kpi("月预算消耗", money(o.month_spend) + " / " + money(o.monthly_budget), "预算消耗率 " + pct(o.monthly_execution_rate), "#2563eb"),
       kpi("近 7 天预算消耗", money(o.spend_7d) + " / " + money(o.weekly_budget), "预算消耗率 " + pct(o.weekly_execution_rate), "#d97706")
     ].join("");
+    el("ab-kpis").setAttribute("aria-busy","false");
   }
 
   function initChart(current, id) { if (current) current.dispose(); return echarts.init(el(id)); }
@@ -143,42 +145,68 @@
   function metricCell(main, sub) {
     return '<div class="ab-metric"><strong>' + main + '</strong><small title="' + esc(sub) + '">' + sub + '</small></div>';
   }
+  function numericValue(field){return function(p){var value=p.data?p.data[field]:null;return value==null||value===""?null:Number(value);};}
+  function colSort(field){return state.sortField===field?state.sortDir:null;}
+  function handleGridSortChanged(event){
+    if(!state.gridReady)return;
+    var sorted=(event.api.getColumnState()||[]).find(function(column){return column.sort;});
+    var nextField=sorted?sorted.colId:"";var nextDir=sorted?sorted.sort:"";
+    if((state.sortField||"")===nextField&&(state.sortDir||"")===nextDir)return;
+    state.sortField=nextField;state.sortDir=nextDir;state.page=1;load();
+  }
+  function handleGridFilterChanged(event){
+    if(!state.gridReady)return;
+    var model=event.api.getFilterModel?event.api.getFilterModel():{};
+    if(JSON.stringify(model)===JSON.stringify(state.columnFilters))return;
+    state.columnFilters=model;state.page=1;load();
+  }
   function gridColumns() {
     return [
-      {headerName:"产品",pinned:"left",width:265,minWidth:230,cellRenderer:function(p){return productCell(p.data);}},
-      {headerName:"MSKU / ASIN",pinned:"left",width:155,minWidth:145,cellRenderer:function(p){return identifierCell(p.data);}},
-      {headerName:"预算约束",width:170,cellRenderer:function(p){return capCell(p.data);}},
-      {headerName:"广告总预算",field:"total_budget_pool_cny",width:125,valueFormatter:function(p){return money(p.value);}},
-      {headerName:"月预算 / 花费",width:155,cellRenderer:function(p){var r=p.data;return budgetMetric(r.monthly_ad_budget_cny,r.month_spend,r.monthly_remaining,r.monthly_execution_rate);}},
-      {headerName:"周预算 / 近7天",width:155,cellRenderer:function(p){var r=p.data;return budgetMetric(r.weekly_ad_budget_cny,r.spend_7d,r.weekly_remaining,r.weekly_execution_rate);}},
-      {headerName:"曝光 / 点击",width:130,cellRenderer:function(p){var r=p.data;return metricCell(num(r.ad_impressions,0)+" / "+num(r.ad_clicks,0),"CTR "+pct(r.ctr));}},
-      {headerName:"广告转化",width:205,cellRenderer:function(p){var r=p.data;return metricCell(num(r.ad_orders,0)+" 单","广告 CVR "+pct(r.ad_cvr)+" · 销售 "+money(r.ad_sales));}},
-      {headerName:"TACOS / ACOS",width:130,cellRenderer:function(p){var r=p.data;return metricCell(pct(r.tacos),"ACOS "+pct(r.acos));}},
-      {headerName:"流量 / 销量",width:125,cellRenderer:function(p){var r=p.data;return metricCell(num(r.sessions_total,0)+" Sessions","销量 "+num(r.sales_qty,0));}},
-      {headerName:"异常",width:250,minWidth:180,cellRenderer:function(p){return '<div class="ab-anomaly-cell">'+badges(p.data)+'</div>';}}
+      {headerName:"产品",field:"product_name",pinned:"left",width:265,minWidth:230,sort:colSort("product_name"),filter:"agTextColumnFilter",cellRenderer:function(p){return productCell(p.data);}},
+      {headerName:"MSKU / ASIN",field:"seller_sku_adj",pinned:"left",width:155,minWidth:145,sort:colSort("seller_sku_adj"),filter:"agTextColumnFilter",cellRenderer:function(p){return identifierCell(p.data);}},
+      {headerName:"预算约束",field:"label",colId:"anomaly_priority",width:170,sort:colSort("anomaly_priority"),filter:"agTextColumnFilter",cellRenderer:function(p){return capCell(p.data);}},
+      {headerName:"广告总预算",field:"total_budget_pool_cny",width:125,sort:colSort("total_budget_pool_cny"),filter:"agNumberColumnFilter",valueGetter:numericValue("total_budget_pool_cny"),valueFormatter:function(p){return money(p.value);}},
+      {headerName:"月预算 / 花费",field:"monthly_ad_budget_cny",width:155,sort:colSort("monthly_ad_budget_cny"),filter:"agNumberColumnFilter",valueGetter:numericValue("monthly_ad_budget_cny"),cellRenderer:function(p){var r=p.data;return budgetMetric(r.monthly_ad_budget_cny,r.month_spend,r.monthly_remaining,r.monthly_execution_rate);}},
+      {headerName:"周预算 / 近7天",field:"weekly_ad_budget_cny",width:155,sort:colSort("weekly_ad_budget_cny"),filter:"agNumberColumnFilter",valueGetter:numericValue("weekly_ad_budget_cny"),cellRenderer:function(p){var r=p.data;return budgetMetric(r.weekly_ad_budget_cny,r.spend_7d,r.weekly_remaining,r.weekly_execution_rate);}},
+      {headerName:"曝光 / 点击",field:"ad_impressions",width:130,sort:colSort("ad_impressions"),filter:"agNumberColumnFilter",valueGetter:numericValue("ad_impressions"),cellRenderer:function(p){var r=p.data;return metricCell(num(r.ad_impressions,0)+" / "+num(r.ad_clicks,0),"CTR "+pct(r.ctr));}},
+      {headerName:"广告转化",field:"ad_orders",width:205,sort:colSort("ad_orders"),filter:"agNumberColumnFilter",valueGetter:numericValue("ad_orders"),cellRenderer:function(p){var r=p.data;return metricCell(num(r.ad_orders,0)+" 单","广告 CVR "+pct(r.ad_cvr)+" · 销售 "+money(r.ad_sales));}},
+      {headerName:"TACOS / ACOS",field:"tacos",width:130,sort:colSort("tacos"),filter:"agNumberColumnFilter",valueGetter:numericValue("tacos"),cellRenderer:function(p){var r=p.data;return metricCell(pct(r.tacos),"ACOS "+pct(r.acos));}},
+      {headerName:"流量 / 销量",field:"sessions_total",width:125,sort:colSort("sessions_total"),filter:"agNumberColumnFilter",valueGetter:numericValue("sessions_total"),cellRenderer:function(p){var r=p.data;return metricCell(num(r.sessions_total,0)+" Sessions","销量 "+num(r.sales_qty,0));}},
+      {headerName:"异常",field:"anomalies",width:250,minWidth:180,sort:colSort("anomalies"),filter:"agTextColumnFilter",cellRenderer:function(p){return '<div class="ab-anomaly-cell">'+badges(p.data)+'</div>';}}
     ];
   }
   function renderTable(data) {
     state.total = data.total || 0;
+    state.gridReady=false;
     var pages = Math.max(1, Math.ceil(state.total/state.pageSize));
     el("ab-table-count").textContent = "共 " + num(state.total,0) + " 个站点产品";
+    window.kanbanGrid.destroy("ab-grid");
+    el("ab-grid").replaceChildren();
     window.kanbanGrid.makeGrid("ab-grid", {
       rowData: data.rows || [],
       columnDefs: gridColumns(),
       domLayout: "normal",
       rowHeight: 84,
       headerHeight: 44,
-      defaultColDef: {sortable:false,filter:false,resizable:true,minWidth:96},
+      initialState:{filter:{filterModel:state.columnFilters}},
+      defaultColDef:{sortable:true,filter:true,resizable:true,minWidth:96,filterParams:{buttons:["reset","apply"],closeOnApply:true}},
+      onSortChanged:handleGridSortChanged,
+      onFilterChanged:handleGridFilterChanged,
+      onFirstDataRendered:function(){state.gridReady=true;},
       getRowId: function(p){var r=p.data;return [r.country_category,r.country,r.seller_name_new,r.seller_sku_adj].join("|");},
       onRowClicked: function(p){if(!p.event.target.closest(".ab-copy-button"))openDetail(p.data);}
     });
+    el("ab-grid").classList.remove("is-loading");
+    el("ab-grid").setAttribute("aria-busy","false");
     el("ab-page").textContent = "第 " + state.page + " / " + pages + " 页";
     el("ab-page-summary").textContent = "共 " + num(state.total,0) + " 条，第 " + state.page + " / " + pages + " 页";
     el("ab-prev").disabled = state.page <= 1; el("ab-next").disabled = state.page * state.pageSize >= state.total;
   }
   function load() {
     el("ab-table-count").textContent = "正在加载…";
-    api("/api/ad-budget?" + query()).then(function(data){ renderKpis(data); renderCharts(data); renderTable(data); }).catch(function(error){ window.kanbanGrid.destroy("ab-grid");el("ab-grid").innerHTML='<div class="ab-error">' + esc(error.message) + '</div>';el("ab-table-count").textContent="加载失败"; });
+    el("ab-grid").classList.add("is-loading");
+    el("ab-grid").setAttribute("aria-busy","true");
+    return api("/api/ad-budget?" + query()).then(function(data){ renderKpis(data); renderCharts(data); renderTable(data); }).catch(function(error){ window.kanbanGrid.destroy("ab-grid");el("ab-grid").classList.remove("is-loading");el("ab-grid").setAttribute("aria-busy","false");el("ab-grid").innerHTML='<div class="ab-error">' + esc(error.message) + '</div>';el("ab-table-count").textContent="加载失败";throw error; });
   }
 
   function openDetail(identity) {
@@ -196,7 +224,12 @@
     state.detailChart=echarts.init(el("ab-detail-chart"));var trend=data.trend||[];state.detailChart.setOption({tooltip:{trigger:"axis"},legend:{bottom:4,data:["累计广告花费","累计广告销售额"]},grid:{left:55,right:20,top:28,bottom:46},xAxis:{type:"category",data:trend.map(function(x){return x.dt_date.slice(5);})},yAxis:{type:"value",splitLine:{lineStyle:{color:"#edf2f5"}}},series:[{name:"累计广告花费",type:"line",smooth:true,data:trend.map(function(x){return x.cumulative_ad_spend;}),lineStyle:{color:"#d97706"},itemStyle:{color:"#d97706"}},{name:"累计广告销售额",type:"line",smooth:true,data:trend.map(function(x){return x.cumulative_ad_sales;}),lineStyle:{color:"#2563eb"},itemStyle:{color:"#2563eb"},areaStyle:{color:"rgba(37,99,235,.08)"}}]});
   }
 
-  function bind(){Object.keys(ids).forEach(function(key){var node=el(ids[key]);var event=node.tagName==="INPUT"?"input":"change";var timer;node.addEventListener(event,function(){clearTimeout(timer);timer=setTimeout(function(){state.page=1;load();},node.tagName==="INPUT"?250:0);});});el("ab-reset").addEventListener("click",function(){Object.keys(ids).forEach(function(key){var node=el(ids[key]);node.value=node.tagName==="INPUT"?"":"all";});state.page=1;load();});el("ab-page-size").value=String(state.pageSize);el("ab-page-size").addEventListener("change",function(){state.pageSize=Number(this.value);state.page=1;try{localStorage.setItem("adBudgetPageSize",String(state.pageSize));}catch(error){}load();});el("ab-prev").addEventListener("click",function(){if(state.page>1){state.page--;load();}});el("ab-next").addEventListener("click",function(){if(state.page*state.pageSize<state.total){state.page++;load();}});el("ab-drawer-close").addEventListener("click",closeDetail);el("ab-drawer-backdrop").addEventListener("click",closeDetail);window.addEventListener("resize",function(){[state.countryChart,state.anomalyChart,state.detailChart].forEach(function(chart){if(chart)chart.resize();});});}
-  function init(){api("/api/ad-budget/meta").then(function(meta){state.meta=meta;renderDates(meta);fillSelect(ids.market,meta.country_categories);fillSelect(ids.country,meta.countries);fillSelect(ids.store,meta.stores);fillSelect(ids.productType,meta.product_types);fillSelect(ids.anomaly,meta.anomalies);bind();load();}).catch(function(error){el("ad-budget-dates").innerHTML='<span class="ab-error">'+esc(error.message)+"</span>";});}
+  function bind(){Object.keys(ids).forEach(function(key){var node=el(ids[key]);var event=node.tagName==="INPUT"?"input":"change";var timer;node.addEventListener(event,function(){clearTimeout(timer);timer=setTimeout(function(){state.page=1;load();},node.tagName==="INPUT"?250:0);});});el("ab-reset").addEventListener("click",function(){Object.keys(ids).forEach(function(key){var node=el(ids[key]);node.value=node.tagName==="INPUT"?"":"all";});state.columnFilters={};state.sortField="anomaly_priority";state.sortDir="asc";state.page=1;load();});el("ab-page-size").value=String(state.pageSize);el("ab-page-size").addEventListener("change",function(){state.pageSize=Number(this.value);state.page=1;try{localStorage.setItem("adBudgetPageSize",String(state.pageSize));}catch(error){}load();});el("ab-prev").addEventListener("click",function(){if(state.page>1){state.page--;load();}});el("ab-next").addEventListener("click",function(){if(state.page*state.pageSize<state.total){state.page++;load();}});el("ab-drawer-close").addEventListener("click",closeDetail);el("ab-drawer-backdrop").addEventListener("click",closeDetail);window.addEventListener("resize",function(){[state.countryChart,state.anomalyChart,state.detailChart].forEach(function(chart){if(chart)chart.resize();});});}
+  function init(){
+    bind();
+    var metaRequest=api("/api/ad-budget/meta").then(function(meta){state.meta=meta;renderDates(meta);fillSelect(ids.market,meta.country_categories);fillSelect(ids.country,meta.countries);fillSelect(ids.store,meta.stores);fillSelect(ids.productType,meta.product_types);fillSelect(ids.anomaly,meta.anomalies);}).catch(function(error){el("ad-budget-dates").innerHTML='<span class="ab-error">'+esc(error.message)+"</span>";});
+    var dataRequest=load();
+    Promise.allSettled([metaRequest,dataRequest]);
+  }
   init();
 }());

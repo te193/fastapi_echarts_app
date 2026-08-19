@@ -6,6 +6,13 @@
   var linkedFilter = null;
   var currentView = "performance";
   var performanceHero = null;
+  var rolePerformanceTrendChart = null;
+  var roleDetailTrendChart = null;
+  var roleDetailTrendView = "sales_margin";
+  var roleDetailRows = {};
+  var activeRoleDetailKey = "";
+  var roleMigrationGridApi = null;
+  var roleMigrationGridReady = false;
   var state = {
     pre_days: "30",
     post_days: "3",
@@ -20,7 +27,10 @@
     data_status: "all",
     keyword: "",
     page: 1,
-    page_size: 20
+    page_size: 20,
+    sort_field: "",
+    sort_dir: "",
+    column_filters: {}
   };
 
   document.addEventListener("DOMContentLoaded", init);
@@ -40,10 +50,13 @@
       "roleKeywordInput", "applyRoleFiltersBtn", "resetRoleFiltersBtn", "roleAdvancedFiltersBtn",
       "roleAdvancedFilters", "roleAdvancedFilterCount", "roleActiveFilterChips", "roleMigrationKpis",
       "roleMigrationMatrix", "roleMigrationInsights", "financeMigrationMatrix",
-      "roleMigrationCount", "roleMigrationTableBody", "rolePaginationInfo", "rolePaginationNumbers",
-      "rolePrevPageBtn", "roleNextPageBtn", "roleRuleVersion", "roleWindowMeta",
+      "rolePerformanceTrendSummary", "rolePerformanceTrendChart", "rolePerformanceTrendCoverage",
+      "roleMigrationCount", "roleMigrationGrid", "rolePaginationInfo", "rolePaginationNumbers",
+      "rolePageSizeSelect", "rolePrevPageBtn", "roleNextPageBtn", "roleRuleVersion", "roleWindowMeta",
       "roleCacheStatusMeta", "roleFinanceSnapshotMeta", "roleLinkedFilterBar", "roleLinkedFilterText",
-      "clearRoleLinkedFiltersBtn", "pageTitle", "statSkuCount", "statCountryCount"
+      "clearRoleLinkedFiltersBtn", "pageTitle", "statSkuCount", "statCountryCount",
+      "roleDetailDrawerMask", "roleDetailDrawer", "roleDetailTitle", "roleDetailSubtitle",
+      "closeRoleDetailDrawerBtn", "roleDetailDrawerContent"
     ].forEach(function (id) { elements[id] = document.getElementById(id); });
   }
 
@@ -121,6 +134,22 @@
         selectFinancePath(row);
       });
     }
+    window.addEventListener("resize", function () {
+      if (rolePerformanceTrendChart) rolePerformanceTrendChart.resize();
+      if (roleDetailTrendChart) roleDetailTrendChart.resize();
+    });
+    if (elements.rolePageSizeSelect) {
+      elements.rolePageSizeSelect.addEventListener("change", function () {
+        state.page_size = Number(this.value || 20);
+        state.page = 1;
+        loadRoleMigration();
+      });
+    }
+    if (elements.closeRoleDetailDrawerBtn) elements.closeRoleDetailDrawerBtn.addEventListener("click", closeRoleDetail);
+    if (elements.roleDetailDrawerMask) elements.roleDetailDrawerMask.addEventListener("click", closeRoleDetail);
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") closeRoleDetail();
+    });
   }
 
   function selectFinancePath(row) {
@@ -221,10 +250,10 @@
     state = Object.assign(state, {
       pre_days: "30", post_days: "3", country: "all", store: "all",
       role_before: "all", role_after: "all", role_change: "all", finance_change: "all",
-      finance_before: "all", finance_after: "all", data_status: "all", keyword: "", page: 1
+      finance_before: "all", finance_after: "all", data_status: "all", keyword: "", page: 1,
+      sort_field: "", sort_dir: "", column_filters: {}
     });
     linkedFilter = null;
-    financeExpanded = false;
     syncInputs();
     renderFilterState();
     loadRoleMigration();
@@ -271,7 +300,10 @@
   }
 
   function buildQuery() {
-    var query = Object.assign({}, state, { adjust_date: currentAdjustDate() });
+    var query = Object.assign({}, state, {
+      adjust_date: currentAdjustDate(),
+      column_filters: Object.keys(state.column_filters || {}).length ? JSON.stringify(state.column_filters) : ""
+    });
     return "?" + Object.keys(query).filter(function (key) {
       return query[key] !== "" && query[key] !== "all";
     }).map(function (key) {
@@ -287,6 +319,7 @@
       populateFilterOptions(payload);
       renderSummary(payload.summary || {});
       renderRoleMatrix(payload.role_matrix || []);
+      renderRolePerformanceTrend(payload.performance_trend || {});
       renderMigrationInsights(payload.summary || {}, payload.role_matrix || []);
       renderFinanceMatrix(payload.finance_matrix || []);
       renderRoleDetails(payload.rows || [], payload);
@@ -296,7 +329,7 @@
       renderFilterState();
     }).catch(function (error) {
       console.error("Failed to load station role migration", error);
-      elements.roleMigrationTableBody.innerHTML = '<tr><td colspan="15" class="empty-state">角色迁移数据加载失败</td></tr>';
+      elements.roleMigrationGrid.innerHTML = '<div class="empty-state compact">角色迁移数据加载失败</div>';
     }).finally(function () {
       elements.priceReviewRoleMigrationView.classList.remove("is-loading");
     });
@@ -368,6 +401,52 @@
     if (afterRank > beforeRank) return { className: "is-up", label: "上升" };
     if (afterRank < beforeRank) return { className: "is-down", label: "下降" };
     return { className: "is-stable", label: "保持" };
+  }
+
+  function renderRolePerformanceTrend(trend) {
+    var summary = trend.summary || {};
+    var points = trend.points || [];
+    var hasValues = points.some(function (point) {
+      return point.sales_qty != null || point.margin_rate != null;
+    });
+    var trendApi = window.priceReviewRoleTrend;
+    if (!trendApi || !window.echarts || !Number(trend.sku_count || 0) || !hasValues) {
+      if (rolePerformanceTrendChart) {
+        rolePerformanceTrendChart.dispose();
+        rolePerformanceTrendChart = null;
+      }
+      elements.rolePerformanceTrendSummary.innerHTML = "";
+      elements.rolePerformanceTrendChart.innerHTML = '<div class="empty-state compact">当前筛选下暂无销量与毛利率趋势数据</div>';
+      elements.rolePerformanceTrendCoverage.textContent = "";
+      return;
+    }
+
+    function salesText(value) {
+      return Number(value || 0).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
+    }
+
+    function marginText(value) {
+      return value == null ? "—" : (Number(value) * 100).toFixed(1) + "%";
+    }
+
+    elements.rolePerformanceTrendSummary.innerHTML = [
+      ["调前销量合计", salesText(summary.sales_before), "before"],
+      ["调后销量合计", salesText(summary.sales_after), "after"],
+      ["调前整体毛利率", marginText(summary.margin_before), "before"],
+      ["调后整体毛利率", marginText(summary.margin_after), "after"]
+    ].map(function (item) {
+      return '<div class="role-performance-trend-stat is-' + item[2] + '"><span>' + item[0] + '</span><strong>' + item[1] + '</strong></div>';
+    }).join("");
+
+    var preCoverage = Number(summary.available_pre_days || 0) + "/" + Number(summary.expected_pre_days || 0);
+    var postCoverage = Number(summary.available_post_days || 0) + "/" + Number(summary.expected_post_days || 0);
+    elements.rolePerformanceTrendCoverage.textContent = "覆盖当前筛选的 " + Number(trend.sku_count || 0).toLocaleString("zh-CN") + " 个 SKU · 调前数据 " + preCoverage + " 天 · 调后数据 " + postCoverage + " 天";
+    if (!rolePerformanceTrendChart) {
+      elements.rolePerformanceTrendChart.innerHTML = "";
+      rolePerformanceTrendChart = window.echarts.init(elements.rolePerformanceTrendChart);
+    }
+    rolePerformanceTrendChart.setOption(trendApi.buildOption(trend), true);
+    rolePerformanceTrendChart.resize();
   }
 
   function largestRoleTransition(items) {
@@ -488,7 +567,8 @@
       remote_dws: "远端快照",
       remote_cache: "远端快照",
       local_recomputed: "本地重算",
-      local_v47: "本地重算"
+      local_v47: "本地重算",
+      mixed: "混合来源"
     })[value] || "等待数据";
   }
 
@@ -531,30 +611,252 @@
 
   function renderRoleDetails(rows, payload) {
     elements.roleMigrationCount.textContent = "共 " + Number(payload.total || 0).toLocaleString("zh-CN") + " 条";
-    if (!rows.length) {
-      elements.roleMigrationTableBody.innerHTML = '<tr><td colspan="15" class="empty-state">当前筛选下暂无数据</td></tr>';
+    if (!window.PriceReviewRoleGrid || !window.kanbanGrid) {
+      elements.roleMigrationGrid.innerHTML = '<div class="empty-state compact">表格组件加载失败，请刷新页面重试。</div>';
       return;
     }
-    elements.roleMigrationTableBody.innerHTML = rows.map(function (row) {
-      var windowText = (row.pre_period_start || "--") + " 至 " + (row.pre_period_end || "--") + " / " + (row.post_period_start || "--") + " 至 " + (row.post_period_end || "--");
-      return '<tr><td>' + text(row.country) + '</td><td>' + text(row.station_store || row.store) + '</td><td><strong>' + text(row.msku) + '</strong></td>' +
-        '<td>' + roleBadge(row.role_before_label) + '</td><td>' + roleBadge(row.role_after_label) + '</td><td>' + changeBadge(row.role_change) + '</td>' +
-        '<td class="number-cell">' + number(row.pre_daily_sales, 2) + '</td><td class="number-cell">' + number(row.post_daily_sales, 2) + '</td>' +
-        '<td class="number-cell">' + percent(row.pre_margin_rate) + '</td><td class="number-cell">' + percent(row.post_margin_rate) + '</td>' +
-        '<td>' + text(row.finance_band_before_label) + '</td><td>' + text(row.finance_band_after_label) + '</td><td>' + changeBadge(row.finance_change) + '</td>' +
-        '<td>' + statusBadge(row.data_status, row.data_message) + '</td><td class="role-window-cell">' + app.escapeHtml(windowText) + '</td></tr>';
+    roleMigrationGridReady = false;
+    var options = window.PriceReviewRoleGrid.buildGridOptions(rows, {
+      msku: function (value) { return window.PriceReviewRoleCopy.renderMskuCell(value, text); },
+      role: roleBadge,
+      change: changeBadge,
+      number: function (value) { return number(value, 2); },
+      percent: percent,
+      status: function (row) { return statusBadge(row.data_status, row.data_message); }
+    }, {
+      activeKey: function () { return activeRoleDetailKey; },
+      handleCopy: function (event) { return window.PriceReviewRoleCopy.handleMskuCopyClick(event); },
+      isCopyTarget: function (event) { return window.PriceReviewRoleCopy.isMskuCopyTarget(event); },
+      openDetail: openRoleDetail,
+      gridState: {
+        sortField: state.sort_field,
+        sortDir: state.sort_dir,
+        filterModel: state.column_filters
+      },
+      sortChanged: function (field, direction) {
+        if (!roleMigrationGridReady || (state.sort_field === field && state.sort_dir === direction)) return;
+        state.sort_field = field;
+        state.sort_dir = direction;
+        state.page = 1;
+        loadRoleMigration();
+      },
+      filterChanged: function (filterModel) {
+        if (!roleMigrationGridReady || JSON.stringify(state.column_filters || {}) === JSON.stringify(filterModel || {})) return;
+        state.column_filters = filterModel || {};
+        state.page = 1;
+        loadRoleMigration();
+      },
+      ready: function () { roleMigrationGridReady = true; }
+    });
+    roleDetailRows = options.rowData.reduce(function (map, row) {
+      map[row._roleDetailKey] = row;
+      return map;
+    }, {});
+    roleMigrationGridApi = window.kanbanGrid.makeGrid("roleMigrationGrid", options);
+  }
+
+  function openRoleDetail(detailKey) {
+    var row = roleDetailRows[detailKey];
+    if (!row) return;
+    activeRoleDetailKey = detailKey;
+    roleDetailTrendView = "sales_margin";
+    if (roleMigrationGridApi && roleMigrationGridApi.redrawRows) roleMigrationGridApi.redrawRows();
+    elements.roleDetailDrawerMask.classList.remove("hidden");
+    elements.roleDetailDrawer.classList.remove("hidden");
+    elements.roleDetailDrawer.setAttribute("aria-hidden", "false");
+    document.body.classList.add("role-detail-open");
+    elements.roleDetailTitle.textContent = "单品调价诊断";
+    elements.roleDetailSubtitle.textContent = [row.country, row.station_store || row.store, row.msku].filter(Boolean).join(" · ");
+    elements.roleDetailDrawerContent.innerHTML = '<div class="role-detail-loading"><span></span><p>正在加载角色、定价和每日趋势证据...</p></div>';
+
+    var query = new URLSearchParams({
+      adjust_date: currentAdjustDate(),
+      pre_days: state.pre_days,
+      post_days: state.post_days,
+      country: row.country || "",
+      store: row.station_store || row.store || "",
+      msku: row.msku || ""
+    });
+    app.apiGet("/api/price-review/role-migration/detail" + "?" + query.toString()).then(function (payload) {
+      renderRoleDetail(payload);
+    }).catch(function (error) {
+      console.error("Failed to load role migration detail", error);
+      elements.roleDetailDrawerContent.innerHTML = '<div class="empty-state">单品诊断加载失败，请稍后重试。</div>';
+    });
+  }
+
+  function closeRoleDetail() {
+    if (!elements.roleDetailDrawer || elements.roleDetailDrawer.classList.contains("hidden")) return;
+    elements.roleDetailDrawerMask.classList.add("hidden");
+    elements.roleDetailDrawer.classList.add("hidden");
+    elements.roleDetailDrawer.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("role-detail-open");
+    if (roleDetailTrendChart) {
+      roleDetailTrendChart.dispose();
+      roleDetailTrendChart = null;
+    }
+  }
+
+  function renderRoleDetail(payload) {
+    var identity = payload.identity || {};
+    var windows = payload.windows || {};
+    var checkpoints = payload.checkpoints || {};
+    var roles = payload.roles || {};
+    var evidence = payload.role_evidence || {};
+    var finance = payload.finance || {};
+    elements.roleDetailSubtitle.textContent = [identity.country, identity.store, identity.msku, identity.product_name].filter(Boolean).join(" · ");
+    elements.roleDetailDrawerContent.innerHTML = [
+      '<section class="role-detail-identity">',
+        identityItem("国家", identity.country), identityItem("店铺", identity.store), identityItem("MSKU", identity.msku), identityItem("本地 SKU", identity.local_sku),
+        '<div class="role-detail-role-transition"><span>调前角色</span>' + roleBadge((roles.before || {}).label) + '<b>→</b><span>调后角色</span>' + roleBadge((roles.after || {}).label) + changeBadge(identity.role_change) + '</div>',
+      '</section>',
+      '<section class="role-detail-checkpoint-grid">',
+        checkpointCard("调价前窗口", windowLabel(windows.before), checkpoints.before || {}, "before"),
+        checkpointCard("调价日", identity.adjust_date || "—", checkpoints.adjustment || {}, "adjustment"),
+        checkpointCard("调价后窗口", windowLabel(windows.after), checkpoints.after || {}, "after"),
+      '</section>',
+      '<section class="role-detail-evidence-grid">',
+        evidenceCard("调前", evidence.before || {}),
+        '<div class="role-detail-evidence-arrow" aria-hidden="true">→</div>',
+        evidenceCard("调后", evidence.after || {}),
+      '</section>',
+      financeCard(finance),
+      '<section class="role-detail-trend-card">',
+        '<div class="role-detail-section-head"><div><span>日度趋势</span><strong>' + text(windowLabel(windows.before) + " 至 " + windowLabel(windows.after)) + '</strong></div>',
+          '<div class="role-detail-trend-controls" role="group" aria-label="趋势指标切换">',
+            '<button type="button" class="is-active" data-role-detail-trend-view="sales_margin" aria-pressed="true">销量与毛利率</button>',
+            '<button type="button" data-role-detail-trend-view="rank" aria-pressed="false">小类排名</button>',
+          '</div>',
+        '</div>',
+        '<div id="roleDetailTrendChart" class="role-detail-trend-chart" role="img" aria-label="单品调价前后销量与毛利率趋势"></div>',
+      '</section>',
+      '<footer class="role-detail-actions"><span>规则版本：' + text(identity.rule_version) + '</span><button id="roleDetailLocateBtn" type="button" class="primary-button">定位到明细</button></footer>'
+    ].join("");
+
+    var locateButton = document.getElementById("roleDetailLocateBtn");
+    if (locateButton) locateButton.addEventListener("click", function () {
+      closeRoleDetail();
+      if (roleMigrationGridApi && roleMigrationGridApi.ensureIndexVisible) {
+        roleMigrationGridApi.ensureIndexVisible(Number(activeRoleDetailKey), "middle");
+        if (roleMigrationGridApi.flashCells && roleMigrationGridApi.getRowNode) {
+          var selectedNode = roleMigrationGridApi.getRowNode(activeRoleDetailKey);
+          if (selectedNode) roleMigrationGridApi.flashCells({ rowNodes: [selectedNode] });
+        }
+      }
+    });
+    renderRoleDetailTrend(payload);
+  }
+
+  function identityItem(label, value) {
+    return '<div><span>' + app.escapeHtml(label) + '</span><strong>' + text(value) + '</strong></div>';
+  }
+
+  function checkpointCard(title, subtitle, values, tone) {
+    var isAdjustment = tone === "adjustment";
+    var cells = isAdjustment
+      ? metricCell("当天排名", rankText(values.small_rank)) + metricCell("价格", money(values.price_before) + " → " + money(values.price_after))
+      : metricCell("日销（件/天）", number(values.daily_sales, 2)) + metricCell("毛利率", percent(values.margin_rate)) + metricCell("小类排名", rankText(values.small_rank));
+    return '<article class="role-detail-checkpoint is-' + tone + '"><div><strong>' + app.escapeHtml(title) + '</strong><span>' + text(subtitle) + '</span></div><section>' + cells + '</section></article>';
+  }
+
+  function metricCell(label, value) {
+    return '<div><span>' + app.escapeHtml(label) + '</span><strong>' + value + '</strong></div>';
+  }
+
+  function evidenceCard(periodLabel, evidence) {
+    var isProblem = evidence.role_code === "problem";
+    var rows = (evidence.items || []).map(function (item) {
+      var matchedLabel = isProblem ? (item.matched ? "已触发" : "未触发") : (item.matched ? "满足" : "未满足");
+      return '<tr><td>' + text(item.metric) + '</td><td>' + formatEvidenceActual(item) + '</td><td>' + text(item.condition) + '</td><td><span class="role-evidence-state ' + (item.matched ? 'is-match' : 'is-miss') + '">' + matchedLabel + '</span></td></tr>';
     }).join("");
+    return '<article class="role-detail-evidence-card"><header><span>' + app.escapeHtml(periodLabel) + '角色证据</span><strong>' + text(evidence.role_label) + '</strong></header><div class="role-detail-evidence-table-wrap"><table><thead><tr><th>规则维度</th><th>实际表现</th><th>判定条件</th><th>结果</th></tr></thead><tbody>' + rows + '</tbody></table></div><footer class="' + (evidence.qualified ? 'is-qualified' : 'is-unqualified') + '">' + (evidence.qualified ? '结论：当前指标与角色判定一致' : '结论：当前指标与固化角色不一致，建议核查快照') + '</footer></article>';
+  }
+
+  function formatEvidenceActual(item) {
+    var actual = item.actual;
+    if (typeof actual === "string") return text(actual);
+    if (actual && typeof actual === "object") {
+      if (Object.prototype.hasOwnProperty.call(actual, "daily_sales") && Object.prototype.hasOwnProperty.call(actual, "margin_rate")) {
+        return '日销 ' + number(actual.daily_sales, 2) + ' / 毛利率 ' + percent(actual.margin_rate);
+      }
+      return text(JSON.stringify(actual));
+    }
+    if (item.metric && item.metric.indexOf("毛利") >= 0) return percent(actual);
+    if (item.metric && item.metric.indexOf("排名") >= 0) return rankText(actual);
+    return number(actual, 2);
+  }
+
+  function financeCard(finance) {
+    var ladder = (finance.ladder || []).filter(function (item) { return item.price !== null && item.price !== undefined; });
+    var ladderText = ladder.length ? ladder.map(function (item) { return item.margin + '%=' + money(item.price, finance.currency); }).join(' · ') : '财务阶梯缺失';
+    return '<section class="role-detail-finance"><div class="role-detail-finance-title"><span>财务快照</span><strong>' + text(finance.snapshot_date) + '</strong><small>' + text(ladderText) + '</small></div>' +
+      financeMetric("调前价格", money(finance.price_before, finance.currency)) + financeMetric("调后价格", money(finance.price_after, finance.currency)) + financeMetric("调价幅度", signedPercent(finance.drop_ratio)) + financeMetric("调前区间", text((finance.band_before || {}).label)) + financeMetric("调后区间", text((finance.band_after || {}).label)) + '</section>';
+  }
+
+  function financeMetric(label, value) {
+    return '<div><span>' + app.escapeHtml(label) + '</span><strong>' + value + '</strong></div>';
+  }
+
+  function renderRoleDetailTrend(payload) {
+    var chartElement = document.getElementById("roleDetailTrendChart");
+    var chartApi = window.priceReviewRoleDetailChart;
+    if (!chartElement || !chartApi || !window.echarts || !(payload.trend || []).length) {
+      if (chartElement) chartElement.innerHTML = '<div class="empty-state compact">暂无逐日趋势数据</div>';
+      return;
+    }
+    if (roleDetailTrendChart) roleDetailTrendChart.dispose();
+    roleDetailTrendChart = window.echarts.init(chartElement);
+
+    function updateView(nextView) {
+      roleDetailTrendView = nextView === "rank" ? "rank" : "sales_margin";
+      document.querySelectorAll("[data-role-detail-trend-view]").forEach(function (button) {
+        var isActive = button.dataset.roleDetailTrendView === roleDetailTrendView;
+        button.classList.toggle("is-active", isActive);
+        button.setAttribute("aria-pressed", isActive ? "true" : "false");
+      });
+      chartElement.setAttribute("aria-label", roleDetailTrendView === "rank" ? "单品调价前后小类排名趋势" : "单品调价前后销量与毛利率趋势");
+      roleDetailTrendChart.setOption(chartApi.buildOption(payload, roleDetailTrendView), true);
+    }
+
+    document.querySelectorAll("[data-role-detail-trend-view]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        updateView(button.dataset.roleDetailTrendView);
+      });
+    });
+    updateView(roleDetailTrendView);
+  }
+
+  function windowLabel(value) {
+    if (!value) return "—";
+    return (value.start || "—") + " 至 " + (value.end || "—");
+  }
+
+  function rankText(value) {
+    return value === null || value === undefined ? "—" : Number(value).toLocaleString("zh-CN");
+  }
+
+  function money(value, currency) {
+    if (value === null || value === undefined) return "—";
+    return Number(value).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + (currency ? " " + app.escapeHtml(currency) : "");
+  }
+
+  function signedPercent(value) {
+    if (value === null || value === undefined) return "—";
+    var numeric = Number(value) * 100;
+    return (numeric > 0 ? "+" : "") + numeric.toFixed(1) + "%";
   }
 
   function renderPagination(payload) {
-    elements.rolePaginationInfo.textContent = "第 " + payload.page + " / " + payload.total_pages + " 页";
-    elements.rolePrevPageBtn.disabled = payload.page <= 1;
-    elements.roleNextPageBtn.disabled = payload.page >= payload.total_pages;
-    elements.rolePrevPageBtn.onclick = function () { if (payload.page > 1) { state.page = payload.page - 1; loadRoleMigration(); } };
-    elements.roleNextPageBtn.onclick = function () { if (payload.page < payload.total_pages) { state.page = payload.page + 1; loadRoleMigration(); } };
-    var pages = [];
-    for (var page = Math.max(1, payload.page - 2); page <= Math.min(payload.total_pages, payload.page + 2); page += 1) pages.push(page);
-    elements.rolePaginationNumbers.innerHTML = pages.map(function (page) { return '<button type="button" class="page-number ' + (page === payload.page ? "active" : "") + '" data-role-page="' + page + '">' + page + '</button>'; }).join("");
+    var pagination = window.PriceReviewRoleGrid.buildPaginationModel(payload);
+    state.page = pagination.page;
+    state.page_size = pagination.pageSize;
+    elements.rolePaginationInfo.textContent = pagination.info;
+    elements.rolePageSizeSelect.value = String(pagination.pageSize);
+    elements.rolePrevPageBtn.disabled = pagination.page <= 1;
+    elements.roleNextPageBtn.disabled = pagination.page >= pagination.totalPages;
+    elements.rolePrevPageBtn.onclick = function () { if (pagination.page > 1) { state.page = pagination.page - 1; loadRoleMigration(); } };
+    elements.roleNextPageBtn.onclick = function () { if (pagination.page < pagination.totalPages) { state.page = pagination.page + 1; loadRoleMigration(); } };
+    elements.rolePaginationNumbers.innerHTML = pagination.pages.map(function (page) { return '<button type="button" class="page-number ' + (page === pagination.page ? "active" : "") + '" data-role-page="' + page + '">' + page + '</button>'; }).join("");
     elements.rolePaginationNumbers.querySelectorAll("[data-role-page]").forEach(function (button) {
       button.addEventListener("click", function () { state.page = Number(button.dataset.rolePage); loadRoleMigration(); });
     });

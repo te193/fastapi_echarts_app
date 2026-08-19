@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
+import logging
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+from threading import Lock, Thread
 from typing import Any
 
 from .dashboard_db import dashboard_service
@@ -30,6 +33,9 @@ ANOMALY_ORDER = (
     "未启动",
 )
 SORT_FIELDS = {
+    "product_name",
+    "seller_sku_adj",
+    "anomalies",
     "anomaly_priority",
     "budget_gap_amount",
     "site_total_budget_cny",
@@ -51,7 +57,24 @@ SORT_FIELDS = {
     "sessions_total",
     "sales_qty",
 }
+TEXT_SORT_FIELDS = {"product_name", "seller_sku_adj", "anomalies"}
+COLUMN_FILTER_FIELDS = {
+    "product_name",
+    "seller_sku_adj",
+    "anomaly_priority",
+    "total_budget_pool_cny",
+    "monthly_ad_budget_cny",
+    "weekly_ad_budget_cny",
+    "ad_impressions",
+    "ad_orders",
+    "tacos",
+    "sessions_total",
+    "anomalies",
+}
 SUPPORTED_BUDGET_COUNTRIES = frozenset({"德国", "法国", "意大利", "西班牙", "荷兰", "美国", "英国"})
+CACHE_TTL_SECONDS = 600
+
+logger = logging.getLogger(__name__)
 
 
 def filter_budget_countries(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -81,6 +104,66 @@ def _iso(value: Any) -> str | None:
     if isinstance(value, (date, datetime)):
         return value.isoformat()[:10]
     return str(value) if value else None
+
+
+def _column_filter_value(row: dict[str, Any], field: str) -> Any:
+    if field == "product_name":
+        return " ".join(str(row.get(key) or "") for key in ("product_name", "country_category", "country", "seller_name_new"))
+    if field == "seller_sku_adj":
+        return " ".join(str(row.get(key) or "") for key in ("seller_sku_adj", "asin"))
+    if field == "anomaly_priority":
+        return " ".join([str(row.get("label") or ""), str(row.get("excess_level") or ""), *map(str, row.get("anomalies") or [])])
+    if field == "anomalies":
+        return " ".join(map(str, row.get("anomalies") or []))
+    return row.get(field)
+
+
+def _matches_column_condition(value: Any, model: dict[str, Any]) -> bool:
+    conditions = model.get("conditions") or [item for item in (model.get("condition1"), model.get("condition2")) if item]
+    if conditions:
+        matches = [_matches_column_condition(value, condition) for condition in conditions]
+        return all(matches) if str(model.get("operator") or "AND").upper() == "AND" else any(matches)
+    if isinstance(model.get("values"), list):
+        return str(value or "") in {str(item) for item in model["values"]}
+    filter_type = str(model.get("filterType") or "text")
+    operation = str(model.get("type") or "contains")
+    if operation == "blank":
+        return value is None or value == ""
+    if operation == "notBlank":
+        return value is not None and value != ""
+    if filter_type == "number":
+        if value is None or value == "":
+            return False
+        actual = _float(value)
+        expected = _float(model.get("filter"))
+        if operation == "equals":
+            return actual == expected
+        if operation == "notEqual":
+            return actual != expected
+        if operation == "lessThan":
+            return actual < expected
+        if operation == "lessThanOrEqual":
+            return actual <= expected
+        if operation == "greaterThan":
+            return actual > expected
+        if operation == "greaterThanOrEqual":
+            return actual >= expected
+        if operation == "inRange":
+            return expected <= actual <= _float(model.get("filterTo"))
+        return True
+    actual_text = str(value or "").casefold()
+    expected_text = str(model.get("filter") or "").casefold()
+    if operation == "equals":
+        return actual_text == expected_text
+    if operation == "notEqual":
+        return actual_text != expected_text
+    if operation == "notContains":
+        return expected_text not in actual_text
+    if operation == "startsWith":
+        return actual_text.startswith(expected_text)
+    if operation == "endsWith":
+        return actual_text.endswith(expected_text)
+    return expected_text in actual_text
 
 
 def _percentile(values: list[float], ratio: float) -> float | None:
@@ -296,6 +379,11 @@ class AdBudgetService:
         self._cache_rows: list[dict[str, Any]] | None = None
         self._cache_dates: tuple[date | None, date | None] = (None, None)
         self._cache_at: datetime | None = None
+        self._cache_lock = Lock()
+        self._refresh_lock = Lock()
+        self._refreshing = False
+        self._meta_cache: tuple[list[dict[str, Any]], date | None, date | None] | None = None
+        self._meta_cache_at: datetime | None = None
 
     def connect(self):
         return dashboard_service.connect(autocommit=True)
@@ -319,13 +407,60 @@ class AdBudgetService:
             performance_date = (cursor.fetchone() or {}).get("performance_date")
         return budget_date, performance_date
 
+    def _cached_rows(self) -> tuple[list[dict[str, Any]], date | None, date | None, float] | None:
+        with self._cache_lock:
+            if self._cache_rows is None or self._cache_at is None:
+                return None
+            age_seconds = (datetime.now() - self._cache_at).total_seconds()
+            return [dict(row) for row in self._cache_rows], *self._cache_dates, age_seconds
+
+    def _background_refresh(self) -> None:
+        try:
+            self._refresh_rows(force=True)
+        except Exception:
+            logger.exception("广告预算缓存后台刷新失败，继续使用最后成功快照")
+        finally:
+            with self._cache_lock:
+                self._refreshing = False
+
+    def _schedule_refresh(self) -> None:
+        with self._cache_lock:
+            if self._refreshing:
+                return
+            self._refreshing = True
+        Thread(target=self._background_refresh, name="ad-budget-cache-refresh", daemon=True).start()
+
+    def warm_cache(self) -> None:
+        cached = self._cached_rows()
+        if cached is None or cached[3] >= CACHE_TTL_SECONDS:
+            self._schedule_refresh()
+
     def _load_rows(self, force: bool = False) -> tuple[list[dict[str, Any]], date | None, date | None]:
-        if not force and self._cache_rows is not None and self._cache_at and (datetime.now() - self._cache_at).total_seconds() < 120:
-            return [dict(row) for row in self._cache_rows], *self._cache_dates
+        cached = self._cached_rows()
+        if not force and cached is not None:
+            rows, budget_date, performance_date, age_seconds = cached
+            if age_seconds >= CACHE_TTL_SECONDS:
+                self._schedule_refresh()
+            return rows, budget_date, performance_date
+        return self._refresh_rows(force=force)
+
+    def _refresh_rows(self, force: bool = False) -> tuple[list[dict[str, Any]], date | None, date | None]:
+        with self._refresh_lock:
+            cached = self._cached_rows()
+            if not force and cached is not None and cached[3] < CACHE_TTL_SECONDS:
+                return cached[0], cached[1], cached[2]
+            return self._query_rows()
+
+    def _query_rows(self) -> tuple[list[dict[str, Any]], date | None, date | None]:
         with self.connect() as conn:
             budget_date, performance_date = self._dates(conn)
             if performance_date is None and budget_date is None:
-                return [], budget_date, performance_date
+                rows: list[dict[str, Any]] = []
+                with self._cache_lock:
+                    self._cache_rows = rows
+                    self._cache_dates = (budget_date, performance_date)
+                    self._cache_at = datetime.now()
+                return rows, budget_date, performance_date
             month_start = date(performance_date.year, performance_date.month, 1) if performance_date else budget_date
             seven_start = performance_date - timedelta(days=6) if performance_date else budget_date
             performance_start = self._performance_start(performance_date) if performance_date else budget_date
@@ -396,13 +531,46 @@ class AdBudgetService:
                 )
                 raw_rows = filter_budget_countries(cursor.fetchall())
         rows = apply_anomaly_rules(raw_rows, performance_date or budget_date or date.today())
-        self._cache_rows = [dict(row) for row in rows]
-        self._cache_dates = (budget_date, performance_date)
-        self._cache_at = datetime.now()
+        with self._cache_lock:
+            self._cache_rows = [dict(row) for row in rows]
+            self._cache_dates = (budget_date, performance_date)
+            self._cache_at = datetime.now()
+        return rows, budget_date, performance_date
+
+    def _load_meta_options(self) -> tuple[list[dict[str, Any]], date | None, date | None]:
+        with self._cache_lock:
+            if self._meta_cache is not None and self._meta_cache_at is not None:
+                if (datetime.now() - self._meta_cache_at).total_seconds() < CACHE_TTL_SECONDS:
+                    rows, budget_date, performance_date = self._meta_cache
+                    return [dict(row) for row in rows], budget_date, performance_date
+        with self.connect() as conn:
+            budget_date, performance_date = self._dates(conn)
+            performance_start = self._performance_start(performance_date) if performance_date else budget_date
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select distinct country_category, country, seller_name_new, product_type
+                    from dashboard_ad_budget_snapshot
+                    where biz_date = %(budget_date)s
+                    union
+                    select distinct country_category, country, seller_name_new, null as product_type
+                    from dashboard_product_performance_daily
+                    where dt_date between %(performance_start)s and %(performance_date)s
+                    """,
+                    {
+                        "budget_date": budget_date,
+                        "performance_start": performance_start,
+                        "performance_date": performance_date,
+                    },
+                )
+                rows = filter_budget_countries(cursor.fetchall())
+        with self._cache_lock:
+            self._meta_cache = ([dict(row) for row in rows], budget_date, performance_date)
+            self._meta_cache_at = datetime.now()
         return rows, budget_date, performance_date
 
     def get_meta(self) -> dict[str, Any]:
-        rows, budget_date, performance_date = self._load_rows()
+        rows, budget_date, performance_date = self._load_meta_options()
         lag_days = (performance_date - budget_date).days if budget_date and performance_date else None
         return {
             "budget_date": _iso(budget_date),
@@ -441,9 +609,35 @@ class AdBudgetService:
             ]
         return result
 
+    def _column_filtered(self, rows: list[dict[str, Any]], raw_model: Any) -> list[dict[str, Any]]:
+        if not raw_model:
+            return rows
+        try:
+            model = raw_model if isinstance(raw_model, dict) else json.loads(str(raw_model))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return rows
+        if not isinstance(model, dict):
+            return rows
+        active = {
+            field: condition
+            for field, condition in model.items()
+            if field in COLUMN_FILTER_FIELDS and isinstance(condition, dict)
+        }
+        if not active:
+            return rows
+        return [
+            row
+            for row in rows
+            if all(
+                _matches_column_condition(_column_filter_value(row, field), condition)
+                for field, condition in active.items()
+            )
+        ]
+
     def get_payload(self, **filters: Any) -> dict[str, Any]:
         rows, budget_date, performance_date = self._load_rows()
         filtered = self._filtered(rows, **filters)
+        filtered = self._column_filtered(filtered, filters.get("column_filters"))
         sort_field = str(filters.get("sort_field") or "anomaly_priority")
         if sort_field not in SORT_FIELDS:
             sort_field = "anomaly_priority"
@@ -460,7 +654,13 @@ class AdBudgetService:
         else:
             present = [row for row in filtered if row.get(sort_field) is not None]
             missing = [row for row in filtered if row.get(sort_field) is None]
-            present.sort(key=lambda row: _float(row.get(sort_field)), reverse=reverse)
+            if sort_field in TEXT_SORT_FIELDS:
+                present.sort(
+                    key=lambda row: str(_column_filter_value(row, sort_field) or "").casefold(),
+                    reverse=reverse,
+                )
+            else:
+                present.sort(key=lambda row: _float(row.get(sort_field)), reverse=reverse)
             filtered = present + missing
         page = max(1, int(filters.get("page") or 1))
         page_size = min(200, max(20, int(filters.get("page_size") or 50)))

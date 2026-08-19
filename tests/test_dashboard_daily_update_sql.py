@@ -26,6 +26,13 @@ from etl.dashboard_daily_update import (
 
 
 class DashboardDailyUpdateSqlTests(unittest.TestCase):
+    def test_product_daily_preserves_profit_for_zero_volume_rows(self):
+        self.assertIn("sum(predict_gross_profit) as order_gross_profit", INSERT_PRODUCT_DAILY_SQL)
+        self.assertNotIn(
+            "sum(case when volume = 0 then 0 else predict_gross_profit end) as order_gross_profit",
+            INSERT_PRODUCT_DAILY_SQL,
+        )
+
     def test_product_daily_sql_contains_complete_country_rules(self):
         self.assertIn("when country in ('美国', '加拿大', '巴西', '墨西哥') then '北美站'", INSERT_PRODUCT_DAILY_SQL)
         self.assertIn("when country = '英国' then '英国站'", INSERT_PRODUCT_DAILY_SQL)

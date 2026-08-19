@@ -10,6 +10,7 @@ from typing import Iterable
 import pymysql
 
 from app.services.station_sales_role import (
+    REMOTE_ROLE_PERIODS,
     SUPPORTED_ROLE_PERIODS,
     build_station_role_tracking_row,
     normalize_remote_role_snapshot,
@@ -18,7 +19,7 @@ from etl.station_sales_role_cache import station_role_recent_cache_ddl, sync_rec
 from etl.station_sales_role_drift_check import run_station_sales_role_drift_check
 
 
-TRACKING_PERIODS = (7, 14, 28)
+TRACKING_PERIODS = (3, 7, 14, 28)
 STATION_ROLE_HISTORY_START = date(2026, 8, 1)
 DEFAULT_LOOKBACK_DAYS = 80
 DEFAULT_QUEUE_LOOKBACK_DAYS = 20
@@ -259,6 +260,14 @@ def _station_role_tracking_ddl(target_schema: str) -> str:
     """
 
 
+def _station_role_performance_index_sql(target_schema: str) -> str:
+    return f"""
+        alter table {target_table(target_schema, 'dashboard_product_performance_daily')}
+        add index idx_station_role_lookup
+            (seller_name_new, country, seller_sku_adj, dt_date)
+    """
+
+
 STATION_ROLE_SOURCE_COLUMN_DDL = {
     "pre_role_source": "varchar(32) not null default 'unavailable'",
     "post_role_source": "varchar(32) not null default 'unavailable'",
@@ -480,6 +489,12 @@ def ensure_price_review_tables(conn, target_schema: str) -> None:
                 """
             )
         _ensure_station_role_tracking_schema(cursor, target_schema)
+        cursor.execute(
+            f"show index from {target_table(target_schema, 'dashboard_product_performance_daily')} "
+            "where Key_name = 'idx_station_role_lookup'"
+        )
+        if not cursor.fetchone():
+            cursor.execute(_station_role_performance_index_sql(target_schema))
     conn.commit()
 
 
@@ -661,7 +676,7 @@ def _station_role_cached_roles_sql(target_schema: str) -> str:
          and c.station_store = coalesce(a.seller_name_new, substring_index(a.store, '-', 1))
          and c.msku = a.msku
          and c.period_days = %(pre_days)s
-         and c.data_date = date_sub(a.adjust_date, interval 1 day)
+         and c.data_date = a.adjust_date
         where a.adjust_date between %(adjust_start)s and %(adjust_end)s
           and %(pre_days)s in (7, 14, 30, 90)
         union all
@@ -712,14 +727,21 @@ def _load_cached_station_roles(
 def _should_refresh_station_role_tracking(
     existing: dict | None,
     recent_cache_dates: set[date],
+    pre_days: int | None = None,
+    post_days: int | None = None,
 ) -> bool:
     if not existing or existing.get("data_status") != "complete":
         return True
-    return any(
-        existing.get(f"{side}_role_source") == "remote_dws"
-        and existing.get(f"{side}_source_data_date") in recent_cache_dates
-        for side in ("pre", "post")
-    )
+    if existing.get("adjust_date") and existing.get("pre_period_end") != existing.get("adjust_date"):
+        return True
+    for side, period_days in (("pre", pre_days), ("post", post_days)):
+        if period_days is not None and period_days not in REMOTE_ROLE_PERIODS:
+            continue
+        if existing.get(f"{side}_source_data_date") not in recent_cache_dates:
+            continue
+        if existing.get(f"{side}_role_source") in {"remote_dws", "local_recomputed"}:
+            return True
+    return False
 
 
 def _load_existing_station_role_rows(
@@ -733,6 +755,7 @@ def _load_existing_station_role_rows(
     cursor.execute(
         f"""
         select adjust_date, country, station_store, msku, data_status,
+               pre_period_end,
                pre_role_source, post_role_source,
                pre_source_data_date, post_source_data_date
         from {target_table(target_schema, 'price_review_station_role_tracking')}
@@ -770,34 +793,34 @@ def _station_role_metrics_sql(target_schema: str) -> str:
         a.price_after,
         a.drop_ratio,
         count(distinct case
-            when p.dt_date between date_sub(a.adjust_date, interval %(pre_days)s day)
-                               and date_sub(a.adjust_date, interval 1 day)
+            when p.dt_date between date_sub(a.adjust_date, interval (%(pre_days)s - 1) day)
+                               and a.adjust_date
             then p.dt_date end) as pre_seen_days,
         count(distinct case
             when p.dt_date between date_add(a.adjust_date, interval 1 day)
                                and date_add(a.adjust_date, interval %(post_days)s day)
             then p.dt_date end) as post_seen_days,
-        coalesce(sum(case when p.dt_date between date_sub(a.adjust_date, interval %(pre_days)s day)
-                                             and date_sub(a.adjust_date, interval 1 day)
+        coalesce(sum(case when p.dt_date between date_sub(a.adjust_date, interval (%(pre_days)s - 1) day)
+                                             and a.adjust_date
                           then p.sales_qty else 0 end), 0) as pre_sales_qty,
         coalesce(sum(case when p.dt_date between date_add(a.adjust_date, interval 1 day)
                                              and date_add(a.adjust_date, interval %(post_days)s day)
                           then p.sales_qty else 0 end), 0) as post_sales_qty,
-        coalesce(sum(case when p.dt_date between date_sub(a.adjust_date, interval %(pre_days)s day)
-                                             and date_sub(a.adjust_date, interval 1 day)
+        coalesce(sum(case when p.dt_date between date_sub(a.adjust_date, interval (%(pre_days)s - 1) day)
+                                             and a.adjust_date
                           then p.sales_amount else 0 end), 0) as pre_sales_amount,
         coalesce(sum(case when p.dt_date between date_add(a.adjust_date, interval 1 day)
                                              and date_add(a.adjust_date, interval %(post_days)s day)
                           then p.sales_amount else 0 end), 0) as post_sales_amount,
-        coalesce(sum(case when p.dt_date between date_sub(a.adjust_date, interval %(pre_days)s day)
-                                             and date_sub(a.adjust_date, interval 1 day)
+        coalesce(sum(case when p.dt_date between date_sub(a.adjust_date, interval (%(pre_days)s - 1) day)
+                                             and a.adjust_date
                           then p.order_gross_profit else 0 end), 0) as pre_order_profit,
         coalesce(sum(case when p.dt_date between date_add(a.adjust_date, interval 1 day)
                                              and date_add(a.adjust_date, interval %(post_days)s day)
                           then p.order_gross_profit else 0 end), 0) as post_order_profit,
         cast(nullif(substring_index(group_concat(case
-            when p.dt_date between date_sub(a.adjust_date, interval %(pre_days)s day)
-                               and date_sub(a.adjust_date, interval 1 day)
+            when p.dt_date between date_sub(a.adjust_date, interval (%(pre_days)s - 1) day)
+                               and a.adjust_date
              and p.ranking > 0 then p.ranking end order by p.dt_date desc, p.ranking asc separator ','), ',', 1), '') as unsigned)
             as pre_small_rank,
         cast(nullif(substring_index(group_concat(case
@@ -805,8 +828,8 @@ def _station_role_metrics_sql(target_schema: str) -> str:
                                and date_add(a.adjust_date, interval %(post_days)s day)
              and p.ranking > 0 then p.ranking end order by p.dt_date desc, p.ranking asc separator ','), ',', 1), '') as unsigned)
             as post_small_rank,
-        max(case when p.dt_date between date_sub(a.adjust_date, interval %(pre_days)s day)
-                                      and date_sub(a.adjust_date, interval 1 day)
+        max(case when p.dt_date between date_sub(a.adjust_date, interval (%(pre_days)s - 1) day)
+                                      and a.adjust_date
                   and p.ranking > 0 then p.dt_date end) as pre_small_rank_date,
         max(case when p.dt_date between date_add(a.adjust_date, interval 1 day)
                                        and date_add(a.adjust_date, interval %(post_days)s day)
@@ -816,9 +839,8 @@ def _station_role_metrics_sql(target_schema: str) -> str:
       on p.seller_name_new = coalesce(a.seller_name_new, substring_index(a.store, '-', 1))
      and p.country = a.country
      and p.seller_sku_adj = a.msku
-     and p.dt_date between date_sub(a.adjust_date, interval %(pre_days)s day)
+     and p.dt_date between date_sub(a.adjust_date, interval (%(pre_days)s - 1) day)
                        and date_add(a.adjust_date, interval %(post_days)s day)
-     and p.dt_date <> a.adjust_date
     where a.adjust_date between %(adjust_start)s and %(adjust_end)s
     group by a.adjust_date, a.store, a.msku, a.country, a.seller_name_new, a.local_sku,
              a.product_name, a.currency, a.price_before, a.price_after, a.drop_ratio
@@ -961,6 +983,8 @@ def _execute_station_role_tracking(
                 if not _should_refresh_station_role_tracking(
                     existing_rows.get(business_key),
                     recent_cache_dates,
+                    pre_days=pre_days,
+                    post_days=post_days,
                 ):
                     continue
                 raw.update(finance_rows.get(business_key, {}))

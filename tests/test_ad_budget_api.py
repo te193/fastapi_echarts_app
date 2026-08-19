@@ -34,6 +34,33 @@ def test_ad_budget_page_renders_operating_workbench():
     assert "ad-budget.js" in response.text
 
 
+def test_ad_budget_page_renders_loading_placeholders_before_javascript_finishes():
+    response = TestClient(main.app).get("/ad-budget")
+
+    assert response.status_code == 200
+    assert response.text.count('class="ab-skeleton ab-skeleton-kpi"') == 4
+    assert response.text.count('class="ab-skeleton ab-skeleton-chart') == 2
+    assert 'class="ab-grid-loading"' in response.text
+
+
+def test_ad_budget_initializes_meta_and_main_data_requests_in_parallel():
+    script = (PROJECT_ROOT / "app/static/js/ad-budget.js").read_text(encoding="utf-8")
+
+    assert 'var metaRequest=api("/api/ad-budget/meta")' in script
+    assert "var dataRequest=load();" in script
+    assert "Promise.allSettled([metaRequest,dataRequest])" in script
+
+
+def test_ad_budget_removes_grid_skeleton_before_ag_grid_mounts():
+    script = (PROJECT_ROOT / "app/static/js/ad-budget.js").read_text(encoding="utf-8")
+    render_table = script[script.index("function renderTable"):script.index("function load")]
+
+    destroy_at = render_table.index('window.kanbanGrid.destroy("ab-grid")')
+    clear_at = render_table.index('el("ab-grid").replaceChildren()')
+    mount_at = render_table.index('window.kanbanGrid.makeGrid("ab-grid"')
+    assert destroy_at < clear_at < mount_at
+
+
 def test_ad_budget_product_cell_labels_identifiers_and_supports_copying():
     script = (PROJECT_ROOT / "app/static/js/ad-budget.js").read_text(encoding="utf-8")
     stylesheet = (PROJECT_ROOT / "app/static/css/ad_budget.css").read_text(encoding="utf-8")
@@ -53,7 +80,7 @@ def test_ad_budget_product_cell_labels_identifiers_and_supports_copying():
     assert 'identifierLine("ASIN", row.asin, false)' in script
     assert "data-copy-value" in script
     assert "navigator.clipboard.writeText" in script
-    assert '{headerName:"广告转化",width:205' in script
+    assert '{headerName:"广告转化",field:"ad_orders",width:205' in script
     assert 'headerName:"TACOS / ACOS"' in script
     assert 'headerName:"ACOS / TACOS"' not in script
     assert 'metricCell(pct(r.tacos),"ACOS "+pct(r.acos))' in script
@@ -115,6 +142,7 @@ def test_ad_budget_api_forwards_filters_sort_and_pagination():
             page_size=50,
             sort_field="month_spend",
             sort_dir="asc",
+            column_filters='{"monthly_ad_budget_cny":{"filterType":"number","type":"greaterThan","filter":100}}',
         )
 
     assert payload == {"rows": [], "total": 0}
@@ -133,9 +161,27 @@ def test_ad_budget_api_forwards_filters_sort_and_pagination():
                 "page_size": 50,
                 "sort_field": "month_spend",
                 "sort_dir": "asc",
+                "column_filters": '{"monthly_ad_budget_cny":{"filterType":"number","type":"greaterThan","filter":100}}',
             },
         )
     ]
+
+
+def test_ad_budget_grid_uses_server_side_header_sorting_and_filtering():
+    script = (PROJECT_ROOT / "app/static/js/ad-budget.js").read_text(encoding="utf-8")
+
+    assert "sortable:false" not in script
+    assert "filter:false" not in script
+    assert "onSortChanged:handleGridSortChanged" in script
+    assert "onFilterChanged:handleGridFilterChanged" in script
+    assert "getFilterModel" in script
+    assert 'params.set("column_filters",JSON.stringify(state.columnFilters))' in script
+    assert 'state.page=1;load();' in script
+    assert 'sort:colSort("monthly_ad_budget_cny")' in script
+    assert 'state.columnFilters={};state.sortField="anomaly_priority";state.sortDir="asc"' in script
+    assert 'if(!state.gridReady)return;' in script
+    assert 'onFirstDataRendered:function(){state.gridReady=true;}' in script
+    assert 'valueGetter:numericValue("monthly_ad_budget_cny")' in script
 
 
 def test_anomaly_panel_explains_rules_in_a_hover_and_focus_tooltip():
