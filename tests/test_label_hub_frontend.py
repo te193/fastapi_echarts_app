@@ -115,6 +115,23 @@ def test_current_stockout_card_has_a_separate_operating_status_board_with_period
         assert token in script
 
 
+def test_stockout_operating_status_has_a_question_mark_rules_popover():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+
+    for token in (
+        "data-stockout-operating-status-rules",
+        "data-stockout-operating-status-rules-panel",
+        "历史不可判：无对应周期角色",
+        "低量补给待观察：FBA 在途 + 本地/采购补给 ≤ 5",
+        "补给与动销不一致：补给 > 5 且日销 = 0",
+        "亏损问题：问题产品且毛利率 < 0",
+    ):
+        assert token in script
+    assert ".label-hub-stockout-status-rules" in styles
+    assert ".label-hub-stockout-status-rules-trigger" in styles
+
+
 def test_country_detail_uses_country_scoped_stockout_role_evidence():
     template = (ROOT / "app" / "templates" / "label_hub.html").read_text(encoding="utf-8")
     script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
@@ -127,7 +144,7 @@ def test_country_detail_uses_country_scoped_stockout_role_evidence():
     assert 'row.stockout_before_role' in script
     assert 'class="label-hub-stockout-country-role"' in script
     assert ".label-hub-stockout-country-role" in styles
-    assert "js/label_hub.js') }}?v=20260818labeltimeout2" in template
+    assert "js/label_hub.js') }}?v=20260819stockoutrules1" in template
 
 
 def test_stockout_evidence_summary_keeps_long_calculation_mode_inside_its_cell():
@@ -165,7 +182,7 @@ def test_stockout_evidence_shows_only_start_date_and_elapsed_days():
     assert summary_rule is not None
     assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in summary_rule.group("body")
     assert "css/styles.css') }}?v=20260814simpleoostime1" in template
-    assert "js/label_hub.js') }}?v=20260818labeltimeout2" in template
+    assert "js/label_hub.js') }}?v=20260819stockoutrules1" in template
 
 
 def test_label_hub_detail_workbench_uses_independent_post_flow_and_dual_views():
@@ -218,7 +235,7 @@ def test_label_hub_detail_export_uses_current_filters_and_downloads_csv_blob():
     assert "URL.revokeObjectURL" in script
     assert "function setDetailExportLoading(isLoading)" in script
     assert 'elements.labelHubDetailExport.textContent = isLoading ? "导出中…" : "导出 CSV";' in script
-    assert "js/label_hub.js') }}?v=20260818labeltimeout2" in template
+    assert "js/label_hub.js') }}?v=20260819stockoutrules1" in template
 
 
 def test_detail_role_reason_filter_replaces_sales_trend_and_follows_detail_scope():
@@ -967,7 +984,7 @@ def test_current_category_detail_uses_period_scoped_distribution():
     assert "distributionById" in script
     assert 'cache: "no-store"' in common
     assert "js/common.js') }}?v=20260818labeltimeout1" in base
-    assert "js/label_hub.js') }}?v=20260818labeltimeout2" in template
+    assert "js/label_hub.js') }}?v=20260819stockoutrules1" in template
 
 
 def test_country_detail_overview_matches_label_hub_information_structure():

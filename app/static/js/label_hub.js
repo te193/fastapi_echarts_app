@@ -53,6 +53,7 @@
   };
   var stockoutOperatingStatusState = {
     open: false,
+    rulesOpen: false,
     period: normalizeStockoutRolePeriod(state.metric_period),
     payload: null,
     requestKey: "",
@@ -268,6 +269,7 @@
       var stockoutRole = event.target.closest("[data-stockout-role-id]");
       var stockoutOperatingStatusToggle = event.target.closest("[data-stockout-operating-status-toggle]");
       var stockoutOperatingStatusPeriod = event.target.closest("[data-stockout-operating-status-period]");
+      var stockoutOperatingStatusRules = event.target.closest("[data-stockout-operating-status-rules]");
       var ruleButton = event.target.closest("[data-view-rules]");
       var stockoutFormula = event.target.closest("[data-operating-stockout-formula]");
       var returnAttribution = event.target.closest("[data-return-attribution]");
@@ -277,6 +279,8 @@
         toggleStockoutRolePanel();
       } else if (stockoutOperatingStatusToggle) {
         toggleStockoutOperatingStatusPanel();
+      } else if (stockoutOperatingStatusRules) {
+        toggleStockoutOperatingStatusRules();
       } else if (stockoutRolePeriod) {
         selectStockoutRolePeriod(stockoutRolePeriod.dataset.stockoutRolePeriod);
       } else if (stockoutOperatingStatusPeriod) {
@@ -2325,12 +2329,16 @@
 
   function stockoutOperatingStatusPanelShell() {
     if (!stockoutOperatingStatusState.open) return "";
+    var rulesOpen = stockoutOperatingStatusState.rulesOpen;
+    var rules = rulesOpen
+      ? '<div id="labelHubStockoutOperatingStatusRules" class="label-hub-stockout-status-rules" data-stockout-operating-status-rules-panel role="note"><b>判断顺序（前项命中即停止）</b><ol><li>历史不可判：无对应周期角色，或缺少日销/窗口；日销 = 0 且历史起始为空或晚于周期起始。</li><li>低量补给待观察：FBA 在途 + 本地/采购补给 ≤ 5。</li><li>补给与动销不一致：补给 > 5 且日销 = 0。</li><li>明星 / 潜力 / 瘦狗：其余有日销产品，沿用该周期断货前角色。</li><li>亏损问题：问题产品且毛利率 < 0；其余问题产品归入低毛利问题。</li></ol></div>'
+      : "";
     return '<section id="labelHubStockoutOperatingStatusPanel" class="label-hub-stockout-role-panel label-hub-stockout-status-panel" aria-label="断货经营状态汇总">' +
-      '<header><div><strong>断货经营状态</strong><span>结合断货前表现与当前补给证据，仅统计断货中产品</span></div>' +
+      '<header><div><strong>断货经营状态 <button type="button" class="label-hub-stockout-status-rules-trigger" data-stockout-operating-status-rules aria-expanded="' + rulesOpen + '" aria-controls="labelHubStockoutOperatingStatusRules" aria-label="查看断货经营状态判断条件">?</button></strong><span>结合断货前表现与当前补给证据，仅统计断货中产品</span></div>' +
       '<div class="label-hub-stockout-role-periods" aria-label="经营状态周期">' + STOCKOUT_ROLE_PERIODS.map(function (period) {
         var active = period === stockoutOperatingStatusState.period;
         return '<button type="button" data-stockout-operating-status-period="' + period + '" class="' + (active ? "active" : "") + '" aria-pressed="' + active + '">' + stockoutRolePeriodLabel(period) + '</button>';
-      }).join("") + '</div></header><div data-stockout-operating-status-content class="label-hub-stockout-role-content"><div class="label-hub-stockout-role-loading">正在加载经营状态分布…</div></div></section>';
+      }).join("") + '</div></header>' + rules + '<div data-stockout-operating-status-content class="label-hub-stockout-role-content"><div class="label-hub-stockout-role-loading">正在加载经营状态分布…</div></div></section>';
   }
 
   function renderStockoutOperatingStatusPanelContent() {
@@ -2378,7 +2386,13 @@
 
   function toggleStockoutOperatingStatusPanel() {
     stockoutOperatingStatusState.open = !stockoutOperatingStatusState.open;
+    if (!stockoutOperatingStatusState.open) stockoutOperatingStatusState.rulesOpen = false;
     if (stockoutOperatingStatusState.open && !stockoutOperatingStatusState.payload) stockoutOperatingStatusState.period = normalizeStockoutRolePeriod(state.metric_period);
+    if (lastPayload) renderCategoryDetail(lastPayload);
+  }
+
+  function toggleStockoutOperatingStatusRules() {
+    stockoutOperatingStatusState.rulesOpen = !stockoutOperatingStatusState.rulesOpen;
     if (lastPayload) renderCategoryDetail(lastPayload);
   }
 
