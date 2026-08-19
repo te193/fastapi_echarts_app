@@ -13,6 +13,7 @@ from app.services.label_hub_data import (
     SOURCE_CONTENT_CHECK_SECONDS,
     SOURCE_INITIAL_CONTENT_CHECK_DELAY_SECONDS,
     LabelHubDataService,
+    _evidence_object,
     _missing_metric_units,
     _public_business_row,
 )
@@ -180,6 +181,11 @@ class LabelHubDataTests(unittest.TestCase):
 
     def test_label_fact_and_metric_cache_keeps_five_minutes(self):
         self.assertEqual(300, CACHE_SECONDS)
+
+    def test_evidence_object_decodes_database_bytes_before_parsing_json(self):
+        evidence = _evidence_object(b'{"metrics": {"daily_sales": 2}}')
+
+        self.assertEqual({"metrics": {"daily_sales": 2}}, evidence)
 
     def test_remote_invalidation_clears_label_caches_but_keeps_local_metrics(self):
         service = LabelHubDataService()

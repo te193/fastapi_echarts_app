@@ -142,6 +142,8 @@ def _evidence_object(value: Any) -> dict[str, Any]:
         return value
     if not value:
         return {}
+    if isinstance(value, (bytes, bytearray)):
+        value = value.decode("utf-8", errors="replace")
     try:
         parsed = json.loads(str(value))
     except (TypeError, ValueError, json.JSONDecodeError):
