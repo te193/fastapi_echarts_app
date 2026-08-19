@@ -1527,7 +1527,8 @@ class LabelHubDataService:
         with self._source_connection() as conn, conn.cursor() as cursor:
             cursor.execute(
                 f"""
-                select data_date, country_category, store, msku, label_id, label_period, evidence_json
+                select data_date, country_category, store, msku, label_id, label_period,
+                       uncompress(evidence_blob) as evidence_json
                 from {LABEL_FACT_TABLE}
                 where data_date = %(data_date)s
                   and msku not like %(refund_prefix)s

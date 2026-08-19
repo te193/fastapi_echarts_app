@@ -585,6 +585,39 @@ class LabelHubDataTests(unittest.TestCase):
         )
         self.assertEqual(3, payload["coverage"]["evaluable_count"])
 
+    def test_stockout_operating_status_fetches_compressed_evidence_from_local_snapshot(self):
+        executed = {}
+
+        class Cursor:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def execute(self, sql, params):
+                executed["sql"] = sql
+                executed["params"] = params
+
+            def fetchall(self):
+                return []
+
+        class Connection:
+            def cursor(self):
+                return Cursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        self.service._source_connection = lambda: Connection()
+
+        self.assertEqual([], self.service._fetch_stockout_operating_status_facts("2026-08-17"))
+        self.assertIn("uncompress(evidence_blob) as evidence_json", executed["sql"])
+        self.assertNotIn("label_period, evidence_json", executed["sql"])
+
     def test_public_business_row_exposes_msku_stockout_before_role(self):
         public = _public_business_row({
             "country_category": "欧洲站",
