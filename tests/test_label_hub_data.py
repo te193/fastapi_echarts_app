@@ -760,6 +760,43 @@ class LabelHubDataTests(unittest.TestCase):
         self.assertEqual({("欧洲站", "StoreA", "STAR")}, star_members)
         self.assertEqual({("欧洲站", "StoreA", "SHORT")}, history_members)
 
+    def test_problem_status_members_combine_loss_and_low_margin_problem_products(self):
+        stockout = {"metrics": {"fba_available": 0, "fba_in_transit": 5, "local_quantity": 0}}
+
+        def role_evidence(margin_rate):
+            return {
+                "type": "pre_oos_sales_role",
+                "metrics": {"daily_sales": 1, "period_sales_qty": 30, "tag_margin_rate": margin_rate},
+                "oos": {"history_start_date": "2026-07-01", "oos_start_date": "2026-08-01"},
+                "window": {"period": "30d", "days": 30, "start": "2026-07-01", "end": "2026-07-30"},
+                "calculation": {"mode": "historical_backtrack", "status": "matched"},
+            }
+
+        def fact(msku, label_id, evidence):
+            return {
+                "country_category": "欧洲站", "store": "StoreA", "msku": msku,
+                "label_id": label_id, "label_period": "current" if label_id == 304 else "30d",
+                "evidence_json": evidence,
+            }
+
+        facts = [
+            fact("LOSS", 304, stockout),
+            fact("LOW_MARGIN", 304, stockout),
+            fact("LOSS", 2004, role_evidence(-2)),
+            fact("LOW_MARGIN", 2004, role_evidence(3)),
+        ]
+        self.service.get_meta = lambda: {"default_data_date": "2026-08-01"}
+        self.service._fetch_stockout_operating_status_facts = lambda data_date: facts
+
+        problem_members = self.service.get_stockout_operating_status_members(
+            data_date="2026-08-01", role_period="30d", status_code="problem"
+        )
+
+        self.assertEqual(
+            {("欧洲站", "StoreA", "LOSS"), ("欧洲站", "StoreA", "LOW_MARGIN")},
+            problem_members,
+        )
+
     def test_stockout_operating_status_fetches_compressed_evidence_from_local_snapshot(self):
         executed = {}
 

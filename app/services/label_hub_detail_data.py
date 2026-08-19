@@ -41,7 +41,7 @@ STOCKOUT_BEFORE_ROLE_IDS = {2001, 2002, 2003, 2004}
 STOCKOUT_BEFORE_ROLE_PERIODS = {"7d", "14d", "30d", "90d"}
 STOCKOUT_OPERATING_STATUS_CODES = {
     "low_inventory_edge", "pre_oos_evidence_insufficient", "full_period_zero_sales",
-    "star", "potential", "dog", "loss_issue", "low_margin_issue",
+    "star", "potential", "dog", "problem", "loss_issue", "low_margin_issue",
 }
 STOCKOUT_INSUFFICIENT_REASON_CODES = {"history_data_insufficient"}
 COUNTRY_STOCKOUT_BEFORE_ROLE_LABELS = {

@@ -15430,6 +15430,7 @@ body[data-page="label_hub"] {
 .label-hub-stockout-status-group.not-evaluable .label-hub-stockout-role-row > i > em { background: #d69a3b; }
 .label-hub-stockout-status-group.evaluable .status-loss_issue { background: #fff7f6; border-color: #f0d4d0; }
 .label-hub-stockout-status-group.evaluable .status-loss_issue > i > em { background: #d66b5f; }
+.label-hub-stockout-status-group.evaluable .status-problem > i > em { background: #d66b5f; }
 
 .label-hub-stockout-status-row-wrap { align-items: center; display: grid; gap: 6px; grid-template-columns: minmax(0, 1fr); }
 .label-hub-stockout-status-row-wrap.has-breakdown { grid-template-columns: minmax(0, 1fr) auto; }
@@ -15442,6 +15443,12 @@ body[data-page="label_hub"] {
 .label-hub-stockout-status-breakdown .label-hub-stockout-role-row { background: #fffdf8; border-color: #ead9ba; }
 .label-hub-stockout-status-breakdown .label-hub-stockout-role-row:hover { background: #fffaf2; border-color: #e0c38e; }
 .label-hub-stockout-status-breakdown .label-hub-stockout-role-row > i > em { background: #d69a3b; }
+.label-hub-stockout-status-breakdown.problem-breakdown { border-left-color: #d98b82; }
+.label-hub-stockout-status-breakdown.problem-breakdown > b { color: #9e4d45; }
+.label-hub-stockout-status-breakdown.problem-breakdown .label-hub-stockout-role-row { background: #fffafa; border-color: #edd4d0; }
+.label-hub-stockout-status-breakdown.problem-breakdown .label-hub-stockout-role-row:hover { background: #fff5f4; border-color: #dfa8a1; }
+.label-hub-stockout-status-breakdown.problem-breakdown .status-loss_issue > i > em { background: #d66b5f; }
+.label-hub-stockout-status-breakdown.problem-breakdown .status-low_margin_issue > i > em { background: #3b82d0; }
 
 .label-hub-stockout-role-row {
   align-items: center;
