@@ -12,8 +12,8 @@ from .dashboard_db import dashboard_service
 from .label_hub_local_metrics import METRIC_PERIODS, label_hub_local_metrics_service
 
 
-LABEL_DETAIL_TABLE = "dws_datasync.dws_标签详情表"
-LABEL_FACT_TABLE = "dws_datasync.dws_标签表"
+LABEL_DETAIL_TABLE = "etl_datasync_test.dashboard_label_detail_snapshot"
+LABEL_FACT_TABLE = "etl_datasync_test.dashboard_label_fact_snapshot"
 REFUND_MSKU_PREFIX = "Amazon.Found."
 CACHE_SECONDS = 300
 # The source snapshots are date-keyed and only change during the daily refresh.
@@ -21,7 +21,7 @@ CACHE_SECONDS = 300
 # repeatedly reconnect to the remote warehouse.
 SOURCE_CACHE_SECONDS = 1800
 SOURCE_QUICK_CHECK_SECONDS = 15
-SOURCE_CONTENT_CHECK_SECONDS = 300
+SOURCE_CONTENT_CHECK_SECONDS = 21600
 # The deep fingerprint scans both retained label snapshots.  Do not start that
 # scan while the first dashboard and comparison requests are still warming.
 SOURCE_INITIAL_CONTENT_CHECK_DELAY_SECONDS = 30
@@ -31,6 +31,10 @@ MSKU_ANALYSIS_HIDDEN_PARENT_IDS = {21}
 EXCLUDED_ANALYSIS_PARENT_IDS = (
     COUNTRY_SCOPE_PARENT_IDS
     | DIAGNOSTIC_PARENT_IDS
+    | MSKU_ANALYSIS_HIDDEN_PARENT_IDS
+)
+FACT_FETCH_EXCLUDED_PARENT_IDS = (
+    COUNTRY_SCOPE_PARENT_IDS
     | MSKU_ANALYSIS_HIDDEN_PARENT_IDS
 )
 CURRENT_STOCKOUT_CHILD_ID = 304
@@ -261,6 +265,8 @@ class LabelHubDataService:
         self._meta_cache_at: datetime | None = None
         self._details_cache: tuple[datetime, list[dict[str, Any]]] | None = None
         self._facts_cache: dict[str, tuple[datetime, list[dict[str, Any]]]] = {}
+        self._facts_load_lock = threading.Lock()
+        self._facts_load_events: dict[str, threading.Event] = {}
         self._diagnostic_facts_cache: dict[tuple[str, int], tuple[datetime, list[dict[str, Any]]]] = {}
         self._metrics_cache: dict[tuple[str, str], tuple[datetime, dict[str, Any]]] = {}
         self._payload_cache: dict[tuple[Any, ...], tuple[datetime, dict[str, Any]]] = {}
@@ -365,18 +371,14 @@ class LabelHubDataService:
                     initial_delay_elapsed = (
                         datetime.now() - self._source_validation_started_at
                     ).total_seconds() >= SOURCE_INITIAL_CONTENT_CHECK_DELAY_SECONDS
+                    if initial_delay_elapsed and self._source_content_checked_at is None:
+                        self._source_content_checked_at = datetime.now()
                     run_content_check = (
-                        quick_changed
-                        or (
-                            initial_delay_elapsed
-                            and self._source_content_checked_at is None
-                        )
-                        or (
-                            self._source_content_checked_at is not None
-                            and (
-                                datetime.now() - self._source_content_checked_at
-                            ).total_seconds() >= SOURCE_CONTENT_CHECK_SECONDS
-                        )
+                        not quick_changed
+                        and self._source_content_checked_at is not None
+                        and (
+                            datetime.now() - self._source_content_checked_at
+                        ).total_seconds() >= SOURCE_CONTENT_CHECK_SECONDS
                     )
                     if quick_changed:
                         self._source_content_fingerprint = None
@@ -588,7 +590,8 @@ class LabelHubDataService:
             cursor.execute(
                 f"""
                 select data_date, country, country_category, store, msku,
-                       label_id, label_period, evidence_json
+                       label_id, label_period,
+                       uncompress(evidence_blob) as evidence_json
                 from {LABEL_FACT_TABLE}
                 where data_date = %(data_date)s
                   and country_category = %(country_category)s
@@ -610,6 +613,8 @@ class LabelHubDataService:
         if isinstance(raw_evidence, dict):
             evidence = raw_evidence
         else:
+            if isinstance(raw_evidence, (bytes, bytearray)):
+                raw_evidence = raw_evidence.decode("utf-8", errors="replace")
             try:
                 evidence = json.loads(str(raw_evidence or ""))
             except (TypeError, ValueError, json.JSONDecodeError) as exc:
@@ -1378,20 +1383,30 @@ class LabelHubDataService:
     def _cached_facts(self, data_date: str) -> list[dict[str, Any]]:
         cached = self._facts_cache.get(data_date)
         if cached and (datetime.now() - cached[0]).total_seconds() < SOURCE_CACHE_SECONDS:
-            facts = cached[1]
-            present_parents = {
-                int(fact.get("label_id") or 0) // 100
-                for fact in facts
-                if int(fact.get("label_id") or 0) >= 100
-            }
-            for parent_id in sorted(DIAGNOSTIC_PARENT_IDS - present_parents):
-                facts.extend(self._cached_diagnostic_facts(data_date, parent_id))
+            return cached[1]
+        with self._facts_load_lock:
+            cached = self._facts_cache.get(data_date)
+            if cached and (datetime.now() - cached[0]).total_seconds() < SOURCE_CACHE_SECONDS:
+                return cached[1]
+            event = self._facts_load_events.get(data_date)
+            owns_load = event is None
+            if owns_load:
+                event = threading.Event()
+                self._facts_load_events[data_date] = event
+        if not owns_load:
+            event.wait()
+            cached = self._facts_cache.get(data_date)
+            if cached and (datetime.now() - cached[0]).total_seconds() < SOURCE_CACHE_SECONDS:
+                return cached[1]
+        try:
+            facts = self._fetch_facts(data_date, excluded_parent_ids=FACT_FETCH_EXCLUDED_PARENT_IDS)
+            self._facts_cache[data_date] = (datetime.now(), facts)
             return facts
-        facts = self._fetch_facts(data_date, excluded_parent_ids=EXCLUDED_ANALYSIS_PARENT_IDS)
-        for parent_id in sorted(DIAGNOSTIC_PARENT_IDS):
-            facts.extend(self._cached_diagnostic_facts(data_date, parent_id))
-        self._facts_cache[data_date] = (datetime.now(), facts)
-        return facts
+        finally:
+            if owns_load:
+                event.set()
+                with self._facts_load_lock:
+                    self._facts_load_events.pop(data_date, None)
 
     def _cached_diagnostic_facts(self, data_date: str, parent_id: int) -> list[dict[str, Any]]:
         cache_key = (data_date, parent_id)
@@ -1643,7 +1658,7 @@ class LabelHubDataService:
         }
 
     def _source_connection(self):
-        return self._dashboard.source_connect()
+        return self._dashboard.connect(autocommit=True)
 
     def _fetch_quick_source_fingerprint(self) -> tuple[Any, ...]:
         """Read cheap table metadata plus the indexed latest label date.
@@ -1655,6 +1670,7 @@ class LabelHubDataService:
         """
         fact_name = LABEL_FACT_TABLE.split(".", 1)[1]
         detail_name = LABEL_DETAIL_TABLE.split(".", 1)[1]
+        source_schema = LABEL_FACT_TABLE.split(".", 1)[0]
         with self._source_connection() as conn, conn.cursor() as cursor:
             cursor.execute(
                 f"select max(data_date) as latest_date from {LABEL_FACT_TABLE}"
@@ -1664,11 +1680,11 @@ class LabelHubDataService:
                 """
                 select table_name, table_rows, update_time, data_length, index_length
                 from information_schema.tables
-                where table_schema = 'dws_datasync'
+                where table_schema = %s
                   and table_name in (%s, %s)
                 order by table_name
                 """,
-                (fact_name, detail_name),
+                (source_schema, fact_name, detail_name),
             )
             tables = cursor.fetchall()
         table_markers = tuple(
@@ -1768,7 +1784,7 @@ class LabelHubDataService:
         latest_date = comparison_dates[0] if comparison_dates else ""
         dates = [latest_date] if latest_date else []
         facts = (
-            self._fetch_facts(latest_date, excluded_parent_ids=EXCLUDED_ANALYSIS_PARENT_IDS)
+            self._fetch_facts(latest_date, excluded_parent_ids=FACT_FETCH_EXCLUDED_PARENT_IDS)
             if latest_date
             else []
         )
@@ -1905,7 +1921,7 @@ class LabelHubDataService:
                        group_concat(
                          distinct concat(
                            label_id, '@', coalesce(label_period, ''), '@',
-                           case when evidence_json is null or evidence_json = '' then '0' else '1' end
+                           case when evidence_blob is null then '0' else '1' end
                          )
                          order by label_id separator '|'
                        ) as fact_tokens

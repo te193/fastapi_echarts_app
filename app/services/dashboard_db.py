@@ -57,8 +57,8 @@ SALES_ROLE_MARGIN_5 = Decimal("0.05")
 SALES_ROLE_MARGIN_10 = Decimal("0.10")
 SALES_ROLE_MARGIN_15 = Decimal("0.15")
 SALES_ROLE_MARGIN_25 = Decimal("0.25")
-LIFECYCLE_DETAIL_TABLE = "dws_datasync.dws_标签详情表"
-LIFECYCLE_TAG_TABLE = "dws_datasync.dws_标签表"
+LIFECYCLE_DETAIL_TABLE = "etl_datasync_test.dashboard_label_detail_snapshot"
+LIFECYCLE_TAG_TABLE = "etl_datasync_test.dashboard_label_fact_snapshot"
 LIFECYCLE_PARENT_LABEL_ID = 2
 LIFECYCLE_LABEL_IDS = [201, 202, 203, 204, 205]
 LIFECYCLE_WINDOW_BY_ID = {
@@ -1935,22 +1935,10 @@ class DashboardDbService:
         rows: list[dict[str, Any]] = []
         try:
             rows = self._query_lifecycle_options(conn)
-        except pymysql.err.OperationalError as exc:
-            if not (exc.args and exc.args[0] == 1049):
+        except (pymysql.err.OperationalError, pymysql.err.ProgrammingError) as exc:
+            if not (exc.args and exc.args[0] in {1049, 1146}):
                 raise
-            with self.source_connect() as source_conn:
-                rows = self._query_lifecycle_options(source_conn)
-        except pymysql.err.ProgrammingError as exc:
-            if exc.args and exc.args[0] == 1146:
-                try:
-                    with self.source_connect() as source_conn:
-                        rows = self._query_lifecycle_options(source_conn)
-                except pymysql.err.ProgrammingError as source_exc:
-                    if source_exc.args and source_exc.args[0] == 1146:
-                        return list(defaults.values())
-                    raise
-            else:
-                raise
+            return list(defaults.values())
 
         for row in rows:
             label_id = to_int(row.get("sub_label_id"))
@@ -1992,21 +1980,10 @@ class DashboardDbService:
     def _latest_lifecycle_data_date(self, conn) -> date | None:
         try:
             return self._query_latest_lifecycle_data_date(conn)
-        except pymysql.err.OperationalError as exc:
-            if not (exc.args and exc.args[0] == 1049):
+        except (pymysql.err.OperationalError, pymysql.err.ProgrammingError) as exc:
+            if not (exc.args and exc.args[0] in {1049, 1146}):
                 raise
-            with self.source_connect() as source_conn:
-                return self._query_latest_lifecycle_data_date(source_conn)
-        except pymysql.err.ProgrammingError as exc:
-            if exc.args and exc.args[0] == 1146:
-                try:
-                    with self.source_connect() as source_conn:
-                        return self._query_latest_lifecycle_data_date(source_conn)
-                except pymysql.err.ProgrammingError as source_exc:
-                    if source_exc.args and source_exc.args[0] == 1146:
-                        return None
-                    raise
-            raise
+            return None
 
     def _query_latest_lifecycle_data_date(self, conn) -> date | None:
         try:
@@ -2058,7 +2035,7 @@ class DashboardDbService:
         where_sql, params = self._lifecycle_filter_sql(country_category, seller_name_new, keyword)
         params.update({"data_date": lifecycle_date, "label_ids": tuple(LIFECYCLE_LABEL_IDS)})
         try:
-            with self.source_connect() as conn:
+            with self.connect(autocommit=True) as conn:
                 with conn.cursor() as cursor:
                     cursor.execute(
                         f"""

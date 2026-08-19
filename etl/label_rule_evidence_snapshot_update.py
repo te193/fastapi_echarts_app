@@ -1,6 +1,7 @@
 import argparse
 from collections import defaultdict
 from datetime import date, datetime, timedelta
+from typing import Iterable
 
 from etl.dashboard_daily_update import build_schema_config, connect_source, connect_target, render_sql
 from etl.replenishment_update import apply_database_ini_env
@@ -11,6 +12,82 @@ RULE_VERSION = "label_id_1_20260702_v1_raw_predict_profit"
 ROLE_PRIORITY = (101, 102, 103, 104)
 LABEL_FACT_TABLE = "dws_datasync.dws_标签表"
 LABEL_DETAIL_TABLE = "dws_datasync.dws_标签详情表"
+LOCAL_LABEL_FACT_TABLE = "etl_datasync_test.dashboard_label_fact_snapshot"
+LOCAL_LABEL_DETAIL_TABLE = "etl_datasync_test.dashboard_label_detail_snapshot"
+SNAPSHOT_BATCH_SIZE = 500
+
+
+def fact_table_sql(table_name: str, *, include_indexes: bool) -> str:
+    indexes = """
+    key idx_label_date (label_id, data_date, label_period, country_category, store(80), msku(120)),
+    key idx_date_unit (data_date, country_category, store(80), msku(120), country(40), label_id, label_period),
+    key idx_date_label_period (data_date, label_id, label_period),
+    key idx_msku_date (msku(120), data_date)
+    """ if include_indexes else ""
+    index_clause = f",\n{indexes.rstrip()}" if indexes else ""
+    return f"""
+create table if not exists {table_name} (
+    id bigint unsigned not null auto_increment,
+    data_date date not null comment '标签事实日期',
+    country_category varchar(20) null,
+    country varchar(100) null,
+    store varchar(100) not null,
+    msku varchar(500) not null,
+    label_id int not null,
+    label_period varchar(20) not null,
+    created_time datetime not null,
+    evidence_blob mediumblob null,
+    primary key (id)
+    {index_clause}
+) engine=InnoDB default charset=utf8mb4 comment='标签中心本地事实快照，仅保留最近两个标签日期';
+"""
+
+
+def detail_table_sql(table_name: str, *, include_indexes: bool) -> str:
+    index_clause = ",\n    key idx_label_detail_parent_child (label_id, sub_label_id)" if include_indexes else ""
+    return f"""
+create table if not exists {table_name} (
+    label_id int not null,
+    label_name text null,
+    sub_label_id int not null,
+    sub_label_name text null,
+    tag_rule text null,
+    business_definition text null,
+    business_owner text null,
+    label_category text null,
+    update_frequency text null,
+    mutual_exclusion text null,
+    status text null,
+    create_time datetime not null,
+    tagging_method varchar(20) null,
+    key idx_label_detail_sub_label (sub_label_id)
+    {index_clause}
+) engine=InnoDB default charset=utf8mb4 comment='标签中心本地标签详情快照';
+"""
+
+
+FACT_INSERT_SQL = """
+insert into {table_name} (
+    data_date, country_category, country, store, msku,
+    label_id, label_period, created_time, evidence_blob
+) values (
+    %(data_date)s, %(country_category)s, %(country)s, %(store)s, %(msku)s,
+    %(label_id)s, %(label_period)s, %(created_time)s, %(evidence_blob)s
+)
+"""
+
+
+DETAIL_INSERT_SQL = """
+insert into {table_name} (
+    label_id, label_name, sub_label_id, sub_label_name, tag_rule,
+    business_definition, business_owner, label_category, update_frequency,
+    mutual_exclusion, status, create_time, tagging_method
+) values (
+    %(label_id)s, %(label_name)s, %(sub_label_id)s, %(sub_label_name)s, %(tag_rule)s,
+    %(business_definition)s, %(business_owner)s, %(label_category)s, %(update_frequency)s,
+    %(mutual_exclusion)s, %(status)s, %(create_time)s, %(tagging_method)s
+)
+"""
 
 
 CREATE_TABLE_SQL = """
@@ -106,24 +183,231 @@ def latest_label_dates(source_conn) -> tuple[date, ...]:
     with source_conn.cursor() as cursor:
         cursor.execute(
             f"select distinct data_date from {LABEL_FACT_TABLE} "
-            "where msku not like %s order by data_date desc limit 2",
-            ("Amazon.Found.%",),
+            "order by data_date desc limit 2"
         )
         rows = cursor.fetchall()
     return tuple(row["data_date"] for row in rows if row.get("data_date"))
 
 
-def remote_role_facts(source_conn, label_dates: tuple[date, ...]) -> dict[tuple[date, str, str, str, str], set[int]]:
+def _batched(rows: Iterable[dict], batch_size: int = SNAPSHOT_BATCH_SIZE) -> Iterable[list[dict]]:
+    batch: list[dict] = []
+    for row in rows:
+        batch.append(row)
+        if len(batch) >= batch_size:
+            yield batch
+            batch = []
+    if batch:
+        yield batch
+
+
+def snapshot_date_plan(
+    label_dates: tuple[date, ...],
+    available_local_dates: set[date],
+) -> tuple[tuple[date, ...], tuple[date, ...]]:
+    if not label_dates:
+        return (), ()
+    reusable_dates = tuple(
+        item for item in label_dates[1:] if item in available_local_dates
+    )
+    remote_dates = tuple(
+        item
+        for item in label_dates
+        if item == label_dates[0] or item not in available_local_dates
+    )
+    return remote_dates, reusable_dates
+
+
+def _prepare_snapshot_tables(target_conn, schemas) -> tuple[str, str, str, str, str, str]:
+    fact_table = render_sql(LOCAL_LABEL_FACT_TABLE, schemas)
+    detail_table = render_sql(LOCAL_LABEL_DETAIL_TABLE, schemas)
+    fact_stage = f"{fact_table}__staging"
+    detail_stage = f"{detail_table}__staging"
+    fact_old = f"{fact_table}__old"
+    detail_old = f"{detail_table}__old"
+    with target_conn.cursor() as cursor:
+        cursor.execute(fact_table_sql(fact_table, include_indexes=True))
+        cursor.execute(detail_table_sql(detail_table, include_indexes=True))
+        cursor.execute(f"drop table if exists {fact_stage}")
+        cursor.execute(f"drop table if exists {detail_stage}")
+        cursor.execute(f"drop table if exists {fact_old}")
+        cursor.execute(f"drop table if exists {detail_old}")
+        cursor.execute(fact_table_sql(fact_stage, include_indexes=False))
+        cursor.execute(detail_table_sql(detail_stage, include_indexes=False))
+    target_conn.commit()
+    return fact_table, detail_table, fact_stage, detail_stage, fact_old, detail_old
+
+
+def _load_detail_snapshot(source_conn, target_conn, detail_stage: str) -> int:
+    with source_conn.cursor() as source_cursor:
+        source_cursor.execute(
+            f"""
+            select label_id, label_name, sub_label_id, sub_label_name, tag_rule,
+                   business_definition, business_owner, label_category, update_frequency,
+                   mutual_exclusion, status, create_time, tagging_method
+            from {LABEL_DETAIL_TABLE}
+            """
+        )
+        rows = source_cursor.fetchall()
+    with target_conn.cursor() as target_cursor:
+        if rows:
+            target_cursor.executemany(DETAIL_INSERT_SQL.format(table_name=detail_stage), rows)
+    target_conn.commit()
+    return len(rows)
+
+
+def _load_fact_snapshot(
+    source_conn,
+    target_conn,
+    fact_table: str,
+    fact_stage: str,
+    label_dates: tuple[date, ...],
+) -> dict[str, int]:
+    reusable_dates: set[date] = set()
+    with target_conn.cursor() as cursor:
+        cursor.execute(f"show columns from {fact_table} like 'evidence_blob'")
+        supports_blob = cursor.fetchone() is not None
+        if supports_blob and len(label_dates) > 1:
+            placeholders = ",".join(["%s"] * len(label_dates[1:]))
+            cursor.execute(
+                f"select distinct data_date from {fact_table} "
+                f"where data_date in ({placeholders})",
+                label_dates[1:],
+            )
+            reusable_dates = {
+                row["data_date"]
+                for row in cursor.fetchall()
+                if row.get("data_date")
+            }
+
+    remote_dates, reused_dates = snapshot_date_plan(label_dates, reusable_dates)
+    reused = 0
+    if reused_dates:
+        placeholders = ",".join(["%s"] * len(reused_dates))
+        with target_conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                insert into {fact_stage} (
+                    data_date, country_category, country, store, msku,
+                    label_id, label_period, created_time, evidence_blob
+                )
+                select data_date, country_category, country, store, msku,
+                       label_id, label_period, created_time, evidence_blob
+                from {fact_table}
+                where data_date in ({placeholders})
+                """,
+                reused_dates,
+            )
+            reused = max(cursor.rowcount, 0)
+        target_conn.commit()
+        print(f"  label facts : {reused:,} rows reused locally")
+
+    copied = 0
+    insert_sql = FACT_INSERT_SQL.format(table_name=fact_stage)
+    for label_date in remote_dates:
+        with source_conn.cursor() as source_cursor:
+            source_cursor.execute(
+                f"""
+                select data_date, country_category, country, store, msku,
+                       label_id, label_period, created_time,
+                       compress(cast(evidence_json as char)) as evidence_blob
+                from {LABEL_FACT_TABLE} force index (idx_dt)
+                where data_date = %s
+                """,
+                (label_date,),
+            )
+            with target_conn.cursor() as target_cursor:
+                date_copied = 0
+                for batch in _batched(source_cursor):
+                    target_cursor.executemany(insert_sql, batch)
+                    copied += len(batch)
+                    date_copied += len(batch)
+                    if date_copied % 50000 == 0:
+                        target_conn.commit()
+                        print(
+                            f"  label facts : {label_date.isoformat()} "
+                            f"copied {date_copied:,} rows remotely"
+                        )
+        target_conn.commit()
+        print(f"  label facts : {label_date.isoformat()} copied {date_copied:,} rows remotely")
+    target_conn.commit()
+    return {
+        "fact_rows": reused + copied,
+        "remote_fact_rows": copied,
+        "reused_fact_rows": reused,
+    }
+
+
+def sync_label_snapshots(source_conn, target_conn, schemas, label_dates: tuple[date, ...]) -> dict[str, int]:
+    if not label_dates:
+        raise RuntimeError("remote label fact table has no label dates")
+    (
+        fact_table,
+        detail_table,
+        fact_stage,
+        detail_stage,
+        fact_old,
+        detail_old,
+    ) = _prepare_snapshot_tables(target_conn, schemas)
+    try:
+        detail_rows = _load_detail_snapshot(source_conn, target_conn, detail_stage)
+        fact_counts = _load_fact_snapshot(
+            source_conn,
+            target_conn,
+            fact_table,
+            fact_stage,
+            label_dates,
+        )
+        with target_conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                alter table {fact_stage}
+                    add key idx_label_date
+                        (label_id, data_date, label_period, country_category, store(80), msku(120)),
+                    add key idx_date_unit
+                        (data_date, country_category, store(80), msku(120), country(40), label_id, label_period),
+                    add key idx_date_label_period (data_date, label_id, label_period),
+                    add key idx_msku_date (msku(120), data_date)
+                """
+            )
+            cursor.execute(
+                f"alter table {detail_stage} "
+                "add key idx_label_detail_parent_child (label_id, sub_label_id)"
+            )
+            cursor.execute(
+                f"""
+                rename table
+                    {fact_table} to {fact_old},
+                    {fact_stage} to {fact_table},
+                    {detail_table} to {detail_old},
+                    {detail_stage} to {detail_table}
+                """
+            )
+            cursor.execute(f"drop table {fact_old}")
+            cursor.execute(f"drop table {detail_old}")
+        target_conn.commit()
+    except Exception:
+        target_conn.rollback()
+        raise
+    return {**fact_counts, "detail_rows": detail_rows}
+
+
+def remote_role_facts(
+    source_conn,
+    label_dates: tuple[date, ...],
+    *,
+    fact_table: str = LOCAL_LABEL_FACT_TABLE,
+    detail_table: str = LOCAL_LABEL_DETAIL_TABLE,
+) -> dict[tuple[date, str, str, str, str], set[int]]:
     if not label_dates:
         return {}
     placeholders = ",".join(["%s"] * len(label_dates))
     sql = f"""
         select data_date, country_category, store, msku, label_period, label_id
-        from {LABEL_FACT_TABLE}
+        from {fact_table}
         where data_date in ({placeholders})
           and msku not like %s
           and label_id in (
-              select sub_label_id from {LABEL_DETAIL_TABLE}
+              select sub_label_id from {detail_table}
               where label_id = 1 and sub_label_id is not null
           )
     """
@@ -249,13 +533,23 @@ def main() -> None:
         label_dates = latest_label_dates(source_conn)
         if not label_dates:
             raise RuntimeError("remote label fact table has no label dates")
-        remote_facts = remote_role_facts(source_conn, label_dates)
+        snapshot_counts = sync_label_snapshots(source_conn, target_conn, schemas, label_dates)
+        remote_facts = remote_role_facts(
+            target_conn,
+            label_dates,
+            fact_table=render_sql(LOCAL_LABEL_FACT_TABLE, schemas),
+            detail_table=render_sql(LOCAL_LABEL_DETAIL_TABLE, schemas),
+        )
         rows = build_rows(target_conn, schemas, label_dates, periods, remote_facts)
         affected = refresh(target_conn, schemas, rows, label_dates)
-        print("Label rule evidence snapshot updated")
+        print("Local label snapshots and rule evidence updated")
         print(f"  label_dates : {', '.join(item.isoformat() for item in label_dates)}")
+        print(f"  label_facts : {snapshot_counts['fact_rows']:,}")
+        print(f"  remote_rows : {snapshot_counts['remote_fact_rows']:,}")
+        print(f"  reused_rows : {snapshot_counts['reused_fact_rows']:,}")
+        print(f"  label_meta  : {snapshot_counts['detail_rows']:,}")
         print(f"  periods     : {', '.join(f'{days}d' for days in periods)}")
-        print(f"  rows        : {affected}")
+        print(f"  evidence    : {affected:,}")
     finally:
         source_conn.close()
         target_conn.close()

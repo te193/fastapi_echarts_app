@@ -148,7 +148,8 @@
     window.location.href = url;
   }
 
-  function apiGet(path, params) {
+  function apiGet(path, params, options) {
+    var settings = Object.assign({ timeoutMs: 45000 }, options || {});
     var url = new URL(path, window.location.origin);
     Object.keys(params || {}).forEach(function (key) {
       var value = params[key];
@@ -158,7 +159,7 @@
     var controller = window.AbortController ? new AbortController() : null;
     var timeoutId = setTimeout(function () {
       if (controller) controller.abort();
-    }, 45000);
+    }, settings.timeoutMs);
     return fetch(url.toString(), controller ? { signal: controller.signal, cache: "no-store" } : { cache: "no-store" }).then(function (response) {
       if (!response.ok) throw new Error("Request failed: " + response.status);
       return response.json();

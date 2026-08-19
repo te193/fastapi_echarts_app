@@ -1,4 +1,6 @@
 (function () {
+  var META_REQUEST_OPTIONS = { timeoutMs: 120000 };
+  var CHANGE_REQUEST_OPTIONS = { timeoutMs: 90000 };
   "use strict";
 
   var app = window.kanbanApp;
@@ -119,7 +121,7 @@
     ].forEach(function (id) { elements[id] = document.getElementById(id); });
     setLoading(true);
     bindEvents();
-    app.apiGet("/api/label-hub/meta").then(function (payload) {
+    app.apiGet("/api/label-hub/meta", null, META_REQUEST_OPTIONS).then(function (payload) {
       meta = payload;
       normalizeStateFromMeta();
       state.metric_period = state.metric_period || meta.default_metric_period || "30d";
@@ -1566,7 +1568,7 @@
     }
     var token = ++changeRequestToken;
     elements.labelHubChangeBrief.innerHTML = '<span>较上期变化</span><strong>正在核对各层级变化…</strong>';
-    app.apiGet("/api/label-hub/changes", buildCurrentCombinationChangeParams()).then(function (payload) {
+    app.apiGet("/api/label-hub/changes", buildCurrentCombinationChangeParams(), CHANGE_REQUEST_OPTIONS).then(function (payload) {
       if (token !== changeRequestToken) return;
       lastHighlights = payload;
       renderChangeBrief(payload);
@@ -3599,7 +3601,7 @@
     setDrawerMode("changes");
     elements.labelHubDrawer.hidden = false;
     elements.labelHubDrawerContent.innerHTML = '<div class="empty-state">正在加载完整变化明细…</div>';
-    app.apiGet("/api/label-hub/changes", buildChangeParams()).then(function (payload) {
+    app.apiGet("/api/label-hub/changes", buildChangeParams(), CHANGE_REQUEST_OPTIONS).then(function (payload) {
       lastChanges = payload;
       if (!payload || !payload.available) {
         elements.labelHubDrawerContent.innerHTML = '<div class="empty-state">当前暂无可比较的标签变化。</div>';
@@ -3687,7 +3689,7 @@
     if (!context || activeLayerChangeContext !== context) return;
     elements.labelHubDrawerContent.innerHTML = '<div class="empty-state compact">正在核对当前组合的两期变化…</div>';
     var token = ++changeRequestToken;
-    app.apiGet("/api/label-hub/changes", buildLayerChangeParams(context)).then(function (payload) {
+    app.apiGet("/api/label-hub/changes", buildLayerChangeParams(context), CHANGE_REQUEST_OPTIONS).then(function (payload) {
       if (token !== changeRequestToken || activeLayerChangeContext !== context) return;
       elements.labelHubDrawerContent.innerHTML = changeDetailsHtml(payload, context);
     }).catch(function (error) {

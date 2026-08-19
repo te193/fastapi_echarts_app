@@ -15,6 +15,7 @@ from .label_hub_data import (
     LOCAL_VALUE_PRIORITY,
     METRIC_PERIODS,
     REMOTE_PARENT_CHILD_PRIORITY,
+    LABEL_FACT_TABLE,
     _business_unit_key,
     _parse_code_pipe,
     _parse_int_pipe,
@@ -160,12 +161,13 @@ class LabelHubChangeDataService:
                 cursor.execute(
                     f"""
                     select f.data_date, f.country_category, f.store, f.msku,
-                           f.label_id as sub_label_id, f.label_period, f.evidence_json
-                    from dws_datasync.dws_标签表 f
+                           f.label_id as sub_label_id, f.label_period,
+                           uncompress(f.evidence_blob) as evidence_json
+                    from {LABEL_FACT_TABLE} f
                     where f.data_date in (%(current_date)s, %(previous_date)s)
                       and f.label_id in ({", ".join(child_placeholders)})
                       and f.msku not like 'Amazon.Found.%%'
-                      and f.evidence_json is not null
+                      and f.evidence_blob is not null
                       {period_sql}
                       {unit_sql}
                     """,

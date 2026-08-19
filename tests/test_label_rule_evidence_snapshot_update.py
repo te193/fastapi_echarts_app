@@ -2,9 +2,13 @@ from datetime import date
 
 from etl.label_rule_evidence_snapshot_update import (
     CREATE_TABLE_SQL,
+    LOCAL_LABEL_DETAIL_TABLE,
+    LOCAL_LABEL_FACT_TABLE,
     classify_sales_role,
+    fact_table_sql,
     parse_periods,
     refresh,
+    snapshot_date_plan,
 )
 from etl.dashboard_daily_update import SchemaConfig
 
@@ -17,6 +21,33 @@ def test_sales_role_evidence_uses_remote_rule_thresholds():
     assert parse_periods("7d,14d,30d,90d") == (7, 14, 30, 90)
     assert "raw_order_gross_profit" not in CREATE_TABLE_SQL
     assert "最近两个标签日期" in CREATE_TABLE_SQL
+    assert "idx_label_date" in fact_table_sql(LOCAL_LABEL_FACT_TABLE, include_indexes=True)
+    assert "idx_date_unit" in fact_table_sql(LOCAL_LABEL_FACT_TABLE, include_indexes=True)
+    assert "evidence_blob mediumblob" in fact_table_sql(LOCAL_LABEL_FACT_TABLE, include_indexes=True)
+    assert "evidence_json json" not in fact_table_sql(LOCAL_LABEL_FACT_TABLE, include_indexes=True)
+    assert LOCAL_LABEL_DETAIL_TABLE.endswith("dashboard_label_detail_snapshot")
+
+
+def test_snapshot_date_plan_refreshes_latest_and_reuses_previous_local_date():
+    latest = date(2026, 8, 17)
+    previous = date(2026, 8, 16)
+
+    remote_dates, reused_dates = snapshot_date_plan(
+        (latest, previous),
+        {latest, previous},
+    )
+
+    assert remote_dates == (latest,)
+    assert reused_dates == (previous,)
+
+
+def test_snapshot_date_plan_fetches_both_dates_when_local_snapshot_is_empty():
+    dates = (date(2026, 8, 17), date(2026, 8, 16))
+
+    remote_dates, reused_dates = snapshot_date_plan(dates, set())
+
+    assert remote_dates == dates
+    assert reused_dates == ()
 
 
 class Cursor:

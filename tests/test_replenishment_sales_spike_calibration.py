@@ -174,12 +174,11 @@ def test_script_entrypoint_can_run_directly():
         [sys.executable, "scripts/calibrate_replenishment_sales_spike.py", "--help"],
         cwd=Path(__file__).resolve().parents[1],
         capture_output=True,
-        text=True,
         check=False,
     )
 
     assert result.returncode == 0, result.stderr
-    assert "--as-of-date" in result.stdout
+    assert b"--as-of-date" in result.stdout
 
 
 def test_shadow_report_contains_review_sections_and_jc029b_result(tmp_path):

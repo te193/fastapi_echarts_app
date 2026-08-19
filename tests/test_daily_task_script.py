@@ -65,6 +65,16 @@ def test_daily_update_task_sends_dingtalk_notifications():
     assert '"--label-evidence-stderr", $LabelEvidenceStderrLog' in script
 
 
+def test_daily_update_task_keeps_dingtalk_notification_logs():
+    script = SCRIPT.read_text(encoding="utf-8")
+
+    assert 'dingtalk_notify_run_$RunStamp.log' in script
+    assert 'dingtalk_notify_run_$RunStamp.err.log' in script
+    assert "> $DingTalkStdoutLog 2> $DingTalkStderrLog" in script
+    assert "& $PythonExe @NotifyArgs | Out-Null" not in script
+    assert "See $DingTalkStdoutLog and $DingTalkStderrLog." in script
+
+
 def test_dingtalk_notification_does_not_replace_etl_exit_code():
     script = SCRIPT.read_text(encoding="utf-8")
 
