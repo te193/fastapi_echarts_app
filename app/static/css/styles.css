@@ -15431,14 +15431,15 @@ body[data-page="label_hub"] {
 .label-hub-stockout-status-group.evaluable .status-loss_issue { background: #fff7f6; border-color: #f0d4d0; }
 .label-hub-stockout-status-group.evaluable .status-loss_issue > i > em { background: #d66b5f; }
 
-.label-hub-stockout-role-row.has-breakdown { grid-template-columns: minmax(88px, .8fr) minmax(70px, 1.4fr) auto auto; }
+.label-hub-stockout-status-row-wrap { align-items: center; display: grid; gap: 6px; grid-template-columns: minmax(0, 1fr); }
+.label-hub-stockout-status-row-wrap.has-breakdown { grid-template-columns: minmax(0, 1fr) auto; }
 .label-hub-stockout-status-breakdown-toggle { background: transparent; border: 0; color: #9a650f; cursor: pointer; font-size: 10px; font-weight: 700; padding: 3px 2px; }
 .label-hub-stockout-status-breakdown-toggle:hover { color: #714702; text-decoration: underline; }
 .label-hub-stockout-status-breakdown-toggle:focus-visible { border-radius: 4px; outline: 2px solid #d69a3b; outline-offset: 2px; }
 
 .label-hub-stockout-status-breakdown { border-left: 2px solid #e0b86f; display: grid; gap: 6px; margin-left: 12px; padding-left: 10px; }
 .label-hub-stockout-status-breakdown > b { color: #765a31; font-size: 10px; }
-.label-hub-stockout-status-breakdown .label-hub-stockout-role-row { background: #fffdf8; border-color: #ead9ba; cursor: default; }
+.label-hub-stockout-status-breakdown .label-hub-stockout-role-row { background: #fffdf8; border-color: #ead9ba; }
 .label-hub-stockout-status-breakdown .label-hub-stockout-role-row:hover { background: #fffaf2; border-color: #e0c38e; }
 .label-hub-stockout-status-breakdown .label-hub-stockout-role-row > i > em { background: #d69a3b; }
 
@@ -15454,9 +15455,11 @@ body[data-page="label_hub"] {
   grid-template-columns: minmax(88px, .8fr) minmax(70px, 1.4fr) auto;
   padding: 8px 10px;
   text-align: left;
+  width: 100%;
 }
 
 .label-hub-stockout-role-row:hover { background: #eef6ff; border-color: #8fbbea; }
+.label-hub-stockout-role-row.active { border-color: #2478c9; box-shadow: 0 0 0 2px rgba(36, 120, 201, .12); }
 .label-hub-stockout-role-row > span { display: grid; gap: 2px; }
 .label-hub-stockout-role-row b { color: var(--text); font-size: 11px; }
 .label-hub-stockout-role-row small { color: var(--muted); font-size: 10px; font-weight: 500; }

@@ -39,11 +39,17 @@
     identifiers: [], country_categories: [], stores: [], countries: [], detail_conditions: "",
     sales_roles: [], role_reason_ids: [], daily_sales_bands: [], margin_bands: [], ranking_bands: [], problems: [],
     current_stockout_only: false, stockout_before_role_period: "", stockout_before_role_ids: [],
+    stockout_operating_status_period: "", stockout_operating_status: "", stockout_insufficient_reason: "",
     problem_mode: "any", page: 1, page_size: state.page_size,
     sort_field: "sales_amount", sort_dir: "desc"
   };
   var STOCKOUT_ROLE_PERIODS = ["7d", "14d", "30d", "90d"];
   var STOCKOUT_ROLE_LABELS = { "2001": "明星产品", "2002": "潜力产品", "2003": "瘦狗产品", "2004": "问题产品" };
+  var STOCKOUT_OPERATING_STATUS_LABELS = {
+    low_inventory_edge: "低量库存边缘断货", pre_oos_evidence_insufficient: "断货前依据不足",
+    full_period_zero_sales: "完整周期零销量", star: "明星产品", potential: "潜力产品",
+    dog: "瘦狗产品", loss_issue: "亏损问题", low_margin_issue: "低毛利问题"
+  };
   var stockoutRoleState = {
     open: false,
     period: normalizeStockoutRolePeriod(state.metric_period),
@@ -272,6 +278,8 @@
       var stockoutOperatingStatusPeriod = event.target.closest("[data-stockout-operating-status-period]");
       var stockoutOperatingStatusRules = event.target.closest("[data-stockout-operating-status-rules]");
       var stockoutOperatingStatusBreakdown = event.target.closest("[data-stockout-operating-status-breakdown]");
+      var stockoutOperatingStatus = event.target.closest("[data-stockout-operating-status-code]");
+      var stockoutInsufficientReason = event.target.closest("[data-stockout-insufficient-reason]");
       var ruleButton = event.target.closest("[data-view-rules]");
       var stockoutFormula = event.target.closest("[data-operating-stockout-formula]");
       var returnAttribution = event.target.closest("[data-return-attribution]");
@@ -285,6 +293,10 @@
         toggleStockoutOperatingStatusRules();
       } else if (stockoutOperatingStatusBreakdown) {
         toggleStockoutOperatingStatusBreakdown();
+      } else if (stockoutInsufficientReason) {
+        openStockoutOperatingStatusDetails("pre_oos_evidence_insufficient", stockoutInsufficientReason.dataset.stockoutInsufficientReason || "");
+      } else if (stockoutOperatingStatus) {
+        openStockoutOperatingStatusDetails(stockoutOperatingStatus.dataset.stockoutOperatingStatusCode || "", "");
       } else if (stockoutRolePeriod) {
         selectStockoutRolePeriod(stockoutRolePeriod.dataset.stockoutRolePeriod);
       } else if (stockoutOperatingStatusPeriod) {
@@ -1103,6 +1115,9 @@
       current_stockout_only: detailState.current_stockout_only,
       stockout_before_role_period: detailState.stockout_before_role_period,
       stockout_before_role_ids: detailState.stockout_before_role_ids,
+      stockout_operating_status_period: detailState.stockout_operating_status_period,
+      stockout_operating_status: detailState.stockout_operating_status,
+      stockout_insufficient_reason: detailState.stockout_insufficient_reason,
       daily_sales_bands: detailState.daily_sales_bands,
       margin_bands: detailState.margin_bands,
       ranking_bands: detailState.ranking_bands,
@@ -1267,6 +1282,7 @@
     detailState.detail_conditions = ""; detailState.problems = []; detailState.problem_mode = "any";
     detailState.sales_roles = []; detailState.role_reason_ids = []; detailState.daily_sales_bands = []; detailState.margin_bands = []; detailState.ranking_bands = [];
     detailState.current_stockout_only = false; detailState.stockout_before_role_period = ""; detailState.stockout_before_role_ids = [];
+    detailState.stockout_operating_status_period = ""; detailState.stockout_operating_status = ""; detailState.stockout_insufficient_reason = "";
     detailState.page = 1;
     elements.labelHubDetailIdentifiers.value = "";
     elements.labelHubIdentifierBatchInput.value = "";
@@ -1374,11 +1390,16 @@
     if (!elements.labelHubDetailActiveFilterList) return;
     var chips = [];
     if (detailState.identifiers.length) chips.push(detailFilterChip("identifiers", "", "编码 " + detailState.identifiers.length + " 个"));
-    if (detailState.current_stockout_only) {
+    if (detailState.current_stockout_only && !detailState.stockout_operating_status) {
       var roleNames = detailState.stockout_before_role_ids.map(function (id) { return STOCKOUT_ROLE_LABELS[String(id)] || String(id); });
       var roleScopeLabel = "断货中 · " + stockoutRolePeriodLabel(detailState.stockout_before_role_period || "30d") + "断货前角色";
       if (roleNames.length) roleScopeLabel += " · " + roleNames.join("、");
       chips.push(detailFilterChip("stockout_before_role_scope", "", roleScopeLabel));
+    }
+    if (detailState.stockout_operating_status) {
+      var operatingLabel = "断货中 · " + stockoutRolePeriodLabel(detailState.stockout_operating_status_period) + " · " + (STOCKOUT_OPERATING_STATUS_LABELS[detailState.stockout_operating_status] || detailState.stockout_operating_status);
+      if (detailState.stockout_insufficient_reason === "history_data_insufficient") operatingLabel += " · 历史数据不足";
+      chips.push(detailFilterChip("stockout_operating_status_scope", "", operatingLabel));
     }
     [
       ["problems", "问题", elements.labelHubDetailProblems],
@@ -1410,6 +1431,11 @@
       detailState.current_stockout_only = false;
       detailState.stockout_before_role_period = "";
       detailState.stockout_before_role_ids = [];
+    } else if (field === "stockout_operating_status_scope") {
+      detailState.current_stockout_only = false;
+      detailState.stockout_operating_status_period = "";
+      detailState.stockout_operating_status = "";
+      detailState.stockout_insufficient_reason = "";
     } else if (field === "detail_conditions") {
       detailState.detail_conditions = serializeDetailConditions(detailConditionValues().filter(function (item) { return item !== value; }));
     } else if (Array.isArray(detailState[field])) {
@@ -2358,7 +2384,8 @@
         var detailButton = hasBreakdown
           ? '<button type="button" class="label-hub-stockout-status-breakdown-toggle" data-stockout-operating-status-breakdown aria-expanded="' + stockoutOperatingStatusState.breakdownOpen + '" aria-controls="labelHubStockoutStatusBreakdown">' + (stockoutOperatingStatusState.breakdownOpen ? "收起明细" : "明细") + '</button>'
           : "";
-        return '<div class="label-hub-stockout-role-row status-' + app.escapeHtml(status.code || "unknown") + (hasBreakdown ? " has-breakdown" : "") + '"><span><b>' + app.escapeHtml(status.label || status.code || "-") + '</b><small>占本组 ' + formatPercent(share) + '</small></span><i><em style="width:' + (share * 100).toFixed(1) + '%"></em></i><strong>' + formatNumber(status.business_unit_count) + '<small> 条</small></strong>' + detailButton + '</div>';
+        var active = detailState.stockout_operating_status === status.code && detailState.stockout_operating_status_period === stockoutOperatingStatusState.period;
+        return '<div class="label-hub-stockout-status-row-wrap' + (hasBreakdown ? " has-breakdown" : "") + '"><button type="button" class="label-hub-stockout-role-row status-' + app.escapeHtml(status.code || "unknown") + (active ? " active" : "") + '" data-stockout-operating-status-code="' + app.escapeHtml(status.code || "") + '" aria-label="筛选下方经营明细：' + app.escapeHtml(status.label || status.code || "") + '"><span><b>' + app.escapeHtml(status.label || status.code || "-") + '</b><small>占本组 ' + formatPercent(share) + '</small></span><i><em style="width:' + (share * 100).toFixed(1) + '%"></em></i><strong>' + formatNumber(status.business_unit_count) + '<small> 条</small></strong></button>' + detailButton + '</div>';
       }).join("");
     }
     var statuses = payload.statuses || [];
@@ -2368,7 +2395,8 @@
     var breakdownDetails = stockoutOperatingStatusState.breakdownOpen && breakdown.length
       ? '<div id="labelHubStockoutStatusBreakdown" class="label-hub-stockout-status-breakdown"><b>断货前依据不足细分</b><div class="label-hub-stockout-role-list">' + breakdown.map(function (item) {
         var share = Math.max(0, Math.min(1, Number(item.share || 0)));
-        return '<div class="label-hub-stockout-role-row status-history-data-insufficient"><span><b>' + app.escapeHtml(item.label || "历史数据不足") + '</b><small>占依据不足 ' + formatPercent(share) + '</small></span><i><em style="width:' + (share * 100).toFixed(1) + '%"></em></i><strong>' + formatNumber(item.count || 0) + '<small> 条</small></strong></div>';
+        var active = detailState.stockout_insufficient_reason === item.code && detailState.stockout_operating_status_period === stockoutOperatingStatusState.period;
+        return '<button type="button" class="label-hub-stockout-role-row status-history-data-insufficient' + (active ? " active" : "") + '" data-stockout-insufficient-reason="' + app.escapeHtml(item.code || "") + '" aria-label="筛选下方经营明细：' + app.escapeHtml(item.label || "历史数据不足") + '"><span><b>' + app.escapeHtml(item.label || "历史数据不足") + '</b><small>占依据不足 ' + formatPercent(share) + '</small></span><i><em style="width:' + (share * 100).toFixed(1) + '%"></em></i><strong>' + formatNumber(item.count || 0) + '<small> 条</small></strong></button>';
       }).join("") + '</div></div>'
       : "";
     var groups = '<section class="label-hub-stockout-status-group not-evaluable"><header><b>暂不评价经营表现</b><span>' + formatNumber(coverage.non_evaluable_count || 0) + ' 条 · 占全部 ' + formatPercent(coverage.non_evaluable_rate || 0) + '</span></header><div class="label-hub-stockout-role-list">' + renderRows(notEvaluableRows) + '</div>' + breakdownDetails + '</section>' +
@@ -2432,6 +2460,31 @@
     stockoutOperatingStatusState.payload = null;
     stockoutOperatingStatusState.requestKey = "";
     if (lastPayload) renderCategoryDetail(lastPayload);
+    if (detailState.stockout_operating_status) {
+      detailState.stockout_operating_status_period = stockoutOperatingStatusState.period;
+      detailState.page = 1;
+      renderDetailActiveFilters();
+      renderDetails();
+    }
+  }
+
+  function openStockoutOperatingStatusDetails(statusCode, reasonCode) {
+    if (!statusCode) return;
+    detailState.detail_view = "business_unit";
+    detailState.identifiers = []; detailState.country_categories = []; detailState.stores = []; detailState.countries = [];
+    detailState.detail_conditions = ""; detailState.sales_roles = []; detailState.role_reason_ids = [];
+    detailState.daily_sales_bands = []; detailState.margin_bands = []; detailState.ranking_bands = []; detailState.problems = [];
+    detailState.problem_mode = "any";
+    detailState.current_stockout_only = true;
+    detailState.stockout_before_role_period = "";
+    detailState.stockout_before_role_ids = [];
+    detailState.stockout_operating_status_period = stockoutOperatingStatusState.period;
+    detailState.stockout_operating_status = statusCode;
+    detailState.stockout_insufficient_reason = reasonCode || "";
+    detailState.page = 1;
+    populateControls();
+    renderDetails();
+    document.getElementById("labelHubDetailSection").scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function openStockoutRoleDetails(roleId) {
@@ -2443,6 +2496,9 @@
     detailState.current_stockout_only = true;
     detailState.stockout_before_role_period = stockoutRoleState.period;
     detailState.stockout_before_role_ids = roleId ? [Number(roleId)] : [];
+    detailState.stockout_operating_status_period = "";
+    detailState.stockout_operating_status = "";
+    detailState.stockout_insufficient_reason = "";
     detailState.page = 1;
     populateControls();
     renderDetails();

@@ -316,6 +316,35 @@ class LabelHubDetailDataTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "必须指定周期"):
             service.get_details(stockout_before_role_ids=[2001])
 
+    def test_stockout_operating_status_filter_is_applied_by_the_business_provider(self):
+        def provider(**kwargs):
+            if (
+                kwargs.get("stockout_operating_status_period") == "30d"
+                and kwargs.get("stockout_operating_status") == "pre_oos_evidence_insufficient"
+                and kwargs.get("stockout_insufficient_reason") == "history_data_insufficient"
+            ):
+                return [ROWS[0]]
+            return ROWS
+
+        service = LabelHubDetailDataService(provider)
+
+        payload = service.get_details(
+            stockout_operating_status_period="30d",
+            stockout_operating_status="pre_oos_evidence_insufficient",
+            stockout_insufficient_reason="history_data_insufficient",
+        )
+
+        self.assertEqual(["MSKU-1"], [row["msku"] for row in payload["rows"]])
+        self.assertEqual("30d", payload["applied_filters"]["stockout_operating_status_period"])
+        self.assertEqual(
+            "pre_oos_evidence_insufficient",
+            payload["applied_filters"]["stockout_operating_status"],
+        )
+        self.assertEqual(
+            "history_data_insufficient",
+            payload["applied_filters"]["stockout_insufficient_reason"],
+        )
+
     def test_counts_precede_pagination_unique_msku_is_deduplicated_and_missing_sorts_last(self):
         rows = [
             {"country_category": "X", "store": f"S{i}", "msku": "A" if i < 2 else f"M{i}", "sales_amount": None if i == 0 else i}

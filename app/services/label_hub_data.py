@@ -597,6 +597,7 @@ class LabelHubDataService:
         *,
         facts: list[dict[str, Any]],
         role_period: str,
+        include_members: bool = False,
     ) -> dict[str, Any]:
         if role_period not in STOCKOUT_BEFORE_ROLE_PERIODS:
             raise ValueError("断货经营状态周期不存在")
@@ -740,7 +741,7 @@ class LabelHubDataService:
             "not_evaluable": non_evaluable_count,
         }
         insufficient_count = len(status_keys["pre_oos_evidence_insufficient"])
-        return {
+        payload = {
             "role_period": role_period,
             "available_periods": list(STOCKOUT_BEFORE_ROLE_PERIODS),
             "scope": {"business_unit_count": total, "unique_msku_count": len({key[2] for key in stockout_by_key})},
@@ -799,6 +800,10 @@ class LabelHubDataService:
                 "non_evaluable_rate": round(non_evaluable_count / total, 4) if total else 0,
             },
         }
+        if include_members:
+            payload["_status_members"] = status_keys
+            payload["_insufficient_reason_members"] = insufficient_reason_keys
+        return payload
 
     def get_stockout_before_role_evidence(
         self,
@@ -1833,6 +1838,43 @@ class LabelHubDataService:
         ]
         return {"data_date": data_date, **self.build_stockout_operating_status_summary(facts=facts, role_period=role_period)}
 
+    def get_stockout_operating_status_members(self, **filters: Any) -> set[tuple[str, str, str]]:
+        meta = self.get_meta()
+        data_date = str(filters.get("data_date") or meta["default_data_date"])
+        role_period = str(filters.get("role_period") or "30d").lower()
+        status_code = str(filters.get("status_code") or "")
+        reason_code = str(filters.get("reason_code") or "")
+        valid_status_codes = {code for code, _, _ in STOCKOUT_OPERATING_STATUS_DEFINITIONS}
+        if status_code not in valid_status_codes:
+            raise ValueError("断货经营状态不存在")
+        if reason_code and (
+            status_code != "pre_oos_evidence_insufficient"
+            or reason_code != "history_data_insufficient"
+        ):
+            raise ValueError("断货前依据不足细分不存在")
+
+        country_category = str(filters.get("country_category") or "all")
+        store = str(filters.get("store") or "all")
+        keyword = str(filters.get("keyword") or "").strip().casefold()
+        facts = [
+            fact for fact in self._fetch_stockout_operating_status_facts(data_date)
+            if (country_category == "all" or str(fact.get("country_category") or "") == country_category)
+            and (store == "all" or str(fact.get("store") or "") == store)
+            and (
+                not keyword
+                or keyword in str(fact.get("msku") or "").casefold()
+                or keyword in str(fact.get("store") or "").casefold()
+            )
+        ]
+        payload = self.build_stockout_operating_status_summary(
+            facts=facts,
+            role_period=role_period,
+            include_members=True,
+        )
+        if reason_code == "history_data_insufficient":
+            return set(payload["_insufficient_reason_members"]["history_coverage_insufficient"])
+        return set(payload["_status_members"][status_code])
+
     def get_diagnostic_base_rows(self, **filters: Any) -> list[dict[str, Any]]:
         meta = self.get_meta()
         data_date = str(filters.get("data_date") or meta["default_data_date"])
@@ -1852,8 +1894,21 @@ class LabelHubDataService:
         """Return globally scoped business rows for the dedicated detail service."""
         payload = self.get_payload(**filters, _include_internal=True)
         metric_status = str(payload.get("scope", {}).get("local_metrics_status") or "unknown")
+        rows = payload.pop("_comparison_rows", [])
+        operating_status = str(filters.get("stockout_operating_status") or "")
+        if operating_status:
+            members = self.get_stockout_operating_status_members(
+                data_date=filters.get("data_date", ""),
+                role_period=filters.get("stockout_operating_status_period", ""),
+                status_code=operating_status,
+                reason_code=filters.get("stockout_insufficient_reason", ""),
+                country_category=filters.get("country_category", "all"),
+                store=filters.get("store", "all"),
+                keyword=filters.get("keyword", ""),
+            )
+            rows = [row for row in rows if _business_unit_key(row) in members]
         return {
-            "rows": [_public_business_row(row) for row in payload.pop("_comparison_rows", [])],
+            "rows": [_public_business_row(row) for row in rows],
             "metric_status": metric_status,
             "warnings": [] if metric_status == "available" else ["本地经营指标暂不完整"],
         }

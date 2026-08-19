@@ -196,6 +196,9 @@ class LabelHubDetailRequest(BaseModel):
     current_stockout_only: bool = False
     stockout_before_role_period: str = ""
     stockout_before_role_ids: list[int] = Field(default_factory=list)
+    stockout_operating_status_period: str = ""
+    stockout_operating_status: str = ""
+    stockout_insufficient_reason: str = ""
     daily_sales_bands: list[str] = Field(default_factory=list)
     margin_bands: list[str] = Field(default_factory=list)
     ranking_bands: list[str] = Field(default_factory=list)
