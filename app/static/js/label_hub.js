@@ -2424,7 +2424,7 @@
     var content = elements.labelHubCategoryDetail.querySelector("[data-stockout-operating-status-content]");
     if (!content || !stockoutOperatingStatusState.payload) return;
     var payload = stockoutOperatingStatusState.payload;
-    var isCountryScope = stockoutOperatingStatusState.scope === "country";
+    var isCountryScope = payload.scope_mode === "country";
     var total = Number(isCountryScope ? (payload.scope || {}).country_record_count : (payload.scope || {}).business_unit_count || 0);
     var countUnit = isCountryScope ? " 国家记录" : " 条";
     var coverage = payload.coverage || {};
@@ -2453,7 +2453,7 @@
               return '<button type="button" class="label-hub-stockout-role-row' + (trendActive ? " active" : "") + '" data-stockout-operating-trend="' + app.escapeHtml(trend.code) + '" data-stockout-operating-status="' + app.escapeHtml(status.code) + '"><span><b>' + app.escapeHtml(trend.label) + '</b><small>占当前角色 ' + formatPercent(trend.share || 0) + '</small></span><strong>' + formatNumber(trend.count || 0) + '<small>' + countUnit + '</small></strong></button>';
             }).join("") + '</div>'
           : "";
-        return '<div class="label-hub-stockout-status-row-wrap' + (hasBreakdown ? " has-breakdown" : "") + '"><button type="button" class="label-hub-stockout-role-row status-' + app.escapeHtml(status.code || "unknown") + (active ? " active" : "") + '" data-stockout-operating-status-code="' + app.escapeHtml(status.code || "") + '" aria-label="筛选下方经营明细：' + app.escapeHtml(status.label || status.code || "") + '"><span><b>' + app.escapeHtml(status.label || status.code || "-") + '</b><small>占本组 ' + formatPercent(share) + '</small></span><i><em style="width:' + (share * 100).toFixed(1) + '%"></em></i><strong>' + formatNumber(status.business_unit_count) + '<small>' + countUnit + '</small></strong></button>' + trendButton + detailButton + trendDetails + '</div>';
+        return '<div class="label-hub-stockout-status-row-wrap' + (hasBreakdown ? " has-breakdown" : "") + '"><button type="button" class="label-hub-stockout-role-row status-' + app.escapeHtml(status.code || "unknown") + (active ? " active" : "") + '" data-stockout-operating-status-code="' + app.escapeHtml(status.code || "") + '" aria-label="筛选下方经营明细：' + app.escapeHtml(status.label || status.code || "") + '"><span><b>' + app.escapeHtml(status.label || status.code || "-") + '</b><small>占本组 ' + formatPercent(share) + '</small></span><i><em style="width:' + (share * 100).toFixed(1) + '%"></em></i><strong>' + formatNumber(status.record_count || status.business_unit_count) + '<small>' + countUnit + '</small></strong></button>' + trendButton + detailButton + trendDetails + '</div>';
       }).join("");
     }
     var statuses = payload.statuses || [];
@@ -2466,6 +2466,7 @@
       code: "problem",
       label: "问题产品",
       group: "evaluable",
+      record_count: problemCount,
       business_unit_count: problemCount,
       group_share: evaluableCount ? problemCount / evaluableCount : 0
     };
@@ -2517,6 +2518,7 @@
       return;
     }
     var token = ++stockoutOperatingStatusState.requestToken;
+    var requestedScope = stockoutOperatingStatusState.scope;
     stockoutOperatingStatusState.requestKey = key;
     app.apiGet("/api/label-hub/stockout-operating-status", {
       data_date: state.data_date,
@@ -2527,6 +2529,10 @@
       keyword: state.keyword
     }).then(function (payload) {
       if (token !== stockoutOperatingStatusState.requestToken || !stockoutOperatingStatusState.open) return;
+      if (payload.scope_mode !== requestedScope) {
+        renderStockoutOperatingStatusPanelError(new Error("经营状态返回维度与当前选择不一致"));
+        return;
+      }
       stockoutOperatingStatusState.payload = payload;
       renderStockoutOperatingStatusPanelContent();
     }).catch(function (error) {
@@ -2576,14 +2582,20 @@
     stockoutOperatingStatusState.breakdownOpen = false;
     stockoutOperatingStatusState.problemBreakdownOpen = false;
     stockoutOperatingStatusState.expandedTrendStatus = "";
+    stockoutOperatingStatusState.requestToken += 1;
     stockoutOperatingStatusState.payload = null;
     stockoutOperatingStatusState.requestKey = "";
     detailState.stockout_operating_status_period = "";
     detailState.stockout_operating_status = "";
     detailState.stockout_insufficient_reason = "";
-    detailState.stockout_operating_scope = "";
+    detailState.detail_view = scope === "country" ? "country" : "business_unit";
+    detailState.current_stockout_only = true;
+    detailState.stockout_operating_scope = scope;
     detailState.stockout_operating_trend = "";
+    detailState.page = 1;
+    populateControls();
     if (lastPayload) renderCategoryDetail(lastPayload);
+    renderDetails();
   }
 
   function toggleStockoutOperatingTrend(statusCode) {

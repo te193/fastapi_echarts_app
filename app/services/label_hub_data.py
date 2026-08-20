@@ -1026,6 +1026,7 @@ class LabelHubDataService:
                     "code": code,
                     "label": label,
                     "group": group,
+                    "record_count": len(status_keys[code]),
                     "business_unit_count": len(status_keys[code]),
                     "share": round(len(status_keys[code]) / total, 4) if total else 0,
                     "group_share": round(len(status_keys[code]) / group_totals[group], 4)

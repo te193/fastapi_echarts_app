@@ -976,6 +976,7 @@ class LabelHubDataTests(unittest.TestCase):
         self.assertEqual(1, counts["star"])
         self.assertEqual(1, counts["pre_oos_evidence_insufficient"])
         self.assertEqual(0.5, payload["coverage"]["role_evidence_rate"])
+        self.assertTrue(all(item["record_count"] == item["business_unit_count"] for item in payload["statuses"]))
 
     def test_public_business_row_exposes_msku_stockout_before_role(self):
         public = _public_business_row({
