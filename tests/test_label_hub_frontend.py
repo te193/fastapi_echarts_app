@@ -181,6 +181,27 @@ def test_stockout_operating_status_has_scope_switch_fixed_baseline_and_trend_dri
     assert ".label-hub-stockout-status-trends" in styles
 
 
+def test_stockout_operating_scope_switch_uses_country_payload_and_country_details():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+    scope_block = script.split("function selectStockoutOperatingStatusScope(scope)", 1)[1].split(
+        "function toggleStockoutOperatingTrend", 1
+    )[0]
+    load_block = script.split("function loadStockoutOperatingStatus()", 1)[1].split(
+        "function toggleStockoutOperatingStatusPanel", 1
+    )[0]
+
+    assert "stockoutOperatingStatusState.requestToken += 1;" in scope_block
+    assert 'detailState.detail_view = scope === "country" ? "country" : "business_unit";' in scope_block
+    assert "detailState.current_stockout_only = true;" in scope_block
+    assert "detailState.stockout_operating_scope = scope;" in scope_block
+    assert "renderDetails();" in scope_block
+    assert "var requestedScope = stockoutOperatingStatusState.scope;" in load_block
+    assert "payload.scope_mode !== requestedScope" in load_block
+    assert 'new Error("经营状态返回维度与当前选择不一致")' in load_block
+    assert 'var isCountryScope = payload.scope_mode === "country";' in script
+    assert "status.record_count || status.business_unit_count" in script
+
+
 def test_country_detail_uses_country_scoped_stockout_role_evidence():
     template = (ROOT / "app" / "templates" / "label_hub.html").read_text(encoding="utf-8")
     script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
@@ -193,7 +214,7 @@ def test_country_detail_uses_country_scoped_stockout_role_evidence():
     assert 'row.stockout_before_role' in script
     assert 'class="label-hub-stockout-country-role"' in script
     assert ".label-hub-stockout-country-role" in styles
-    assert "js/label_hub.js') }}?v=20260820stockoutbaseline1" in template
+    assert "js/label_hub.js') }}?v=20260820stockoutbaseline2" in template
 
 
 def test_stockout_evidence_summary_keeps_long_calculation_mode_inside_its_cell():
@@ -231,7 +252,7 @@ def test_stockout_evidence_shows_only_start_date_and_elapsed_days():
     assert summary_rule is not None
     assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in summary_rule.group("body")
     assert "css/styles.css') }}?v=20260820stockoutbaseline1" in template
-    assert "js/label_hub.js') }}?v=20260820stockoutbaseline1" in template
+    assert "js/label_hub.js') }}?v=20260820stockoutbaseline2" in template
 
 
 def test_label_hub_detail_workbench_uses_independent_post_flow_and_dual_views():
@@ -284,7 +305,7 @@ def test_label_hub_detail_export_uses_current_filters_and_downloads_csv_blob():
     assert "URL.revokeObjectURL" in script
     assert "function setDetailExportLoading(isLoading)" in script
     assert 'elements.labelHubDetailExport.textContent = isLoading ? "导出中…" : "导出 CSV";' in script
-    assert "js/label_hub.js') }}?v=20260820stockoutbaseline1" in template
+    assert "js/label_hub.js') }}?v=20260820stockoutbaseline2" in template
 
 
 def test_detail_role_reason_filter_replaces_sales_trend_and_follows_detail_scope():
@@ -1033,7 +1054,7 @@ def test_current_category_detail_uses_period_scoped_distribution():
     assert "distributionById" in script
     assert 'cache: "no-store"' in common
     assert "js/common.js') }}?v=20260818labeltimeout1" in base
-    assert "js/label_hub.js') }}?v=20260820stockoutbaseline1" in template
+    assert "js/label_hub.js') }}?v=20260820stockoutbaseline2" in template
 
 
 def test_country_detail_overview_matches_label_hub_information_structure():
