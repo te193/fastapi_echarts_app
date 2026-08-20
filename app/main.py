@@ -199,6 +199,8 @@ class LabelHubDetailRequest(BaseModel):
     stockout_operating_status_period: str = ""
     stockout_operating_status: str = ""
     stockout_insufficient_reason: str = ""
+    stockout_operating_scope: Literal["", "business_unit", "country"] = ""
+    stockout_operating_trend: str = ""
     daily_sales_bands: list[str] = Field(default_factory=list)
     margin_bands: list[str] = Field(default_factory=list)
     ranking_bands: list[str] = Field(default_factory=list)
@@ -539,6 +541,7 @@ def api_label_hub_stockout_before_roles(
 def api_label_hub_stockout_operating_status(
     data_date: str = "",
     role_period: str = "30d",
+    scope: Literal["business_unit", "country"] = "business_unit",
     country_category: str = "all",
     store: str = "all",
     keyword: str = "",
@@ -547,6 +550,7 @@ def api_label_hub_stockout_operating_status(
         return label_hub_service.get_stockout_operating_status_summary(
             data_date=data_date,
             role_period=role_period,
+            scope=scope,
             country_category=country_category,
             store=store,
             keyword=keyword,

@@ -4,7 +4,7 @@ import json
 import math
 import threading
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Callable
 from urllib.parse import urlencode
 
@@ -67,6 +67,25 @@ STOCKOUT_EVIDENCE_REASON_LABELS = {
     "history_coverage_insufficient": "断货前历史覆盖不足",
     "calculation_abnormal": "断货前角色计算状态异常",
     "role_evidence_conflict": "断货前角色与指标冲突",
+}
+STOCKOUT_OPERATING_TREND_LABELS = {
+    "stable": "断货前稳定",
+    "accelerating": "断货前加速",
+    "slowing": "断货前减速",
+    "recent_start": "断货前启动",
+    "stopped": "断货前临停",
+    "volatile": "断货前波动",
+    "unavailable": "趋势暂不可判",
+}
+STOCKOUT_ROLE_LEVELS = {
+    2004: 0,
+    2104: 0,
+    2003: 1,
+    2103: 1,
+    2002: 2,
+    2102: 2,
+    2001: 3,
+    2101: 3,
 }
 COUNTRY_STOCKOUT_BEFORE_ROLE_LABELS = {
     2101: "明星产品",
@@ -592,30 +611,235 @@ class LabelHubDataService:
             },
         }
 
+    def derive_stockout_operating_trend(
+        self,
+        period_evidence: dict[str, dict[str, Any]],
+        *,
+        baseline_role_id: int,
+    ) -> dict[str, Any]:
+        """Derive a pre-stockout trend from cumulative, stockout-anchored windows."""
+
+        def unavailable(*reasons: str) -> dict[str, Any]:
+            return {
+                "trend_code": "unavailable",
+                "trend_label": STOCKOUT_OPERATING_TREND_LABELS["unavailable"],
+                "trend_reason": reasons[0] if reasons else "required_evidence_missing",
+                "quality_reasons": list(dict.fromkeys(reasons or ("required_evidence_missing",))),
+                "long_term_consistency": "unavailable",
+                "baseline_metrics": {},
+                "interval_metrics": {},
+            }
+
+        def parse_period(period: str) -> tuple[dict[str, Any] | None, str | None]:
+            fact = period_evidence.get(period)
+            if not fact:
+                return None, "required_evidence_missing"
+            evidence = _evidence_object(fact.get("evidence_json"))
+            metrics = evidence.get("metrics") or {}
+            window = evidence.get("window") or {}
+            oos = evidence.get("oos") or {}
+            try:
+                days = int(period.removesuffix("d"))
+                window_days = int(window.get("days"))
+                window_start = date.fromisoformat(str(window.get("start") or ""))
+                window_end = date.fromisoformat(str(window.get("end") or ""))
+                oos_start = date.fromisoformat(str(oos.get("oos_start_date") or ""))
+            except (TypeError, ValueError):
+                return None, "window_evidence_incomplete"
+            qty = _number(metrics.get("period_sales_qty"))
+            if evidence.get("type") not in {"pre_oos_sales_role", "pre_oos_station_sales_role"} or qty is None or qty < 0:
+                return None, "period_metrics_invalid"
+            if (
+                str(fact.get("label_period") or window.get("period") or "") != period
+                or str(window.get("period") or "") != period
+                or window_days != days
+                or window_end != oos_start - timedelta(days=1)
+                or window_start != window_end - timedelta(days=days - 1)
+            ):
+                return None, "window_not_anchored_before_stockout"
+            return {
+                "qty": qty,
+                "role_id": int(fact.get("label_id") or 0),
+                "window_start": window_start.isoformat(),
+                "window_end": window_end.isoformat(),
+            }, None
+
+        parsed: dict[str, dict[str, Any]] = {}
+        errors: list[str] = []
+        for period in ("7d", "14d", "30d"):
+            item, error = parse_period(period)
+            if error:
+                errors.append(error)
+            elif item:
+                parsed[period] = item
+        if errors:
+            return unavailable(*errors)
+
+        q7 = parsed["7d"]["qty"]
+        q14 = parsed["14d"]["qty"]
+        q30 = parsed["30d"]["qty"]
+        if q7 > q14 or q14 > q30:
+            return unavailable("cumulative_metrics_non_monotonic")
+
+        last7 = q7 / 7
+        prior7 = (q14 - q7) / 7
+        last14 = q14 / 14
+        prior16 = (q30 - q14) / 16
+
+        def change(current: float, previous: float) -> float | None:
+            if previous == 0:
+                return None
+            return (current - previous) / previous
+
+        short_change = change(last7, prior7)
+        medium_change = change(last14, prior16)
+        interval_metrics = {
+            "last7_daily_sales": round(last7, 6),
+            "prior7_daily_sales": round(prior7, 6),
+            "last14_daily_sales": round(last14, 6),
+            "prior16_daily_sales": round(prior16, 6),
+            "last7_vs_prior7_change": round(short_change, 6) if short_change is not None else None,
+            "last14_vs_prior16_change": round(medium_change, 6) if medium_change is not None else None,
+        }
+
+        if q30 > 0 and q7 == 0:
+            trend_code = "stopped"
+            trend_reason = "last_7_days_zero_sales"
+        elif q7 > 0 and q14 - q7 == 0:
+            trend_code = "recent_start"
+            trend_reason = "sales_started_in_last_7_days"
+        elif (
+            short_change is not None
+            and medium_change is not None
+            and ((short_change >= 0.30 and medium_change <= -0.10)
+                 or (short_change <= -0.30 and medium_change >= 0.10))
+        ):
+            trend_code = "volatile"
+            trend_reason = "short_and_medium_signals_conflict"
+        else:
+            role7_level = STOCKOUT_ROLE_LEVELS.get(parsed["7d"]["role_id"])
+            baseline_level = STOCKOUT_ROLE_LEVELS.get(int(baseline_role_id or 0))
+            if (
+                short_change is not None
+                and medium_change is not None
+                and short_change >= 0.30
+                and medium_change >= 0.10
+                and role7_level is not None
+                and baseline_level is not None
+                and role7_level >= baseline_level
+            ):
+                trend_code = "accelerating"
+                trend_reason = "short_and_medium_sales_accelerated"
+            elif (
+                short_change is not None
+                and medium_change is not None
+                and short_change <= -0.30
+                and medium_change <= -0.10
+                and role7_level is not None
+                and baseline_level is not None
+                and role7_level <= baseline_level
+            ):
+                trend_code = "slowing"
+                trend_reason = "short_and_medium_sales_slowed"
+            else:
+                trend_code = "stable"
+                trend_reason = "no_material_directional_change"
+
+        long_term_consistency = "unavailable"
+        item90, error90 = parse_period("90d")
+        if not error90 and item90 and item90["qty"] >= q30:
+            baseline_level = STOCKOUT_ROLE_LEVELS.get(int(baseline_role_id or 0))
+            long_level = STOCKOUT_ROLE_LEVELS.get(item90["role_id"])
+            if baseline_level is not None and long_level is not None:
+                if baseline_level == long_level:
+                    long_term_consistency = "same"
+                elif baseline_level > long_level:
+                    long_term_consistency = "higher_than_long_term"
+                else:
+                    long_term_consistency = "lower_than_long_term"
+
+        return {
+            "trend_code": trend_code,
+            "trend_label": STOCKOUT_OPERATING_TREND_LABELS[trend_code],
+            "trend_reason": trend_reason,
+            "quality_reasons": [],
+            "long_term_consistency": long_term_consistency,
+            "baseline_metrics": {"period_sales_qty": q30, "daily_sales": round(q30 / 30, 6)},
+            "interval_metrics": interval_metrics,
+        }
+
     def build_stockout_operating_status_summary(
         self,
         *,
         facts: list[dict[str, Any]],
         role_period: str,
+        scope: str = "business_unit",
         include_members: bool = False,
     ) -> dict[str, Any]:
         if role_period not in STOCKOUT_BEFORE_ROLE_PERIODS:
             raise ValueError("断货经营状态周期不存在")
+        if scope not in {"business_unit", "country"}:
+            raise ValueError("断货经营状态维度不存在")
 
-        stockout_by_key = {
+        business_stockout_by_key = {
             _business_unit_key(fact): fact
             for fact in facts
             if int(fact.get("label_id") or 0) == CURRENT_STOCKOUT_CHILD_ID
             and str(fact.get("label_period") or "") == "current"
         }
+        role_ids = STOCKOUT_BEFORE_ROLE_IDS if scope == "business_unit" else COUNTRY_STOCKOUT_BEFORE_ROLE_IDS
+
+        def record_key(fact: dict[str, Any]) -> tuple[str, ...]:
+            if scope == "country":
+                return (
+                    str(fact.get("country_category") or ""),
+                    str(fact.get("country") or ""),
+                    str(fact.get("store") or ""),
+                    str(fact.get("msku") or ""),
+                )
+            return _business_unit_key(fact)
+
+        if scope == "country":
+            excluded_universe_ids = {
+                CURRENT_STOCKOUT_CHILD_ID,
+                *STOCKOUT_BEFORE_ROLE_IDS,
+                *COUNTRY_STOCKOUT_BEFORE_ROLE_IDS,
+            }
+            country_universe = {
+                record_key(fact)
+                for fact in facts
+                if str(fact.get("country") or "")
+                and int(fact.get("label_id") or 0) not in excluded_universe_ids
+                and _business_unit_key(fact) in business_stockout_by_key
+            }
+            stockout_by_key = {
+                key: business_stockout_by_key[(key[0], key[2], key[3])]
+                for key in country_universe
+            }
+        else:
+            stockout_by_key = business_stockout_by_key
+
+        role_facts_by_key_period: dict[tuple[str, ...], dict[str, list[dict[str, Any]]]] = defaultdict(
+            lambda: defaultdict(list)
+        )
+        for fact in facts:
+            if int(fact.get("label_id") or 0) not in role_ids:
+                continue
+            period = str(fact.get("label_period") or "")
+            if period in STOCKOUT_BEFORE_ROLE_PERIODS:
+                role_facts_by_key_period[record_key(fact)][period].append(fact)
         role_by_key = {
-            _business_unit_key(fact): fact
-            for fact in facts
-            if int(fact.get("label_id") or 0) in STOCKOUT_BEFORE_ROLE_IDS
-            and str(fact.get("label_period") or "") == role_period
+            key: by_period["30d"][0]
+            for key, by_period in role_facts_by_key_period.items()
+            if len(by_period.get("30d") or []) == 1
         }
         status_keys = {code: set() for code, _, _ in STOCKOUT_OPERATING_STATUS_DEFINITIONS}
         insufficient_reason_keys = {code: set() for code in STOCKOUT_EVIDENCE_REASON_LABELS}
+        problem_reason_keys: dict[str, set[tuple[str, ...]]] = {
+            "loss": set(),
+            "low_margin": set(),
+            "invalid_rank": set(),
+        }
         evaluable_codes = {
             "full_period_zero_sales",
             "star",
@@ -624,9 +848,10 @@ class LabelHubDataService:
             "loss_issue",
             "low_margin_issue",
         }
-        expected_days = int(role_period.removesuffix("d"))
+        expected_days = 30
+        trend_by_key: dict[tuple[str, str, str], dict[str, Any]] = {}
 
-        def mark_insufficient(key: tuple[str, str, str], reason: str) -> None:
+        def mark_insufficient(key: tuple[str, ...], reason: str) -> None:
             status_keys["pre_oos_evidence_insufficient"].add(key)
             insufficient_reason_keys[reason].add(key)
 
@@ -670,7 +895,7 @@ class LabelHubDataService:
             oos_start = parse_iso_date(oos.get("oos_start_date"))
             window_days = _number(window.get("days"))
             if (
-                evidence.get("type") != "pre_oos_sales_role"
+                evidence.get("type") not in {"pre_oos_sales_role", "pre_oos_station_sales_role"}
                 or daily_sales is None
                 or period_sales_qty is None
                 or window_start is None
@@ -681,7 +906,7 @@ class LabelHubDataService:
                 mark_insufficient(key, "role_evidence_incomplete")
                 continue
             if (
-                str(window.get("period") or "") != role_period
+                str(window.get("period") or "") != "30d"
                 or int(window_days) != expected_days
                 or window_start > window_end
                 or window_end >= oos_start
@@ -693,14 +918,15 @@ class LabelHubDataService:
 
             calculation_mode = str(calculation.get("mode") or "")
             if calculation_mode == "historical_backtrack":
-                if str(calculation.get("status") or "") != "matched":
+                is_station_evidence = evidence.get("type") == "pre_oos_station_sales_role"
+                if not is_station_evidence and str(calculation.get("status") or "") != "matched":
                     mark_insufficient(key, "calculation_abnormal")
                     continue
                 history_start = parse_iso_date(oos.get("history_start_date"))
-                if history_start is None:
+                if history_start is None and not is_station_evidence:
                     mark_insufficient(key, "role_evidence_incomplete")
                     continue
-                if history_start > window_start:
+                if history_start is not None and history_start > window_start and not is_station_evidence:
                     mark_insufficient(key, "history_coverage_insufficient")
                     continue
             elif calculation_mode == "copy_previous_day_sales_role":
@@ -715,12 +941,14 @@ class LabelHubDataService:
             role_id = int(role_fact.get("label_id") or 0)
             if period_sales_qty == 0:
                 status_code = "full_period_zero_sales"
-            elif role_id == 2001:
+            elif role_id in {2001, 2101}:
                 status_code = "star"
-            elif role_id == 2002:
+            elif role_id in {2002, 2102}:
                 status_code = "potential"
-            elif role_id == 2003:
+            elif role_id in {2003, 2103}:
                 status_code = "dog"
+            elif role_id == 2104:
+                status_code = "loss_issue" if margin_rate is not None and margin_rate < 0 else "low_margin_issue"
             elif margin_rate is None:
                 mark_insufficient(key, "role_evidence_incomplete")
                 continue
@@ -732,6 +960,35 @@ class LabelHubDataService:
                 mark_insufficient(key, "role_evidence_conflict")
                 continue
             status_keys[status_code].add(key)
+            if status_code == "loss_issue":
+                problem_reason_keys["loss"].add(key)
+            if status_code == "low_margin_issue" and margin_rate is not None and margin_rate <= 5:
+                problem_reason_keys["low_margin"].add(key)
+            if role_id == 2104:
+                small_rank = _number(metrics.get("small_rank"))
+                if small_rank is None or small_rank <= 0 or small_rank >= 99999:
+                    problem_reason_keys["invalid_rank"].add(key)
+            if status_code != "full_period_zero_sales":
+                period_facts = role_facts_by_key_period.get(key) or {}
+                if any(len(period_facts.get(period) or []) > 1 for period in STOCKOUT_BEFORE_ROLE_PERIODS):
+                    trend_by_key[key] = {
+                        "trend_code": "unavailable",
+                        "trend_label": STOCKOUT_OPERATING_TREND_LABELS["unavailable"],
+                        "trend_reason": "period_role_evidence_conflict",
+                        "quality_reasons": ["period_role_evidence_conflict"],
+                        "long_term_consistency": "unavailable",
+                        "baseline_metrics": {},
+                        "interval_metrics": {},
+                    }
+                else:
+                    trend_by_key[key] = self.derive_stockout_operating_trend(
+                        {
+                            period: period_items[0]
+                            for period, period_items in period_facts.items()
+                            if len(period_items) == 1
+                        },
+                        baseline_role_id=role_id,
+                    )
 
         total = len(stockout_by_key)
         evaluable_count = sum(len(status_keys[code]) for code in evaluable_codes)
@@ -743,8 +1000,23 @@ class LabelHubDataService:
         insufficient_count = len(status_keys["pre_oos_evidence_insufficient"])
         payload = {
             "role_period": role_period,
+            "evidence_period": role_period,
+            "baseline_period": "30d",
             "available_periods": list(STOCKOUT_BEFORE_ROLE_PERIODS),
-            "scope": {"business_unit_count": total, "unique_msku_count": len({key[2] for key in stockout_by_key})},
+            "scope_mode": scope,
+            "scope": (
+                {
+                    "country_record_count": total,
+                    "matched_business_unit_count": len({(key[0], key[2], key[3]) for key in stockout_by_key}),
+                    "unique_msku_count": len({key[3] for key in stockout_by_key}),
+                    "business_unit_count": total,
+                }
+                if scope == "country"
+                else {
+                    "business_unit_count": total,
+                    "unique_msku_count": len({key[2] for key in stockout_by_key}),
+                }
+            ),
             "supply": {
                 "low_supply_threshold": STOCKOUT_LOW_SUPPLY_THRESHOLD,
                 "threshold_operator": "<",
@@ -775,6 +1047,15 @@ class LabelHubDataService:
                 for code, label in STOCKOUT_EVIDENCE_REASON_LABELS.items()
                 if insufficient_reason_keys[code]
             ],
+            "problem_reason_summary": [
+                {
+                    "code": code,
+                    "label": {"loss": "亏损", "low_margin": "低毛利", "invalid_rank": "排名无效"}[code],
+                    "count": len(members),
+                }
+                for code, members in problem_reason_keys.items()
+                if members
+            ],
             "display_insufficient_breakdown": (
                 [
                     {
@@ -798,11 +1079,76 @@ class LabelHubDataService:
                 "evaluable_rate": round(evaluable_count / total, 4) if total else 0,
                 "non_evaluable_count": non_evaluable_count,
                 "non_evaluable_rate": round(non_evaluable_count / total, 4) if total else 0,
+                "role_evidence_rate": round(
+                    sum(1 for key in stockout_by_key if key in role_by_key) / total,
+                    4,
+                ) if total else 0,
             },
+            "trend_definitions": [
+                {"code": code, "label": label}
+                for code, label in STOCKOUT_OPERATING_TREND_LABELS.items()
+            ],
+            "trend_summary_by_status": {},
         }
+        trend_status_codes = ("star", "potential", "dog", "loss_issue", "low_margin_issue")
+        for status_code in trend_status_codes:
+            members = status_keys[status_code]
+            counts = {
+                trend_code: sum(
+                    1
+                    for key in members
+                    if (trend_by_key.get(key) or {}).get("trend_code") == trend_code
+                )
+                for trend_code in STOCKOUT_OPERATING_TREND_LABELS
+            }
+            payload["trend_summary_by_status"][status_code] = [
+                {
+                    "code": trend_code,
+                    "label": STOCKOUT_OPERATING_TREND_LABELS[trend_code],
+                    "count": count,
+                    "share": round(count / len(members), 4) if members else 0,
+                }
+                for trend_code, count in counts.items()
+                if count
+            ]
+        problem_members = status_keys["loss_issue"] | status_keys["low_margin_issue"]
+        payload["trend_summary_by_status"]["problem"] = [
+            {
+                "code": trend_code,
+                "label": STOCKOUT_OPERATING_TREND_LABELS[trend_code],
+                "count": count,
+                "share": round(count / len(problem_members), 4) if problem_members else 0,
+            }
+            for trend_code in STOCKOUT_OPERATING_TREND_LABELS
+            if (
+                count := sum(
+                    1
+                    for key in problem_members
+                    if (trend_by_key.get(key) or {}).get("trend_code") == trend_code
+                )
+            )
+        ]
         if include_members:
             payload["_status_members"] = status_keys
             payload["_insufficient_reason_members"] = insufficient_reason_keys
+            payload["_trend_members"] = {
+                (status_code, trend_code): {
+                    key
+                    for key in status_keys[status_code]
+                    if (trend_by_key.get(key) or {}).get("trend_code") == trend_code
+                }
+                for status_code in trend_status_codes
+                for trend_code in STOCKOUT_OPERATING_TREND_LABELS
+            }
+            payload["_trend_members"].update({
+                ("problem", trend_code): {
+                    key
+                    for key in problem_members
+                    if (trend_by_key.get(key) or {}).get("trend_code") == trend_code
+                }
+                for trend_code in STOCKOUT_OPERATING_TREND_LABELS
+            })
+            payload["_trend_by_key"] = trend_by_key
         return payload
 
     def get_stockout_before_role_evidence(
@@ -1655,20 +2001,31 @@ class LabelHubDataService:
                 with self._facts_load_lock:
                     self._facts_load_events.pop(data_date, None)
 
-    def _fetch_stockout_operating_status_facts(self, data_date: str) -> list[dict[str, Any]]:
-        relevant_ids = (CURRENT_STOCKOUT_CHILD_ID, *STOCKOUT_BEFORE_ROLE_IDS)
+    def _fetch_stockout_operating_status_facts(
+        self,
+        data_date: str,
+        scope: str = "business_unit",
+    ) -> list[dict[str, Any]]:
+        if scope not in {"business_unit", "country"}:
+            raise ValueError("断货经营状态维度不存在")
+        role_ids = STOCKOUT_BEFORE_ROLE_IDS if scope == "business_unit" else COUNTRY_STOCKOUT_BEFORE_ROLE_IDS
+        country_universe_clause = (
+            f"or label_id in (select sub_label_id from {LABEL_DETAIL_TABLE} where label_id in (4,7,13,14))"
+            if scope == "country"
+            else ""
+        )
         with self._source_connection() as conn, conn.cursor() as cursor:
             cursor.execute(
                 f"""
-                select data_date, country_category, store, msku, label_id, label_period,
+                select data_date, country, country_category, store, msku, label_id, label_period,
                        uncompress(evidence_blob) as evidence_json
                 from {LABEL_FACT_TABLE}
                 where data_date = %(data_date)s
                   and msku not like %(refund_prefix)s
-                  and label_id in ({','.join(str(item) for item in relevant_ids)})
                   and (
                     (label_id = {CURRENT_STOCKOUT_CHILD_ID} and label_period = 'current')
-                    or (label_id in ({','.join(str(item) for item in STOCKOUT_BEFORE_ROLE_IDS)}) and label_period in ({','.join(repr(item) for item in STOCKOUT_BEFORE_ROLE_PERIODS)}))
+                    or (label_id in ({','.join(str(item) for item in role_ids)}) and label_period in ({','.join(repr(item) for item in STOCKOUT_BEFORE_ROLE_PERIODS)}))
+                    {country_universe_clause}
                   )
                 """,
                 {"data_date": data_date, "refund_prefix": f"{REFUND_MSKU_PREFIX}%"},
@@ -1830,20 +2187,44 @@ class LabelHubDataService:
         country_category = str(filters.get("country_category") or "all")
         store = str(filters.get("store") or "all")
         keyword = str(filters.get("keyword") or "").strip().casefold()
+        scope = str(filters.get("scope") or "business_unit")
+        if scope not in {"business_unit", "country"}:
+            raise ValueError("断货经营状态维度不存在")
+        source_facts = (
+            self._fetch_stockout_operating_status_facts(data_date)
+            if scope == "business_unit"
+            else self._fetch_stockout_operating_status_facts(data_date, scope=scope)
+        )
         facts = [
-            fact for fact in self._fetch_stockout_operating_status_facts(data_date)
+            fact for fact in source_facts
             if (country_category == "all" or str(fact.get("country_category") or "") == country_category)
             and (store == "all" or str(fact.get("store") or "") == store)
-            and (not keyword or keyword in str(fact.get("msku") or "").casefold() or keyword in str(fact.get("store") or "").casefold())
+            and (
+                not keyword
+                or keyword in str(fact.get("msku") or "").casefold()
+                or keyword in str(fact.get("store") or "").casefold()
+                or keyword in str(fact.get("country") or "").casefold()
+            )
         ]
-        return {"data_date": data_date, **self.build_stockout_operating_status_summary(facts=facts, role_period=role_period)}
+        return {
+            "data_date": data_date,
+            **self.build_stockout_operating_status_summary(
+                facts=facts,
+                role_period=role_period,
+                scope=scope,
+            ),
+        }
 
-    def get_stockout_operating_status_members(self, **filters: Any) -> set[tuple[str, str, str]]:
+    def get_stockout_operating_status_members(self, **filters: Any) -> set[tuple[str, ...]]:
         meta = self.get_meta()
         data_date = str(filters.get("data_date") or meta["default_data_date"])
         role_period = str(filters.get("role_period") or "30d").lower()
         status_code = str(filters.get("status_code") or "")
         reason_code = str(filters.get("reason_code") or "")
+        trend_code = str(filters.get("trend_code") or "")
+        scope = str(filters.get("scope") or "business_unit")
+        if scope not in {"business_unit", "country"}:
+            raise ValueError("断货经营状态维度不存在")
         valid_status_codes = {code for code, _, _ in STOCKOUT_OPERATING_STATUS_DEFINITIONS} | {"problem"}
         if status_code not in valid_status_codes:
             raise ValueError("断货经营状态不存在")
@@ -1852,31 +2233,44 @@ class LabelHubDataService:
             or reason_code != "history_data_insufficient"
         ):
             raise ValueError("断货前依据不足细分不存在")
+        if trend_code and trend_code not in STOCKOUT_OPERATING_TREND_LABELS:
+            raise ValueError("断货前经营趋势不存在")
+        if trend_code and status_code in {
+            "low_inventory_edge", "pre_oos_evidence_insufficient", "full_period_zero_sales"
+        }:
+            raise ValueError("当前断货经营状态不支持趋势筛选")
 
         country_category = str(filters.get("country_category") or "all")
         store = str(filters.get("store") or "all")
         keyword = str(filters.get("keyword") or "").strip().casefold()
+        source_facts = (
+            self._fetch_stockout_operating_status_facts(data_date)
+            if scope == "business_unit"
+            else self._fetch_stockout_operating_status_facts(data_date, scope=scope)
+        )
         facts = [
-            fact for fact in self._fetch_stockout_operating_status_facts(data_date)
+            fact for fact in source_facts
             if (country_category == "all" or str(fact.get("country_category") or "") == country_category)
             and (store == "all" or str(fact.get("store") or "") == store)
             and (
                 not keyword
                 or keyword in str(fact.get("msku") or "").casefold()
                 or keyword in str(fact.get("store") or "").casefold()
+                or keyword in str(fact.get("country") or "").casefold()
             )
         ]
         payload = self.build_stockout_operating_status_summary(
             facts=facts,
             role_period=role_period,
+            scope=scope,
             include_members=True,
         )
         if reason_code == "history_data_insufficient":
             return set(payload["_insufficient_reason_members"]["history_coverage_insufficient"])
+        if trend_code:
+            return set(payload["_trend_members"][(status_code, trend_code)])
         if status_code == "problem":
-            return set(payload["_status_members"]["loss_issue"]) | set(
-                payload["_status_members"]["low_margin_issue"]
-            )
+            return set(payload["_status_members"]["loss_issue"]) | set(payload["_status_members"]["low_margin_issue"])
         return set(payload["_status_members"][status_code])
 
     def get_diagnostic_base_rows(self, **filters: Any) -> list[dict[str, Any]]:
@@ -1906,11 +2300,17 @@ class LabelHubDataService:
                 role_period=filters.get("stockout_operating_status_period", ""),
                 status_code=operating_status,
                 reason_code=filters.get("stockout_insufficient_reason", ""),
+                trend_code=filters.get("stockout_operating_trend", ""),
+                scope="business_unit",
                 country_category=filters.get("country_category", "all"),
                 store=filters.get("store", "all"),
                 keyword=filters.get("keyword", ""),
             )
             rows = [row for row in rows if _business_unit_key(row) in members]
+            for row in rows:
+                row["stockout_operating_baseline_status"] = operating_status
+                row["stockout_operating_baseline_period"] = "30d"
+                row["stockout_operating_trend"] = str(filters.get("stockout_operating_trend") or "")
         return {
             "rows": [_public_business_row(row) for row in rows],
             "metric_status": metric_status,

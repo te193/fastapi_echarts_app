@@ -44,6 +44,9 @@ STOCKOUT_OPERATING_STATUS_CODES = {
     "star", "potential", "dog", "problem", "loss_issue", "low_margin_issue",
 }
 STOCKOUT_INSUFFICIENT_REASON_CODES = {"history_data_insufficient"}
+STOCKOUT_OPERATING_TREND_CODES = {
+    "stable", "accelerating", "slowing", "recent_start", "stopped", "volatile", "unavailable",
+}
 COUNTRY_STOCKOUT_BEFORE_ROLE_LABELS = {
     2101: "明星产品",
     2102: "潜力产品",
@@ -121,12 +124,14 @@ class LabelHubDetailDataService:
         country_row_provider: Callable[..., list[dict[str, Any]] | dict[str, Any]] | None = None,
         country_summary_provider: Callable[..., Mapping[str, Any]] | None = None,
         country_stockout_role_provider: Callable[..., list[dict[str, Any]]] | None = None,
+        stockout_operating_member_provider: Callable[..., set[tuple[str, ...]]] | None = None,
     ) -> None:
         self._business_row_provider = business_row_provider
         self._identifier_alias_provider = identifier_alias_provider or {}
         self._country_row_provider = country_row_provider
         self._country_summary_provider = country_summary_provider
         self._country_stockout_role_provider = country_stockout_role_provider
+        self._stockout_operating_member_provider = stockout_operating_member_provider
         self._business_rows_cache: OrderedDict[tuple[Any, ...], tuple[float, Any]] = OrderedDict()
         self._country_rows_cache: OrderedDict[tuple[Any, ...], tuple[float, Any]] = OrderedDict()
         self._business_rows_cache_lock = RLock()
@@ -248,6 +253,14 @@ class LabelHubDetailDataService:
         stockout_operating_status_period = str(filters.get("stockout_operating_status_period") or "")
         stockout_operating_status = str(filters.get("stockout_operating_status") or "")
         stockout_insufficient_reason = str(filters.get("stockout_insufficient_reason") or "")
+        stockout_operating_trend = str(filters.get("stockout_operating_trend") or "")
+        stockout_operating_scope = str(filters.get("stockout_operating_scope") or detail_view)
+        if stockout_operating_scope == "business_unit":
+            expected_operating_view = "business_unit"
+        elif stockout_operating_scope == "country":
+            expected_operating_view = "country"
+        else:
+            raise ValueError("断货经营状态维度不存在")
         if stockout_operating_status_period and stockout_operating_status_period not in STOCKOUT_BEFORE_ROLE_PERIODS:
             raise ValueError("断货经营状态周期不存在")
         if stockout_operating_status and stockout_operating_status not in STOCKOUT_OPERATING_STATUS_CODES:
@@ -258,8 +271,12 @@ class LabelHubDetailDataService:
             raise ValueError("断货前依据不足细分不存在")
         if stockout_insufficient_reason and stockout_operating_status != "pre_oos_evidence_insufficient":
             raise ValueError("断货前依据不足细分必须搭配断货前依据不足状态")
-        if stockout_operating_status and detail_view != "business_unit":
-            raise ValueError("断货经营状态筛选仅支持店铺商品记录明细")
+        if stockout_operating_trend not in STOCKOUT_OPERATING_TREND_CODES | {""}:
+            raise ValueError("断货前经营趋势不存在")
+        if stockout_operating_trend and not stockout_operating_status:
+            raise ValueError("断货前经营趋势必须搭配经营状态")
+        if stockout_operating_status and detail_view != expected_operating_view:
+            raise ValueError("断货经营状态筛选与当前明细维度不匹配")
         current_stockout_only = bool(filters.get("current_stockout_only"))
         global_conditions = self._condition_parser(str(filters.get("conditions") or ""))
         detail_conditions = self._condition_parser(str(filters.get("detail_conditions") or ""))
@@ -288,9 +305,11 @@ class LabelHubDetailDataService:
             label_period=filters.get("label_period", "all"),
             analysis_parent_ids="|".join(map(str, analysis_parent_ids)),
             analysis_periods="|".join(map(str, analysis_periods)),
-            stockout_operating_status_period=stockout_operating_status_period,
-            stockout_operating_status=stockout_operating_status,
-            stockout_insufficient_reason=stockout_insufficient_reason,
+            stockout_operating_status_period=(stockout_operating_status_period if detail_view == "business_unit" else ""),
+            stockout_operating_status=(stockout_operating_status if detail_view == "business_unit" else ""),
+            stockout_insufficient_reason=(stockout_insufficient_reason if detail_view == "business_unit" else ""),
+            stockout_operating_trend=(stockout_operating_trend if detail_view == "business_unit" else ""),
+            stockout_operating_scope=(stockout_operating_scope if detail_view == "business_unit" else ""),
         )
         provider_result = self._business_rows(provider_kwargs)
         if isinstance(provider_result, Mapping):
@@ -408,6 +427,38 @@ class LabelHubDetailDataService:
                             str(row.get("country") or ""),
                         )
                         row["country_stockout_before_roles"] = roles_by_country.get(country_key, [])
+                if stockout_operating_status:
+                    if self._stockout_operating_member_provider is None:
+                        raise ValueError("国家断货经营状态筛选暂不可用")
+                    country_members = self._stockout_operating_member_provider(
+                        data_date=str(filters.get("data_date") or ""),
+                        role_period=stockout_operating_status_period,
+                        scope="country",
+                        status_code=stockout_operating_status,
+                        reason_code=stockout_insufficient_reason,
+                        trend_code=stockout_operating_trend,
+                        country_category=str(filters.get("country_category") or "all"),
+                        store=str(filters.get("store") or "all"),
+                        keyword=str(filters.get("keyword") or ""),
+                    )
+                    normalized_country_members = {
+                        (key[0], key[1], key[2], str(key[3]).casefold())
+                        for key in country_members
+                    }
+                    country_rows = [
+                        row
+                        for row in country_rows
+                        if (
+                            str(row.get("country_category") or ""),
+                            str(row.get("country") or ""),
+                            str(row.get("store") or ""),
+                            str(row.get("msku") or "").casefold(),
+                        ) in normalized_country_members
+                    ]
+                    for row in country_rows:
+                        row["stockout_operating_baseline_status"] = stockout_operating_status
+                        row["stockout_operating_baseline_period"] = "30d"
+                        row["stockout_operating_trend"] = stockout_operating_trend
                 rows = country_rows
                 metric_status = country_metric_status
                 warnings = country_warnings
@@ -586,6 +637,8 @@ class LabelHubDetailDataService:
             ("stockout_operating_status_period", ""),
             ("stockout_operating_status", ""),
             ("stockout_insufficient_reason", ""),
+            ("stockout_operating_scope", ""),
+            ("stockout_operating_trend", ""),
             ("detail_conditions", ""), ("problem_mode", "any"),
         )}
         applied.update({
@@ -605,6 +658,8 @@ class LabelHubDetailDataService:
             "stockout_operating_status_period": stockout_operating_status_period,
             "stockout_operating_status": stockout_operating_status,
             "stockout_insufficient_reason": stockout_insufficient_reason,
+            "stockout_operating_scope": stockout_operating_scope,
+            "stockout_operating_trend": stockout_operating_trend,
         })
         return {
             "rows": rows, "counts": counts,
@@ -634,4 +689,5 @@ label_hub_detail_service = LabelHubDetailDataService(
         parent_id=21,
         **kwargs,
     ),
+    stockout_operating_member_provider=label_hub_service.get_stockout_operating_status_members,
 )
