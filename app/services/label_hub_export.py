@@ -11,6 +11,14 @@ from .label_hub_detail_data import label_hub_detail_service
 
 
 Column = tuple[str, str | Callable[[dict[str, Any], dict[str, Any]], Any], Callable[[Any], Any] | None]
+STOCKOUT_OPERATING_LABELS = {
+    "full_period_zero_sales": "完整周期零销量", "star": "明星产品", "potential": "潜力产品",
+    "dog": "瘦狗产品", "problem": "问题产品", "loss_issue": "亏损问题", "low_margin_issue": "低毛利问题",
+}
+STOCKOUT_TREND_LABELS = {
+    "stable": "断货前稳定", "accelerating": "断货前加速", "slowing": "断货前减速",
+    "recent_start": "断货前启动", "stopped": "断货前临停", "volatile": "断货前波动", "unavailable": "趋势暂不可判",
+}
 
 
 def _period_label(value: Any) -> str:
@@ -45,6 +53,14 @@ def _label_count(row: dict[str, Any], _: dict[str, Any]) -> int:
 
 def _constant(field: str) -> Callable[[dict[str, Any], dict[str, Any]], Any]:
     return lambda _row, filters: filters.get(field, "")
+
+
+def _stockout_operating_label(value: Any) -> str:
+    return STOCKOUT_OPERATING_LABELS.get(str(value or ""), str(value or ""))
+
+
+def _stockout_trend_label(value: Any) -> str:
+    return STOCKOUT_TREND_LABELS.get(str(value or ""), str(value or ""))
 
 
 def _dimension(row: dict[str, Any], filters: dict[str, Any]) -> str:
@@ -88,6 +104,8 @@ def _columns(detail_view: str, metric_period: str) -> list[Column]:
         ("销售角色", "sales_role", None),
         ("断货前角色", "stockout_before_role", None),
         ("角色周期", "stockout_before_role_period", _optional_period_label),
+        ("30天断货前经营基线", "stockout_operating_baseline_status", _stockout_operating_label),
+        ("断货前走势", "stockout_operating_trend", _stockout_trend_label),
         ("生命周期标签", "lifecycle_label", None),
         ("国家销售角色标签", "country_sales_role_label", None),
         ("站点生命周期标签", "site_lifecycle_label", None),

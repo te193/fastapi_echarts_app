@@ -1,7 +1,7 @@
 import sys
 import threading
 import unittest
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -829,6 +829,153 @@ class LabelHubDataTests(unittest.TestCase):
         self.assertEqual([], self.service._fetch_stockout_operating_status_facts("2026-08-17"))
         self.assertIn("uncompress(evidence_blob) as evidence_json", executed["sql"])
         self.assertNotIn("label_period, evidence_json", executed["sql"])
+
+    def test_stockout_operating_trend_uses_non_overlapping_pre_oos_windows(self):
+        def evidence(period, qty, role_id=2002, end="2026-07-31"):
+            days = int(period.removesuffix("d"))
+            start = (date.fromisoformat(end) - timedelta(days=days - 1)).isoformat()
+            return {
+                "label_id": role_id,
+                "label_period": period,
+                "evidence_json": {
+                    "type": "pre_oos_sales_role",
+                    "metrics": {"period_sales_qty": qty, "daily_sales": qty / days},
+                    "oos": {"oos_start_date": "2026-08-01"},
+                    "window": {"period": period, "days": days, "start": start, "end": end},
+                },
+            }
+
+        cases = {
+            "stable": {"7d": 7, "14d": 14, "30d": 30, "90d": 90},
+            "accelerating": {"7d": 14, "14d": 21, "30d": 37, "90d": 97},
+            "slowing": {"7d": 7, "14d": 21, "30d": 53, "90d": 173},
+            "recent_start": {"7d": 7, "14d": 7, "30d": 23, "90d": 83},
+            "stopped": {"7d": 0, "14d": 7, "30d": 23, "90d": 83},
+            "volatile": {"7d": 14, "14d": 21, "30d": 53, "90d": 113},
+        }
+
+        for expected, quantities in cases.items():
+            with self.subTest(expected=expected):
+                result = self.service.derive_stockout_operating_trend(
+                    {period: evidence(period, qty) for period, qty in quantities.items()},
+                    baseline_role_id=2002,
+                )
+                self.assertEqual(expected, result["trend_code"])
+
+        accelerating = self.service.derive_stockout_operating_trend(
+            {
+                "7d": evidence("7d", 14, 2001),
+                "14d": evidence("14d", 21, 2002),
+                "30d": evidence("30d", 37, 2002),
+                "90d": evidence("90d", 97, 2003),
+            },
+            baseline_role_id=2002,
+        )
+        self.assertEqual(1.0, accelerating["interval_metrics"]["last7_vs_prior7_change"])
+        self.assertEqual(0.5, accelerating["interval_metrics"]["last14_vs_prior16_change"])
+        self.assertEqual("higher_than_long_term", accelerating["long_term_consistency"])
+
+    def test_stockout_operating_trend_marks_bad_windows_and_non_monotonic_totals_unavailable(self):
+        def evidence(period, qty, end="2026-07-31"):
+            days = int(period.removesuffix("d"))
+            start = (date.fromisoformat(end) - timedelta(days=days - 1)).isoformat()
+            return {
+                "label_id": 2002,
+                "label_period": period,
+                "evidence_json": {
+                    "type": "pre_oos_sales_role",
+                    "metrics": {"period_sales_qty": qty, "daily_sales": qty / days},
+                    "oos": {"oos_start_date": "2026-08-01"},
+                    "window": {"period": period, "days": days, "start": start, "end": end},
+                },
+            }
+
+        bad_window = {period: evidence(period, qty) for period, qty in {"7d": 7, "14d": 14, "30d": 30}.items()}
+        bad_window["7d"] = evidence("7d", 7, end="2026-07-30")
+        result = self.service.derive_stockout_operating_trend(bad_window, baseline_role_id=2002)
+        self.assertEqual("unavailable", result["trend_code"])
+        self.assertIn("window_not_anchored_before_stockout", result["quality_reasons"])
+
+        non_monotonic = {
+            "7d": evidence("7d", 15),
+            "14d": evidence("14d", 14),
+            "30d": evidence("30d", 30),
+        }
+        result = self.service.derive_stockout_operating_trend(non_monotonic, baseline_role_id=2002)
+        self.assertEqual("unavailable", result["trend_code"])
+        self.assertIn("cumulative_metrics_non_monotonic", result["quality_reasons"])
+
+    def test_stockout_operating_trend_does_not_require_90d_evidence(self):
+        def evidence(period, qty):
+            days = int(period.removesuffix("d"))
+            end = date(2026, 7, 31)
+            return {
+                "label_id": 2002,
+                "label_period": period,
+                "evidence_json": {
+                    "type": "pre_oos_sales_role",
+                    "metrics": {"period_sales_qty": qty, "daily_sales": qty / days},
+                    "oos": {"oos_start_date": "2026-08-01"},
+                    "window": {
+                        "period": period,
+                        "days": days,
+                        "start": (end - timedelta(days=days - 1)).isoformat(),
+                        "end": end.isoformat(),
+                    },
+                },
+            }
+
+        result = self.service.derive_stockout_operating_trend(
+            {"7d": evidence("7d", 7), "14d": evidence("14d", 14), "30d": evidence("30d", 30)},
+            baseline_role_id=2002,
+        )
+
+        self.assertEqual("stable", result["trend_code"])
+        self.assertEqual("unavailable", result["long_term_consistency"])
+
+    def test_stockout_operating_country_scope_keeps_country_universe_rows_without_roles(self):
+        stockout = {"metrics": {"fba_available": 0, "fba_in_transit": 5, "local_quantity": 0}}
+        role = {
+            "type": "pre_oos_sales_role",
+            "metrics": {"daily_sales": 1, "period_sales_qty": 30, "tag_margin_rate": 20, "small_rank": 12},
+            "oos": {"history_start_date": "2026-07-01", "oos_start_date": "2026-08-01"},
+            "window": {"period": "30d", "days": 30, "start": "2026-07-02", "end": "2026-07-31"},
+            "calculation": {"mode": "historical_backtrack", "status": "matched"},
+        }
+
+        def fact(label_id, period, country="", evidence=None):
+            return {
+                "country": country,
+                "country_category": "欧洲站",
+                "store": "StoreA",
+                "msku": "M1",
+                "label_id": label_id,
+                "label_period": period,
+                "evidence_json": evidence or {},
+            }
+
+        facts = [
+            fact(304, "current", evidence=stockout),
+            fact(401, "current", country="德国"),
+            fact(401, "current", country="法国"),
+            fact(2101, "30d", country="德国", evidence=role),
+            # A 200x fact must never fill the missing French country role.
+            fact(2001, "30d", evidence=role),
+        ]
+
+        payload = self.service.build_stockout_operating_status_summary(
+            facts=facts,
+            role_period="30d",
+            scope="country",
+        )
+        counts = {item["code"]: item["business_unit_count"] for item in payload["statuses"]}
+
+        self.assertEqual("country", payload["scope_mode"])
+        self.assertEqual(2, payload["scope"]["country_record_count"])
+        self.assertEqual(1, payload["scope"]["matched_business_unit_count"])
+        self.assertEqual(1, counts["star"])
+        self.assertEqual(1, counts["pre_oos_evidence_insufficient"])
+        self.assertEqual(0.5, payload["coverage"]["role_evidence_rate"])
 
     def test_public_business_row_exposes_msku_stockout_before_role(self):
         public = _public_business_row({

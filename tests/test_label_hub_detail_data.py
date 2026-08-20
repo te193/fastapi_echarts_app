@@ -184,6 +184,43 @@ class LabelHubDetailDataTests(unittest.TestCase):
 
         self.assertEqual(["FR"], [row["country"] for row in payload["rows"]])
 
+    def test_country_stockout_operating_status_uses_country_member_keys(self):
+        country_rows = [
+            {
+                "country": country,
+                "country_category": "Europe",
+                "store": "StoreA",
+                "msku": "MSKU-1",
+                "sku": f"SKU-{country}",
+                "labels": [],
+            }
+            for country in ("DE", "FR")
+        ]
+        member_calls = []
+
+        def member_provider(**kwargs):
+            member_calls.append(kwargs)
+            return {("Europe", "FR", "StoreA", "MSKU-1")}
+
+        service = LabelHubDetailDataService(
+            business_row_provider=lambda **kwargs: [ROWS[0]],
+            country_row_provider=lambda **kwargs: {"rows": country_rows, "metric_status": "available"},
+            country_stockout_role_provider=lambda **kwargs: [],
+            stockout_operating_member_provider=member_provider,
+        )
+
+        payload = service.get_details(
+            detail_view="country",
+            stockout_operating_scope="country",
+            stockout_operating_status_period="30d",
+            stockout_operating_status="star",
+            stockout_operating_trend="stable",
+        )
+
+        self.assertEqual(["FR"], [row["country"] for row in payload["rows"]])
+        self.assertEqual("country", member_calls[0]["scope"])
+        self.assertEqual("stable", member_calls[0]["trend_code"])
+
     def test_problems_support_any_and_all(self):
         service, _ = self.make_service()
 

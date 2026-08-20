@@ -171,6 +171,7 @@ class LabelHubApiTests(unittest.TestCase):
             payload = main.api_label_hub_stockout_operating_status(
                 data_date="2026-08-13",
                 role_period="14d",
+                scope="country",
                 country_category="欧洲站",
                 store="StoreA",
                 keyword="M1",
@@ -183,6 +184,7 @@ class LabelHubApiTests(unittest.TestCase):
                 {
                     "data_date": "2026-08-13",
                     "role_period": "14d",
+                    "scope": "country",
                     "country_category": "欧洲站",
                     "store": "StoreA",
                     "keyword": "M1",
@@ -190,6 +192,14 @@ class LabelHubApiTests(unittest.TestCase):
             ),
             service.calls[0],
         )
+
+    def test_stockout_operating_status_api_rejects_unknown_scope(self):
+        response = TestClient(main.app).get(
+            "/api/label-hub/stockout-operating-status",
+            params={"scope": "global"},
+        )
+
+        self.assertEqual(422, response.status_code)
 
     def test_msku_role_diagnostics_forwards_exact_identity_and_period(self):
         service = FakeRoleDiagnosticService()

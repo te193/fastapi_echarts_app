@@ -15404,6 +15404,8 @@ body[data-page="label_hub"] {
   font-weight: 700;
 }
 
+.label-hub-stockout-status-controls { align-items: center; display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+
 .label-hub-stockout-role-content { display: grid; gap: 10px; }
 .label-hub-stockout-role-loading,
 .label-hub-stockout-role-error { color: var(--muted); font-size: 11px; padding: 10px 2px; text-align: center; }
@@ -15437,6 +15439,9 @@ body[data-page="label_hub"] {
 .label-hub-stockout-status-breakdown-toggle { background: transparent; border: 0; color: #9a650f; cursor: pointer; font-size: 10px; font-weight: 700; padding: 3px 2px; }
 .label-hub-stockout-status-breakdown-toggle:hover { color: #714702; text-decoration: underline; }
 .label-hub-stockout-status-breakdown-toggle:focus-visible { border-radius: 4px; outline: 2px solid #d69a3b; outline-offset: 2px; }
+
+.label-hub-stockout-status-trends { border-left: 2px solid #8fbbea; display: grid; gap: 5px; grid-column: 1 / -1; margin: 1px 0 2px 12px; padding-left: 10px; }
+.label-hub-stockout-status-trends .label-hub-stockout-role-row { background: #f8fbff; grid-template-columns: minmax(120px, 1fr) auto; padding-block: 6px; }
 
 .label-hub-stockout-status-breakdown { border-left: 2px solid #e0b86f; display: grid; gap: 6px; margin-left: 12px; padding-left: 10px; }
 .label-hub-stockout-status-breakdown > b { color: #765a31; font-size: 10px; }
@@ -18592,6 +18597,7 @@ body[data-page="country_label_hub"] .country-label-overview-grid .label-hub-cate
 
   .label-hub-stockout-role-periods { align-self: stretch; }
   .label-hub-stockout-role-periods button { flex: 1; }
+  .label-hub-stockout-status-controls { align-items: stretch; flex-direction: column; }
   .label-hub-stockout-role-list { grid-template-columns: minmax(0, 1fr); }
 
   .label-hub-overview-section .sales-role-section-head,

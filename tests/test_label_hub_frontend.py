@@ -123,10 +123,10 @@ def test_stockout_operating_status_has_a_question_mark_rules_popover():
         "data-stockout-operating-status-rules",
         "data-stockout-operating-status-rules-panel",
         "低量库存边缘断货：FBA 可售 = 0，且 FBA 在途 + 本地/采购合计 < 5。",
-        "断货前依据不足：库存或所选周期的远端断货前角色证据缺失、覆盖不足、状态异常或互相冲突。",
-        "完整周期零销量：断货前证据完整，所选周期销量 = 0。",
-        "明星 / 潜力 / 瘦狗：周期销量 > 0，直接沿用远端固定的断货前销售角色。",
-        "亏损问题：问题产品且毛利率 < 0；低毛利问题：问题产品且毛利率为 0%–5%。",
+        "断货前依据不足：库存或30天正式基线角色证据缺失、覆盖不足、状态异常或互相冲突。",
+        "完整周期零销量：30天证据完整且销量 = 0。",
+        "明星 / 潜力 / 瘦狗 / 问题：30天销量 > 0，沿用对应粒度的远端固定角色；国家维度同时使用小类排名。",
+        "断货前走势：从7/14/30天累计销量拆出非重叠区间",
         "暂不评价经营表现",
         "可评价经营表现",
     ):
@@ -158,6 +158,29 @@ def test_stockout_operating_status_shows_only_history_data_insufficient_breakdow
     assert ".label-hub-stockout-status-breakdown-toggle" in styles
 
 
+def test_stockout_operating_status_has_scope_switch_fixed_baseline_and_trend_drilldown():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+
+    for token in (
+        'scope: "business_unit"',
+        'period: "30d"',
+        'data-stockout-operating-status-scope',
+        'MSKU汇总',
+        '国家维度',
+        '30天·正式基线',
+        'scope: stockoutOperatingStatusState.scope',
+        'data-stockout-operating-trend-toggle',
+        'data-stockout-operating-trend',
+        'detailState.stockout_operating_status_period = "30d"',
+        'detailState.detail_view = stockoutOperatingStatusState.scope === "country" ? "country" : "business_unit"',
+        '国家维度的低量库存状态继承对应 MSKU 汇总库存',
+    ):
+        assert token in script
+    assert ".label-hub-stockout-status-controls" in styles
+    assert ".label-hub-stockout-status-trends" in styles
+
+
 def test_country_detail_uses_country_scoped_stockout_role_evidence():
     template = (ROOT / "app" / "templates" / "label_hub.html").read_text(encoding="utf-8")
     script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
@@ -170,7 +193,7 @@ def test_country_detail_uses_country_scoped_stockout_role_evidence():
     assert 'row.stockout_before_role' in script
     assert 'class="label-hub-stockout-country-role"' in script
     assert ".label-hub-stockout-country-role" in styles
-    assert "js/label_hub.js') }}?v=20260819panelautohide2" in template
+    assert "js/label_hub.js') }}?v=20260820stockoutbaseline1" in template
 
 
 def test_stockout_evidence_summary_keeps_long_calculation_mode_inside_its_cell():
@@ -207,8 +230,8 @@ def test_stockout_evidence_shows_only_start_date_and_elapsed_days():
     summary_rule = re.search(r"\.label-hub-stockout-evidence-summary\s*\{(?P<body>[^}]*)\}", styles)
     assert summary_rule is not None
     assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in summary_rule.group("body")
-    assert "css/styles.css') }}?v=20260814simpleoostime1" in template
-    assert "js/label_hub.js') }}?v=20260819panelautohide2" in template
+    assert "css/styles.css') }}?v=20260820stockoutbaseline1" in template
+    assert "js/label_hub.js') }}?v=20260820stockoutbaseline1" in template
 
 
 def test_label_hub_detail_workbench_uses_independent_post_flow_and_dual_views():
@@ -261,7 +284,7 @@ def test_label_hub_detail_export_uses_current_filters_and_downloads_csv_blob():
     assert "URL.revokeObjectURL" in script
     assert "function setDetailExportLoading(isLoading)" in script
     assert 'elements.labelHubDetailExport.textContent = isLoading ? "导出中…" : "导出 CSV";' in script
-    assert "js/label_hub.js') }}?v=20260819panelautohide2" in template
+    assert "js/label_hub.js') }}?v=20260820stockoutbaseline1" in template
 
 
 def test_detail_role_reason_filter_replaces_sales_trend_and_follows_detail_scope():
@@ -384,7 +407,7 @@ def test_detail_filters_match_compact_reference_visual_language():
     assert ".label-hub-detail-filter-control .ss-main:has(.ss-value)" in styles
     assert ".ss-value .ss-value-text" in styles
     assert "color: #155ba6;" in styles
-    assert "styles.css') }}?v=20260814simpleoostime1" in template
+    assert "styles.css') }}?v=20260820stockoutbaseline1" in template
     assert ".label-hub-detail-workbench select[multiple] { min-height: 64px" not in styles
 
 
@@ -849,7 +872,7 @@ def test_remote_breakdown_nodes_have_enough_distinct_colors_for_long_status_list
     assert len(colors) >= 12
     assert len(set(colors)) == len(colors)
     assert "remoteBucketColor(panel, bucket)" in script
-    assert "?v=20260814simpleoostime1" in template
+    assert "?v=20260820stockoutbaseline1" in template
 
 
 def test_label_hub_issue_overview_shows_selected_group_problem_counts():
@@ -1010,7 +1033,7 @@ def test_current_category_detail_uses_period_scoped_distribution():
     assert "distributionById" in script
     assert 'cache: "no-store"' in common
     assert "js/common.js') }}?v=20260818labeltimeout1" in base
-    assert "js/label_hub.js') }}?v=20260819panelautohide2" in template
+    assert "js/label_hub.js') }}?v=20260820stockoutbaseline1" in template
 
 
 def test_country_detail_overview_matches_label_hub_information_structure():
