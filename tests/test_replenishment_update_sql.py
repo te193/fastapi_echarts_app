@@ -579,6 +579,7 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
 
     def test_replenishment_result_merges_follow_groups_by_asin_once(self):
         sql = replenishment_update.REPLENISHMENT_RESULT_SQL
+        normalized_sql = " ".join(sql.split())
 
         self.assertIn("tmp_asin_merge_groups", sql)
         self.assertIn("tmp_asin_merge_targets", sql)
@@ -587,15 +588,32 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("having link_count > 1", sql)
         self.assertIn("and has_follow_link > 0", sql)
         self.assertNotIn("has_follow_link > 0 or has_followed_origin > 0", sql)
-        self.assertIn("max(coalesce(daily_avg_sales, 0)) as group_daily_avg_sales", sql)
-        group_inventory_expr = "sum(coalesce(support_inventory_qty, 0))"
-        normalized_sql = " ".join(sql.split())
+        self.assertIn("sum(coalesce(sales_30, 0)) as group_sales_30", sql)
+        self.assertIn("sum(coalesce(sales_14, 0)) as group_sales_14", sql)
+        self.assertIn("sum(coalesce(sales_7, 0)) as group_sales_7", sql)
+        self.assertIn("sum(coalesce(sales_3, 0)) as group_sales_3", sql)
         self.assertIn(
-            f"{group_inventory_expr} as group_support_inventory_qty",
+            "max(coalesce(result_r_30d_salable_days, 0)) "
+            "as group_result_r_30d_salable_days",
             normalized_sql,
         )
         self.assertIn(
-            f"else {group_inventory_expr} / max(coalesce(daily_avg_sales, 0))",
+            "group_sales_30 / group_result_r_30d_salable_days",
+            normalized_sql,
+        )
+        self.assertIn("as group_adjusted_daily_sales_30d", sql)
+        self.assertIn("as group_daily_avg_sales", sql)
+        self.assertNotIn("max(coalesce(daily_avg_sales, 0))", sql)
+        self.assertNotIn("sum(coalesce(final_sales_30, 0))", sql)
+        self.assertNotIn("sum(coalesce(pre_daily_avg_sales, 0))", sql)
+        group_inventory_expr = "group_support_inventory_qty"
+        group_daily_sales_expr = "group_daily_avg_sales"
+        self.assertIn(
+            "sum(coalesce(support_inventory_qty, 0)) as group_support_inventory_qty",
+            normalized_sql,
+        )
+        self.assertIn(
+            f"else {group_inventory_expr} / {group_daily_sales_expr}",
             normalized_sql,
         )
         self.assertIn("as group_arrival_inventory_qty", normalized_sql)

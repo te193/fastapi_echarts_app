@@ -64,6 +64,8 @@ REPLENISHMENT_WORK_TABLES = {
     "tmp_pur_plan_support_calc_base": "etl_datasync_test.dashboard_replenishment_work_support_calc_base_v3",
     "tmp_pur_plan_support_layer_all": "etl_datasync_test.dashboard_replenishment_work_support_layer_all_v3",
     "tmp_pur_plan_replenish_calc": "etl_datasync_test.dashboard_replenishment_work_replenish_calc_v3",
+    "tmp_asin_merge_group_daily_base": "etl_datasync_test.dashboard_replenishment_work_asin_merge_group_daily_base_v1",
+    "tmp_asin_merge_group_daily_parts": "etl_datasync_test.dashboard_replenishment_work_asin_merge_group_daily_parts_v1",
     "tmp_asin_merge_groups": "etl_datasync_test.dashboard_replenishment_work_asin_merge_groups_v3",
     "tmp_asin_merge_latest_performance": "etl_datasync_test.dashboard_replenishment_work_asin_latest_performance_v1",
     "tmp_asin_merge_targets": "etl_datasync_test.dashboard_replenishment_work_asin_merge_targets_v3",
@@ -2047,107 +2049,35 @@ select
 from tmp_pur_plan_support_layer_all support;
 
 drop temporary table if exists tmp_asin_merge_groups;
-create temporary table tmp_asin_merge_groups as
+drop temporary table if exists tmp_asin_merge_group_daily_base;
+create temporary table tmp_asin_merge_group_daily_base as
 select
     group_base.country_category,
     group_base.max_asin,
     count(*) as link_count,
     max(case when coalesce(fllow_flag, 1) = 0 then 1 else 0 end) as has_follow_link,
     max(case when coalesce(followed_flag, 0) = 1 then 1 else 0 end) as has_followed_origin,
-    max(coalesce(daily_avg_sales, 0)) as group_daily_avg_sales,
+    sum(coalesce(sales_30, 0)) as group_sales_30,
+    sum(coalesce(sales_14, 0)) as group_sales_14,
+    sum(coalesce(sales_7, 0)) as group_sales_7,
+    sum(coalesce(sales_3, 0)) as group_sales_3,
+    max(coalesce(result_r_30d_salable_days, 0)) as group_result_r_30d_salable_days,
+    max(coalesce(result_r_14d_salable_days, 0)) as group_result_r_14d_salable_days,
+    max(coalesce(result_r_7d_salable_days, 0)) as group_result_r_7d_salable_days,
+    max(coalesce(result_r_3d_salable_days, 0)) as group_result_r_3d_salable_days,
+    max(
+        case
+            when (max_brand_name like '%%2025%%' and (receiving_cnt <= 1 or receiving_cnt is null))
+              or (max_brand_name like '%%2026%%' and (receiving_cnt <= 1 or receiving_cnt is null))
+                then 1
+            else 0
+        end
+    ) as group_new_product_daily_weight_flag,
     max(coalesce(pre_replenish_comp_months, 4)) as group_replenish_comp_months,
     sum(coalesce(support_inventory_qty, 0)) as group_support_inventory_qty,
     max(coalesce(purchase_source.effective_purchase_lead_days, 0))
         as group_effective_purchase_lead_days,
-    sum(case when coalesce(fllow_flag, 1) = 0 then 1 else 0 end) as eligible_target_link_count,
-    case
-        when max(coalesce(daily_avg_sales, 0)) <= 0 then null
-        else sum(coalesce(support_inventory_qty, 0))
-            / max(coalesce(daily_avg_sales, 0))
-    end as group_inventory_support_days,
-    case
-        when max(coalesce(daily_avg_sales, 0)) <= 0 then null
-        else sum(coalesce(support_inventory_qty, 0))
-            / max(coalesce(daily_avg_sales, 0))
-            - max(coalesce(purchase_source.effective_purchase_lead_days, 0))
-    end as group_arrival_inventory_support_days,
-    greatest(
-        sum(coalesce(support_inventory_qty, 0))
-        - max(coalesce(purchase_source.effective_purchase_lead_days, 0))
-          * max(coalesce(daily_avg_sales, 0)),
-        0
-    ) as group_arrival_inventory_qty,
-    max(coalesce(purchase_source.effective_purchase_lead_days, 0))
-        * max(coalesce(daily_avg_sales, 0)) as group_lead_time_demand_qty,
-    greatest(
-        120 * max(coalesce(daily_avg_sales, 0))
-        - sum(coalesce(support_inventory_qty, 0)),
-        0
-    ) as group_base_replenish_need_qty,
-    greatest(
-        max(coalesce(pre_replenish_comp_months, 4)) * 30
-        * max(coalesce(daily_avg_sales, 0))
-        - greatest(
-            sum(coalesce(support_inventory_qty, 0))
-            - max(coalesce(purchase_source.effective_purchase_lead_days, 0))
-              * max(coalesce(daily_avg_sales, 0)),
-            0
-        ),
-        0
-    ) as group_replenish_need_qty,
-    greatest(
-        max(coalesce(pre_replenish_comp_months, 4)) * 30
-        * max(coalesce(daily_avg_sales, 0))
-        - greatest(
-            sum(coalesce(support_inventory_qty, 0))
-            - max(coalesce(purchase_source.effective_purchase_lead_days, 0))
-              * max(coalesce(daily_avg_sales, 0)),
-            0
-        ),
-        0
-    ) as group_lead_adjusted_replenish_need_qty,
-    case
-        when max(coalesce(daily_avg_sales, 0)) > 0
-         and sum(coalesce(support_inventory_qty, 0))
-             / max(coalesce(daily_avg_sales, 0))
-             < max(coalesce(purchase_source.effective_purchase_lead_days, 0))
-            then 1
-        else 0
-    end as group_lead_time_stockout_flag,
-    case
-        when max(coalesce(daily_avg_sales, 0)) <= 0 then 0
-        else greatest(
-            max(coalesce(purchase_source.effective_purchase_lead_days, 0))
-            - sum(coalesce(support_inventory_qty, 0))
-              / max(coalesce(daily_avg_sales, 0)),
-            0
-        )
-    end as group_lead_time_stockout_days,
-    case
-        when max(coalesce(daily_avg_sales, 0)) <= 0 then 0
-        else greatest(
-            max(coalesce(purchase_source.effective_purchase_lead_days, 0))
-            - sum(coalesce(support_inventory_qty, 0))
-              / max(coalesce(daily_avg_sales, 0)),
-            0
-        ) * max(coalesce(daily_avg_sales, 0))
-    end as group_lead_time_lost_sales_qty,
-    case
-        when max(coalesce(daily_avg_sales, 0)) <= 0 then 5
-        when sum(coalesce(support_inventory_qty, 0))
-            / max(coalesce(daily_avg_sales, 0))
-            - max(coalesce(purchase_source.effective_purchase_lead_days, 0)) <= 35 then 1
-        when sum(coalesce(support_inventory_qty, 0))
-            / max(coalesce(daily_avg_sales, 0))
-            - max(coalesce(purchase_source.effective_purchase_lead_days, 0)) <= 65 then 2
-        when sum(coalesce(support_inventory_qty, 0))
-            / max(coalesce(daily_avg_sales, 0))
-            - max(coalesce(purchase_source.effective_purchase_lead_days, 0)) <= 90 then 3
-        when sum(coalesce(support_inventory_qty, 0))
-            / max(coalesce(daily_avg_sales, 0))
-            - max(coalesce(purchase_source.effective_purchase_lead_days, 0)) > 90 then 4
-        else 2
-    end as group_support_replenish_level_sort
+    sum(case when coalesce(fllow_flag, 1) = 0 then 1 else 0 end) as eligible_target_link_count
 from (
     select
         country_category,
@@ -2157,7 +2087,16 @@ from (
         fllow_flag,
         followed_flag,
         sales_status,
-        daily_avg_sales,
+        sales_30,
+        sales_14,
+        sales_7,
+        sales_3,
+        result_r_30d_salable_days,
+        result_r_14d_salable_days,
+        result_r_7d_salable_days,
+        result_r_3d_salable_days,
+        max_brand_name,
+        receiving_cnt,
         pre_replenish_comp_months,
         support_inventory_qty
     from tmp_pur_plan_replenish_calc
@@ -2197,6 +2136,174 @@ left join (
 group by group_base.country_category, group_base.max_asin
 having link_count > 1
    and has_follow_link > 0;
+
+drop temporary table if exists tmp_asin_merge_group_daily_parts;
+create temporary table tmp_asin_merge_group_daily_parts as
+select
+    daily_base.*,
+    case
+        when group_result_r_30d_salable_days >= 7 then
+            case
+                when group_result_r_3d_salable_days > 0
+                    then group_sales_3 / group_result_r_3d_salable_days
+                else 0
+            end
+        else group_sales_3 / greatest(group_result_r_3d_salable_days, 2)
+    end as group_adjusted_daily_sales_3d,
+    case
+        when group_result_r_30d_salable_days >= 7 then
+            case
+                when group_result_r_7d_salable_days >= 7
+                    then group_sales_7 / group_result_r_7d_salable_days
+                else least(
+                    case
+                        when group_result_r_7d_salable_days > 0
+                            then group_sales_7 / group_result_r_7d_salable_days
+                        else 0
+                    end,
+                    (case
+                        when group_result_r_7d_salable_days > 0
+                            then group_sales_7 / group_result_r_7d_salable_days
+                        else 0
+                    end)
+                        * (
+                            group_result_r_7d_salable_days
+                            / (group_result_r_7d_salable_days + 3)
+                        )
+                    + (group_sales_30 / nullif(group_result_r_30d_salable_days, 0))
+                        * (
+                            1 - group_result_r_7d_salable_days
+                            / (group_result_r_7d_salable_days + 3)
+                        )
+                )
+            end
+        else group_sales_7 / greatest(group_result_r_7d_salable_days, 3)
+    end as group_adjusted_daily_sales_7d,
+    case
+        when group_result_r_30d_salable_days >= 7 then
+            case
+                when group_result_r_14d_salable_days >= 14
+                    then group_sales_14 / group_result_r_14d_salable_days
+                else least(
+                    case
+                        when group_result_r_14d_salable_days > 0
+                            then group_sales_14 / group_result_r_14d_salable_days
+                        else 0
+                    end,
+                    (case
+                        when group_result_r_14d_salable_days > 0
+                            then group_sales_14 / group_result_r_14d_salable_days
+                        else 0
+                    end)
+                        * (
+                            group_result_r_14d_salable_days
+                            / (group_result_r_14d_salable_days + 7)
+                        )
+                    + (group_sales_30 / nullif(group_result_r_30d_salable_days, 0))
+                        * (
+                            1 - group_result_r_14d_salable_days
+                            / (group_result_r_14d_salable_days + 7)
+                        )
+                )
+            end
+        else group_sales_14 / greatest(group_result_r_14d_salable_days, 7)
+    end as group_adjusted_daily_sales_14d,
+    case
+        when group_result_r_30d_salable_days >= 7
+            then group_sales_30 / group_result_r_30d_salable_days
+        else group_sales_30 / greatest(group_result_r_30d_salable_days, 15)
+    end as group_adjusted_daily_sales_30d
+from tmp_asin_merge_group_daily_base daily_base;
+
+create temporary table tmp_asin_merge_groups as
+select
+    group_daily.*,
+    case
+        when group_daily_avg_sales <= 0 then null
+        else group_support_inventory_qty / group_daily_avg_sales
+    end as group_inventory_support_days,
+    case
+        when group_daily_avg_sales <= 0 then null
+        else group_support_inventory_qty / group_daily_avg_sales
+            - group_effective_purchase_lead_days
+    end as group_arrival_inventory_support_days,
+    greatest(
+        group_support_inventory_qty
+        - group_effective_purchase_lead_days * group_daily_avg_sales,
+        0
+    ) as group_arrival_inventory_qty,
+    group_effective_purchase_lead_days * group_daily_avg_sales
+        as group_lead_time_demand_qty,
+    greatest(
+        120 * group_daily_avg_sales - group_support_inventory_qty,
+        0
+    ) as group_base_replenish_need_qty,
+    greatest(
+        group_replenish_comp_months * 30 * group_daily_avg_sales
+        - greatest(
+            group_support_inventory_qty
+            - group_effective_purchase_lead_days * group_daily_avg_sales,
+            0
+        ),
+        0
+    ) as group_replenish_need_qty,
+    greatest(
+        group_replenish_comp_months * 30 * group_daily_avg_sales
+        - greatest(
+            group_support_inventory_qty
+            - group_effective_purchase_lead_days * group_daily_avg_sales,
+            0
+        ),
+        0
+    ) as group_lead_adjusted_replenish_need_qty,
+    case
+        when group_daily_avg_sales > 0
+         and group_support_inventory_qty / group_daily_avg_sales
+             < group_effective_purchase_lead_days
+            then 1
+        else 0
+    end as group_lead_time_stockout_flag,
+    case
+        when group_daily_avg_sales <= 0 then 0
+        else greatest(
+            group_effective_purchase_lead_days
+            - group_support_inventory_qty / group_daily_avg_sales,
+            0
+        )
+    end as group_lead_time_stockout_days,
+    case
+        when group_daily_avg_sales <= 0 then 0
+        else greatest(
+            group_effective_purchase_lead_days
+            - group_support_inventory_qty / group_daily_avg_sales,
+            0
+        ) * group_daily_avg_sales
+    end as group_lead_time_lost_sales_qty,
+    case
+        when group_daily_avg_sales <= 0 then 5
+        when group_support_inventory_qty / group_daily_avg_sales
+            - group_effective_purchase_lead_days <= 35 then 1
+        when group_support_inventory_qty / group_daily_avg_sales
+            - group_effective_purchase_lead_days <= 65 then 2
+        when group_support_inventory_qty / group_daily_avg_sales
+            - group_effective_purchase_lead_days <= 90 then 3
+        when group_support_inventory_qty / group_daily_avg_sales
+            - group_effective_purchase_lead_days > 90 then 4
+        else 2
+    end as group_support_replenish_level_sort
+from (
+    select
+        daily_parts.*,
+        case
+            when group_new_product_daily_weight_flag = 1
+                then group_adjusted_daily_sales_3d * 0.5
+                   + group_adjusted_daily_sales_7d * 0.5
+            else group_adjusted_daily_sales_7d * 0.6
+               + group_adjusted_daily_sales_14d * 0.2
+               + group_adjusted_daily_sales_30d * 0.2
+        end as group_daily_avg_sales
+    from tmp_asin_merge_group_daily_parts daily_parts
+) group_daily;
 
 drop temporary table if exists tmp_asin_merge_latest_performance;
 create temporary table tmp_asin_merge_latest_performance as
