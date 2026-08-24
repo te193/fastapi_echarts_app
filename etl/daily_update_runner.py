@@ -111,6 +111,13 @@ DEFAULT_STEPS = (
         continue_on_failure=True,
     ),
     EtlStep(
+        "stockout_historical_operating",
+        "断货前历史经营结果 ETL",
+        "etl.stockout_historical_operating_update",
+        "etl_stockout_historical_operating_run",
+        "stockout_historical_operating",
+    ),
+    EtlStep(
         "replenishment",
         "补货 ETL",
         "etl.replenishment_update",

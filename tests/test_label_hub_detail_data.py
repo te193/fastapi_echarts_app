@@ -382,6 +382,53 @@ class LabelHubDetailDataTests(unittest.TestCase):
             payload["applied_filters"]["stockout_insufficient_reason"],
         )
 
+    def test_stockout_historical_result_filter_uses_snapshot_members(self):
+        member_calls = []
+
+        def member_provider(**kwargs):
+            member_calls.append(kwargs)
+            return {("Europe", "StoreA", "MSKU-1")}
+
+        service = LabelHubDetailDataService(
+            lambda **kwargs: list(ROWS),
+            stockout_historical_member_provider=member_provider,
+        )
+
+        payload = service.get_details(
+            stockout_history_dimension="historical_operating_level",
+            stockout_history_code="excellent",
+            stockout_operating_scope="business_unit",
+        )
+
+        self.assertEqual(["StoreA"], [row["store"] for row in payload["rows"]])
+        self.assertEqual("historical_operating_level", payload["applied_filters"]["stockout_history_dimension"])
+        self.assertEqual("excellent", payload["applied_filters"]["stockout_history_code"])
+        self.assertEqual("historical_operating_level", member_calls[0]["dimension"])
+        self.assertEqual("excellent", member_calls[0]["code"])
+
+    def test_stockout_period_role_drilldown_uses_the_selected_period_for_evidence(self):
+        row = {
+            **ROWS[0],
+            "stockout_before_roles": [
+                {"period": "7d", "id": 2001, "label": "明星产品"},
+                {"period": "30d", "id": 2004, "label": "问题产品"},
+            ],
+        }
+        service = LabelHubDetailDataService(
+            lambda **kwargs: [row],
+            stockout_historical_member_provider=lambda **kwargs: {("Europe", "StoreA", "MSKU-1")},
+        )
+
+        payload = service.get_details(
+            stockout_history_dimension="period_role",
+            stockout_history_code="star",
+            stockout_history_period="7d",
+            stockout_operating_scope="business_unit",
+        )
+
+        self.assertEqual("7d", payload["rows"][0]["stockout_before_role_period"])
+        self.assertEqual("明星产品", payload["rows"][0]["stockout_before_role"])
+
     def test_counts_precede_pagination_unique_msku_is_deduplicated_and_missing_sorts_last(self):
         rows = [
             {"country_category": "X", "store": f"S{i}", "msku": "A" if i < 2 else f"M{i}", "sales_amount": None if i == 0 else i}
