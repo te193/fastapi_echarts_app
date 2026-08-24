@@ -164,13 +164,12 @@ class LabelHubApiTests(unittest.TestCase):
             service.calls[0],
         )
 
-    def test_stockout_operating_status_api_passes_scope_and_period(self):
+    def test_stockout_operating_status_api_returns_all_periods_and_only_passes_scope(self):
         service = FakeLabelHubService()
 
         with patch("app.main.label_hub_service", service):
             payload = main.api_label_hub_stockout_operating_status(
                 data_date="2026-08-13",
-                role_period="14d",
                 scope="country",
                 country_category="欧洲站",
                 store="StoreA",
@@ -183,7 +182,6 @@ class LabelHubApiTests(unittest.TestCase):
                 "stockout_operating_status",
                 {
                     "data_date": "2026-08-13",
-                    "role_period": "14d",
                     "scope": "country",
                     "country_category": "欧洲站",
                     "store": "StoreA",

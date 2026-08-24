@@ -3,12 +3,19 @@ from __future__ import annotations
 import json
 import math
 import threading
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 from typing import Any, Callable
 
 from .dashboard_db import dashboard_service
 from .label_hub_local_metrics import METRIC_PERIODS, label_hub_local_metrics_service
+from .stockout_historical_operating_data import (
+    RESULT_TABLE as STOCKOUT_HISTORICAL_RESULT_TABLE,
+    build_stockout_historical_summary,
+    decorate_stockout_snapshot_status,
+    filter_stockout_historical_members,
+)
+from .stockout_historical_operating import ROLE_LABELS as HISTORICAL_ROLE_LABELS
 
 
 LABEL_DETAIL_TABLE = "etl_datasync_test.dashboard_label_detail_snapshot"
@@ -66,6 +73,16 @@ STOCKOUT_EVIDENCE_REASON_LABELS = {
     "history_coverage_insufficient": "断货前历史覆盖不足",
     "calculation_abnormal": "断货前角色计算状态异常",
     "role_evidence_conflict": "断货前角色与指标冲突",
+}
+HISTORICAL_ROLE_DISTRIBUTION_ORDER = (
+    "star",
+    "potential",
+    "dog",
+    "problem",
+    "in_stock_zero_sales",
+)
+HISTORICAL_ROLE_NODE_REASON_LABELS = {
+    "effective_operating_days_insufficient": "30天窗口有效经营日不足",
 }
 STOCKOUT_OPERATING_TREND_LABELS = {
     "stable": "断货前稳定",
@@ -176,6 +193,62 @@ def _evidence_object(value: Any) -> dict[str, Any]:
     except (TypeError, ValueError, json.JSONDecodeError):
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def _historical_role_history(value: Any) -> dict[str, Any]:
+    evidence = _evidence_object(value)
+    source_nodes = evidence.get("rolling_role_nodes")
+    if not isinstance(source_nodes, list):
+        source_nodes = []
+    nodes = []
+    for source in source_nodes:
+        if not isinstance(source, dict):
+            continue
+        role = str(source.get("role") or "unavailable")
+        if role not in HISTORICAL_ROLE_LABELS:
+            role = "unavailable"
+        reason = str(source.get("reason") or "")
+        effective_operating_days = int(source.get("effective_operating_days") or 0)
+        nodes.append(
+            {
+                "window_start": _date_text(source.get("window_start")),
+                "window_end": _date_text(source.get("window_end")),
+                "role": role,
+                "label": HISTORICAL_ROLE_LABELS[role],
+                "is_valid": role != "unavailable",
+                "reason": reason,
+                "reason_label": HISTORICAL_ROLE_NODE_REASON_LABELS.get(reason, "周期角色证据不足") if role == "unavailable" else "",
+                "effective_operating_days": effective_operating_days,
+                "minimum_effective_days": 21,
+            }
+        )
+    nodes.sort(key=lambda item: (item["window_end"], item["window_start"]))
+    counts = Counter(node["role"] for node in nodes if node["is_valid"])
+    valid_count = sum(counts.values())
+    distribution = [
+        {
+            "code": code,
+            "label": HISTORICAL_ROLE_LABELS[code],
+            "count": counts[code],
+            "share": round(counts[code] / valid_count, 4) if valid_count else 0,
+        }
+        for code in HISTORICAL_ROLE_DISTRIBUTION_ORDER
+    ]
+    dominant_role = None
+    if valid_count:
+        dominant_role = max(
+            distribution,
+            key=lambda item: (item["count"], -HISTORICAL_ROLE_DISTRIBUTION_ORDER.index(item["code"])),
+        )
+    return {
+        "status": "available" if valid_count >= 8 else ("insufficient" if nodes else "missing"),
+        "valid_node_count": valid_count,
+        "total_node_count": len(nodes),
+        "unavailable_node_count": len(nodes) - valid_count,
+        "dominant_role": dominant_role,
+        "distribution": distribution,
+        "nodes": nodes,
+    }
 
 
 def _period_order(value: str) -> tuple[int, str]:
@@ -1172,28 +1245,38 @@ class LabelHubDataService:
             "store": store,
             "msku": msku,
             "role_period": role_period,
+            "scope_mode": "country" if str(country or "").strip() else "business_unit",
+            "snapshot_country": str(country or "").strip(),
         }
         country_text = str(country or "").strip()
         role_ids = COUNTRY_STOCKOUT_BEFORE_ROLE_IDS if country_text else STOCKOUT_BEFORE_ROLE_IDS
         role_labels = COUNTRY_STOCKOUT_BEFORE_ROLE_LABELS if country_text else STOCKOUT_BEFORE_ROLE_LABELS
-        country_clause = "and country = %(country)s" if country_text else ""
+        country_clause = "and f.country = %(country)s" if country_text else ""
         if country_text:
             params["country"] = country_text
         with self._source_connection() as conn, conn.cursor() as cursor:
             cursor.execute(
                 f"""
-                select data_date, country, country_category, store, msku,
-                       label_id, label_period,
-                       uncompress(evidence_blob) as evidence_json
-                from {LABEL_FACT_TABLE}
-                where data_date = %(data_date)s
-                  and country_category = %(country_category)s
-                  and store = %(store)s
-                  and msku = %(msku)s
+                select f.data_date, f.country, f.country_category, f.store, f.msku,
+                       f.label_id, f.label_period,
+                       uncompress(f.evidence_blob) as evidence_json,
+                       s.evidence_json as historical_operating_evidence_json
+                from {LABEL_FACT_TABLE} f
+                left join {STOCKOUT_HISTORICAL_RESULT_TABLE} s
+                  on s.data_date = f.data_date
+                 and s.scope_mode = %(scope_mode)s
+                 and s.country_category = f.country_category
+                 and s.store = f.store
+                 and s.msku = f.msku
+                 and s.country = %(snapshot_country)s
+                where f.data_date = %(data_date)s
+                  and f.country_category = %(country_category)s
+                  and f.store = %(store)s
+                  and f.msku = %(msku)s
                   {country_clause}
-                  and label_period = %(role_period)s
-                  and label_id in ({','.join(str(item) for item in role_ids)})
-                order by label_id
+                  and f.label_period = %(role_period)s
+                  and f.label_id in ({','.join(str(item) for item in role_ids)})
+                order by f.label_id
                 limit 1
                 """,
                 params,
@@ -1231,6 +1314,9 @@ class LabelHubDataService:
                 "period": str(row.get("label_period") or role_period),
             },
             "evidence": evidence,
+            "historical_role_history": _historical_role_history(
+                row.get("historical_operating_evidence_json")
+            ),
         }
 
     def _analysis_categories(self, details: list[dict[str, Any]], fact_stats: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:
@@ -2183,37 +2269,90 @@ class LabelHubDataService:
     def get_stockout_operating_status_summary(self, **filters: Any) -> dict[str, Any]:
         meta = self.get_meta()
         data_date = str(filters.get("data_date") or meta["default_data_date"])
-        role_period = str(filters.get("role_period") or "30d").lower()
         country_category = str(filters.get("country_category") or "all")
         store = str(filters.get("store") or "all")
         keyword = str(filters.get("keyword") or "").strip().casefold()
         scope = str(filters.get("scope") or "business_unit")
         if scope not in {"business_unit", "country"}:
             raise ValueError("断货经营状态维度不存在")
-        source_facts = (
-            self._fetch_stockout_operating_status_facts(data_date)
-            if scope == "business_unit"
-            else self._fetch_stockout_operating_status_facts(data_date, scope=scope)
+        rows = self._fetch_stockout_historical_rows(
+            data_date=data_date,
+            scope=scope,
+            country_category=country_category,
+            store=store,
+            keyword=keyword,
         )
-        facts = [
-            fact for fact in source_facts
-            if (country_category == "all" or str(fact.get("country_category") or "") == country_category)
-            and (store == "all" or str(fact.get("store") or "") == store)
-            and (
-                not keyword
-                or keyword in str(fact.get("msku") or "").casefold()
-                or keyword in str(fact.get("store") or "").casefold()
-                or keyword in str(fact.get("country") or "").casefold()
+        payload = build_stockout_historical_summary(rows, scope_mode=scope, data_date=data_date)
+        return decorate_stockout_snapshot_status(
+            payload,
+            requested_data_date=data_date,
+            latest_result_date=self._fetch_stockout_historical_latest_date(),
+            source_data_date=str(meta["default_data_date"]),
+        )
+
+    def _fetch_stockout_historical_latest_date(self) -> str:
+        with self._source_connection() as conn, conn.cursor() as cursor:
+            cursor.execute(f"select max(data_date) as max_date from {STOCKOUT_HISTORICAL_RESULT_TABLE}")
+            value = (cursor.fetchone() or {}).get("max_date")
+        return str(value or "")
+
+    def _fetch_stockout_historical_rows(
+        self,
+        *,
+        data_date: str,
+        scope: str,
+        country_category: str = "all",
+        store: str = "all",
+        keyword: str = "",
+    ) -> list[dict[str, Any]]:
+        clauses = ["data_date = %(data_date)s", "scope_mode = %(scope)s"]
+        params: dict[str, Any] = {"data_date": data_date, "scope": scope}
+        if country_category != "all":
+            clauses.append("country_category = %(country_category)s")
+            params["country_category"] = country_category
+        if store != "all":
+            clauses.append("store = %(store)s")
+            params["store"] = store
+        if keyword:
+            clauses.append("(lower(msku) like %(keyword)s or lower(store) like %(keyword)s or lower(country) like %(keyword)s)")
+            params["keyword"] = f"%{keyword}%"
+        selected_columns = """
+            data_date, scope_mode, country_category, store, msku, country,
+            current_gate_status, current_gate_reason,
+            historical_evaluable_status, historical_evaluable_reason,
+            role_7d, role_14d, role_30d, role_90d,
+            historical_operating_level, historical_stability,
+            historical_role_pattern, pre_oos_role_change,
+            low_stock_constrained, inventory_sales_conflict_flag,
+            missing_date_gap_flag, few_selling_days_flag,
+            single_day_concentrated_flag, extreme_single_day_concentrated_flag,
+            event_boundary_incomplete_flag, one_day_recovery_then_oos_flag,
+            rule_version
+        """
+        with self._source_connection() as conn, conn.cursor() as cursor:
+            cursor.execute(
+                f"select {selected_columns} from {STOCKOUT_HISTORICAL_RESULT_TABLE} where {' and '.join(clauses)}",
+                params,
             )
-        ]
-        return {
-            "data_date": data_date,
-            **self.build_stockout_operating_status_summary(
-                facts=facts,
-                role_period=role_period,
-                scope=scope,
-            ),
-        }
+            return list(cursor.fetchall())
+
+    def get_stockout_historical_members(self, **filters: Any) -> set[tuple[str, ...]]:
+        meta = self.get_meta()
+        data_date = str(filters.get("data_date") or meta["default_data_date"])
+        scope = str(filters.get("scope") or "business_unit")
+        rows = self._fetch_stockout_historical_rows(
+            data_date=data_date,
+            scope=scope,
+            country_category=str(filters.get("country_category") or "all"),
+            store=str(filters.get("store") or "all"),
+            keyword=str(filters.get("keyword") or "").strip().casefold(),
+        )
+        return filter_stockout_historical_members(
+            rows,
+            str(filters.get("dimension") or ""),
+            str(filters.get("code") or ""),
+            period=str(filters.get("period") or ""),
+        )
 
     def get_stockout_operating_status_members(self, **filters: Any) -> set[tuple[str, ...]]:
         meta = self.get_meta()

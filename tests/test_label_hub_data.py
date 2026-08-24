@@ -1,3 +1,4 @@
+import json
 import sys
 import threading
 import unittest
@@ -1021,6 +1022,25 @@ class LabelHubDataTests(unittest.TestCase):
                     "label_id": 2001,
                     "label_period": "30d",
                     "evidence_json": '{"schema_version":"1.0","oos":{"oos_start_date":"2026-08-13"}}',
+                    "historical_operating_evidence_json": json.dumps(
+                        {
+                            "valid_role_node_count": 4,
+                            "rolling_role_nodes": [
+                                {"window_start": "2026-01-01", "window_end": "2026-01-30", "role": "star"},
+                                {"window_start": "2026-01-08", "window_end": "2026-02-06", "role": "potential"},
+                                {"window_start": "2026-01-15", "window_end": "2026-02-13", "role": "potential"},
+                                {"window_start": "2026-01-22", "window_end": "2026-02-20", "role": "dog"},
+                                {
+                                    "window_start": "2026-01-29",
+                                    "window_end": "2026-02-27",
+                                    "role": "unavailable",
+                                    "reason": "effective_operating_days_insufficient",
+                                    "effective_operating_days": 12,
+                                },
+                            ],
+                        },
+                        ensure_ascii=False,
+                    ),
                 }
 
             def __enter__(self):
@@ -1056,8 +1076,33 @@ class LabelHubDataTests(unittest.TestCase):
         self.assertEqual(2001, payload["role"]["id"])
         self.assertEqual("明星产品", payload["role"]["label"])
         self.assertEqual("2026-08-13", payload["evidence"]["oos"]["oos_start_date"])
+        history = payload["historical_role_history"]
+        self.assertEqual("insufficient", history["status"])
+        self.assertEqual(4, history["valid_node_count"])
+        self.assertEqual(1, history["unavailable_node_count"])
+        self.assertEqual(
+            {"code": "potential", "label": "潜力产品", "count": 2, "share": 0.5},
+            history["dominant_role"],
+        )
+        self.assertEqual(
+            [
+                ("star", 1, 0.25),
+                ("potential", 2, 0.5),
+                ("dog", 1, 0.25),
+                ("problem", 0, 0.0),
+                ("in_stock_zero_sales", 0, 0.0),
+            ],
+            [(item["code"], item["count"], item["share"]) for item in history["distribution"]],
+        )
+        self.assertEqual("2026-02-27", history["nodes"][-1]["window_end"])
+        self.assertEqual("周期角色不可判", history["nodes"][-1]["label"])
+        self.assertEqual("30天窗口有效经营日不足", history["nodes"][-1]["reason_label"])
+        self.assertEqual(12, history["nodes"][-1]["effective_operating_days"])
+        self.assertEqual(21, history["nodes"][-1]["minimum_effective_days"])
         self.assertIn("label_id in (2001,2002,2003,2004)", connection.cursor_instance.sql.lower())
+        self.assertIn("dashboard_stockout_historical_operating_snapshot", connection.cursor_instance.sql.lower())
         self.assertEqual("SCH6038a", connection.cursor_instance.params["msku"])
+        self.assertEqual("business_unit", connection.cursor_instance.params["scope_mode"])
 
     def test_stockout_before_role_evidence_queries_exact_country_role(self):
         class Cursor:

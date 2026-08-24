@@ -14,6 +14,7 @@ EXPECTED_MODULES = [
     "etl.product_performance_history_sync",
     "etl.sales_role_snapshot_update",
     "etl.label_rule_evidence_snapshot_update",
+    "etl.stockout_historical_operating_update",
     "etl.replenishment_update",
     "etl.replenishment_tracking_summary_update",
     "etl.return_goods_update",
@@ -119,7 +120,9 @@ def test_required_step_failure_stops_chain_and_returns_original_exit_code(tmp_pa
     )
 
     assert result.exit_code == 7
-    assert [command[2] for command in commands] == EXPECTED_MODULES[:6]
+    assert [command[2] for command in commands] == EXPECTED_MODULES[
+        : EXPECTED_MODULES.index("etl.replenishment_update") + 1
+    ]
     assert [item.status for item in notifications] == ["failed"]
     assert notifications[0].stage == "replenishment"
     assert notifications[0].exit_code == 7
@@ -203,7 +206,7 @@ def test_progress_output_contains_step_numbers_status_and_summary(tmp_path):
 
     text = "\n".join(output)
     assert result.exit_code == 0
-    assert "[1/8]" in text
+    assert "[1/9]" in text
     assert "远端数据完整性预检" in text
     assert "成功" in text
     assert "总耗时" in text
