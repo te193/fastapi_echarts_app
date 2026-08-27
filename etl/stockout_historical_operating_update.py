@@ -6,7 +6,6 @@ from collections import defaultdict
 from datetime import date, datetime
 from typing import Any, Iterable, Mapping
 
-from app.services.label_hub_data import label_hub_service
 from app.services.stockout_historical_operating import RULE_VERSION, evaluate_stockout_history
 from etl.dashboard_daily_update import build_schema_config, connect_target, render_sql
 from etl.replenishment_update import apply_database_ini_env
@@ -14,8 +13,6 @@ from etl.replenishment_update import apply_database_ini_env
 
 TABLE_NAME = "etl_datasync_test.dashboard_stockout_historical_operating_snapshot"
 CURRENT_STOCKOUT_LABEL_ID = 304
-CURRENT_ROLE_IDS = (2001, 2002, 2003, 2004)
-EVALUABLE_GATE_CODES = {"full_period_zero_sales", "star", "potential", "dog", "loss_issue", "low_margin_issue"}
 
 CREATE_TABLE_SQL = """
 create table if not exists etl_datasync_test.dashboard_stockout_historical_operating_snapshot (
@@ -47,6 +44,20 @@ create table if not exists etl_datasync_test.dashboard_stockout_historical_opera
     role_14d varchar(32) null,
     role_30d varchar(32) null,
     role_90d varchar(32) null,
+    pre_oos_role varchar(32) null,
+    role_evidence_status varchar(40) not null default 'no_valid_role',
+    role_source_date date null,
+    valid_window_count int not null default 0,
+    dominant_role varchar(32) null,
+    dominant_role_share decimal(10,6) not null default 0,
+    role_switch_rate decimal(10,6) not null default 0,
+    recent_trend varchar(40) null,
+    daily_sales_trend varchar(40) null,
+    margin_trend varchar(40) null,
+    combined_label_code varchar(128) null,
+    combined_label varchar(128) null,
+    auxiliary_json json null,
+    inventory_boundary_status varchar(48) null,
     historical_operating_level varchar(40) null,
     historical_stability varchar(40) null,
     role_stability varchar(24) null,
@@ -75,6 +86,22 @@ create table if not exists etl_datasync_test.dashboard_stockout_historical_opera
 ) engine=InnoDB default charset=utf8mb4 comment='当前断货商品的断货前历史经营每日结果快照';
 """
 ENSURE_COUNTRY_INDEX_SQL = f"alter table {TABLE_NAME} add index idx_date_scope_country (data_date, scope_mode, country)"
+ENSURE_V3_COLUMN_SQL = (
+    f"alter table {TABLE_NAME} add column pre_oos_role varchar(32) null after role_90d",
+    f"alter table {TABLE_NAME} add column role_evidence_status varchar(40) not null default 'no_valid_role' after pre_oos_role",
+    f"alter table {TABLE_NAME} add column role_source_date date null after role_evidence_status",
+    f"alter table {TABLE_NAME} add column valid_window_count int not null default 0 after role_source_date",
+    f"alter table {TABLE_NAME} add column dominant_role varchar(32) null after valid_window_count",
+    f"alter table {TABLE_NAME} add column dominant_role_share decimal(10,6) not null default 0 after dominant_role",
+    f"alter table {TABLE_NAME} add column role_switch_rate decimal(10,6) not null default 0 after dominant_role_share",
+    f"alter table {TABLE_NAME} add column recent_trend varchar(40) null after role_switch_rate",
+    f"alter table {TABLE_NAME} add column daily_sales_trend varchar(40) null after recent_trend",
+    f"alter table {TABLE_NAME} add column margin_trend varchar(40) null after daily_sales_trend",
+    f"alter table {TABLE_NAME} add column combined_label_code varchar(128) null after margin_trend",
+    f"alter table {TABLE_NAME} add column combined_label varchar(128) null after combined_label_code",
+    f"alter table {TABLE_NAME} add column auxiliary_json json null after combined_label",
+    f"alter table {TABLE_NAME} add column inventory_boundary_status varchar(48) null after auxiliary_json",
+)
 
 SNAPSHOT_COLUMNS = (
     "data_date", "scope_mode", "country_category", "store", "msku", "country",
@@ -84,6 +111,10 @@ SNAPSHOT_COLUMNS = (
     "history_span_days", "expected_calendar_days", "observed_daily_days", "daily_coverage_rate",
     "effective_operating_days", "effective_operating_weeks", "historical_evaluable_status",
     "historical_evaluable_reason", "role_7d", "role_14d", "role_30d", "role_90d",
+    "pre_oos_role", "role_evidence_status", "role_source_date", "valid_window_count",
+    "dominant_role", "dominant_role_share", "role_switch_rate", "recent_trend",
+    "daily_sales_trend", "margin_trend", "combined_label_code", "combined_label",
+    "auxiliary_json", "inventory_boundary_status",
     "historical_operating_level", "historical_stability", "role_stability", "sales_stability",
     "margin_stability", "historical_role_pattern", "pre_oos_role_change", "low_stock_constrained",
     "inventory_sales_conflict_flag", "missing_date_gap_flag", "few_selling_days_flag",
@@ -120,22 +151,44 @@ def _performance_row(row: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _aggregate_business_rows(rows: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    grouped: dict[date, list[dict[str, Any]]] = defaultdict(list)
-    for source in rows:
+def _inventory_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "dt_date": row.get("dt_date", row.get("snapshot_date")),
+        "country_category": str(row.get("country_category") or ""),
+        "country": str(row.get("country") or ""),
+        "store": str(row.get("store", row.get("seller_name_new")) or ""),
+        "msku": str(row.get("msku", row.get("seller_sku_adj")) or ""),
+        "fba_available": (
+            None
+            if row.get("fba_available", row.get("afn_fulfillable_quantity")) is None
+            else float(row.get("fba_available", row.get("afn_fulfillable_quantity")))
+        ),
+    }
+
+
+def _business_daily_rows(
+    performance_rows: Iterable[Mapping[str, Any]],
+    inventory_rows: Iterable[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    performance_by_day: dict[date, list[dict[str, Any]]] = defaultdict(list)
+    for source in performance_rows:
         row = _performance_row(source)
-        grouped[row["dt_date"]].append(row)
+        performance_by_day[row["dt_date"]].append(row)
+    inventory_by_day: dict[date, list[float]] = defaultdict(list)
+    for source in inventory_rows:
+        row = _inventory_row(source)
+        if row["fba_available"] is not None:
+            inventory_by_day[row["dt_date"]].append(row["fba_available"])
     result = []
-    for day in sorted(grouped):
-        items = grouped[day]
-        inventories = [row["fba_available"] for row in items if row["fba_available"] is not None]
+    for day in sorted(inventory_by_day):
+        items = performance_by_day.get(day, [])
         result.append(
             {
                 "dt_date": day,
                 "sales_qty": sum(row["sales_qty"] for row in items),
                 "sales_amount": sum(row["sales_amount"] for row in items),
                 "order_gross_profit": sum(row["order_gross_profit"] for row in items),
-                "fba_available": sum(inventories) if inventories else None,
+                "fba_available": max(inventory_by_day[day]),
                 "ranking": None,
             }
         )
@@ -145,12 +198,26 @@ def _aggregate_business_rows(rows: Iterable[Mapping[str, Any]]) -> list[dict[str
 def _country_rows_with_business_inventory(
     rows: Iterable[Mapping[str, Any]], business_rows: Iterable[Mapping[str, Any]], country: str
 ) -> list[dict[str, Any]]:
-    inventory_by_day = {row["dt_date"]: row["fba_available"] for row in business_rows}
-    return [
-        {**row, "fba_available": inventory_by_day.get(row["dt_date"])}
-        for row in (_performance_row(source) for source in rows)
-        if row["country"] == country
-    ]
+    performance_by_day: dict[date, list[dict[str, Any]]] = defaultdict(list)
+    for source in rows:
+        row = _performance_row(source)
+        if row["country"] == country:
+            performance_by_day[row["dt_date"]].append(row)
+    result = []
+    for business_row in business_rows:
+        items = performance_by_day.get(business_row["dt_date"], [])
+        rankings = [row["ranking"] for row in items if row["ranking"] is not None]
+        result.append(
+            {
+                "dt_date": business_row["dt_date"],
+                "sales_qty": sum(row["sales_qty"] for row in items),
+                "sales_amount": sum(row["sales_amount"] for row in items),
+                "order_gross_profit": sum(row["order_gross_profit"] for row in items),
+                "fba_available": business_row["fba_available"],
+                "ranking": rankings[-1] if rankings else None,
+            }
+        )
+    return result
 
 
 def _snapshot_record(
@@ -160,6 +227,13 @@ def _snapshot_record(
     flags = result.get("sales_concentration_flags") or {}
     evidence = dict(result)
     evidence["inventory_scope"] = "inherited_business_unit" if scope_mode == "country" else "business_unit_aggregate"
+    auxiliary = {
+        "dominant_role": result.get("dominant_role"),
+        "historical_stability": result.get("confirmed_historical_stability"),
+        "role_evidence_status": result.get("role_evidence_status"),
+        "role_source_date": result.get("role_source_date"),
+        "auxiliary_metric": result.get("auxiliary_metric") or "",
+    }
     return {
         "data_date": data_date,
         "scope_mode": scope_mode,
@@ -189,8 +263,22 @@ def _snapshot_record(
         "role_14d": (periods.get("14d") or {}).get("role"),
         "role_30d": (periods.get("30d") or {}).get("role"),
         "role_90d": (periods.get("90d") or {}).get("role"),
+        "pre_oos_role": result.get("pre_oos_role"),
+        "role_evidence_status": result.get("role_evidence_status") or "no_valid_role",
+        "role_source_date": result.get("role_source_date"),
+        "valid_window_count": int(result.get("valid_window_count") or 0),
+        "dominant_role": result.get("dominant_role"),
+        "dominant_role_share": float(result.get("dominant_role_share") or 0),
+        "role_switch_rate": float(result.get("role_switch_rate") or 0),
+        "recent_trend": result.get("recent_trend"),
+        "daily_sales_trend": result.get("daily_sales_trend"),
+        "margin_trend": result.get("margin_trend"),
+        "combined_label_code": result.get("combined_label_code"),
+        "combined_label": result.get("combined_label"),
+        "auxiliary_json": json.dumps(auxiliary, ensure_ascii=False, default=str, separators=(",", ":")),
+        "inventory_boundary_status": result.get("oos_start_confidence"),
         "historical_operating_level": result.get("historical_operating_level"),
-        "historical_stability": result.get("historical_stability"),
+        "historical_stability": result.get("confirmed_historical_stability"),
         "role_stability": result.get("role_stability"),
         "sales_stability": result.get("sales_stability"),
         "margin_stability": result.get("margin_stability"),
@@ -213,56 +301,56 @@ def _snapshot_record(
 def build_snapshot_rows(
     stockout_facts: Iterable[Mapping[str, Any]],
     performance_rows: Iterable[Mapping[str, Any]],
-    gate_by_key: Mapping[tuple[str, str, str], Mapping[str, str]],
+    inventory_rows: Iterable[Mapping[str, Any]],
     *,
     data_date: date,
 ) -> list[dict[str, Any]]:
     stockouts = {_key(row): {"country_category": _key(row)[0], "store": _key(row)[1], "msku": _key(row)[2]} for row in stockout_facts}
-    grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
+    grouped_performance: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
     for source in performance_rows:
         row = _performance_row(source)
         if _key(row) in stockouts:
-            grouped[_key(row)].append(row)
+            grouped_performance[_key(row)].append(row)
+    grouped_inventory: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
+    for source in inventory_rows:
+        row = _inventory_row(source)
+        if _key(row) in stockouts:
+            grouped_inventory[_key(row)].append(row)
     snapshots = []
     for key, identity in sorted(stockouts.items()):
-        source_rows = grouped.get(key, [])
-        business_rows = _aggregate_business_rows(source_rows)
-        gate = gate_by_key.get(key) or {"status": "not_evaluable", "reason": "current_gate_evidence_missing"}
+        source_rows = grouped_performance.get(key, [])
+        business_rows = _business_daily_rows(
+            source_rows,
+            grouped_inventory.get(key, []),
+        )
         business_result = evaluate_stockout_history(
             business_rows,
             current_date=data_date,
-            current_gate_status=gate["status"],
-            current_gate_reason=gate.get("reason", ""),
+            current_gate_status="evaluable",
+            current_gate_reason="",
             scope_mode="business_unit",
+            current_oos_confirmed=True,
         )
         snapshots.append(_snapshot_record(identity, business_result, data_date=data_date, scope_mode="business_unit", country=""))
-        current_countries = sorted({row["country"] for row in source_rows if row["dt_date"] == data_date and row["country"]})
-        for country in current_countries:
-            country_rows = _country_rows_with_business_inventory(source_rows, business_rows, country)
+        for country in sorted({row["country"] for row in source_rows if row["country"]}):
             country_result = evaluate_stockout_history(
-                country_rows,
+                _country_rows_with_business_inventory(source_rows, business_rows, country),
                 current_date=data_date,
-                current_gate_status=gate["status"],
-                current_gate_reason=gate.get("reason", ""),
+                current_gate_status="evaluable",
+                current_gate_reason="",
                 scope_mode="country",
+                current_oos_confirmed=True,
             )
-            snapshots.append(_snapshot_record(identity, country_result, data_date=data_date, scope_mode="country", country=country))
+            snapshots.append(
+                _snapshot_record(
+                    identity,
+                    country_result,
+                    data_date=data_date,
+                    scope_mode="country",
+                    country=country,
+                )
+            )
     return snapshots
-
-
-def derive_current_gate_by_key(facts: list[dict[str, Any]]) -> dict[tuple[str, str, str], dict[str, str]]:
-    payload = label_hub_service.build_stockout_operating_status_summary(
-        facts=facts,
-        role_period="30d",
-        scope="business_unit",
-        include_members=True,
-    )
-    by_key: dict[tuple[str, str, str], dict[str, str]] = {}
-    for code, members in payload["_status_members"].items():
-        status = "evaluable" if code in EVALUABLE_GATE_CODES else "not_evaluable"
-        for member in members:
-            by_key[tuple(member)] = {"status": status, "reason": "" if status == "evaluable" else code}
-    return by_key
 
 
 def replace_snapshot_date(conn, data_date: date, rows: list[dict[str, Any]]) -> None:
@@ -280,6 +368,12 @@ def replace_snapshot_date(conn, data_date: date, rows: list[dict[str, Any]]) -> 
 def ensure_result_table(conn, schemas: Mapping[str, str]) -> None:
     with conn.cursor() as cursor:
         cursor.execute(render_sql(CREATE_TABLE_SQL, schemas))
+        for statement in ENSURE_V3_COLUMN_SQL:
+            try:
+                cursor.execute(statement)
+            except Exception as exc:
+                if not exc.args or exc.args[0] != 1060:
+                    raise
         try:
             cursor.execute(ENSURE_COUNTRY_INDEX_SQL)
         except Exception as exc:
@@ -288,16 +382,18 @@ def ensure_result_table(conn, schemas: Mapping[str, str]) -> None:
     conn.commit()
 
 
-def _load_dates(conn) -> tuple[date | None, date | None]:
+def _load_dates(conn) -> tuple[date | None, date | None, date | None]:
     with conn.cursor() as cursor:
         cursor.execute("select max(data_date) as max_date from etl_datasync_test.dashboard_label_fact_snapshot")
         label_date = (cursor.fetchone() or {}).get("max_date")
         cursor.execute("select max(dt_date) as max_date from etl_datasync_test.dashboard_product_performance_daily")
         performance_date = (cursor.fetchone() or {}).get("max_date")
-    return label_date, performance_date
+        cursor.execute("select max(snapshot_date) as max_date from etl_datasync_test.dashboard_inventory_daily_snapshot")
+        inventory_date = (cursor.fetchone() or {}).get("max_date")
+    return label_date, performance_date, inventory_date
 
 
-def _source_partition_presence(conn, data_date: date) -> tuple[bool, bool]:
+def _source_partition_presence(conn, data_date: date) -> tuple[bool, bool, bool]:
     with conn.cursor() as cursor:
         cursor.execute(
             "select exists(select 1 from etl_datasync_test.dashboard_label_fact_snapshot where data_date = %(data_date)s limit 1) as present",
@@ -309,7 +405,12 @@ def _source_partition_presence(conn, data_date: date) -> tuple[bool, bool]:
             {"data_date": data_date},
         )
         performance_present = bool((cursor.fetchone() or {}).get("present"))
-    return label_present, performance_present
+        cursor.execute(
+            "select exists(select 1 from etl_datasync_test.dashboard_inventory_daily_snapshot where snapshot_date = %(data_date)s limit 1) as present",
+            {"data_date": data_date},
+        )
+        inventory_present = bool((cursor.fetchone() or {}).get("present"))
+    return label_present, performance_present, inventory_present
 
 
 def validate_source_dates(
@@ -317,23 +418,27 @@ def validate_source_dates(
     target_date: date,
     label_max_date: date | None,
     performance_max_date: date | None,
+    inventory_max_date: date | None,
     label_partition_exists: bool,
     performance_partition_exists: bool,
+    inventory_partition_exists: bool,
     allow_latest_mismatch: bool = False,
 ) -> None:
-    if label_max_date is None or performance_max_date is None:
+    if label_max_date is None or performance_max_date is None or inventory_max_date is None:
         raise RuntimeError("stockout historical operating source tables have no available date")
-    if label_max_date != performance_max_date and not allow_latest_mismatch:
+    if len({label_max_date, performance_max_date, inventory_max_date}) > 1 and not allow_latest_mismatch:
         raise RuntimeError(
-            f"latest source date mismatch: label={label_max_date}, performance={performance_max_date}"
+            "latest source date mismatch: "
+            f"label={label_max_date}, performance={performance_max_date}, inventory={inventory_max_date}"
         )
-    latest_common_date = min(label_max_date, performance_max_date)
+    latest_common_date = min(label_max_date, performance_max_date, inventory_max_date)
     if target_date > latest_common_date:
         raise RuntimeError(f"target source date is newer than latest ready date: target={target_date}, latest={latest_common_date}")
-    if not label_partition_exists or not performance_partition_exists:
+    if not label_partition_exists or not performance_partition_exists or not inventory_partition_exists:
         raise RuntimeError(
             "target source partition missing: "
-            f"target={target_date}, label={label_partition_exists}, performance={performance_partition_exists}"
+            f"target={target_date}, label={label_partition_exists}, "
+            f"performance={performance_partition_exists}, inventory={inventory_partition_exists}"
         )
 
 
@@ -345,8 +450,7 @@ def _load_facts(conn, data_date: date) -> list[dict[str, Any]]:
                    uncompress(evidence_blob) as evidence_json
             from etl_datasync_test.dashboard_label_fact_snapshot
             where data_date = %(data_date)s
-              and ((label_id = 304 and label_period = 'current')
-                   or (label_id in (2001,2002,2003,2004) and label_period in ('7d','14d','30d','90d')))
+              and label_id = 304 and label_period = 'current'
               and msku not like 'Amazon.Found.%%'
             """,
             {"data_date": data_date},
@@ -361,7 +465,7 @@ def _load_performance(conn, data_date: date) -> list[dict[str, Any]]:
             select p.dt_date, p.country_category, p.country,
                    p.seller_name_new as store, p.seller_sku_adj as msku,
                    p.sales_qty, p.sales_amount, p.order_gross_profit,
-                   p.afn_fulfillable_quantity as fba_available, p.ranking
+                   p.ranking
             from etl_datasync_test.dashboard_product_performance_daily p
             inner join (
                 select distinct country_category, store, msku
@@ -377,21 +481,50 @@ def _load_performance(conn, data_date: date) -> list[dict[str, Any]]:
         return list(cursor.fetchall())
 
 
+def _load_inventory(conn, data_date: date) -> list[dict[str, Any]]:
+    with conn.cursor() as cursor:
+        cursor.execute(
+            """
+            select i.snapshot_date as dt_date, i.country_category,
+                   i.seller_name_new as store, i.seller_sku_adj as msku,
+                   max(i.afn_fulfillable_quantity) as fba_available
+            from etl_datasync_test.dashboard_inventory_daily_snapshot i
+            inner join (
+                select distinct country_category, store, msku
+                from etl_datasync_test.dashboard_label_fact_snapshot
+                where data_date = %(data_date)s and label_id = 304 and label_period = 'current'
+            ) s on s.country_category = i.country_category
+               and s.store = i.seller_name_new and s.msku = i.seller_sku_adj
+            where i.snapshot_date between '2026-01-01' and %(data_date)s
+            group by i.snapshot_date, i.country_category, i.seller_name_new, i.seller_sku_adj
+            order by i.country_category, i.seller_name_new, i.seller_sku_adj, i.snapshot_date
+            """,
+            {"data_date": data_date},
+        )
+        return list(cursor.fetchall())
+
+
 def run_update(conn, *, data_date: date, allow_latest_mismatch: bool = False) -> list[dict[str, Any]]:
-    label_date, performance_date = _load_dates(conn)
-    label_partition, performance_partition = _source_partition_presence(conn, data_date)
+    label_date, performance_date, inventory_date = _load_dates(conn)
+    label_partition, performance_partition, inventory_partition = _source_partition_presence(conn, data_date)
     validate_source_dates(
         target_date=data_date,
         label_max_date=label_date,
         performance_max_date=performance_date,
+        inventory_max_date=inventory_date,
         label_partition_exists=label_partition,
         performance_partition_exists=performance_partition,
+        inventory_partition_exists=inventory_partition,
         allow_latest_mismatch=allow_latest_mismatch,
     )
     facts = _load_facts(conn, data_date)
     stockouts = [fact for fact in facts if int(fact.get("label_id") or 0) == CURRENT_STOCKOUT_LABEL_ID and fact.get("label_period") == "current"]
-    gates = derive_current_gate_by_key(facts)
-    rows = build_snapshot_rows(stockouts, _load_performance(conn, data_date), gates, data_date=data_date)
+    rows = build_snapshot_rows(
+        stockouts,
+        _load_performance(conn, data_date),
+        _load_inventory(conn, data_date),
+        data_date=data_date,
+    )
     expected_business_units = len({_key(fact) for fact in stockouts})
     actual_business_units = sum(row["scope_mode"] == "business_unit" for row in rows)
     if actual_business_units != expected_business_units:
@@ -422,12 +555,16 @@ def main() -> None:
     schemas = build_schema_config()
     conn = connect_target()
     try:
-        label_date, performance_date = _load_dates(conn)
+        label_date, performance_date, inventory_date = _load_dates(conn)
         target_date = resolve_target_date(args.data_date or "", args.biz_date or "", label_date)
-        if target_date is None or performance_date is None:
+        if target_date is None or performance_date is None or inventory_date is None:
             raise RuntimeError("stockout historical operating source tables have no available date")
         if args.dry_run:
-            print(f"stockout historical operating plan: data_date={target_date}, label={label_date}, performance={performance_date}")
+            print(
+                "stockout historical operating plan: "
+                f"data_date={target_date}, label={label_date}, "
+                f"performance={performance_date}, inventory={inventory_date}"
+            )
             return
         ensure_result_table(conn, schemas)
         rows = run_update(

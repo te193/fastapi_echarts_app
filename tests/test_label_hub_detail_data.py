@@ -221,6 +221,28 @@ class LabelHubDetailDataTests(unittest.TestCase):
         self.assertEqual("country", member_calls[0]["scope"])
         self.assertEqual("stable", member_calls[0]["trend_code"])
 
+    def test_country_operating_status_can_drill_down_to_deduplicated_mskus(self):
+        member_calls = []
+
+        def member_provider(**kwargs):
+            member_calls.append(kwargs)
+            return {("Europe", "FR", "StoreA", "MSKU-1")}
+
+        service = LabelHubDetailDataService(
+            business_row_provider=lambda **kwargs: list(ROWS),
+            stockout_operating_member_provider=member_provider,
+        )
+
+        payload = service.get_details(
+            detail_view="business_unit",
+            stockout_operating_scope="country",
+            stockout_operating_status_period="30d",
+            stockout_operating_status="star",
+        )
+
+        self.assertEqual(["MSKU-1"], [row["msku"] for row in payload["rows"]])
+        self.assertEqual("country", member_calls[0]["scope"])
+
     def test_problems_support_any_and_all(self):
         service, _ = self.make_service()
 
@@ -406,6 +428,62 @@ class LabelHubDetailDataTests(unittest.TestCase):
         self.assertEqual("historical_operating_level", member_calls[0]["dimension"])
         self.assertEqual("excellent", member_calls[0]["code"])
 
+    def test_country_historical_result_can_drill_down_to_deduplicated_mskus(self):
+        member_calls = []
+
+        def member_provider(**kwargs):
+            member_calls.append(kwargs)
+            return {("Europe", "FR", "StoreA", "MSKU-1")}
+
+        service = LabelHubDetailDataService(
+            lambda **kwargs: list(ROWS),
+            stockout_historical_member_provider=member_provider,
+        )
+
+        payload = service.get_details(
+            detail_view="business_unit",
+            stockout_operating_scope="country",
+            stockout_history_dimension="role_stability",
+            stockout_history_code="star|stable",
+        )
+
+        self.assertEqual(["MSKU-1"], [row["msku"] for row in payload["rows"]])
+        self.assertEqual("country", member_calls[0]["scope"])
+
+    def test_stockout_historical_drilldown_enriches_existing_detail_rows(self):
+        annotation_calls = []
+
+        def annotation_provider(**kwargs):
+            annotation_calls.append(kwargs)
+            return {
+                ("Europe", "StoreA", "msku-1"): {
+                    "inventory_first_observed_date": "2026-01-08",
+                    "stockout_combined_label": "明星·持续稳定",
+                    "stockout_historical_stability": "stable",
+                    "stockout_role_source_date": "2026-08-01",
+                }
+            }
+
+        service = LabelHubDetailDataService(
+            lambda **kwargs: list(ROWS),
+            stockout_historical_member_provider=lambda **kwargs: {("Europe", "StoreA", "MSKU-1")},
+            stockout_historical_annotation_provider=annotation_provider,
+        )
+
+        payload = service.get_details(
+            data_date="2026-08-25",
+            stockout_history_dimension="role_stability",
+            stockout_history_code="star|stable",
+            stockout_operating_scope="business_unit",
+        )
+
+        self.assertEqual(1, payload["total"])
+        self.assertEqual("2026-01-08", payload["rows"][0]["inventory_first_observed_date"])
+        self.assertEqual("明星·持续稳定", payload["rows"][0]["stockout_combined_label"])
+        self.assertEqual("stable", payload["rows"][0]["stockout_historical_stability"])
+        self.assertEqual("2026-08-01", payload["rows"][0]["stockout_role_source_date"])
+        self.assertEqual("role_stability", annotation_calls[0]["dimension"])
+
     def test_stockout_period_role_drilldown_uses_the_selected_period_for_evidence(self):
         row = {
             **ROWS[0],
@@ -428,6 +506,22 @@ class LabelHubDetailDataTests(unittest.TestCase):
 
         self.assertEqual("7d", payload["rows"][0]["stockout_before_role_period"])
         self.assertEqual("明星产品", payload["rows"][0]["stockout_before_role"])
+
+    def test_stockout_period_unformed_reason_drilldown_accepts_the_selected_period(self):
+        service = LabelHubDetailDataService(
+            lambda **kwargs: [ROWS[0]],
+            stockout_historical_member_provider=lambda **kwargs: {("Europe", "StoreA", "MSKU-1")},
+        )
+
+        payload = service.get_details(
+            stockout_history_dimension="period_unformed_reason",
+            stockout_history_code="left_boundary_incomplete",
+            stockout_history_period="7d",
+            stockout_operating_scope="business_unit",
+        )
+
+        self.assertEqual(1, payload["total"])
+        self.assertEqual("7d", payload["applied_filters"]["stockout_history_period"])
 
     def test_counts_precede_pagination_unique_msku_is_deduplicated_and_missing_sorts_last(self):
         rows = [
