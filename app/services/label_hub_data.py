@@ -256,6 +256,9 @@ def _historical_role_history(value: Any) -> dict[str, Any]:
                 "minimum_effective_days": 30,
                 "daily_sales": _number(source.get("daily_sales")),
                 "margin_rate": _number(source.get("margin_rate")),
+                "sellable_inventory": _number(
+                    source.get("fba_available", source.get("sellable_inventory"))
+                ),
             }
         )
     nodes.sort(key=lambda item: (item["window_end"], item["window_start"]))
@@ -302,6 +305,7 @@ def _historical_role_history(value: Any) -> dict[str, Any]:
         "dominant_role": dominant_role,
         "distribution": distribution,
         "nodes": nodes,
+        "event_sellable_inventory": _number(evidence.get("sellable_inventory")),
     }
 
 
@@ -392,6 +396,7 @@ def _stockout_evidence_result(
             "confidence": confidence,
             "observed_since_date": observed_start,
             "minimum_days": int(row.get("minimum_current_oos_days") or 0),
+            "sellable_inventory": history.get("event_sellable_inventory"),
         },
         "history_window": {
             "start": _date_text(row.get("history_window_start")),

@@ -46,6 +46,7 @@ def test_current_oos_event_uses_most_recent_continuous_zero_run():
 
     assert event["oos_start_date"] == date(2026, 4, 5)
     assert event["oos_start_confidence"] == "complete"
+    assert event["sellable_inventory"] == 0
 
 
 def test_current_oos_event_starts_again_after_any_positive_inventory():
@@ -153,6 +154,8 @@ def test_nodes_carry_last_role_until_thirty_complete_recovery_days():
     assert by_day[date(2026, 3, 7)]["state"] == "recovery_observation"
     assert by_day[date(2026, 3, 8)]["state"] == "normal"
     assert by_day[date(2026, 3, 8)]["source_node_date"] == date(2026, 3, 8)
+    assert by_day[date(2026, 2, 2)]["sellable_inventory"] == 10
+    assert by_day[date(2026, 2, 3)]["sellable_inventory"] == 0
 
 
 def test_recovery_counter_resets_when_stockout_recurs_before_day_thirty():
