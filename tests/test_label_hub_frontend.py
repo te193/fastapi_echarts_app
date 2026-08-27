@@ -406,7 +406,7 @@ def test_stockout_visible_result_labels_expose_their_complete_operating_rules():
     assert "stockoutHistoryDetailedHelp(dimension, code)" in script
     assert "stockoutHistoryExplanationText(focusGroup.dimension, focusItem.code" in script
     assert ".label-hub-stockout-explanation-option:hover > .label-hub-stockout-rule-tooltip" in styles
-    assert "js/label_hub.js') }}?v=20260826stockoutevidence2" in template
+    assert "js/label_hub.js') }}?v=20260827stockoutinventory1" in template
 
 
 def test_stockout_big_label_view_renders_good_to_bad_role_accordion():
@@ -454,7 +454,7 @@ def test_stockout_detailed_help_uses_a_quiet_themed_scrollbar():
     assert "scrollbar-width: thin" in styles
     assert "scrollbar-color: rgba(143, 208, 255, .48) transparent" in styles
     assert "scrollbar-gutter: stable" in styles
-    assert "css/styles.css') }}?v=20260826stockoutevidence2" in template
+    assert "css/styles.css') }}?v=20260827stockoutinventory1" in template
 
 
 def test_stockout_explanation_tooltip_anchors_to_its_own_chip_without_clipping():
@@ -602,7 +602,7 @@ def test_stockout_historical_requests_follow_selected_data_date():
     assert "detailState.stockout_history_dimension ? stockoutHistoricalDataDate() : state.data_date" in detail_payload
     assert "data_date: stockoutHistoricalDataDate()" in evidence_request
     assert "row.stockout_history_dimension ? stockoutHistoricalDataDate() : state.data_date" not in evidence_request
-    assert "js/label_hub.js') }}?v=20260826stockoutevidence2" in template
+    assert "js/label_hub.js') }}?v=20260827stockoutinventory1" in template
 
 
 def test_country_detail_uses_country_scoped_stockout_role_evidence():
@@ -617,7 +617,7 @@ def test_country_detail_uses_country_scoped_stockout_role_evidence():
     assert 'row.stockout_before_role' in script
     assert 'class="label-hub-stockout-country-role"' in script
     assert ".label-hub-stockout-country-role" in styles
-    assert "js/label_hub.js') }}?v=20260826stockoutevidence2" in template
+    assert "js/label_hub.js') }}?v=20260827stockoutinventory1" in template
 
 
 def test_stockout_evidence_summary_keeps_long_calculation_mode_inside_its_cell():
@@ -653,8 +653,8 @@ def test_stockout_evidence_header_distinguishes_start_date_kind_and_elapsed_days
     summary_rule = re.search(r"\.label-hub-stockout-evidence-summary\s*\{(?P<body>[^}]*)\}", styles)
     assert summary_rule is not None
     assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in summary_rule.group("body")
-    assert "css/styles.css') }}?v=20260826stockoutevidence2" in template
-    assert "js/label_hub.js') }}?v=20260826stockoutevidence2" in template
+    assert "css/styles.css') }}?v=20260827stockoutinventory1" in template
+    assert "js/label_hub.js') }}?v=20260827stockoutinventory1" in template
 
 
 def test_label_hub_detail_workbench_uses_independent_post_flow_and_dual_views():
@@ -707,7 +707,7 @@ def test_label_hub_detail_export_uses_current_filters_and_downloads_csv_blob():
     assert "URL.revokeObjectURL" in script
     assert "function setDetailExportLoading(isLoading)" in script
     assert 'elements.labelHubDetailExport.textContent = isLoading ? "导出中…" : "导出 CSV";' in script
-    assert "js/label_hub.js') }}?v=20260826stockoutevidence2" in template
+    assert "js/label_hub.js') }}?v=20260827stockoutinventory1" in template
 
 
 def test_detail_role_reason_filter_replaces_sales_trend_and_follows_detail_scope():
@@ -830,7 +830,7 @@ def test_detail_filters_match_compact_reference_visual_language():
     assert ".label-hub-detail-filter-control .ss-main:has(.ss-value)" in styles
     assert ".ss-value .ss-value-text" in styles
     assert "color: #155ba6;" in styles
-    assert "styles.css') }}?v=20260826stockoutevidence2" in template
+    assert "styles.css') }}?v=20260827stockoutinventory1" in template
     assert ".label-hub-detail-workbench select[multiple] { min-height: 64px" not in styles
 
 
@@ -1295,7 +1295,7 @@ def test_remote_breakdown_nodes_have_enough_distinct_colors_for_long_status_list
     assert len(colors) >= 12
     assert len(set(colors)) == len(colors)
     assert "remoteBucketColor(panel, bucket)" in script
-    assert "?v=20260826stockoutevidence2" in template
+    assert "?v=20260827stockoutinventory1" in template
 
 
 def test_label_hub_issue_overview_shows_selected_group_problem_counts():
@@ -1456,7 +1456,7 @@ def test_current_category_detail_uses_period_scoped_distribution():
     assert "distributionById" in script
     assert 'cache: "no-store"' in common
     assert "js/common.js') }}?v=20260818labeltimeout1" in base
-    assert "js/label_hub.js') }}?v=20260826stockoutevidence2" in template
+    assert "js/label_hub.js') }}?v=20260827stockoutinventory1" in template
 
 
 def test_country_detail_overview_matches_label_hub_information_structure():
@@ -1628,4 +1628,18 @@ def test_stockout_historical_role_timeline_puts_the_pre_stockout_node_first():
     assert "is-pre-oos-source" in renderer
     assert "最新在左，越靠左越接近断货" in renderer
     assert "由左到右，越靠右越接近断货" not in renderer
-    assert "js/label_hub.js') }}?v=20260826stockoutevidence2" in template
+    assert "js/label_hub.js') }}?v=20260827stockoutinventory1" in template
+
+
+def test_stockout_historical_role_timeline_shows_daily_sellable_inventory():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+    renderer = script.split("function renderHistoricalRoleHistory(history, stockoutEvent)", 1)[1].split(
+        "function stockoutOperatingColumns", 1
+    )[0]
+
+    assert "node.sellable_inventory" in renderer
+    assert "可售库存" in renderer
+    assert "stockoutEvent.sellable_inventory" in renderer
+    assert "库存为 0 用于核对库存事实" in renderer
+    assert "label-hub-stockout-history-inventory" in styles

@@ -139,6 +139,7 @@ def find_current_oos_event(
         "minimum_current_oos_days": 0,
         "one_day_recovery_then_oos": False,
         "event_boundary_incomplete": False,
+        "sellable_inventory": None,
     }
     if not base["current_oos_flag"]:
         return base
@@ -179,6 +180,7 @@ def find_current_oos_event(
             observed_oos_since_date=event_start,
             minimum_current_oos_days=(current_date - event_start).days + 1,
             event_boundary_incomplete=True,
+            sellable_inventory=by_day.get(event_start, {}).get("fba_available"),
         )
         return base
 
@@ -195,6 +197,7 @@ def find_current_oos_event(
         observed_oos_since_date=event_start,
         minimum_current_oos_days=(current_date - event_start).days + 1,
         one_day_recovery_then_oos=one_day_recovery,
+        sellable_inventory=by_day.get(event_start, {}).get("fba_available"),
     )
     return base
 
@@ -417,6 +420,7 @@ def build_rolling_role_nodes(
             "margin_rate": None,
             "recovery_day_count": 0,
             "reason": "no_complete_30d_window",
+            "sellable_inventory": row.get("fba_available") if row is not None else None,
         }
         if row is None or row["fba_available"] is None:
             consecutive_recovery_days = 0

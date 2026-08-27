@@ -20296,7 +20296,7 @@ body.has-label-hub-stockout-evidence-modal { overflow: hidden; }
   position: relative;
   display: grid;
   width: 104px;
-  min-height: 82px;
+  min-height: 98px;
   padding: 16px 8px 7px;
   border-top: 3px solid var(--role-color);
   background: #f8fbff;
@@ -20319,6 +20319,9 @@ body.has-label-hub-stockout-evidence-modal { overflow: hidden; }
 .label-hub-stockout-history-timeline time { color: #566d86; font-size: 11px; }
 .label-hub-stockout-history-timeline b { margin-top: 4px; color: var(--role-color); font-size: 12px; }
 .label-hub-stockout-history-timeline small { margin-top: 3px; color: #8291a2; font-size: 10px; }
+.label-hub-stockout-history-inventory { margin-top: 5px; color: #48627e; font-size: 10px; font-weight: 700; white-space: nowrap; }
+.label-hub-stockout-history-inventory.is-zero { color: #c33f50; }
+.label-hub-stockout-history-inventory.is-missing { color: #8291a2; font-weight: 600; }
 
 .label-hub-stockout-evidence-section.is-raw pre { max-height: 390px; margin: 0; overflow: auto; padding: 14px; border-radius: 8px; background: #10233e; color: #d9e8f8; font: 12px/1.65 Consolas, "Courier New", monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .label-hub-stockout-evidence-foot { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 12px 26px 16px; border-top: 1px solid #e1e9f2; }

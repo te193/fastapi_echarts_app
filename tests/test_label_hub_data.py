@@ -15,6 +15,7 @@ from app.services.label_hub_data import (
     SOURCE_INITIAL_CONTENT_CHECK_DELAY_SECONDS,
     LabelHubDataService,
     _evidence_object,
+    _historical_role_history,
     _missing_metric_units,
     _public_business_row,
     _stockout_evidence_result,
@@ -233,6 +234,34 @@ class LabelHubDataTests(unittest.TestCase):
         evidence = _evidence_object(b'{"metrics": {"daily_sales": 2}}')
 
         self.assertEqual({"metrics": {"daily_sales": 2}}, evidence)
+
+    def test_historical_role_history_exposes_daily_sellable_inventory(self):
+        history = _historical_role_history(
+            {
+                "confirmed_role_nodes": [
+                    {
+                        "node_date": "2026-07-29",
+                        "window_start": "2026-06-30",
+                        "window_end": "2026-07-29",
+                        "role": "star",
+                        "state": "normal",
+                        "selected_for_stability": True,
+                        "fba_available": 12,
+                    },
+                    {
+                        "node_date": "2026-07-30",
+                        "window_start": "2026-07-01",
+                        "window_end": "2026-07-30",
+                        "role": "unavailable",
+                        "state": "data_anomaly",
+                        "fba_available": None,
+                    },
+                ]
+            }
+        )
+
+        self.assertEqual(12, history["nodes"][0]["sellable_inventory"])
+        self.assertIsNone(history["nodes"][1]["sellable_inventory"])
 
     def test_stockout_evidence_result_distinguishes_confirmed_observed_and_pending_dates(self):
         cases = (
