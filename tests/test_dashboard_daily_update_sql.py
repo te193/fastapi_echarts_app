@@ -1,7 +1,9 @@
 import unittest
 from argparse import Namespace
 from datetime import date
+from unittest.mock import patch
 
+from etl import dashboard_daily_update as dashboard_update
 from etl.dashboard_daily_update import (
     AD_BUDGET_COLUMNS,
     CREATE_AD_BUDGET_SNAPSHOT_SQL,
@@ -61,6 +63,106 @@ class DashboardDailyUpdateSqlTests(unittest.TestCase):
             "sum(case when volume = 0 then 0 else predict_gross_profit end) as order_gross_profit",
             INSERT_PRODUCT_DAILY_SQL,
         )
+
+    def test_product_fingerprint_covers_business_columns_but_ignores_etl_timestamps(self):
+        sql = dashboard_update._product_source_fingerprint_sql(
+            STEPS["product_performance_daily"].source_select_statement
+        )
+
+        self.assertIn("cast(`sales_qty` as decimal(18,4))", sql)
+        self.assertIn("cast(`ranking` as signed)", sql)
+        self.assertIn("`item_key`", sql)
+        self.assertNotIn("`created_at`", sql)
+        self.assertNotIn("`updated_at`", sql)
+
+    def test_product_changed_dates_detects_remote_updates_deletes_and_local_gaps(self):
+        start = date(2026, 8, 23)
+        end = date(2026, 8, 25)
+        source = {
+            date(2026, 8, 23): (10, 100, 10),
+            date(2026, 8, 24): (11, 200, 20),
+        }
+        local = {
+            date(2026, 8, 23): (10, 100, 10),
+            date(2026, 8, 24): (11, 199, 20),
+            date(2026, 8, 25): (9, 300, 30),
+        }
+
+        changed = dashboard_update._product_changed_dates(source, local, start, end)
+
+        self.assertEqual((date(2026, 8, 24), date(2026, 8, 25)), changed)
+        self.assertEqual(
+            ((date(2026, 8, 24), date(2026, 8, 25)),),
+            dashboard_update._contiguous_date_ranges(changed),
+        )
+
+    def test_product_date_ranges_are_formatted_compactly_for_logs(self):
+        changed = (
+            date(2026, 8, 10),
+            date(2026, 8, 11),
+            date(2026, 8, 13),
+        )
+
+        self.assertEqual(
+            "2026-08-10~2026-08-11, 2026-08-13",
+            dashboard_update._format_date_ranges(changed),
+        )
+
+    def test_incremental_product_load_only_replaces_changed_dates(self):
+        start = date(2026, 8, 24)
+        end = date(2026, 8, 25)
+        source = ProductIncrementalSourceConnection(
+            {end: [{"dt_date": end, "item_key": "changed"}]}
+        )
+        target = FakeTargetConnection()
+        params = {
+            "biz_date": end,
+            "product_start_date": start,
+            "product_end_date": end,
+            "next_product_end_date": end.replace(day=26),
+            "product_full_load": 0,
+        }
+        schemas = SchemaConfig(
+            target_schema="etl_datasync_test",
+            etl_source_schema="etl_datasync",
+            dwd_source_schema="dwd_datasync",
+            pricing_source_schema="temporary_dwd",
+        )
+        step = STEPS["product_performance_daily"]
+
+        with (
+            patch.object(
+                dashboard_update,
+                "_load_product_source_fingerprints",
+                return_value={start: (10, 100, 10), end: (11, 200, 20)},
+            ),
+            patch.object(
+                dashboard_update,
+                "_load_product_local_fingerprints",
+                return_value={start: (10, 100, 10), end: (11, 199, 20)},
+            ),
+        ):
+            affected, changed = dashboard_update._execute_incremental_product_source_load(
+                target,
+                source,
+                schemas,
+                step,
+                render_sql(step.source_select_statement, schemas),
+                "insert into target values (%(dt_date)s, %(item_key)s)",
+                params,
+                batch_size=1000,
+            )
+
+        self.assertEqual(1, affected)
+        self.assertEqual((end,), changed)
+        self.assertEqual([end], source.requested_start_dates)
+        delete_params = [
+            statement_params
+            for statement, statement_params in target.executed
+            if "delete from" in statement.lower()
+        ]
+        self.assertEqual(end, delete_params[0]["product_start_date"])
+        self.assertEqual(end, delete_params[0]["product_end_date"])
 
     def test_product_daily_sql_contains_complete_country_rules(self):
         self.assertIn("when country in ('美国', '加拿大', '巴西', '墨西哥') then '北美站'", INSERT_PRODUCT_DAILY_SQL)
@@ -265,6 +367,39 @@ class EmptySourceCursor(FakeSourceCursor):
 class EmptySourceConnection(FakeSourceConnection):
     def cursor(self):
         return EmptySourceCursor(self)
+
+
+class ProductIncrementalSourceCursor:
+    def __init__(self, conn):
+        self.conn = conn
+        self.rows = []
+        self.fetched = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def execute(self, sql, params):
+        requested_date = params["product_start_date"]
+        self.conn.requested_start_dates.append(requested_date)
+        self.rows = self.conn.rows_by_date.get(requested_date, [])
+
+    def fetchmany(self, batch_size):
+        if self.fetched:
+            return []
+        self.fetched = True
+        return self.rows
+
+
+class ProductIncrementalSourceConnection:
+    def __init__(self, rows_by_date):
+        self.rows_by_date = rows_by_date
+        self.requested_start_dates = []
+
+    def cursor(self):
+        return ProductIncrementalSourceCursor(self)
 
 
 class FakeTargetCursor:

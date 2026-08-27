@@ -35,6 +35,10 @@ class FakeLabelHubService:
         self.calls.append(("stockout_before_role_evidence", kwargs))
         return {"role": {"id": 2001, "label": "明星产品"}, "evidence": {"schema_version": "1.0"}}
 
+    def force_source_refresh(self):
+        self.calls.append(("refresh", {}))
+        return {"status": "refreshed", "latest_date": "2026-08-20"}
+
 
 class FakeLabelHubDetailService:
     def __init__(self):
@@ -94,6 +98,27 @@ class FakeCountryProfileService:
 
 
 class LabelHubApiTests(unittest.TestCase):
+    def test_manual_refresh_api_returns_remote_sync_result(self):
+        service = FakeLabelHubService()
+
+        with patch("app.main.label_hub_service", service):
+            payload = main.api_label_hub_refresh()
+
+        self.assertEqual("2026-08-20", payload["latest_date"])
+        self.assertEqual(("refresh", {}), service.calls[0])
+
+    def test_manual_refresh_api_reports_busy_as_conflict(self):
+        service = FakeLabelHubService()
+        service.force_source_refresh = lambda: (_ for _ in ()).throw(
+            main.LabelHubRefreshBusyError("busy")
+        )
+
+        with patch("app.main.label_hub_service", service):
+            with self.assertRaises(HTTPException) as raised:
+                main.api_label_hub_refresh()
+
+        self.assertEqual(409, raised.exception.status_code)
+
     def test_stockout_before_role_evidence_api_passes_exact_identity_and_period(self):
         service = FakeLabelHubService()
 

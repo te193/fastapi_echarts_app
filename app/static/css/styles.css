@@ -7197,25 +7197,6 @@ body[data-page="price_review"] .price-review-filter-panel {
   flex-wrap: wrap;
 }
 
-.layer-tracking-button {
-  appearance: none;
-  border: 1px solid #93c5fd;
-  border-radius: 999px;
-  background: #eff6ff;
-  color: #1d4ed8;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 800;
-  line-height: 1;
-  padding: 7px 10px;
-  white-space: nowrap;
-}
-
-.layer-tracking-button:hover {
-  border-color: #2563eb;
-  background: #dbeafe;
-}
-
 .level-flow-chips {
   display: flex;
   flex-wrap: wrap;
@@ -8198,6 +8179,47 @@ body[data-page="price_review"] .price-review-filter-panel {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.label-hub-refresh-wrap {
+  position: relative;
+}
+
+.sales-role-action.label-hub-refresh-action {
+  height: 34px;
+  padding: 0 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sales-role-action.label-hub-refresh-action:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.sales-role-action.label-hub-refresh-action:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+.label-hub-refresh-status {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 2;
+  width: max-content;
+  max-width: 260px;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: right;
+}
+
+.label-hub-refresh-status.is-error {
+  color: #ffd6d6;
 }
 
 .label-view-switch {

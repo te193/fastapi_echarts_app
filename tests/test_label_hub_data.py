@@ -1497,6 +1497,47 @@ class LabelHubDataTests(unittest.TestCase):
         self.assertEqual(3, star["business_unit_count"])
         self.assertEqual(2, star["unique_msku_count"])
 
+    def test_unique_msku_metrics_ignore_case_without_merging_business_units(self):
+        case_variant_fact = {
+            **FACTS[0],
+            "country_category": "Case variant scope",
+            "store": "StoreB",
+            "msku": "a1",
+        }
+
+        payload = self.service.build_payload(
+            details=DETAILS,
+            facts=[*FACTS, case_variant_fact],
+            metrics=METRICS,
+            data_date="2026-07-13",
+            parent_label_id=1,
+            compare_parent_id=2,
+            conditions={},
+            label_period="all",
+            country_category="all",
+            store="all",
+            keyword="",
+            page=1,
+            page_size=20,
+            sort_field="sales_amount",
+            sort_dir="desc",
+        )
+
+        self.assertEqual(
+            {
+                "business_unit_count": 3,
+                "unique_msku_count": 2,
+                "cross_scope_msku_count": 1,
+            },
+            payload["population_summary"],
+        )
+        sales_role = next(item for item in payload["overview"] if item["id"] == 1)
+        self.assertEqual(3, sales_role["business_unit_count"])
+        self.assertEqual(2, sales_role["unique_msku_count"])
+        star = next(item for item in sales_role["children"] if item["id"] == 101)
+        self.assertEqual(3, star["business_unit_count"])
+        self.assertEqual(2, star["unique_msku_count"])
+
     def test_analysis_panels_count_business_units_and_keep_unique_msku_auxiliary(self):
         cross_scope_facts = [
             {**FACTS[0], "country_category": "美国站", "store": "StoreB"},

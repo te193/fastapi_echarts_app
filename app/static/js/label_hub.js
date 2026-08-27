@@ -287,7 +287,7 @@
   function init() {
     [
       "labelHubMetricPeriod", "labelHubCountry", "labelHubStore", "labelHubParent",
-      "labelHubPeriod", "labelHubPeriodField", "labelHubKeyword", "labelHubClear", "labelHubScope",
+      "labelHubPeriod", "labelHubPeriodField", "labelHubKeyword", "labelHubClear", "labelHubRefresh", "labelHubRefreshStatus", "labelHubScope",
       "labelHubPopulationSummary", "labelHubCategories", "labelHubCategoryDetail", "labelHubDiagnosis", "labelHubBreakdowns",
       "labelHubMeasureTabs", "labelHubCompare", "labelHubMatrix", "labelHubConditionRow", "labelHubConditions",
       "labelHubTable", "labelHubTableSummary", "labelHubTableView", "labelHubPageSize", "labelHubPagination", "labelHubHint", "labelHubDrawer",
@@ -440,6 +440,7 @@
       if (button) removeDetailFilter(button.dataset.detailFilterField, button.dataset.detailFilterValue || "");
     });
     elements.labelHubClear.addEventListener("click", clearAllFilters);
+    elements.labelHubRefresh.addEventListener("click", refreshSourceData);
     elements.labelHubMeasureTabs.addEventListener("click", function (event) {
       var button = event.target.closest("[data-measure]");
       if (!button) return;
@@ -1712,9 +1713,9 @@
     if (roles.length === 1) {
       var allowedDiagnostics = {
         "101": { "15": ["1501"], "16": ["1601"] },
-        "102": { "15": ["1502", "1503"], "16": ["1602", "1603", "1604", "1605", "1606"] },
-        "103": { "15": ["1504", "1505", "1506"], "16": ["1607", "1608", "1609", "1610", "1611", "1612", "1613"] },
-        "104": { "15": ["1507", "1508"], "16": ["1614", "1615", "1616", "1617", "1618"] }
+        "102": { "15": ["1502", "1503"], "16": ["1602", "1603"] },
+        "103": { "15": ["1504", "1505", "1506"], "16": ["1604", "1605"] },
+        "104": { "15": ["1507", "1508"], "16": ["1606", "1607"] }
       }[roles[0]] || {};
       ["15", "16"].forEach(function (parent) {
         if (!value[parent]) return;
@@ -1792,6 +1793,34 @@
     state.page = 1;
     populateControls();
     render();
+  }
+
+  function refreshSourceData() {
+    var button = elements.labelHubRefresh;
+    var status = elements.labelHubRefreshStatus;
+    if (button.disabled) return;
+    button.disabled = true;
+    button.textContent = "正在刷新";
+    status.classList.remove("is-error");
+    status.textContent = "正在从远端重新拉取数据…";
+    fetch("/api/label-hub/refresh", {
+      method: "POST",
+      headers: { "Accept": "application/json" },
+      cache: "no-store"
+    }).then(function (response) {
+      return response.json().catch(function () { return {}; }).then(function (payload) {
+        if (!response.ok) throw new Error(payload.detail || "刷新失败，请稍后重试");
+        return payload;
+      });
+    }).then(function (payload) {
+      status.textContent = "已更新至 " + (payload.latest_date || "最新数据") + "，正在重新加载…";
+      window.location.reload();
+    }).catch(function (error) {
+      button.disabled = false;
+      button.textContent = "刷新数据";
+      status.classList.add("is-error");
+      status.textContent = (error && error.message) || "刷新失败，请稍后重试";
+    });
   }
 
   function render() {

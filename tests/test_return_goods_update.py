@@ -9,12 +9,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from etl.dashboard_daily_update import SchemaConfig
 from etl.return_goods_update import (
     CREATE_RETURN_EVENTS_SQL,
+    INSERT_STAGE_DAILY_SUMMARY_SQL,
     INSERT_STOCKOUT_POOL_SQL,
     INSERT_RETURN_EVENT_SQL,
     SELECT_PRODUCT_DAILY_SQL,
     avg_sales,
     build_events,
+    build_stockout_pool_row,
     ensure_return_events_schema,
+    merge_stockout_pool_row,
     salable_sales_qty,
     sales_role,
     source_history_start_date,
@@ -82,6 +85,67 @@ class ReturnGoodsEventTests(unittest.TestCase):
 
     def test_stockout_pool_does_not_require_positive_sales(self):
         self.assertNotIn("period_sales_qty > 0", INSERT_STOCKOUT_POOL_SQL)
+
+    def test_stockout_pool_is_built_from_the_same_streamed_rows(self):
+        snapshot_date = date(2026, 7, 28)
+        rows = [
+            product_row(date(2026, 1, 20), 0, 4, msku="MSKU1"),
+            product_row(date(2026, 1, 30), 6, 5, msku="MSKU1"),
+            product_row(date(2026, 7, 27), 0, 2, msku="MSKU1"),
+            product_row(date(2026, 7, 28), 8, 3, msku="MSKU1"),
+        ]
+        rows[2]["local_sku"] = "SKU9"
+
+        pool_row = build_stockout_pool_row(rows, snapshot_date, lookback_days=180)
+
+        self.assertEqual(date(2026, 7, 27), pool_row["first_stockout_date"])
+        self.assertEqual(date(2026, 7, 27), pool_row["last_stockout_date"])
+        self.assertEqual(1, pool_row["stockout_days"])
+        self.assertEqual(Decimal("10"), pool_row["period_sales_qty"])
+        self.assertEqual("SKU9", pool_row["local_sku"])
+
+    def test_stockout_pool_skips_products_without_stockout_in_rolling_window(self):
+        snapshot_date = date(2026, 7, 28)
+        rows = [
+            product_row(date(2026, 1, 20), 0, 4),
+            product_row(date(2026, 7, 27), 6, 2),
+            product_row(date(2026, 7, 28), 8, 3),
+        ]
+
+        self.assertIsNone(build_stockout_pool_row(rows, snapshot_date, lookback_days=180))
+
+    def test_stockout_pool_merges_case_variants_like_mysql_collation(self):
+        current = {
+            "local_sku": "GQ0348a-zu",
+            "first_stockout_date": date(2026, 2, 27),
+            "last_stockout_date": date(2026, 3, 14),
+            "stockout_days": 16,
+            "period_sales_qty": Decimal("0"),
+        }
+        incoming = {
+            "local_sku": "GQ0348a-zu",
+            "first_stockout_date": date(2026, 3, 15),
+            "last_stockout_date": date(2026, 8, 25),
+            "stockout_days": 164,
+            "period_sales_qty": Decimal("0"),
+        }
+
+        merged = merge_stockout_pool_row(current, incoming)
+
+        self.assertEqual(date(2026, 2, 27), merged["first_stockout_date"])
+        self.assertEqual(date(2026, 8, 25), merged["last_stockout_date"])
+        self.assertEqual(180, merged["stockout_days"])
+        self.assertEqual(Decimal("0"), merged["period_sales_qty"])
+
+    def test_stage_summary_uses_window_cumulative_instead_of_range_join(self):
+        sql = INSERT_STAGE_DAILY_SUMMARY_SQL.lower()
+
+        self.assertIn("sum(ec.sales_qty) over", sql)
+        self.assertIn(
+            "partition by ec.stage_key, ec.segment_key, ec.return_event_id",
+            sql,
+        )
+        self.assertNotIn("left join daily_msku p2", sql)
 
     def test_event_with_old_stockout_is_retained_when_return_start_is_inside_window(self):
         rows = [

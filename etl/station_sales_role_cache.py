@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any, Iterable, Mapping
 from uuid import uuid4
 
@@ -34,6 +35,7 @@ class CacheSyncResult:
     data_dates: tuple[date, ...]
     row_count: int
     sync_batch_id: str
+    changed_dates: tuple[date, ...] = ()
 
 
 def _schema_name(value: str) -> str:
@@ -44,6 +46,10 @@ def _schema_name(value: str) -> str:
 
 def _target_table(target_schema: str) -> str:
     return f"`{_schema_name(target_schema)}`.`station_sales_role_recent_cache`"
+
+
+def _state_table(target_schema: str) -> str:
+    return f"`{_schema_name(target_schema)}`.`station_sales_role_cache_state`"
 
 
 def station_role_recent_cache_ddl(target_schema: str) -> str:
@@ -68,6 +74,116 @@ def station_role_recent_cache_ddl(target_schema: str) -> str:
             key idx_role_cache_synced (synced_at)
         ) engine=InnoDB default charset=utf8mb4
     """
+
+
+def station_role_cache_state_ddl(target_schema: str) -> str:
+    return f"""
+        create table if not exists {_state_table(target_schema)} (
+            data_date date not null,
+            source_row_count bigint not null,
+            source_period_count int not null,
+            source_max_created_time datetime null,
+            source_checksum_sum decimal(30,0) not null,
+            source_checksum_xor bigint unsigned not null,
+            sync_batch_id varchar(64) not null,
+            synced_at datetime not null default current_timestamp,
+            primary key (data_date)
+        ) engine=InnoDB default charset=utf8mb4
+    """
+
+
+def _source_fingerprints_sql() -> str:
+    return """
+        select
+            data_date,
+            count(*) as source_row_count,
+            count(distinct label_period) as source_period_count,
+            max(created_time) as source_max_created_time,
+            sum(crc32(concat_ws(
+                char(31),
+                coalesce(country, ''),
+                coalesce(store, ''),
+                coalesce(msku, ''),
+                coalesce(cast(label_id as char), ''),
+                coalesce(label_period, ''),
+                coalesce(date_format(created_time, '%%Y-%%m-%%d %%H:%%i:%%s.%%f'), ''),
+                coalesce(cast(json_extract(evidence_json, '$.metrics') as char), ''),
+                coalesce(cast(json_extract(evidence_json, '$.rule_version') as char), '')
+            ))) as source_checksum_sum,
+            bit_xor(crc32(concat_ws(
+                char(31),
+                coalesce(country, ''),
+                coalesce(store, ''),
+                coalesce(msku, ''),
+                coalesce(cast(label_id as char), ''),
+                coalesce(label_period, ''),
+                coalesce(date_format(created_time, '%%Y-%%m-%%d %%H:%%i:%%s.%%f'), ''),
+                coalesce(cast(json_extract(evidence_json, '$.metrics') as char), ''),
+                coalesce(cast(json_extract(evidence_json, '$.rule_version') as char), '')
+            ))) as source_checksum_xor
+        from dws_datasync.`dws_标签表`
+        where label_id in %(label_ids)s
+          and label_period in %(periods)s
+          and data_date in %(data_dates)s
+        group by data_date
+        order by data_date
+    """
+
+
+def _fingerprint_value(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return int(value)
+    if isinstance(value, datetime):
+        return value.replace(microsecond=value.microsecond)
+    return value
+
+
+def _same_fingerprint(source: Mapping[str, Any], local: Mapping[str, Any] | None) -> bool:
+    if not local:
+        return False
+    fields = (
+        "source_row_count",
+        "source_period_count",
+        "source_max_created_time",
+        "source_checksum_sum",
+        "source_checksum_xor",
+    )
+    return all(_fingerprint_value(source.get(field)) == _fingerprint_value(local.get(field)) for field in fields)
+
+
+def _load_local_cache_state(target_cursor, target_schema: str) -> dict[date, dict[str, Any]]:
+    target_cursor.execute(
+        f"""
+        select
+            s.data_date,
+            s.source_row_count,
+            s.source_period_count,
+            s.source_max_created_time,
+            s.source_checksum_sum,
+            s.source_checksum_xor,
+            count(c.data_date) as local_row_count,
+            count(distinct c.period_days) as local_period_count
+        from {_state_table(target_schema)} s
+        left join {_target_table(target_schema)} c
+          on c.data_date = s.data_date
+        group by
+            s.data_date,
+            s.source_row_count,
+            s.source_period_count,
+            s.source_max_created_time,
+            s.source_checksum_sum,
+            s.source_checksum_xor
+        """
+    )
+    return {row["data_date"]: row for row in target_cursor.fetchall()}
+
+
+def _cache_is_complete(source: Mapping[str, Any], local: Mapping[str, Any] | None) -> bool:
+    return (
+        _same_fingerprint(source, local)
+        and int(local.get("local_row_count") or 0) == int(source.get("source_row_count") or 0)
+        and int(local.get("local_period_count") or 0) == len(REMOTE_ROLE_PERIODS)
+    )
 
 
 def _period_days(row: Mapping[str, Any]) -> int:
@@ -148,6 +264,7 @@ def sync_recent_station_role_cache(
         raise ValueError("batch_size must be positive")
     sync_batch_id = uuid4().hex
     target = _target_table(target_schema)
+    state_table = _state_table(target_schema)
     temporary = "`tmp_station_sales_role_recent_cache`"
     columns = ", ".join(f"`{column}`" for column in CACHE_COLUMNS)
     values = ", ".join(f"%({column})s" for column in CACHE_COLUMNS)
@@ -169,7 +286,36 @@ def sync_recent_station_role_cache(
                 raise ValueError("No remote station role data dates")
 
             source_cursor.execute(
-                """
+                _source_fingerprints_sql(),
+                {
+                    "label_ids": REMOTE_ROLE_LABEL_IDS,
+                    "periods": REMOTE_ROLE_PERIOD_LABELS,
+                    "data_dates": data_dates,
+                },
+            )
+            source_fingerprints = {
+                row["data_date"]: row
+                for row in source_cursor.fetchall()
+            }
+            if set(source_fingerprints) != set(data_dates):
+                raise ValueError("Remote station role fingerprints are incomplete")
+            for row_date, fingerprint in source_fingerprints.items():
+                if int(fingerprint.get("source_period_count") or 0) != len(REMOTE_ROLE_PERIODS):
+                    raise ValueError(f"Remote station role missing periods for {row_date}")
+
+            with target_conn.cursor() as target_cursor:
+                target_cursor.execute(station_role_recent_cache_ddl(target_schema))
+                target_cursor.execute(station_role_cache_state_ddl(target_schema))
+                local_state = _load_local_cache_state(target_cursor, target_schema)
+                changed_dates = tuple(
+                    row_date
+                    for row_date in data_dates
+                    if not _cache_is_complete(source_fingerprints[row_date], local_state.get(row_date))
+                )
+
+            if changed_dates:
+                source_cursor.execute(
+                    """
                 select data_date, country, store, msku, label_id, label_period,
                        created_time,
                        json_object(
@@ -184,33 +330,33 @@ def sync_recent_station_role_cache(
                 {
                     "label_ids": REMOTE_ROLE_LABEL_IDS,
                     "periods": REMOTE_ROLE_PERIOD_LABELS,
-                    "data_dates": data_dates,
+                    "data_dates": changed_dates,
                 },
             )
-            periods_by_date: dict[date, set[int]] = {item: set() for item in data_dates}
+            periods_by_date: dict[date, set[int]] = {item: set() for item in changed_dates}
             with target_conn.cursor() as target_cursor:
-                target_cursor.execute(station_role_recent_cache_ddl(target_schema))
                 target_cursor.execute(f"drop temporary table if exists {temporary}")
                 target_cursor.execute(f"create temporary table {temporary} like {target}")
                 insert_temp = f"insert into {temporary} ({columns}) values ({values})"
-                while True:
-                    remote_batch = source_cursor.fetchmany(batch_size)
-                    if not remote_batch:
-                        break
-                    payload = []
-                    for row in remote_batch:
-                        row_date = row.get("data_date")
-                        if row_date not in periods_by_date:
-                            raise ValueError(f"Unexpected remote station role date: {row_date!r}")
-                        country = str(row.get("country") or "").strip()
-                        store = str(row.get("store") or row.get("station_store") or "").strip()
-                        msku = str(row.get("msku") or "").strip()
-                        if not country or not store or not msku:
-                            raise ValueError("Remote station role business key is incomplete")
-                        periods_by_date[row_date].add(_period_days(row))
-                        payload.append(_cache_payload(row, sync_batch_id))
-                    target_cursor.executemany(insert_temp, payload)
-                    row_count += len(payload)
+                if changed_dates:
+                    while True:
+                        remote_batch = source_cursor.fetchmany(batch_size)
+                        if not remote_batch:
+                            break
+                        payload = []
+                        for row in remote_batch:
+                            row_date = row.get("data_date")
+                            if row_date not in periods_by_date:
+                                raise ValueError(f"Unexpected remote station role date: {row_date!r}")
+                            country = str(row.get("country") or "").strip()
+                            store = str(row.get("store") or row.get("station_store") or "").strip()
+                            msku = str(row.get("msku") or "").strip()
+                            if not country or not store or not msku:
+                                raise ValueError("Remote station role business key is incomplete")
+                            periods_by_date[row_date].add(_period_days(row))
+                            payload.append(_cache_payload(row, sync_batch_id))
+                        target_cursor.executemany(insert_temp, payload)
+                        row_count += len(payload)
 
                 required = set(REMOTE_ROLE_PERIODS)
                 for row_date, actual in periods_by_date.items():
@@ -219,13 +365,58 @@ def sync_recent_station_role_cache(
                             f"Remote station role missing periods for {row_date}: "
                             f"{sorted(required - actual)}"
                         )
-                target_cursor.execute(f"delete from {target}")
                 target_cursor.execute(
-                    f"insert into {target} ({columns}) select {columns} from {temporary}"
+                    f"delete from {target} where data_date not in %(data_dates)s",
+                    {"data_dates": data_dates},
+                )
+                if changed_dates:
+                    target_cursor.execute(
+                        f"delete from {target} where data_date in %(changed_dates)s",
+                        {"changed_dates": changed_dates},
+                    )
+                    target_cursor.execute(
+                        f"insert into {target} ({columns}) select {columns} from {temporary}"
+                    )
+                target_cursor.execute(
+                    f"delete from {state_table} where data_date not in %(data_dates)s",
+                    {"data_dates": data_dates},
+                )
+                state_sql = f"""
+                    insert into {state_table} (
+                        data_date, source_row_count, source_period_count,
+                        source_max_created_time, source_checksum_sum, source_checksum_xor,
+                        sync_batch_id
+                    ) values (
+                        %(data_date)s, %(source_row_count)s, %(source_period_count)s,
+                        %(source_max_created_time)s, %(source_checksum_sum)s, %(source_checksum_xor)s,
+                        %(sync_batch_id)s
+                    ) on duplicate key update
+                        source_row_count=values(source_row_count),
+                        source_period_count=values(source_period_count),
+                        source_max_created_time=values(source_max_created_time),
+                        source_checksum_sum=values(source_checksum_sum),
+                        source_checksum_xor=values(source_checksum_xor),
+                        sync_batch_id=values(sync_batch_id),
+                        synced_at=current_timestamp
+                """
+                target_cursor.executemany(
+                    state_sql,
+                    [
+                        {
+                            **source_fingerprints[row_date],
+                            "sync_batch_id": sync_batch_id,
+                        }
+                        for row_date in changed_dates
+                    ],
                 )
                 target_cursor.execute(f"drop temporary table {temporary}")
         target_conn.commit()
     except Exception:
         target_conn.rollback()
         raise
-    return CacheSyncResult(data_dates=data_dates, row_count=row_count, sync_batch_id=sync_batch_id)
+    return CacheSyncResult(
+        data_dates=data_dates,
+        row_count=row_count,
+        sync_batch_id=sync_batch_id,
+        changed_dates=changed_dates,
+    )

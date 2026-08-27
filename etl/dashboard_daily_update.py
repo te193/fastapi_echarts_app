@@ -2812,6 +2812,32 @@ PRODUCT_DAILY_COLUMNS = (
     "created_at", "updated_at",
 )
 
+PRODUCT_FINGERPRINT_INTEGER_COLUMNS = {
+    "dt_year",
+    "dt_week",
+    "dt_month",
+    "abnormal_flag_count",
+    "ranking",
+}
+PRODUCT_FINGERPRINT_DECIMAL_COLUMNS = {
+    "sales_qty",
+    "sales_amount",
+    "sales_amount_ex_tax",
+    "raw_order_gross_profit",
+    "order_gross_profit",
+    "settlement_gross_profit",
+    "afn_fulfillable_quantity",
+    "ad_spend",
+    "ad_orders",
+    "ad_sales",
+    "ad_clicks",
+    "ad_impressions",
+    "sessions_total",
+    "return_count",
+    "return_amount",
+    "net_amount",
+}
+
 AD_BUDGET_COLUMNS = (
     "biz_date", "country_category", "country", "seller_name_new", "seller_sku_adj",
     "max_brand_name", "receiving_cnt", "product_type",
@@ -3505,6 +3531,191 @@ def cleanup_opportunity_comparison_retention(conn, schemas: SchemaConfig, params
         raise
 
 
+def _product_fingerprint_value_sql(column: str) -> str:
+    quoted = f"`{column}`"
+    if column in PRODUCT_FINGERPRINT_DECIMAL_COLUMNS:
+        return f"coalesce(cast(cast({quoted} as decimal(18,4)) as char), '')"
+    if column in PRODUCT_FINGERPRINT_INTEGER_COLUMNS:
+        return f"coalesce(cast(cast({quoted} as signed) as char), '')"
+    return f"coalesce(cast({quoted} as char), '')"
+
+
+def _product_fingerprint_sql(rows_sql: str) -> str:
+    business_columns = [
+        column
+        for column in PRODUCT_DAILY_COLUMNS
+        if column not in {"created_at", "updated_at"}
+    ]
+    hash_values = ",\n                ".join(
+        _product_fingerprint_value_sql(column)
+        for column in business_columns
+    )
+    return f"""
+        select
+            dt_date,
+            count(*) as row_count,
+            coalesce(sum(crc32(concat_ws(
+                char(31),
+                {hash_values}
+            ))), 0) as checksum_sum,
+            coalesce(bit_xor(crc32(concat_ws(
+                char(31),
+                {hash_values}
+            ))), 0) as checksum_xor
+        from (
+            {rows_sql.strip().rstrip(";")}
+        ) product_rows
+        group by dt_date
+        order by dt_date
+    """
+
+
+def _product_source_fingerprint_sql(source_sql: str) -> str:
+    return _product_fingerprint_sql(source_sql)
+
+
+def _product_local_fingerprint_sql(target_table_name: str) -> str:
+    business_columns = [
+        column
+        for column in PRODUCT_DAILY_COLUMNS
+        if column not in {"created_at", "updated_at"}
+    ]
+    columns = ", ".join(f"`{column}`" for column in business_columns)
+    return _product_fingerprint_sql(
+        f"""
+        select {columns}
+        from {target_table_name}
+        where dt_date between %(product_start_date)s and %(product_end_date)s
+        """
+    )
+
+
+def _product_fingerprint_map(rows: Iterable[dict]) -> dict[date, tuple[int, int, int]]:
+    return {
+        row["dt_date"]: (
+            int(row.get("row_count") or 0),
+            int(row.get("checksum_sum") or 0),
+            int(row.get("checksum_xor") or 0),
+        )
+        for row in rows
+    }
+
+
+def _load_product_source_fingerprints(
+    source_conn,
+    source_sql: str,
+    params: dict[str, object],
+) -> dict[date, tuple[int, int, int]]:
+    with source_conn.cursor() as cursor:
+        cursor.execute(_product_source_fingerprint_sql(source_sql), params)
+        return _product_fingerprint_map(cursor.fetchall())
+
+
+def _load_product_local_fingerprints(
+    target_conn,
+    target_table_name: str,
+    params: dict[str, object],
+) -> dict[date, tuple[int, int, int]]:
+    with target_conn.cursor() as cursor:
+        cursor.execute(_product_local_fingerprint_sql(target_table_name), params)
+        return _product_fingerprint_map(cursor.fetchall())
+
+
+def _product_changed_dates(
+    source_fingerprints: dict[date, tuple[int, int, int]],
+    local_fingerprints: dict[date, tuple[int, int, int]],
+    start_date: date,
+    end_date: date,
+) -> tuple[date, ...]:
+    return tuple(
+        start_date + timedelta(days=offset)
+        for offset in range((end_date - start_date).days + 1)
+        if source_fingerprints.get(start_date + timedelta(days=offset))
+        != local_fingerprints.get(start_date + timedelta(days=offset))
+    )
+
+
+def _contiguous_date_ranges(days: Iterable[date]) -> tuple[tuple[date, date], ...]:
+    ordered = sorted(set(days))
+    if not ordered:
+        return ()
+    ranges = []
+    range_start = ordered[0]
+    range_end = ordered[0]
+    for current_day in ordered[1:]:
+        if current_day == range_end + timedelta(days=1):
+            range_end = current_day
+            continue
+        ranges.append((range_start, range_end))
+        range_start = current_day
+        range_end = current_day
+    ranges.append((range_start, range_end))
+    return tuple(ranges)
+
+
+def _format_date_ranges(days: Iterable[date]) -> str:
+    return ", ".join(
+        str(range_start)
+        if range_start == range_end
+        else f"{range_start}~{range_end}"
+        for range_start, range_end in _contiguous_date_ranges(days)
+    )
+
+
+def _execute_incremental_product_source_load(
+    target_conn,
+    source_conn,
+    schemas: SchemaConfig,
+    step: SourceLoadStep,
+    source_sql: str,
+    target_insert_sql: str,
+    params: dict[str, object],
+    batch_size: int,
+) -> tuple[int, tuple[date, ...]]:
+    target_table_name = render_sql(step.target_table, schemas)
+    fingerprint_started = time.perf_counter()
+    source_fingerprints = _load_product_source_fingerprints(source_conn, source_sql, params)
+    source_fingerprint_seconds = time.perf_counter() - fingerprint_started
+    local_started = time.perf_counter()
+    local_fingerprints = _load_product_local_fingerprints(target_conn, target_table_name, params)
+    local_fingerprint_seconds = time.perf_counter() - local_started
+    changed_dates = _product_changed_dates(
+        source_fingerprints,
+        local_fingerprints,
+        params["product_start_date"],
+        params["product_end_date"],
+    )
+    print(
+        "[info] product_performance_daily fingerprint: "
+        f"source={source_fingerprint_seconds:.2f}s "
+        f"local={local_fingerprint_seconds:.2f}s "
+        f"changed_dates={len(changed_dates)}"
+    )
+    if not changed_dates:
+        return 0, ()
+
+    affected_rows = 0
+    with target_conn.cursor() as target_cursor:
+        for range_start, range_end in _contiguous_date_ranges(changed_dates):
+            range_params = {
+                **params,
+                "product_start_date": range_start,
+                "product_end_date": range_end,
+                "next_product_end_date": range_end + timedelta(days=1),
+                "product_full_load": 0,
+            }
+            target_cursor.execute(render_sql(step.delete_statement, schemas), range_params)
+            with source_conn.cursor() as source_cursor:
+                source_cursor.execute(source_sql, range_params)
+                while True:
+                    rows = source_cursor.fetchmany(batch_size)
+                    if not rows:
+                        break
+                    target_cursor.executemany(target_insert_sql, rows)
+                    affected_rows += len(rows)
+    return affected_rows, changed_dates
+
+
 def execute_source_load_step(
     target_conn,
     source_conn,
@@ -3523,15 +3734,32 @@ def execute_source_load_step(
             assert_source_select_only(source_sql)
             target_insert_sql = build_target_insert_sql(step.target_table, step.target_columns, schemas)
 
-            with source_conn.cursor() as source_cursor, target_conn.cursor() as target_cursor:
-                target_cursor.execute(render_sql(step.delete_statement, schemas), params)
-                source_cursor.execute(source_sql, params)
-                while True:
-                    rows = source_cursor.fetchmany(batch_size)
-                    if not rows:
-                        break
-                    target_cursor.executemany(target_insert_sql, rows)
-                    affected_rows += len(rows)
+            if step.name == "product_performance_daily" and not params["product_full_load"]:
+                affected_rows, changed_dates = _execute_incremental_product_source_load(
+                    target_conn,
+                    source_conn,
+                    schemas,
+                    step,
+                    source_sql,
+                    target_insert_sql,
+                    params,
+                    batch_size,
+                )
+                if changed_dates:
+                    print(
+                        "[info] product_performance_daily refreshed dates: "
+                        + _format_date_ranges(changed_dates)
+                    )
+            else:
+                with source_conn.cursor() as source_cursor, target_conn.cursor() as target_cursor:
+                    target_cursor.execute(render_sql(step.delete_statement, schemas), params)
+                    source_cursor.execute(source_sql, params)
+                    while True:
+                        rows = source_cursor.fetchmany(batch_size)
+                        if not rows:
+                            break
+                        target_cursor.executemany(target_insert_sql, rows)
+                        affected_rows += len(rows)
 
             if step.name == "product_performance_daily":
                 validate_product_performance_result(target_conn, schemas, params)

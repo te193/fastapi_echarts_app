@@ -334,6 +334,17 @@ def ensure_price_review_tables(conn, target_schema: str) -> None:
         ) engine=InnoDB default charset=utf8mb4;
         """,
         f"""
+        create table if not exists {target_table(target_schema, "price_review_adjustment_source_state")} (
+            adjust_date date not null,
+            source_row_count bigint not null,
+            source_max_updated_at datetime null,
+            source_checksum_sum decimal(30,0) not null,
+            source_checksum_xor bigint unsigned not null,
+            synced_at datetime not null default current_timestamp,
+            primary key (adjust_date)
+        ) engine=InnoDB default charset=utf8mb4;
+        """,
+        f"""
         create table if not exists {target_table(target_schema, "price_review_product_performance_source")} (
             dt_date date not null,
             product_name varchar(512) null,
@@ -562,28 +573,74 @@ def execute_price_review_source_load(
     )
 
     select_sql = _select_price_review_adjustment_source_sql(queue_table)
-    insert_sql = _insert_sql(target_table(target_schema, "price_review_adjustment_source"), adjustment_columns)
+    adjustment_table = target_table(target_schema, "price_review_adjustment_source")
+    insert_sql = _insert_sql(adjustment_table, adjustment_columns)
+    state_table = target_table(target_schema, "price_review_adjustment_source_state")
+
+    source_fingerprints = _load_price_review_source_fingerprints(
+        source_conn,
+        queue_table,
+        adjust_start,
+        adjust_end,
+    )
 
     with target_conn.cursor() as target_cursor:
-        target_cursor.execute(
-            f"""
-            delete from {target_table(target_schema, "price_review_adjustment_source")}
-            where adjust_date between %(adjust_start)s and %(adjust_end)s
-            """,
-            {"adjust_start": adjust_start, "adjust_end": adjust_end},
+        local_fingerprints = _load_price_review_local_fingerprints(
+            target_cursor,
+            state_table,
+            adjustment_table,
+            adjust_start,
+            adjust_end,
+        )
+        changed_dates = tuple(
+            current_day
+            for current_day in _date_range(adjust_start, adjust_end)
+            if not _same_price_review_source_fingerprint(
+                source_fingerprints[current_day],
+                local_fingerprints.get(current_day),
+            )
         )
 
-        current_day = adjust_start
-        while current_day <= adjust_end:
+        for current_day in changed_dates:
             day_start_at = datetime.combine(current_day, datetime.min.time())
             day_end_exclusive = datetime.combine(current_day + timedelta(days=1), datetime.min.time())
+            target_cursor.execute(
+                f"""
+                delete from {target_table(target_schema, "price_review_adjustment_source")}
+                where adjust_date = %(adjust_date)s
+                """,
+                {"adjust_date": current_day},
+            )
             with source_conn.cursor() as source_cursor:
                 source_cursor.execute(
                     select_sql,
                     {"adjust_start_at": day_start_at, "adjust_end_exclusive": day_end_exclusive},
                 )
                 affected += _copy_rows(source_cursor, target_cursor, insert_sql, batch_size)
-            current_day += timedelta(days=1)
+        if changed_dates:
+            target_cursor.executemany(
+                f"""
+                insert into {state_table} (
+                    adjust_date,
+                    source_row_count,
+                    source_max_updated_at,
+                    source_checksum_sum,
+                    source_checksum_xor
+                ) values (
+                    %(adjust_date)s,
+                    %(source_row_count)s,
+                    %(source_max_updated_at)s,
+                    %(source_checksum_sum)s,
+                    %(source_checksum_xor)s
+                ) on duplicate key update
+                    source_row_count=values(source_row_count),
+                    source_max_updated_at=values(source_max_updated_at),
+                    source_checksum_sum=values(source_checksum_sum),
+                    source_checksum_xor=values(source_checksum_xor),
+                    synced_at=current_timestamp
+                """,
+                [source_fingerprints[current_day] for current_day in changed_dates],
+            )
     target_conn.commit()
     cache_result = sync_recent_station_role_cache(
         source_conn,
@@ -593,6 +650,143 @@ def execute_price_review_source_load(
     )
     affected += cache_result.row_count
     return affected
+
+
+def _date_range(start_date: date, end_date: date) -> tuple[date, ...]:
+    return tuple(
+        start_date + timedelta(days=offset)
+        for offset in range((end_date - start_date).days + 1)
+    )
+
+
+def _price_review_source_fingerprints_sql(queue_table: str) -> str:
+    return f"""
+        select
+            date(finish_time) as adjust_date,
+            count(*) as source_row_count,
+            max(coalesce(update_time, ods_update_time, backup_time)) as source_max_updated_at,
+            coalesce(sum(crc32(concat_ws(
+                char(31),
+                coalesce(cast(id as char), ''),
+                coalesce(msku, ''),
+                coalesce(local_sku, ''),
+                coalesce(asin, ''),
+                coalesce(local_name, ''),
+                coalesce(store_name, ''),
+                coalesce(marketplace, ''),
+                coalesce(currency_icon, ''),
+                coalesce(adjust_before_obj_standard_price, ''),
+                coalesce(adjust_after_obj_standard_price, ''),
+                coalesce(cast(finish_time as char), ''),
+                coalesce(cast(coalesce(update_time, ods_update_time, backup_time) as char), '')
+            ))), 0) as source_checksum_sum,
+            coalesce(bit_xor(crc32(concat_ws(
+                char(31),
+                coalesce(cast(id as char), ''),
+                coalesce(msku, ''),
+                coalesce(local_sku, ''),
+                coalesce(asin, ''),
+                coalesce(local_name, ''),
+                coalesce(store_name, ''),
+                coalesce(marketplace, ''),
+                coalesce(currency_icon, ''),
+                coalesce(adjust_before_obj_standard_price, ''),
+                coalesce(adjust_after_obj_standard_price, ''),
+                coalesce(cast(finish_time as char), ''),
+                coalesce(cast(coalesce(update_time, ods_update_time, backup_time) as char), '')
+            ))), 0) as source_checksum_xor
+        from {queue_table}
+        where delete_flag = 0
+          and finish_time is not null
+          and finish_time <> ''
+          and finish_time >= %(adjust_start_at)s
+          and finish_time < %(adjust_end_exclusive)s
+          and msku is not null
+          and msku <> ''
+          and store_name is not null
+          and store_name <> ''
+        group by date(finish_time)
+        order by adjust_date
+    """
+
+
+def _empty_price_review_source_fingerprint(adjust_date: date) -> dict:
+    return {
+        "adjust_date": adjust_date,
+        "source_row_count": 0,
+        "source_max_updated_at": None,
+        "source_checksum_sum": 0,
+        "source_checksum_xor": 0,
+    }
+
+
+def _load_price_review_source_fingerprints(
+    source_conn,
+    queue_table: str,
+    adjust_start: date,
+    adjust_end: date,
+) -> dict[date, dict]:
+    fingerprints = {
+        current_day: _empty_price_review_source_fingerprint(current_day)
+        for current_day in _date_range(adjust_start, adjust_end)
+    }
+    with source_conn.cursor() as source_cursor:
+        source_cursor.execute(
+            _price_review_source_fingerprints_sql(queue_table),
+            {
+                "adjust_start_at": datetime.combine(adjust_start, datetime.min.time()),
+                "adjust_end_exclusive": datetime.combine(adjust_end + timedelta(days=1), datetime.min.time()),
+            },
+        )
+        for row in source_cursor.fetchall():
+            row_date = row.get("adjust_date")
+            if row_date in fingerprints:
+                fingerprints[row_date] = row
+    return fingerprints
+
+
+def _load_price_review_local_fingerprints(
+    target_cursor,
+    state_table: str,
+    adjustment_table: str,
+    adjust_start: date,
+    adjust_end: date,
+) -> dict[date, dict]:
+    target_cursor.execute(
+        f"""
+        select
+            s.adjust_date,
+            s.source_row_count,
+            s.source_max_updated_at,
+            s.source_checksum_sum,
+            s.source_checksum_xor,
+            coalesce(a.local_row_count, 0) as local_row_count
+        from {state_table} s
+        left join (
+            select adjust_date, count(*) as local_row_count
+            from {adjustment_table}
+            where adjust_date between %(adjust_start)s and %(adjust_end)s
+            group by adjust_date
+        ) a on a.adjust_date = s.adjust_date
+        where s.adjust_date between %(adjust_start)s and %(adjust_end)s
+        """,
+        {"adjust_start": adjust_start, "adjust_end": adjust_end},
+    )
+    return {row["adjust_date"]: row for row in target_cursor.fetchall()}
+
+
+def _same_price_review_source_fingerprint(source: dict, local: dict | None) -> bool:
+    if not local:
+        return False
+    return int(local.get("local_row_count") or 0) == int(source.get("source_row_count") or 0) and all(
+        source.get(field) == local.get(field)
+        for field in (
+            "source_row_count",
+            "source_max_updated_at",
+            "source_checksum_sum",
+            "source_checksum_xor",
+        )
+    )
 
 
 def _select_price_review_adjustment_source_sql(queue_table: str) -> str:
@@ -693,6 +887,60 @@ def _station_role_cached_roles_sql(target_schema: str) -> str:
     """
 
 
+def _station_role_all_cached_roles_sql(target_schema: str) -> str:
+    adjustments = target_table(target_schema, "price_review_adjustment_source")
+    cache = target_table(target_schema, "station_sales_role_recent_cache")
+    cached_columns = """
+        c.data_date, c.period_days, c.label_period, c.country,
+        c.station_store, c.msku, c.label_id, c.role_code, c.role_label,
+        c.evidence_json, c.rule_version, c.source_created_time as created_time
+    """
+    return f"""
+        select 'pre' as role_side, a.adjust_date, {cached_columns}
+        from {adjustments} a
+        join {cache} c
+          on c.country = a.country
+         and c.station_store = coalesce(a.seller_name_new, substring_index(a.store, '-', 1))
+         and c.msku = a.msku
+         and c.data_date = a.adjust_date
+        where a.adjust_date between %(adjust_start)s and %(adjust_end)s
+        union all
+        select 'post' as role_side, a.adjust_date, {cached_columns}
+        from {adjustments} a
+        join {cache} c
+          on c.country = a.country
+         and c.station_store = coalesce(a.seller_name_new, substring_index(a.store, '-', 1))
+         and c.msku = a.msku
+         and c.data_date = date_add(a.adjust_date, interval c.period_days day)
+        where a.adjust_date between %(adjust_start)s and %(adjust_end)s
+    """
+
+
+def _load_all_cached_station_roles(
+    cursor,
+    target_schema: str,
+    adjust_start: date,
+    adjust_end: date,
+) -> dict[tuple, dict]:
+    cursor.execute(
+        _station_role_all_cached_roles_sql(target_schema),
+        {"adjust_start": adjust_start, "adjust_end": adjust_end},
+    )
+    snapshots = {}
+    for row in cursor.fetchall():
+        snapshot = normalize_remote_role_snapshot(row)
+        key = (
+            row["role_side"],
+            row["period_days"],
+            row["adjust_date"],
+            row["country"],
+            row["station_store"],
+            row["msku"],
+        )
+        snapshots[key] = snapshot
+    return snapshots
+
+
 def _load_cached_station_roles(
     cursor,
     target_schema: str,
@@ -776,6 +1024,36 @@ def _load_existing_station_role_rows(
     }
 
 
+def _load_all_existing_station_role_rows(
+    cursor,
+    target_schema: str,
+    adjust_start: date,
+    adjust_end: date,
+) -> dict[tuple, dict]:
+    cursor.execute(
+        f"""
+        select adjust_date, pre_period_days, post_period_days, country, station_store, msku,
+               data_status, pre_period_end,
+               pre_role_source, post_role_source,
+               pre_source_data_date, post_source_data_date
+        from {target_table(target_schema, 'price_review_station_role_tracking')}
+        where adjust_date between %(adjust_start)s and %(adjust_end)s
+        """,
+        {"adjust_start": adjust_start, "adjust_end": adjust_end},
+    )
+    return {
+        (
+            row["pre_period_days"],
+            row["post_period_days"],
+            row["adjust_date"],
+            row["country"],
+            row["station_store"],
+            row["msku"],
+        ): row
+        for row in cursor.fetchall()
+    }
+
+
 def _station_role_metrics_sql(target_schema: str) -> str:
     adjustments = target_table(target_schema, "price_review_adjustment_source")
     performance = target_table(target_schema, "dashboard_product_performance_daily")
@@ -845,6 +1123,99 @@ def _station_role_metrics_sql(target_schema: str) -> str:
     group by a.adjust_date, a.store, a.msku, a.country, a.seller_name_new, a.local_sku,
              a.product_name, a.currency, a.price_before, a.price_after, a.drop_ratio
     """
+
+
+def _station_role_all_period_metrics_sql(target_schema: str) -> str:
+    adjustments = target_table(target_schema, "price_review_adjustment_source")
+    performance = target_table(target_schema, "dashboard_product_performance_daily")
+    metric_columns = []
+    for period_days in SUPPORTED_ROLE_PERIODS:
+        pre_range = (
+            f"p.dt_date between date_sub(a.adjust_date, interval {period_days - 1} day) "
+            "and a.adjust_date"
+        )
+        post_range = (
+            "p.dt_date between date_add(a.adjust_date, interval 1 day) "
+            f"and date_add(a.adjust_date, interval {period_days} day)"
+        )
+        metric_columns.extend(
+            (
+                f"count(distinct case when {pre_range} then p.dt_date end) as pre_seen_days_{period_days}",
+                f"count(distinct case when {post_range} then p.dt_date end) as post_seen_days_{period_days}",
+                f"coalesce(sum(case when {pre_range} then p.sales_qty else 0 end), 0) as pre_sales_qty_{period_days}",
+                f"coalesce(sum(case when {post_range} then p.sales_qty else 0 end), 0) as post_sales_qty_{period_days}",
+                f"coalesce(sum(case when {pre_range} then p.sales_amount else 0 end), 0) as pre_sales_amount_{period_days}",
+                f"coalesce(sum(case when {post_range} then p.sales_amount else 0 end), 0) as post_sales_amount_{period_days}",
+                f"coalesce(sum(case when {pre_range} then p.order_gross_profit else 0 end), 0) as pre_order_profit_{period_days}",
+                f"coalesce(sum(case when {post_range} then p.order_gross_profit else 0 end), 0) as post_order_profit_{period_days}",
+                (
+                    "cast(nullif(substring_index(group_concat(case "
+                    f"when {pre_range} and p.ranking > 0 then p.ranking end "
+                    "order by p.dt_date desc, p.ranking asc separator ','), ',', 1), '') as unsigned) "
+                    f"as pre_small_rank_{period_days}"
+                ),
+                (
+                    "cast(nullif(substring_index(group_concat(case "
+                    f"when {post_range} and p.ranking > 0 then p.ranking end "
+                    "order by p.dt_date desc, p.ranking asc separator ','), ',', 1), '') as unsigned) "
+                    f"as post_small_rank_{period_days}"
+                ),
+                (
+                    f"max(case when {pre_range} and p.ranking > 0 then p.dt_date end) "
+                    f"as pre_small_rank_date_{period_days}"
+                ),
+                (
+                    f"max(case when {post_range} and p.ranking > 0 then p.dt_date end) "
+                    f"as post_small_rank_date_{period_days}"
+                ),
+            )
+        )
+    rendered_metrics = ",\n        ".join(metric_columns)
+    max_period = max(SUPPORTED_ROLE_PERIODS)
+    return f"""
+    select
+        a.adjust_date,
+        coalesce(a.country, '') as country,
+        coalesce(a.seller_name_new, substring_index(a.store, '-', 1), '') as station_store,
+        a.store as store,
+        a.msku,
+        a.local_sku,
+        a.product_name,
+        a.currency,
+        a.price_before,
+        a.price_after,
+        a.drop_ratio,
+        {rendered_metrics}
+    from {adjustments} a
+    left join {performance} p
+      on p.seller_name_new = coalesce(a.seller_name_new, substring_index(a.store, '-', 1))
+     and p.country = a.country
+     and p.seller_sku_adj = a.msku
+     and p.dt_date between date_sub(a.adjust_date, interval {max_period - 1} day)
+                       and date_add(a.adjust_date, interval {max_period} day)
+    where a.adjust_date between %(adjust_start)s and %(adjust_end)s
+    group by a.adjust_date, a.store, a.msku, a.country, a.seller_name_new, a.local_sku,
+             a.product_name, a.currency, a.price_before, a.price_after, a.drop_ratio
+    """
+
+
+def _station_role_pair_metrics(raw: dict, pre_days: int, post_days: int) -> dict:
+    paired = {
+        key: value
+        for key, value in raw.items()
+        if not key.startswith(("pre_", "post_"))
+    }
+    for metric in (
+        "seen_days",
+        "sales_qty",
+        "sales_amount",
+        "order_profit",
+        "small_rank",
+        "small_rank_date",
+    ):
+        paired[f"pre_{metric}"] = raw.get(f"pre_{metric}_{pre_days}")
+        paired[f"post_{metric}"] = raw.get(f"post_{metric}_{post_days}")
+    return paired
 
 
 def _station_role_finance_sql(target_schema: str) -> str:
@@ -947,33 +1318,27 @@ def _execute_station_role_tracking(
             f"select distinct data_date from {target_table(target_schema, 'station_sales_role_recent_cache')}"
         )
         recent_cache_dates = {row["data_date"] for row in cursor.fetchall()}
+        cached_roles = _load_all_cached_station_roles(
+            cursor,
+            target_schema,
+            adjust_start,
+            adjust_end,
+        )
+        existing_rows = _load_all_existing_station_role_rows(
+            cursor,
+            target_schema,
+            adjust_start,
+            adjust_end,
+        )
+        cursor.execute(
+            _station_role_all_period_metrics_sql(target_schema),
+            {"adjust_start": adjust_start, "adjust_end": adjust_end},
+        )
+        metric_rows = cursor.fetchall()
         for pre_days, post_days in _station_role_period_pairs():
-            params = {
-                "adjust_start": adjust_start,
-                "adjust_end": adjust_end,
-                "pre_days": pre_days,
-                "post_days": post_days,
-            }
-            cached_roles = _load_cached_station_roles(
-                cursor,
-                target_schema,
-                adjust_start,
-                adjust_end,
-                pre_days,
-                post_days,
-            )
-            existing_rows = _load_existing_station_role_rows(
-                cursor,
-                target_schema,
-                adjust_start,
-                adjust_end,
-                pre_days,
-                post_days,
-            )
-            cursor.execute(_station_role_metrics_sql(target_schema), params)
-            rows = cursor.fetchall()
             payload = []
-            for raw in rows:
+            for all_metrics in metric_rows:
+                raw = _station_role_pair_metrics(all_metrics, pre_days, post_days)
                 business_key = (
                     raw["adjust_date"],
                     raw["country"],
@@ -981,15 +1346,15 @@ def _execute_station_role_tracking(
                     raw["msku"],
                 )
                 if not _should_refresh_station_role_tracking(
-                    existing_rows.get(business_key),
+                    existing_rows.get((pre_days, post_days, *business_key)),
                     recent_cache_dates,
                     pre_days=pre_days,
                     post_days=post_days,
                 ):
                     continue
                 raw.update(finance_rows.get(business_key, {}))
-                pre_snapshot = cached_roles.get(("pre", *business_key))
-                post_snapshot = cached_roles.get(("post", *business_key))
+                pre_snapshot = cached_roles.get(("pre", pre_days, *business_key))
+                post_snapshot = cached_roles.get(("post", post_days, *business_key))
                 built = build_station_role_tracking_row(
                     raw,
                     pre_days,

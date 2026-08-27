@@ -64,6 +64,8 @@ $SalesRoleStdoutLog = Join-Path $LogDir "etl_sales_role_run_$RunStamp.log"
 $SalesRoleStderrLog = Join-Path $LogDir "etl_sales_role_run_$RunStamp.err.log"
 $LabelEvidenceStdoutLog = Join-Path $LogDir "etl_label_rule_evidence_run_$RunStamp.log"
 $LabelEvidenceStderrLog = Join-Path $LogDir "etl_label_rule_evidence_run_$RunStamp.err.log"
+$StockoutHistoricalStdoutLog = Join-Path $LogDir "etl_stockout_historical_operating_run_$RunStamp.log"
+$StockoutHistoricalStderrLog = Join-Path $LogDir "etl_stockout_historical_operating_run_$RunStamp.err.log"
 $ReplenishmentStdoutLog = Join-Path $LogDir "etl_replenishment_run_$RunStamp.log"
 $ReplenishmentStderrLog = Join-Path $LogDir "etl_replenishment_run_$RunStamp.err.log"
 $ReplenishmentTrackingStdoutLog = Join-Path $LogDir "etl_replenishment_tracking_summary_run_$RunStamp.log"
@@ -222,6 +224,23 @@ if ($LabelEvidenceExitCode -ne 0) {
     Write-Host "Label change evidence ETL finished at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 }
 
+Write-Host "Stockout historical operating ETL started at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+Write-Host "Stockout historical stdout log : $StockoutHistoricalStdoutLog"
+Write-Host "Stockout historical stderr log : $StockoutHistoricalStderrLog"
+
+$PreviousErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+& $PythonExe -m etl.stockout_historical_operating_update @args > $StockoutHistoricalStdoutLog 2> $StockoutHistoricalStderrLog
+$StockoutHistoricalExitCode = $LASTEXITCODE
+$ErrorActionPreference = $PreviousErrorActionPreference
+
+if ($StockoutHistoricalExitCode -ne 0) {
+    Send-DashboardDingTalkNotification -Status "failed" -Stage "stockout_historical_operating" -ExitCode $StockoutHistoricalExitCode -ErrorMessage "Stockout historical operating ETL failed with exit code $StockoutHistoricalExitCode. See $StockoutHistoricalStdoutLog and $StockoutHistoricalStderrLog."
+    Write-Error "Stockout historical operating ETL failed with exit code $StockoutHistoricalExitCode. See $StockoutHistoricalStdoutLog and $StockoutHistoricalStderrLog."
+    exit $StockoutHistoricalExitCode
+}
+
+Write-Host "Stockout historical operating ETL finished at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 Write-Host "Replenishment ETL started at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 Write-Host "Replenishment stdout log : $ReplenishmentStdoutLog"
 Write-Host "Replenishment stderr log : $ReplenishmentStderrLog"
@@ -273,5 +292,5 @@ if ($ReturnGoodsExitCode -ne 0) {
 }
 
 Write-Host "Return goods ETL finished at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-Write-Host "Data update strategy includes rolling product refresh, current snapshots, preset period summaries, sales role snapshots, label change evidence, matrix summaries, replenishment results, replenishment tracking summary, and return goods."
+Write-Host "Data update strategy includes rolling product refresh, current snapshots, preset period summaries, sales role snapshots, label change evidence, stockout historical operating snapshots, matrix summaries, replenishment results, replenishment tracking summary, and return goods."
 Send-DashboardDingTalkNotification -Status "success" -Stage "all" -ExitCode 0

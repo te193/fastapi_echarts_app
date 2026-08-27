@@ -21,7 +21,7 @@ from etl.dashboard_daily_update import COLUMN_COMMENTS
 from .services.dashboard_db import dashboard_service
 from .services.ad_budget_data import ad_budget_service
 from .services.country_label_hub_data import country_label_hub_service
-from .services.label_hub_data import label_hub_service
+from .services.label_hub_data import LabelHubRefreshBusyError, label_hub_service
 from .services.label_hub_diagnostics import label_hub_diagnostics_service
 from .services.label_hub_role_diagnostics import label_hub_role_diagnostic_service
 from .services.label_hub_detail_data import label_hub_detail_service
@@ -539,6 +539,8 @@ def api_label_hub_meta() -> dict:
 def api_label_hub_refresh() -> dict:
     try:
         return label_hub_service.force_source_refresh()
+    except LabelHubRefreshBusyError as exc:
+        raise HTTPException(status_code=409, detail="标签数据正在刷新，请稍后") from exc
     except Exception as exc:
         raise HTTPException(status_code=503, detail="远端标签刷新失败，请稍后重试") from exc
 

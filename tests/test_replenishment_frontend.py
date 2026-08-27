@@ -20,7 +20,7 @@ def test_margin_price_assets_use_cache_busting_versions():
     replenishment_template = (ROOT / "app" / "templates" / "replenishment.html").read_text(encoding="utf-8")
 
     assert "styles.css') }}?v=20260818rolegrid1" in base_template
-    assert "replenishment.js') }}?v=20260804leadtime1" in replenishment_template
+    assert "replenishment.js') }}?v=20260827trackingbutton1" in replenishment_template
     assert "replenishment_tracking_summary.js') }}?v=20260727stagefilters1" in replenishment_template
 
 
@@ -52,6 +52,16 @@ def test_replenishment_tracking_summary_entry_is_visible():
 
     assert '<button id="summaryViewBtn" type="button">' in template
     assert '<button id="summaryViewBtn" type="button" hidden>' not in template
+
+
+def test_replenishment_layers_do_not_show_purchase_tracking_jump_button():
+    script = (ROOT / "app" / "static" / "js" / "replenishment.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+
+    assert "layer-tracking-button" not in script
+    assert "data-tracking-level-entry" not in script
+    assert "openTrackingPage" not in script
+    assert ".layer-tracking-button" not in styles
 
 
 def test_replenishment_tracking_summary_allows_selecting_page_size():
