@@ -17,6 +17,7 @@ from app.services.label_hub_data import (
     _evidence_object,
     _missing_metric_units,
     _public_business_row,
+    _stockout_evidence_result,
 )
 
 
@@ -180,6 +181,51 @@ class LabelHubDataTests(unittest.TestCase):
     def setUp(self):
         self.service = LabelHubDataService.__new__(LabelHubDataService)
 
+    def test_stockout_historical_rows_select_v3_big_label_fields(self):
+        class Cursor:
+            def __init__(self):
+                self.sql = ""
+
+            def execute(self, sql, _params):
+                self.sql = sql
+
+            def fetchall(self):
+                return []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+        class Connection:
+            def __init__(self):
+                self.cursor_instance = Cursor()
+
+            def cursor(self):
+                return self.cursor_instance
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+        connection = Connection()
+        self.service._source_connection = lambda: connection
+
+        self.service._fetch_stockout_historical_rows(
+            data_date="2026-08-24",
+            scope="business_unit",
+        )
+
+        sql = connection.cursor_instance.sql.lower()
+        self.assertIn("pre_oos_role", sql)
+        self.assertIn("combined_label_code", sql)
+        self.assertIn("combined_label", sql)
+        self.assertIn("auxiliary_json", sql)
+        self.assertIn("evidence_json", sql)
+
     def test_label_fact_and_metric_cache_keeps_five_minutes(self):
         self.assertEqual(300, CACHE_SECONDS)
 
@@ -187,6 +233,42 @@ class LabelHubDataTests(unittest.TestCase):
         evidence = _evidence_object(b'{"metrics": {"daily_sales": 2}}')
 
         self.assertEqual({"metrics": {"daily_sales": 2}}, evidence)
+
+    def test_stockout_evidence_result_distinguishes_confirmed_observed_and_pending_dates(self):
+        cases = (
+            (
+                {"oos_start_date": "2026-08-23", "oos_start_confidence": "complete"},
+                ("recent_start", "最近断货开始日", "2026-08-23"),
+            ),
+            (
+                {"observed_oos_since_date": "2026-01-01", "oos_start_confidence": "left_boundary_incomplete"},
+                ("observed_since", "最早观察到断货", "2026-01-01"),
+            ),
+            (
+                {"oos_start_date": "2026-08-23", "oos_start_confidence": "event_boundary_incomplete"},
+                ("pending", "断货起点待确认", "2026-08-23"),
+            ),
+        )
+
+        for row, expected in cases:
+            with self.subTest(confidence=row["oos_start_confidence"]):
+                event = _stockout_evidence_result(row, {"nodes": []})["stockout_event"]
+                self.assertEqual(expected, (event["date_kind"], event["date_label"], event["date"]))
+
+    def test_stockout_evidence_result_translates_component_stability_codes(self):
+        result = _stockout_evidence_result(
+            {
+                "historical_stability": "light_fluctuation",
+                "role_stability": "normal",
+                "sales_stability": "high",
+                "margin_stability": "unavailable",
+            },
+            {"nodes": []},
+        )
+
+        self.assertEqual("轻度波动", result["stability"]["role_label"])
+        self.assertEqual("波动", result["stability"]["sales_label"])
+        self.assertEqual("依据不足", result["stability"]["margin_label"])
 
     def test_remote_invalidation_clears_label_caches_but_keeps_local_metrics(self):
         service = LabelHubDataService()
@@ -1021,21 +1103,46 @@ class LabelHubDataTests(unittest.TestCase):
                     "msku": "SCH6038a",
                     "label_id": 2001,
                     "label_period": "30d",
+                    "current_oos_flag": 1,
+                    "oos_start_date": "2026-08-13",
+                    "oos_start_method": "label_304_current_plus_most_recent_inventory_zero_run",
+                    "oos_start_confidence": "complete",
+                    "observed_oos_since_date": "2026-08-13",
+                    "history_window_start": "2026-01-01",
+                    "history_window_end": "2026-08-12",
+                    "pre_oos_role": "potential",
+                    "role_evidence_status": "available",
+                    "role_source_date": "2026-08-12",
+                    "valid_window_count": 4,
+                    "dominant_role": "potential",
+                    "dominant_role_share": 0.5,
+                    "role_switch_rate": 0.5,
+                    "recent_trend": "stable",
+                    "daily_sales_trend": "improving",
+                    "margin_trend": "stable",
+                    "combined_label_code": "potential_daily_sales_improving",
+                    "combined_label": "潜力·日销改善",
+                    "historical_stability": "stable",
+                    "role_stability": "stable",
+                    "sales_stability": "stable",
+                    "margin_stability": "light_fluctuation",
                     "evidence_json": '{"schema_version":"1.0","oos":{"oos_start_date":"2026-08-13"}}',
                     "historical_operating_evidence_json": json.dumps(
                         {
-                            "valid_role_node_count": 4,
-                            "rolling_role_nodes": [
-                                {"window_start": "2026-01-01", "window_end": "2026-01-30", "role": "star"},
-                                {"window_start": "2026-01-08", "window_end": "2026-02-06", "role": "potential"},
-                                {"window_start": "2026-01-15", "window_end": "2026-02-13", "role": "potential"},
-                                {"window_start": "2026-01-22", "window_end": "2026-02-20", "role": "dog"},
+                            "pre_oos_role": "potential",
+                            "confirmed_role_nodes": [
+                                {"node_date": "2026-01-30", "window_start": "2026-01-01", "window_end": "2026-01-30", "role": "star", "state": "normal", "selected_for_stability": True, "daily_sales": 6.2, "margin_rate": 0.2},
+                                {"node_date": "2026-03-01", "window_start": "2026-01-31", "window_end": "2026-03-01", "role": "potential", "state": "normal", "selected_for_stability": True, "daily_sales": 4.1, "margin_rate": 0.16},
+                                {"node_date": "2026-03-31", "window_start": "2026-03-02", "window_end": "2026-03-31", "role": "potential", "state": "normal", "selected_for_stability": True, "daily_sales": 4.6, "margin_rate": 0.17},
+                                {"node_date": "2026-04-30", "window_start": "2026-04-01", "window_end": "2026-04-30", "role": "dog", "state": "normal", "selected_for_stability": True, "daily_sales": 0.8, "margin_rate": 0.08},
                                 {
-                                    "window_start": "2026-01-29",
-                                    "window_end": "2026-02-27",
-                                    "role": "unavailable",
-                                    "reason": "effective_operating_days_insufficient",
-                                    "effective_operating_days": 12,
+                                    "node_date": "2026-05-01",
+                                    "window_start": "2026-04-02",
+                                    "window_end": "2026-05-01",
+                                    "role": "dog",
+                                    "state": "carried_oos",
+                                    "source_node_date": "2026-04-30",
+                                    "selected_for_stability": False,
                                 },
                             ],
                         },
@@ -1079,7 +1186,10 @@ class LabelHubDataTests(unittest.TestCase):
         history = payload["historical_role_history"]
         self.assertEqual("insufficient", history["status"])
         self.assertEqual(4, history["valid_node_count"])
-        self.assertEqual(1, history["unavailable_node_count"])
+        self.assertEqual(4, history["calculated_node_count"])
+        self.assertEqual(1, history["carried_node_count"])
+        self.assertEqual(0, history["recovery_node_count"])
+        self.assertEqual(0, history["unavailable_node_count"])
         self.assertEqual(
             {"code": "potential", "label": "潜力产品", "count": 2, "share": 0.5},
             history["dominant_role"],
@@ -1090,15 +1200,29 @@ class LabelHubDataTests(unittest.TestCase):
                 ("potential", 2, 0.5),
                 ("dog", 1, 0.25),
                 ("problem", 0, 0.0),
-                ("in_stock_zero_sales", 0, 0.0),
             ],
             [(item["code"], item["count"], item["share"]) for item in history["distribution"]],
         )
-        self.assertEqual("2026-02-27", history["nodes"][-1]["window_end"])
-        self.assertEqual("周期角色不可判", history["nodes"][-1]["label"])
-        self.assertEqual("30天窗口有效经营日不足", history["nodes"][-1]["reason_label"])
-        self.assertEqual(12, history["nodes"][-1]["effective_operating_days"])
-        self.assertEqual(21, history["nodes"][-1]["minimum_effective_days"])
+        self.assertEqual("2026-05-01", history["nodes"][-1]["window_end"])
+        self.assertEqual("瘦狗产品", history["nodes"][-1]["label"])
+        self.assertEqual("断货前角色沿用", history["nodes"][-1]["state_label"])
+        self.assertEqual("2026-04-30", history["nodes"][-1]["source_node_date"])
+        self.assertFalse(history["nodes"][-1]["selected_for_stability"])
+        self.assertEqual("recent_start", payload["stockout_event"]["date_kind"])
+        self.assertEqual("最近断货开始日", payload["stockout_event"]["date_label"])
+        self.assertEqual("potential", payload["pre_oos_role"]["code"])
+        self.assertEqual("potential", payload["historical_primary_role"]["code"])
+        self.assertEqual(0.5, payload["historical_primary_role"]["share"])
+        self.assertEqual("stable", payload["stability"]["code"])
+        self.assertEqual("潜力·日销改善", payload["combined_conclusion"]["label"])
+        self.assertEqual(
+            ["2026-03-01", "2026-03-31", "2026-04-30"],
+            [item["node_date"] for item in payload["metric_trend_nodes"]],
+        )
+        self.assertEqual(0.8, payload["metric_trend_nodes"][-1]["daily_sales"])
+        self.assertEqual(0.08, payload["metric_trend_nodes"][-1]["margin_rate"])
+        self.assertIn("s.oos_start_method", connection.cursor_instance.sql.lower())
+        self.assertIn("s.combined_label", connection.cursor_instance.sql.lower())
         self.assertIn("label_id in (2001,2002,2003,2004)", connection.cursor_instance.sql.lower())
         self.assertIn("dashboard_stockout_historical_operating_snapshot", connection.cursor_instance.sql.lower())
         self.assertEqual("SCH6038a", connection.cursor_instance.params["msku"])

@@ -5,6 +5,7 @@ from typing import Any, Iterable, Mapping
 
 from .stockout_historical_operating import (
     HISTORICAL_LEVEL_LABELS,
+    PERIOD_MIN_EFFECTIVE_DAYS,
     PRE_OOS_CHANGE_LABELS,
     ROLE_LABELS,
     ROLE_PATTERN_LABELS,
@@ -152,10 +153,314 @@ REASON_LABELS = {
     "daily_coverage_lt_80pct": "日级数据覆盖率低于80%",
     "effective_days_or_weeks_insufficient": "有效经营日或有效周不足",
 }
+PERIOD_UNFORMED_REASON_LABELS = {
+    "left_boundary_incomplete": "断货起点历史不足",
+    "effective_days_or_weeks_insufficient": "有效经营日或有效周不足",
+    "history_span_lt_90": "历史跨度不足90天",
+    "daily_coverage_lt_80pct": "日级数据覆盖不足80%",
+    "in_stock_zero_sales": "有货零销量",
+    "period_role_unavailable": "该周期角色不可判",
+    "unclassified": "其他未归类原因",
+}
+PERIOD_UNFORMED_REASON_DESCRIPTIONS = {
+    "left_boundary_incomplete": "历史数据起点已处于断货，无法完整确认本次断货前的经营周期。",
+    "effective_days_or_weeks_insufficient": "有效经营日：当天FBA可售库存>0。有效经营周：按ISO自然周统计，一周内至少3个有效经营日。历史总门槛要求有效经营日不少于30天，且有效经营周不少于8周；任一项不足归入此原因。",
+    "history_span_lt_90": "2026-01-01至断货前的可用历史跨度少于90天。",
+    "daily_coverage_lt_80pct": "日级数据覆盖率＝历史窗口内实际有记录的日期数÷应有自然日数；低于80%归入此原因。",
+    "in_stock_zero_sales": "该周期有有效库存，但周期总销量为0，不归入明星、潜力、瘦狗或问题角色。",
+    "period_role_unavailable": "历史总门槛已通过，但该周期的有效经营日或指标仍不足以形成销售角色。",
+    "unclassified": "当前记录未命中已定义的未形成原因，需要结合明细证据复核。",
+}
 
 
 def _share(count: int, denominator: int) -> float:
     return round(count / denominator, 4) if denominator else 0
+
+
+CONFIRMED_ROLE_DEFINITIONS = (
+    ("star", "明星", "positive"),
+    ("potential", "潜力", "positive"),
+    ("dog", "瘦狗", "risk"),
+    ("problem", "问题", "risk"),
+)
+ROLE_STABILITY_DEFINITIONS = (
+    ("stable", "稳定"),
+    ("volatile", "波动"),
+    ("insufficient", "依据不足"),
+)
+UNFORMED_ROLE_REASON_DEFINITIONS = (
+    ("oos_start_history_insufficient", "断货起点历史不足"),
+    ("pre_oos_period_insufficient", "断货前周期不足"),
+    ("no_valid_role", "无有效历史角色"),
+)
+ROLE_LEVEL = {"problem": 0, "dog": 1, "potential": 2, "star": 3}
+
+
+def _period_role_is_formed(row: Mapping[str, Any], period: str) -> bool:
+    return (
+        row.get("historical_evaluable_status") == "historical_operating_evaluable"
+        and str(row.get(f"role_{period}") or "") in ROLE_LEVEL
+    )
+
+
+def _period_unformed_reason_code(row: Mapping[str, Any], period: str) -> str:
+    if _period_role_is_formed(row, period):
+        return ""
+    if row.get("historical_evaluable_status") != "historical_operating_evaluable":
+        return str(row.get("historical_evaluable_reason") or row.get("current_gate_reason") or "unclassified")
+    role_code = str(row.get(f"role_{period}") or "")
+    if role_code == "in_stock_zero_sales":
+        return role_code
+    return "period_role_unavailable"
+
+
+def _period_unformed_reason_label(code: str) -> str:
+    return PERIOD_UNFORMED_REASON_LABELS.get(code) or REASON_LABELS.get(code) or code
+
+
+def _period_unformed_reason_description(code: str, period: str) -> str:
+    if code == "period_role_unavailable":
+        period_days = int(period[:-1])
+        minimum_days = PERIOD_MIN_EFFECTIVE_DAYS[period]
+        return (
+            f"该周期的有效经营日指FBA可售库存>0的日期；"
+            f"{period_days}天周期至少需要{minimum_days}个有效经营日"
+            "（完整门槛：7天=5天、14天=10天、30天=21天、90天=63天）。"
+            "未达到对应天数，或达到后仍出现销量>0但毛利率缺失，都无法形成销售角色。"
+        )
+    return PERIOD_UNFORMED_REASON_DESCRIPTIONS.get(code) or f"未形成原因代码：{code}。"
+
+
+def _role_stability_group(row: Mapping[str, Any]) -> str:
+    stability = str(row.get("historical_stability") or "")
+    if stability in {"stable", "light_fluctuation"}:
+        return "stable"
+    if stability == "volatile":
+        return "volatile"
+    return "insufficient"
+
+
+def _role_stability_matrix(rows: list[Mapping[str, Any]]) -> dict[str, Any]:
+    denominator = len(rows)
+    valid_roles = {code for code, _label, _group in CONFIRMED_ROLE_DEFINITIONS}
+    role_rows = [row for row in rows if str(row.get("pre_oos_role") or "") in valid_roles]
+    role_denominator = len(role_rows)
+    result_rows = []
+    for role_code, role_label, role_group in CONFIRMED_ROLE_DEFINITIONS:
+        matching = [row for row in role_rows if str(row.get("pre_oos_role") or "") == role_code]
+        role_count = len(matching)
+        stability_counts = Counter(_role_stability_group(row) for row in matching)
+        result_rows.append(
+            {
+                "code": role_code,
+                "label": role_label,
+                "group": role_group,
+                "total_count": role_count,
+                "share_of_total": _share(role_count, denominator),
+                "cells": [
+                    {
+                        "code": stability_code,
+                        "label": stability_label,
+                        "count": stability_counts[stability_code],
+                        "share_of_role": _share(stability_counts[stability_code], role_count),
+                        "share_of_total": _share(stability_counts[stability_code], denominator),
+                    }
+                    for stability_code, stability_label in ROLE_STABILITY_DEFINITIONS
+                ],
+            }
+        )
+    return {
+        "denominator": denominator,
+        "role_denominator": role_denominator,
+        "rows": result_rows,
+    }
+
+
+def _historical_transition_label(dominant_role: str, pre_oos_role: str) -> str:
+    role_labels = {code: label for code, label, _group in CONFIRMED_ROLE_DEFINITIONS}
+    if pre_oos_role not in ROLE_LEVEL:
+        return "断货前角色不足"
+    if pre_oos_role == dominant_role:
+        return f"断货前持续{role_labels[pre_oos_role]}"
+    direction = "升为" if ROLE_LEVEL[pre_oos_role] > ROLE_LEVEL[dominant_role] else "降为"
+    return f"断货前{direction}{role_labels[pre_oos_role]}"
+
+
+def _historical_primary_summary(rows: list[Mapping[str, Any]]) -> dict[str, Any]:
+    denominator = len(rows)
+    valid_roles = set(ROLE_LEVEL)
+    formed_rows = [row for row in rows if str(row.get("dominant_role") or "") in valid_roles]
+    result_rows = []
+    for role_code, role_label, role_group in CONFIRMED_ROLE_DEFINITIONS:
+        matching = [row for row in formed_rows if str(row.get("dominant_role") or "") == role_code]
+        role_count = len(matching)
+        stability_counts = Counter(_role_stability_group(row) for row in matching)
+        transition_counts = Counter(
+            str(row.get("pre_oos_role") or "unavailable")
+            if str(row.get("pre_oos_role") or "") in valid_roles
+            else "unavailable"
+            for row in matching
+        )
+        result_rows.append(
+            {
+                "code": role_code,
+                "label": role_label,
+                "group": role_group,
+                "total_count": role_count,
+                "share_of_total": _share(role_count, denominator),
+                "cells": [
+                    {
+                        "code": stability_code,
+                        "label": stability_label,
+                        "count": stability_counts[stability_code],
+                        "share_of_role": _share(stability_counts[stability_code], role_count),
+                        "share_of_total": _share(stability_counts[stability_code], denominator),
+                    }
+                    for stability_code, stability_label in ROLE_STABILITY_DEFINITIONS
+                ],
+                "transitions": [
+                    {
+                        "code": f"{role_code}|{pre_oos_role}",
+                        "label": _historical_transition_label(role_code, pre_oos_role),
+                        "count": transition_counts[pre_oos_role],
+                        "share_of_role": _share(transition_counts[pre_oos_role], role_count),
+                        "share_of_total": _share(transition_counts[pre_oos_role], denominator),
+                    }
+                    for pre_oos_role in sorted(
+                        transition_counts,
+                        key=lambda code: (-(ROLE_LEVEL.get(code, -1)), code),
+                    )
+                ],
+            }
+        )
+    return {
+        "denominator": denominator,
+        "formed_role_count": len(formed_rows),
+        "unformed_role_count": denominator - len(formed_rows),
+        "rows": result_rows,
+    }
+
+
+def _role_coverage(rows: list[Mapping[str, Any]]) -> dict[str, Any]:
+    total = len(rows)
+    valid_roles = {code for code, _label, _group in CONFIRMED_ROLE_DEFINITIONS}
+    unformed_rows = [row for row in rows if str(row.get("pre_oos_role") or "") not in valid_roles]
+    unformed_count = len(unformed_rows)
+    reason_counts = Counter(
+        str(row.get("role_evidence_status") or "no_valid_role")
+        if str(row.get("role_evidence_status") or "") in {code for code, _label in UNFORMED_ROLE_REASON_DEFINITIONS}
+        else "no_valid_role"
+        for row in unformed_rows
+    )
+    formed_count = total - unformed_count
+    return {
+        "total_count": total,
+        "formed_role_count": formed_count,
+        "unformed_role_count": unformed_count,
+        "formed_share": _share(formed_count, total),
+        "unformed_share": _share(unformed_count, total),
+        "unformed_reasons": [
+            {
+                "code": code,
+                "label": label,
+                "count": reason_counts[code],
+                "share_of_total": _share(reason_counts[code], total),
+                "share_of_unformed": _share(reason_counts[code], unformed_count),
+            }
+            for code, label in UNFORMED_ROLE_REASON_DEFINITIONS
+        ],
+    }
+
+
+def _confirmed_big_label_summary(rows: list[Mapping[str, Any]]) -> dict[str, Any]:
+    denominator = len(rows)
+
+    def items(field: str, labels: Mapping[str, str]) -> list[dict[str, Any]]:
+        counts = Counter(str(row.get(field) or "") for row in rows)
+        return [
+            {
+                "code": code,
+                "label": labels.get(code, code),
+                "count": count,
+                "share": _share(count, denominator),
+            }
+            for code, count in sorted(counts.items(), key=lambda item: (-item[1], labels.get(item[0], item[0])))
+            if code
+        ]
+
+    combined_labels = {
+        str(row.get("combined_label_code") or ""): str(row.get("combined_label") or "")
+        for row in rows
+        if row.get("combined_label_code")
+    }
+    combined_label_groups = []
+    for role_code, role_label, role_group in CONFIRMED_ROLE_DEFINITIONS:
+        role_rows = [row for row in rows if str(row.get("pre_oos_role") or "") == role_code]
+        role_count = len(role_rows)
+        display_counts = Counter(str(row.get("combined_label") or "") for row in role_rows)
+        combined_label_groups.append(
+            {
+                "code": role_code,
+                "label": role_label,
+                "group": role_group,
+                "role_count": role_count,
+                "items": [
+                    {
+                        "code": label,
+                        "label": label,
+                        "count": count,
+                        "share_of_role": _share(count, role_count),
+                        "share_of_total": _share(count, denominator),
+                    }
+                    for label, count in sorted(display_counts.items(), key=lambda item: (-item[1], item[0]))
+                    if label
+                ],
+            }
+        )
+    return {
+        "denominator": denominator,
+        "combined_labels": items("combined_label_code", combined_labels),
+        "combined_label_groups": combined_label_groups,
+        "pre_oos_roles": items(
+            "pre_oos_role",
+            {"star": "明星", "potential": "潜力", "dog": "瘦狗", "problem": "问题"},
+        ),
+        "dominant_roles": items(
+            "dominant_role",
+            {"star": "明星", "potential": "潜力", "dog": "瘦狗", "problem": "问题"},
+        ),
+        "recent_trends": items(
+            "recent_trend",
+            {
+                "stable": "近期角色稳定",
+                "improving": "近期改善",
+                "declining": "近期退化",
+                "fluctuating": "近期波动",
+                "insufficient": "趋势依据不足",
+            },
+        ),
+        "historical_stability": items(
+            "historical_stability",
+            {
+                "stable": "历史稳定",
+                "light_fluctuation": "轻度波动",
+                "volatile": "历史波动",
+                "insufficient": "稳定性依据不足",
+            },
+        ),
+        "evidence_statuses": items(
+            "role_evidence_status",
+            {
+                "normal": "正常计算",
+                "carried": "角色沿用",
+                "short_period_fallback": "14天兜底角色",
+                "pre_oos_period_insufficient": "断货前周期不足",
+                "oos_start_history_insufficient": "断货起点历史不足",
+                "no_valid_role": "无有效历史角色",
+                "data_anomaly": "数据异常待核实",
+            },
+        ),
+    }
 
 
 def _period_role_rule_description(*, scope_mode: str, period: str, code: str) -> str:
@@ -551,12 +856,29 @@ def build_stockout_historical_summary(
         field = f"role_{period}"
         counts = Counter(str(row.get(field) or "unavailable") for row in historical_evaluable)
         status_counts = Counter(_full_population_status_code(row) for row in scoped)
+        unformed_rows = [row for row in scoped if not _period_role_is_formed(row, period)]
+        unformed_reason_counts = Counter(_period_unformed_reason_code(row, period) for row in unformed_rows)
         period_role_matrix.append(
             {
                 "period": period,
                 "label": f"断货日前{period[:-1]}天",
                 "denominator": total,
                 "historical_evaluable_denominator": denominator,
+                "unformed_count": len(unformed_rows),
+                "unformed_reasons": [
+                    {
+                        "code": reason_code,
+                        "label": _period_unformed_reason_label(reason_code),
+                        "count": reason_count,
+                        "share_of_unformed": _share(reason_count, len(unformed_rows)),
+                        "share_of_total": _share(reason_count, total),
+                        "reason_description": _period_unformed_reason_description(reason_code, period),
+                    }
+                    for reason_code, reason_count in sorted(
+                        unformed_reason_counts.items(),
+                        key=lambda item: (-item[1], item[0]),
+                    )
+                ],
                 "items": [
                     {
                         "code": code,
@@ -613,6 +935,43 @@ def build_stockout_historical_summary(
             for column_code, _column_label in matrix_columns
         ],
     }
+    operating_summary_groups = {
+        "denominator": denominator,
+        "groups": [],
+    }
+    for group_code, group_label, items in (
+        (
+            "operating_level",
+            "经营等级",
+            (
+                ("quality", "表现较好", sum(matrix_counts[("quality", column)] for column, _ in matrix_columns)),
+                ("general", "经营一般", sum(matrix_counts[("general", column)] for column, _ in matrix_columns)),
+                ("risk", "经营风险", sum(matrix_counts[("risk", column)] for column, _ in matrix_columns)),
+            ),
+        ),
+        (
+            "stability",
+            "稳定性",
+            (
+                ("stable", "经营稳定", sum(matrix_counts[(row, "stable")] for row, _ in matrix_rows)),
+                ("non_stable", "非稳定", sum(matrix_counts[(row, "non_stable")] for row, _ in matrix_rows)),
+                ("unavailable", "稳定性不可判", sum(matrix_counts[(row, "unavailable")] for row, _ in matrix_rows)),
+            ),
+        ),
+    ):
+        reconciled_count = sum(count for _code, _label, count in items)
+        operating_summary_groups["groups"].append(
+            {
+                "code": group_code,
+                "label": group_label,
+                "reconciled_count": reconciled_count,
+                "is_reconciled": reconciled_count == denominator,
+                "items": [
+                    {"code": code, "label": label, "count": count, "share": _share(count, denominator)}
+                    for code, label, count in items
+                ],
+            }
+        )
     action_counts = Counter(_action_queue_code(row) for row in scoped)
     action_reconciled_count = sum(action_counts.values())
     action_queue = {
@@ -670,6 +1029,11 @@ def build_stockout_historical_summary(
         "action_queue": action_queue,
         "primary_diagnosis": primary_diagnosis,
         "quality_stability_matrix": quality_stability_matrix,
+        "operating_summary_groups": operating_summary_groups,
+        "role_stability_matrix": _role_stability_matrix(scoped),
+        "historical_primary_summary": _historical_primary_summary(scoped),
+        "role_coverage": _role_coverage(scoped),
+        "big_label_summary": _confirmed_big_label_summary(scoped),
         "outcomes": outcomes,
         "quality_flags": quality_flags,
         "period_role_matrix": period_role_matrix,
@@ -705,6 +1069,65 @@ def filter_stockout_historical_members(
     rows: Iterable[Mapping[str, Any]], dimension: str, code: str, *, period: str = ""
 ) -> set[tuple[str, ...]]:
     allowed_dimensions = {field for field, _label, _labels in OUTCOME_DEFINITIONS}
+    confirmed_dimensions = {
+        "combined_label": "combined_label_code",
+        "pre_oos_role": "pre_oos_role",
+        "dominant_role": "dominant_role",
+        "recent_trend": "recent_trend",
+        "role_evidence_status": "role_evidence_status",
+    }
+    if dimension in confirmed_dimensions:
+        field = confirmed_dimensions[dimension]
+        return {_member_key(row) for row in rows if str(row.get(field) or "") == code}
+    if dimension == "combined_label_display":
+        return {_member_key(row) for row in rows if str(row.get("combined_label") or "") == code}
+    if dimension == "historical_stability" and code in {
+        "stable", "light_fluctuation", "volatile", "insufficient"
+    }:
+        return {_member_key(row) for row in rows if str(row.get("historical_stability") or "") == code}
+    if dimension == "role_stability":
+        parts = code.split("|", 1)
+        valid_roles = {item[0] for item in CONFIRMED_ROLE_DEFINITIONS}
+        valid_stabilities = {item[0] for item in ROLE_STABILITY_DEFINITIONS}
+        if len(parts) != 2 or parts[0] not in valid_roles or parts[1] not in valid_stabilities:
+            raise ValueError("断货前角色稳定性组合不存在")
+        role_code, stability_code = parts
+        return {
+            _member_key(row)
+            for row in rows
+            if str(row.get("pre_oos_role") or "") == role_code
+            and _role_stability_group(row) == stability_code
+        }
+    if dimension == "dominant_role_stability":
+        parts = code.split("|", 1)
+        valid_roles = set(ROLE_LEVEL)
+        valid_stabilities = {item[0] for item in ROLE_STABILITY_DEFINITIONS}
+        if len(parts) != 2 or parts[0] not in valid_roles or parts[1] not in valid_stabilities:
+            raise ValueError("历史主导角色稳定性组合不存在")
+        role_code, stability_code = parts
+        return {
+            _member_key(row)
+            for row in rows
+            if str(row.get("dominant_role") or "") == role_code
+            and _role_stability_group(row) == stability_code
+        }
+    if dimension == "dominant_pre_oos_role":
+        parts = code.split("|", 1)
+        valid_dominant_roles = set(ROLE_LEVEL)
+        valid_pre_oos_roles = valid_dominant_roles | {"unavailable"}
+        if len(parts) != 2 or parts[0] not in valid_dominant_roles or parts[1] not in valid_pre_oos_roles:
+            raise ValueError("历史主导角色与断货前角色组合不存在")
+        dominant_role, pre_oos_role = parts
+        return {
+            _member_key(row)
+            for row in rows
+            if str(row.get("dominant_role") or "") == dominant_role
+            and (
+                str(row.get("pre_oos_role") or "") == pre_oos_role
+                if pre_oos_role != "unavailable"
+                else str(row.get("pre_oos_role") or "") not in valid_dominant_roles
+            )
+        }
     if dimension == "eligibility_reason":
         return {
             _member_key(row) for row in rows
@@ -716,14 +1139,33 @@ def filter_stockout_historical_members(
             raise ValueError("断货历史经营质量标记不存在")
         return {_member_key(row) for row in rows if bool(row.get(quality_fields[code]))}
     if dimension == "period_role":
-        if period not in PERIODS or code not in set(ROLE_LABELS) | {item[0] for item in FULL_POPULATION_STATUS_DEFINITIONS}:
+        valid_role_codes = set(ROLE_LABELS)
+        formed_role_codes = set(ROLE_LEVEL)
+        if period not in PERIODS or code not in valid_role_codes | {item[0] for item in FULL_POPULATION_STATUS_DEFINITIONS} | {"unformed"}:
             raise ValueError("断货历史经营周期角色不存在")
+        if code == "unformed":
+            return {
+                _member_key(row)
+                for row in rows
+                if not (
+                    row.get("historical_evaluable_status") == "historical_operating_evaluable"
+                    and str(row.get(f"role_{period}") or "") in formed_role_codes
+                )
+            }
         if code in {item[0] for item in FULL_POPULATION_STATUS_DEFINITIONS}:
             return {_member_key(row) for row in rows if _full_population_status_code(row) == code}
         return {
             _member_key(row) for row in rows
             if row.get("historical_evaluable_status") == "historical_operating_evaluable"
             and str(row.get(f"role_{period}") or "unavailable") == code
+        }
+    if dimension == "period_unformed_reason":
+        if period not in PERIODS or not code:
+            raise ValueError("断货历史经营周期未形成原因不存在")
+        return {
+            _member_key(row)
+            for row in rows
+            if _period_unformed_reason_code(row, period) == code
         }
     if dimension == "operating_overview":
         valid_codes = {item[0] for item in OPERATING_OVERVIEW_DEFINITIONS}

@@ -126,6 +126,7 @@ class LabelHubDetailDataService:
         country_stockout_role_provider: Callable[..., list[dict[str, Any]]] | None = None,
         stockout_operating_member_provider: Callable[..., set[tuple[str, ...]]] | None = None,
         stockout_historical_member_provider: Callable[..., set[tuple[str, ...]]] | None = None,
+        stockout_historical_annotation_provider: Callable[..., Mapping[tuple[str, ...], Mapping[str, Any]]] | None = None,
     ) -> None:
         self._business_row_provider = business_row_provider
         self._identifier_alias_provider = identifier_alias_provider or {}
@@ -134,6 +135,7 @@ class LabelHubDetailDataService:
         self._country_stockout_role_provider = country_stockout_role_provider
         self._stockout_operating_member_provider = stockout_operating_member_provider
         self._stockout_historical_member_provider = stockout_historical_member_provider
+        self._stockout_historical_annotation_provider = stockout_historical_annotation_provider
         self._business_rows_cache: OrderedDict[tuple[Any, ...], tuple[float, Any]] = OrderedDict()
         self._country_rows_cache: OrderedDict[tuple[Any, ...], tuple[float, Any]] = OrderedDict()
         self._business_rows_cache_lock = RLock()
@@ -260,11 +262,7 @@ class LabelHubDetailDataService:
         stockout_history_code = str(filters.get("stockout_history_code") or "")
         stockout_history_period = str(filters.get("stockout_history_period") or "")
         stockout_operating_scope = str(filters.get("stockout_operating_scope") or detail_view)
-        if stockout_operating_scope == "business_unit":
-            expected_operating_view = "business_unit"
-        elif stockout_operating_scope == "country":
-            expected_operating_view = "country"
-        else:
+        if stockout_operating_scope not in {"business_unit", "country"}:
             raise ValueError("断货经营状态维度不存在")
         if stockout_operating_status_period and stockout_operating_status_period not in STOCKOUT_BEFORE_ROLE_PERIODS:
             raise ValueError("断货经营状态周期不存在")
@@ -280,16 +278,13 @@ class LabelHubDetailDataService:
             raise ValueError("断货前经营趋势不存在")
         if stockout_operating_trend and not stockout_operating_status:
             raise ValueError("断货前经营趋势必须搭配经营状态")
-        if stockout_operating_status and detail_view != expected_operating_view:
-            raise ValueError("断货经营状态筛选与当前明细维度不匹配")
         if stockout_history_dimension and not stockout_history_code:
             raise ValueError("断货历史经营筛选必须指定结果代码")
-        if stockout_history_period and stockout_history_dimension != "period_role":
+        period_history_dimensions = {"period_role", "period_unformed_reason"}
+        if stockout_history_period and stockout_history_dimension not in period_history_dimensions:
             raise ValueError("断货历史经营周期只能用于周期角色")
-        if stockout_history_dimension == "period_role" and stockout_history_period not in STOCKOUT_BEFORE_ROLE_PERIODS:
+        if stockout_history_dimension in period_history_dimensions and stockout_history_period not in STOCKOUT_BEFORE_ROLE_PERIODS:
             raise ValueError("断货历史经营周期角色必须指定有效周期")
-        if stockout_history_dimension and detail_view != expected_operating_view:
-            raise ValueError("断货历史经营筛选与当前明细维度不匹配")
         current_stockout_only = bool(filters.get("current_stockout_only"))
         global_conditions = self._condition_parser(str(filters.get("conditions") or ""))
         detail_conditions = self._condition_parser(str(filters.get("detail_conditions") or ""))
@@ -318,11 +313,31 @@ class LabelHubDetailDataService:
             label_period=filters.get("label_period", "all"),
             analysis_parent_ids="|".join(map(str, analysis_parent_ids)),
             analysis_periods="|".join(map(str, analysis_periods)),
-            stockout_operating_status_period=(stockout_operating_status_period if detail_view == "business_unit" else ""),
-            stockout_operating_status=(stockout_operating_status if detail_view == "business_unit" else ""),
-            stockout_insufficient_reason=(stockout_insufficient_reason if detail_view == "business_unit" else ""),
-            stockout_operating_trend=(stockout_operating_trend if detail_view == "business_unit" else ""),
-            stockout_operating_scope=(stockout_operating_scope if detail_view == "business_unit" else ""),
+            stockout_operating_status_period=(
+                stockout_operating_status_period
+                if detail_view == "business_unit" and stockout_operating_scope == "business_unit"
+                else ""
+            ),
+            stockout_operating_status=(
+                stockout_operating_status
+                if detail_view == "business_unit" and stockout_operating_scope == "business_unit"
+                else ""
+            ),
+            stockout_insufficient_reason=(
+                stockout_insufficient_reason
+                if detail_view == "business_unit" and stockout_operating_scope == "business_unit"
+                else ""
+            ),
+            stockout_operating_trend=(
+                stockout_operating_trend
+                if detail_view == "business_unit" and stockout_operating_scope == "business_unit"
+                else ""
+            ),
+            stockout_operating_scope=(
+                stockout_operating_scope
+                if detail_view == "business_unit" and stockout_operating_scope == "business_unit"
+                else ""
+            ),
         )
         provider_result = self._business_rows(provider_kwargs)
         if isinstance(provider_result, Mapping):
@@ -476,6 +491,42 @@ class LabelHubDetailDataService:
                 metric_status = country_metric_status
                 warnings = country_warnings
 
+        if (
+            stockout_operating_status
+            and detail_view == "business_unit"
+            and stockout_operating_scope == "country"
+        ):
+            if self._stockout_operating_member_provider is None:
+                raise ValueError("国家断货经营状态筛选暂不可用")
+            country_members = self._stockout_operating_member_provider(
+                data_date=str(filters.get("data_date") or ""),
+                role_period=stockout_operating_status_period,
+                scope="country",
+                status_code=stockout_operating_status,
+                reason_code=stockout_insufficient_reason,
+                trend_code=stockout_operating_trend,
+                country_category=str(filters.get("country_category") or "all"),
+                store=str(filters.get("store") or "all"),
+                keyword=str(filters.get("keyword") or ""),
+            )
+            normalized_business_members = {
+                (str(key[0]), str(key[2]), str(key[3]).casefold())
+                for key in country_members
+                if len(key) == 4
+            }
+            rows = [
+                row for row in rows
+                if (
+                    str(row.get("country_category") or ""),
+                    str(row.get("store") or ""),
+                    str(row.get("msku") or "").casefold(),
+                ) in normalized_business_members
+            ]
+            for row in rows:
+                row["stockout_operating_baseline_status"] = stockout_operating_status
+                row["stockout_operating_baseline_period"] = "30d"
+                row["stockout_operating_trend"] = stockout_operating_trend
+
         if stockout_history_dimension:
             if self._stockout_historical_member_provider is None:
                 raise ValueError("断货历史经营结果筛选暂不可用")
@@ -505,8 +556,15 @@ class LabelHubDetailDataService:
                 ]
             else:
                 normalized_members = {
-                    (str(key[0]), str(key[1]), str(key[2]).casefold())
+                    (
+                        str(key[0]),
+                        str(key[2]),
+                        str(key[3]).casefold(),
+                    )
+                    if stockout_operating_scope == "country"
+                    else (str(key[0]), str(key[1]), str(key[2]).casefold())
                     for key in members
+                    if len(key) == (4 if stockout_operating_scope == "country" else 3)
                 }
                 rows = [
                     row for row in rows
@@ -520,6 +578,29 @@ class LabelHubDetailDataService:
                 row["stockout_history_dimension"] = stockout_history_dimension
                 row["stockout_history_code"] = stockout_history_code
                 row["stockout_history_period"] = stockout_history_period
+            if self._stockout_historical_annotation_provider is not None:
+                annotations = self._stockout_historical_annotation_provider(
+                    data_date=str(filters.get("data_date") or ""),
+                    scope=stockout_operating_scope,
+                    dimension=stockout_history_dimension,
+                    code=stockout_history_code,
+                    period=stockout_history_period,
+                    country_category=str(filters.get("country_category") or "all"),
+                    store=str(filters.get("store") or "all"),
+                    keyword=str(filters.get("keyword") or ""),
+                )
+                for row in rows:
+                    key = (
+                        str(row.get("country_category") or ""),
+                        str(row.get("country") or ""),
+                        str(row.get("store") or ""),
+                        str(row.get("msku") or "").casefold(),
+                    ) if detail_view == "country" else (
+                        str(row.get("country_category") or ""),
+                        str(row.get("store") or ""),
+                        str(row.get("msku") or "").casefold(),
+                    )
+                    row.update(dict(annotations.get(key) or {}))
 
         all_resolution_rows = [*rows, *country_rows]
         existing_mskus = {str(row.get("msku") or "").casefold() for row in all_resolution_rows}
@@ -755,4 +836,5 @@ label_hub_detail_service = LabelHubDetailDataService(
     ),
     stockout_operating_member_provider=label_hub_service.get_stockout_operating_status_members,
     stockout_historical_member_provider=label_hub_service.get_stockout_historical_members,
+    stockout_historical_annotation_provider=label_hub_service.get_stockout_historical_annotations,
 )

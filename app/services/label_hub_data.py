@@ -16,7 +16,11 @@ from .stockout_historical_operating_data import (
     decorate_stockout_snapshot_status,
     filter_stockout_historical_members,
 )
-from .stockout_historical_operating import ROLE_LABELS as HISTORICAL_ROLE_LABELS
+from .stockout_historical_operating import (
+    ROLE_LABELS as HISTORICAL_ROLE_LABELS,
+    STABILITY_MIN_DAILY_NODES,
+    STABILITY_MIN_SPAN_DAYS,
+)
 
 
 LABEL_DETAIL_TABLE = "etl_datasync_test.dashboard_label_detail_snapshot"
@@ -80,7 +84,6 @@ HISTORICAL_ROLE_DISTRIBUTION_ORDER = (
     "potential",
     "dog",
     "problem",
-    "in_stock_zero_sales",
 )
 HISTORICAL_ROLE_NODE_REASON_LABELS = {
     "effective_operating_days_insufficient": "30天窗口有效经营日不足",
@@ -198,34 +201,73 @@ def _evidence_object(value: Any) -> dict[str, Any]:
 
 def _historical_role_history(value: Any) -> dict[str, Any]:
     evidence = _evidence_object(value)
-    source_nodes = evidence.get("rolling_role_nodes")
+    source_nodes = evidence.get("confirmed_role_nodes")
+    confirmed_schema = isinstance(source_nodes, list)
+    if not confirmed_schema:
+        source_nodes = evidence.get("rolling_role_nodes")
     if not isinstance(source_nodes, list):
         source_nodes = []
+    state_labels = {
+        "normal": "正常计算",
+        "carried_oos": "断货前角色沿用",
+        "recovery_observation": "恢复观察中",
+        "unavailable": "无有效历史角色",
+        "data_anomaly": "数据异常",
+    }
     nodes = []
     for source in source_nodes:
         if not isinstance(source, dict):
             continue
-        role = str(source.get("role") or "unavailable")
+        role = str(source.get("raw_role") or source.get("role") or "unavailable")
         if role not in HISTORICAL_ROLE_LABELS:
             role = "unavailable"
+        stability_role = str(source.get("stability_role") or role)
+        if stability_role not in HISTORICAL_ROLE_LABELS:
+            stability_role = "unavailable"
         reason = str(source.get("reason") or "")
+        state = str(source.get("state") or ("unavailable" if role == "unavailable" else "normal"))
+        selected = bool(source.get("selected_for_stability")) if confirmed_schema else role != "unavailable"
         effective_operating_days = int(source.get("effective_operating_days") or 0)
         nodes.append(
             {
+                "node_date": _date_text(source.get("node_date") or source.get("window_end")),
                 "window_start": _date_text(source.get("window_start")),
-                "window_end": _date_text(source.get("window_end")),
+                "window_end": _date_text(source.get("window_end") or source.get("node_date")),
                 "role": role,
                 "label": HISTORICAL_ROLE_LABELS[role],
-                "is_valid": role != "unavailable",
+                "raw_role": role,
+                "stability_role": stability_role,
+                "stability_role_label": HISTORICAL_ROLE_LABELS[stability_role],
+                "is_valid": selected and state == "normal" and stability_role != "unavailable",
+                "state": state,
+                "state_label": state_labels.get(state, state),
+                "source_node_date": _date_text(source.get("source_node_date")),
+                "selected_for_stability": selected,
+                "role_confirmation_state": str(source.get("role_confirmation_state") or ""),
+                "candidate_streak": int(source.get("candidate_streak") or 0),
+                "confirmed_role_change": bool(source.get("confirmed_role_change")),
                 "reason": reason,
                 "reason_label": HISTORICAL_ROLE_NODE_REASON_LABELS.get(reason, "周期角色证据不足") if role == "unavailable" else "",
                 "effective_operating_days": effective_operating_days,
-                "minimum_effective_days": 21,
+                "minimum_effective_days": 30,
+                "daily_sales": _number(source.get("daily_sales")),
+                "margin_rate": _number(source.get("margin_rate")),
             }
         )
     nodes.sort(key=lambda item: (item["window_end"], item["window_start"]))
-    counts = Counter(node["role"] for node in nodes if node["is_valid"])
+    counts = Counter(node["stability_role"] for node in nodes if node["is_valid"])
     valid_count = sum(counts.values())
+    valid_dates = [date.fromisoformat(node["node_date"]) for node in nodes if node["is_valid"] and node["node_date"]]
+    evidence_span_days = (max(valid_dates) - min(valid_dates)).days + 1 if valid_dates else 0
+    calculated_count = sum(1 for node in nodes if node["state"] == "normal" and node["raw_role"] != "unavailable")
+    carried_count = sum(1 for node in nodes if node["state"] == "carried_oos")
+    recovery_count = sum(1 for node in nodes if node["state"] == "recovery_observation")
+    unavailable_count = sum(
+        1
+        for node in nodes
+        if node["state"] in {"unavailable", "data_anomaly"}
+        or (node["state"] == "normal" and node["raw_role"] == "unavailable")
+    )
     distribution = [
         {
             "code": code,
@@ -242,13 +284,148 @@ def _historical_role_history(value: Any) -> dict[str, Any]:
             key=lambda item: (item["count"], -HISTORICAL_ROLE_DISTRIBUTION_ORDER.index(item["code"])),
         )
     return {
-        "status": "available" if valid_count >= 8 else ("insufficient" if nodes else "missing"),
+        "status": "available"
+        if valid_count >= STABILITY_MIN_DAILY_NODES and evidence_span_days >= STABILITY_MIN_SPAN_DAYS
+        else ("insufficient" if nodes else "missing"),
         "valid_node_count": valid_count,
         "total_node_count": len(nodes),
-        "unavailable_node_count": len(nodes) - valid_count,
+        "calculated_node_count": calculated_count,
+        "carried_node_count": carried_count,
+        "recovery_node_count": recovery_count,
+        "unavailable_node_count": unavailable_count,
+        "excluded_node_count": len(nodes) - valid_count,
+        "evidence_span_days": evidence_span_days,
         "dominant_role": dominant_role,
         "distribution": distribution,
         "nodes": nodes,
+    }
+
+
+def _stockout_evidence_result(
+    row: dict[str, Any], history: dict[str, Any]
+) -> dict[str, Any]:
+    confidence = str(row.get("oos_start_confidence") or "")
+    method = str(row.get("oos_start_method") or "")
+    confirmed_start = _date_text(row.get("oos_start_date"))
+    observed_start = _date_text(row.get("observed_oos_since_date"))
+    if confirmed_start and confidence == "complete":
+        event_date = confirmed_start
+        date_kind = "recent_start"
+        date_label = "最近断货开始日"
+    elif observed_start and confidence in {
+        "left_boundary_incomplete",
+        "event_boundary_incomplete",
+    }:
+        event_date = observed_start
+        date_kind = "observed_since"
+        date_label = "最早观察到断货"
+    else:
+        event_date = confirmed_start or observed_start
+        date_kind = "pending"
+        date_label = "断货起点待确认"
+
+    pre_oos_code = str(row.get("pre_oos_role") or "")
+    primary_code = str(row.get("dominant_role") or "")
+    history_primary = history.get("dominant_role") or {}
+    if not primary_code:
+        primary_code = str(history_primary.get("code") or "")
+    primary_share = _number(row.get("dominant_role_share"))
+    if primary_share is None:
+        primary_share = float(history_primary.get("share") or 0)
+    valid_node_count = int(
+        row.get("valid_window_count") or history.get("valid_node_count") or 0
+    )
+
+    role_levels = {"problem": 0, "dog": 1, "potential": 2, "star": 3}
+    if pre_oos_code not in role_levels or primary_code not in role_levels:
+        change_code, change_label = "unavailable", "变化待判断"
+    elif role_levels[pre_oos_code] > role_levels[primary_code]:
+        change_code, change_label = "improved", "断货前改善"
+    elif role_levels[pre_oos_code] < role_levels[primary_code]:
+        change_code, change_label = "declined", "断货前变差"
+    else:
+        change_code, change_label = "continued", "持续"
+
+    stability_code = str(row.get("historical_stability") or "insufficient")
+    stability_labels = {
+        "stable": "历史稳定",
+        "light_fluctuation": "轻度波动",
+        "volatile": "历史波动",
+        "insufficient": "依据不足",
+    }
+    component_labels = {
+        "stable": "稳定",
+        "normal": "轻度波动",
+        "high": "波动",
+        "light_fluctuation": "轻度波动",
+        "volatile": "波动",
+        "highly_volatile": "高度波动",
+        "insufficient": "依据不足",
+        "unavailable": "依据不足",
+    }
+    role_stability = str(row.get("role_stability") or stability_code)
+    sales_stability = str(row.get("sales_stability") or "insufficient")
+    margin_stability = str(row.get("margin_stability") or "insufficient")
+    metric_nodes = [
+        node
+        for node in history.get("nodes", [])
+        if node.get("is_valid")
+    ][-3:]
+    source_date = _date_text(row.get("role_source_date"))
+    for node in history.get("nodes", []):
+        node["is_pre_oos_source"] = bool(
+            source_date
+            and source_date
+            in {str(node.get("node_date") or ""), str(node.get("window_end") or "")}
+        )
+
+    return {
+        "stockout_event": {
+            "date": event_date,
+            "date_kind": date_kind,
+            "date_label": date_label,
+            "method": method,
+            "confidence": confidence,
+            "observed_since_date": observed_start,
+            "minimum_days": int(row.get("minimum_current_oos_days") or 0),
+        },
+        "history_window": {
+            "start": _date_text(row.get("history_window_start")),
+            "end": _date_text(row.get("history_window_end")),
+        },
+        "pre_oos_role": {
+            "code": pre_oos_code,
+            "label": HISTORICAL_ROLE_LABELS.get(pre_oos_code, "暂未形成"),
+            "source_date": source_date,
+            "evidence_status": str(row.get("role_evidence_status") or ""),
+        },
+        "historical_primary_role": {
+            "code": primary_code,
+            "label": HISTORICAL_ROLE_LABELS.get(primary_code, "暂未形成"),
+            "share": round(float(primary_share or 0), 4),
+            "valid_node_count": valid_node_count,
+            "change_code": change_code,
+            "change_label": change_label,
+        },
+        "stability": {
+            "code": stability_code,
+            "label": stability_labels.get(stability_code, "依据不足"),
+            "role_switch_rate": float(row.get("role_switch_rate") or 0),
+            "role": role_stability,
+            "role_label": component_labels.get(role_stability, "依据不足"),
+            "sales": sales_stability,
+            "sales_label": component_labels.get(sales_stability, "依据不足"),
+            "margin": margin_stability,
+            "margin_label": component_labels.get(margin_stability, "依据不足"),
+        },
+        "combined_conclusion": {
+            "code": str(row.get("combined_label_code") or ""),
+            "label": str(row.get("combined_label") or "趋势依据不足"),
+            "recent_trend": str(row.get("recent_trend") or "insufficient"),
+            "daily_sales_trend": str(row.get("daily_sales_trend") or ""),
+            "margin_trend": str(row.get("margin_trend") or ""),
+        },
+        "metric_trend_nodes": metric_nodes,
     }
 
 
@@ -1261,6 +1438,17 @@ class LabelHubDataService:
                 select f.data_date, f.country, f.country_category, f.store, f.msku,
                        f.label_id, f.label_period,
                        uncompress(f.evidence_blob) as evidence_json,
+                       s.current_oos_flag, s.oos_start_date, s.oos_start_method,
+                       s.oos_start_confidence, s.observed_oos_since_date,
+                       s.minimum_current_oos_days,
+                       s.history_window_start, s.history_window_end,
+                       s.pre_oos_role, s.role_evidence_status, s.role_source_date,
+                       s.valid_window_count, s.dominant_role, s.dominant_role_share,
+                       s.role_switch_rate, s.recent_trend, s.daily_sales_trend,
+                       s.margin_trend, s.combined_label_code, s.combined_label,
+                       s.historical_stability, s.role_stability,
+                       s.sales_stability, s.margin_stability,
+                       s.auxiliary_json,
                        s.evidence_json as historical_operating_evidence_json
                 from {LABEL_FACT_TABLE} f
                 left join {STOCKOUT_HISTORICAL_RESULT_TABLE} s
@@ -1300,6 +1488,10 @@ class LabelHubDataService:
             raise ValueError("断货前销售角色依据 JSON 结构无效")
 
         role_id = int(row.get("label_id") or 0)
+        history = _historical_role_history(
+            row.get("historical_operating_evidence_json")
+        )
+        operating_result = _stockout_evidence_result(row, history)
         return {
             "scope": "country" if country_text else "msku",
             "identity": {
@@ -1315,9 +1507,8 @@ class LabelHubDataService:
                 "period": str(row.get("label_period") or role_period),
             },
             "evidence": evidence,
-            "historical_role_history": _historical_role_history(
-                row.get("historical_operating_evidence_json")
-            ),
+            "historical_role_history": history,
+            **operating_result,
         }
 
     def _analysis_categories(self, details: list[dict[str, Any]], fact_stats: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:
@@ -2320,15 +2511,20 @@ class LabelHubDataService:
         selected_columns = """
             data_date, scope_mode, country_category, store, msku, country,
             current_gate_status, current_gate_reason,
+            oos_start_date, observed_oos_since_date,
             historical_evaluable_status, historical_evaluable_reason,
             role_7d, role_14d, role_30d, role_90d,
+            pre_oos_role, role_evidence_status, role_source_date,
+            valid_window_count, dominant_role, dominant_role_share, role_switch_rate,
+            recent_trend, daily_sales_trend, margin_trend,
+            combined_label_code, combined_label, auxiliary_json, inventory_boundary_status,
             historical_operating_level, historical_stability,
             historical_role_pattern, pre_oos_role_change,
             low_stock_constrained, inventory_sales_conflict_flag,
             missing_date_gap_flag, few_selling_days_flag,
             single_day_concentrated_flag, extreme_single_day_concentrated_flag,
             event_boundary_incomplete_flag, one_day_recovery_then_oos_flag,
-            rule_version
+            evidence_json, rule_version
         """
         with self._source_connection() as conn, conn.cursor() as cursor:
             cursor.execute(
@@ -2354,6 +2550,50 @@ class LabelHubDataService:
             str(filters.get("code") or ""),
             period=str(filters.get("period") or ""),
         )
+
+    def get_stockout_historical_annotations(self, **filters: Any) -> dict[tuple[str, ...], dict[str, Any]]:
+        meta = self.get_meta()
+        data_date = str(filters.get("data_date") or meta["default_data_date"])
+        scope = str(filters.get("scope") or "business_unit")
+        rows = self._fetch_stockout_historical_rows(
+            data_date=data_date,
+            scope=scope,
+            country_category=str(filters.get("country_category") or "all"),
+            store=str(filters.get("store") or "all"),
+            keyword=str(filters.get("keyword") or "").strip().casefold(),
+        )
+        selected = filter_stockout_historical_members(
+            rows,
+            str(filters.get("dimension") or ""),
+            str(filters.get("code") or ""),
+            period=str(filters.get("period") or ""),
+        )
+        normalized_selected = {tuple([*key[:-1], str(key[-1]).casefold()]) for key in selected}
+        annotations: dict[tuple[str, ...], dict[str, Any]] = {}
+        for row in rows:
+            key = (
+                str(row.get("country_category") or ""),
+                str(row.get("country") or ""),
+                str(row.get("store") or ""),
+                str(row.get("msku") or "").casefold(),
+            ) if scope == "country" else (
+                str(row.get("country_category") or ""),
+                str(row.get("store") or ""),
+                str(row.get("msku") or "").casefold(),
+            )
+            if key not in normalized_selected:
+                continue
+            evidence = _evidence_object(row.get("evidence_json"))
+            first_observed = evidence.get("inventory_first_observed_date")
+            if not first_observed and str(row.get("inventory_boundary_status") or "") == "left_boundary_incomplete":
+                first_observed = row.get("observed_oos_since_date")
+            annotations[key] = {
+                "inventory_first_observed_date": _date_text(first_observed),
+                "stockout_combined_label": str(row.get("combined_label") or ""),
+                "stockout_historical_stability": str(row.get("historical_stability") or ""),
+                "stockout_role_source_date": _date_text(row.get("role_source_date")),
+            }
+        return annotations
 
     def get_stockout_operating_status_members(self, **filters: Any) -> set[tuple[str, ...]]:
         meta = self.get_meta()

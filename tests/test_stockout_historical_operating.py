@@ -4,6 +4,8 @@ from datetime import date, timedelta
 
 import pytest
 
+from app.services import stockout_historical_operating as historical_operating
+
 from app.services.stockout_historical_operating import (
     _gap_ranges,
     _weekly_metrics,
@@ -13,8 +15,14 @@ from app.services.stockout_historical_operating import (
     classify_pre_oos_role_change,
     classify_role_pattern,
     classify_stability,
+    build_rolling_role_nodes,
+    classify_historical_stability,
+    classify_metric_direction,
+    classify_recent_trend,
+    compose_operating_label,
     evaluate_stockout_history,
     find_current_oos_event,
+    select_non_overlapping_windows,
 )
 
 
@@ -30,19 +38,19 @@ def _row(day: date, inventory: float | None, sales: float = 1, margin: float = 0
     }
 
 
-def test_current_oos_event_keeps_inventory_one_to_five_inside_same_event():
+def test_current_oos_event_uses_most_recent_continuous_zero_run():
     start = date(2026, 4, 1)
-    rows = [_row(start + timedelta(days=index), inventory) for index, inventory in enumerate([12, 0, 3, 2, 0])]
+    rows = [_row(start + timedelta(days=index), inventory) for index, inventory in enumerate([12, 0, 0, 2, 0])]
 
     event = find_current_oos_event(rows, current_date=start + timedelta(days=4))
 
-    assert event["oos_start_date"] == date(2026, 4, 2)
+    assert event["oos_start_date"] == date(2026, 4, 5)
     assert event["oos_start_confidence"] == "complete"
 
 
-def test_current_oos_event_starts_again_after_inventory_above_five():
+def test_current_oos_event_starts_again_after_any_positive_inventory():
     start = date(2026, 4, 1)
-    rows = [_row(start + timedelta(days=index), inventory) for index, inventory in enumerate([12, 0, 7, 0])]
+    rows = [_row(start + timedelta(days=index), inventory) for index, inventory in enumerate([12, 0, 1, 0])]
 
     event = find_current_oos_event(rows, current_date=start + timedelta(days=3))
 
@@ -52,7 +60,7 @@ def test_current_oos_event_starts_again_after_inventory_above_five():
 
 def test_one_day_recovery_flag_requires_the_previous_oos_day_to_be_contiguous():
     start = date(2026, 4, 1)
-    rows = [_row(start, 0), _row(start + timedelta(days=2), 7), _row(start + timedelta(days=3), 0)]
+    rows = [_row(start, 0), _row(start + timedelta(days=2), 1), _row(start + timedelta(days=3), 0)]
 
     event = find_current_oos_event(rows, current_date=start + timedelta(days=3))
 
@@ -62,7 +70,7 @@ def test_one_day_recovery_flag_requires_the_previous_oos_day_to_be_contiguous():
 
 def test_current_oos_event_without_prior_inventory_above_five_has_incomplete_left_boundary():
     start = date(2026, 1, 1)
-    rows = [_row(start + timedelta(days=index), inventory) for index, inventory in enumerate([0, 2, 0])]
+    rows = [_row(start + timedelta(days=index), inventory) for index, inventory in enumerate([0, 0, 0])]
 
     event = find_current_oos_event(rows, current_date=start + timedelta(days=2))
 
@@ -70,6 +78,23 @@ def test_current_oos_event_without_prior_inventory_above_five_has_incomplete_lef
     assert event["observed_oos_since_date"] == start
     assert event["minimum_current_oos_days"] == 3
     assert event["oos_start_confidence"] == "left_boundary_incomplete"
+
+
+def test_oos_from_history_left_boundary_has_its_own_evidence_status():
+    rows = [_row(date(2026, 1, 1) + timedelta(days=index), 0, sales=0) for index in range(40)]
+
+    result = evaluate_stockout_history(
+        rows,
+        current_date=date(2026, 2, 9),
+        current_gate_status="evaluable",
+        scope_mode="business_unit",
+        current_oos_confirmed=True,
+    )
+
+    assert result["role_evidence_status"] == "oos_start_history_insufficient"
+    assert result["combined_label_code"] == "oos_start_history_insufficient"
+    assert result["combined_label"] == "断货起点历史不足"
+    assert result["inventory_first_observed_date"] == date(2026, 1, 1)
 
 
 def test_current_oos_event_is_incomplete_when_a_day_is_missing_after_first_zero():
@@ -89,18 +114,490 @@ def test_current_oos_event_is_incomplete_when_a_day_is_missing_after_first_zero(
 @pytest.mark.parametrize(
     ("daily_sales", "margin", "expected"),
     [
-        (5, 0.15, "star"),
-        (1, 0.25, "star"),
-        (5, 0.05, "potential"),
+        (5.01, 0.151, "star"),
+        (5, 0.251, "star"),
+        (5, 0.15, "potential"),
         (1, 0.10, "potential"),
         (1, 0.05, "dog"),
-        (0.5, 0.05, "dog"),
-        (0, None, "in_stock_zero_sales"),
+        (0.5, 0.051, "dog"),
+        (0, None, "problem"),
+        (-0.01, 0.20, "problem"),
         (5, 0.0499, "problem"),
     ],
 )
 def test_msku_role_uses_documented_daily_sales_boundaries(daily_sales, margin, expected):
     assert classify_msku_role(daily_sales, margin) == expected
+
+
+def test_positive_daily_sales_without_margin_is_data_error():
+    with pytest.raises(ValueError, match="日销大于0但毛利率缺失"):
+        classify_msku_role(1, None)
+
+
+def test_nodes_carry_last_role_until_thirty_complete_recovery_days():
+    history_start = date(2026, 1, 1)
+    rows = [_row(history_start + timedelta(days=index), 10, sales=6) for index in range(33)]
+    rows.extend(_row(date(2026, 2, 3) + timedelta(days=index), 0, sales=0) for index in range(4))
+    rows.extend(_row(date(2026, 2, 7) + timedelta(days=index), 10, sales=6) for index in range(30))
+
+    nodes = build_rolling_role_nodes(
+        rows,
+        start_date=history_start,
+        end_date=date(2026, 3, 8),
+    )
+    by_day = {node["node_date"]: node for node in nodes}
+
+    assert by_day[date(2026, 2, 2)]["state"] == "normal"
+    assert by_day[date(2026, 2, 3)]["state"] == "carried_oos"
+    assert by_day[date(2026, 2, 3)]["source_node_date"] == date(2026, 2, 2)
+    assert by_day[date(2026, 3, 7)]["state"] == "recovery_observation"
+    assert by_day[date(2026, 3, 8)]["state"] == "normal"
+    assert by_day[date(2026, 3, 8)]["source_node_date"] == date(2026, 3, 8)
+
+
+def test_recovery_counter_resets_when_stockout_recurs_before_day_thirty():
+    history_start = date(2026, 1, 1)
+    rows = [_row(history_start + timedelta(days=index), 10, sales=6) for index in range(33)]
+    rows.extend(_row(date(2026, 2, 3) + timedelta(days=index), 0, sales=0) for index in range(4))
+    rows.extend(_row(date(2026, 2, 7) + timedelta(days=index), 10, sales=6) for index in range(29))
+    rows.append(_row(date(2026, 3, 8), 0, sales=0))
+    rows.extend(_row(date(2026, 3, 9) + timedelta(days=index), 10, sales=6) for index in range(29))
+
+    nodes = build_rolling_role_nodes(
+        rows,
+        start_date=history_start,
+        end_date=date(2026, 4, 6),
+    )
+    by_day = {node["node_date"]: node for node in nodes}
+
+    assert by_day[date(2026, 3, 8)]["state"] == "carried_oos"
+    assert by_day[date(2026, 4, 6)]["state"] == "recovery_observation"
+
+
+def test_stockout_without_prior_valid_role_is_unavailable():
+    rows = [_row(date(2026, 1, 1) + timedelta(days=index), 0, sales=0) for index in range(10)]
+
+    nodes = build_rolling_role_nodes(
+        rows,
+        start_date=date(2026, 1, 1),
+        end_date=date(2026, 1, 10),
+    )
+
+    assert nodes[-1]["state"] == "unavailable"
+    assert nodes[-1]["role"] == "unavailable"
+
+
+def _normal_node(day: date, role: str) -> dict:
+    return {
+        "node_date": day,
+        "window_start": day - timedelta(days=29),
+        "window_end": day,
+        "role": role,
+        "state": "normal",
+        "source_node_date": day,
+        "daily_sales": 6.0,
+        "margin_rate": 0.20,
+    }
+
+
+def test_daily_role_change_requires_five_consecutive_normal_nodes():
+    first = date(2026, 1, 1)
+    nodes = [_normal_node(first + timedelta(days=index), "star") for index in range(10)]
+    nodes.extend(_normal_node(first + timedelta(days=10 + index), "potential") for index in range(4))
+    nodes.append(_normal_node(first + timedelta(days=14), "star"))
+    nodes.extend(_normal_node(first + timedelta(days=15 + index), "potential") for index in range(5))
+
+    selected = historical_operating.select_confirmed_daily_role_nodes(
+        nodes, t0=first + timedelta(days=19)
+    )
+
+    assert [item["stability_role"] for item in selected[10:15]] == ["star"] * 5
+    assert [item["stability_role"] for item in selected[15:20]] == ["potential"] * 5
+    assert selected[19]["confirmed_role_change"] is True
+
+
+def test_carried_and_recovery_nodes_do_not_join_or_count_toward_confirmation():
+    first = date(2026, 1, 1)
+    nodes = [_normal_node(first + timedelta(days=index), "star") for index in range(5)]
+    nodes.extend(_normal_node(first + timedelta(days=5 + index), "potential") for index in range(2))
+    nodes.extend(
+        {
+            **_normal_node(first + timedelta(days=7 + index), "star"),
+            "state": state,
+        }
+        for index, state in enumerate(("carried_oos", "recovery_observation"))
+    )
+    nodes.extend(_normal_node(first + timedelta(days=9 + index), "potential") for index in range(3))
+    nodes.append(
+        {
+            **_normal_node(first + timedelta(days=12), "star"),
+            "state": "carried_oos",
+        }
+    )
+    nodes.extend(_normal_node(first + timedelta(days=13 + index), "potential") for index in range(5))
+
+    selected = historical_operating.select_confirmed_daily_role_nodes(
+        nodes, t0=first + timedelta(days=17)
+    )
+
+    assert len(selected) == 15
+    assert all(item["state"] == "normal" for item in selected)
+    assert [item["stability_role"] for item in selected[5:10]] == ["star"] * 5
+    assert [item["stability_role"] for item in selected[-5:]] == ["potential"] * 5
+    assert sum(item["confirmed_role_change"] for item in selected) == 1
+
+
+def test_daily_stability_requires_thirty_nodes_across_sixty_calendar_days():
+    first = date(2026, 1, 1)
+    enough = [
+        {**_normal_node(first + timedelta(days=index), "star"), "stability_role": "star"}
+        for index in range(15)
+    ] + [
+        {**_normal_node(first + timedelta(days=60 + index), "star"), "stability_role": "star"}
+        for index in range(15)
+    ]
+    short_count = enough[:-1]
+    short_span = [
+        {**_normal_node(first + timedelta(days=index), "star"), "stability_role": "star"}
+        for index in range(30)
+    ]
+
+    stable = classify_historical_stability(enough, reference_role="star")
+    insufficient_count = classify_historical_stability(short_count, reference_role="star")
+    insufficient_span = classify_historical_stability(short_span, reference_role="star")
+
+    assert stable["historical_stability"] == "stable"
+    assert stable["valid_window_count"] == 30
+    assert stable["evidence_span_days"] == 75
+    assert insufficient_count["historical_stability"] == "insufficient"
+    assert insufficient_span["historical_stability"] == "insufficient"
+
+
+def test_non_overlapping_windows_are_selected_backwards_from_t0():
+    first = date(2026, 1, 30)
+    nodes = [_normal_node(first + timedelta(days=index), "star") for index in range(91)]
+
+    selected = select_non_overlapping_windows(nodes, t0=date(2026, 4, 30))
+
+    assert [item["window_end"] for item in selected] == [
+        date(2026, 1, 30),
+        date(2026, 3, 1),
+        date(2026, 3, 31),
+        date(2026, 4, 30),
+    ]
+    assert all(
+        left["window_end"] < right["window_start"]
+        for left, right in zip(selected, selected[1:])
+    )
+
+
+def test_carried_t0_traces_to_original_normal_window_once():
+    source_day = date(2026, 4, 1)
+    nodes = [_normal_node(date(2026, 3, 2), "potential"), _normal_node(source_day, "star")]
+    nodes.extend(
+        {
+            **_normal_node(source_day + timedelta(days=index), "star"),
+            "state": "carried_oos",
+            "source_node_date": source_day,
+        }
+        for index in range(1, 31)
+    )
+
+    selected = select_non_overlapping_windows(nodes, t0=date(2026, 5, 1))
+
+    assert [item["source_node_date"] for item in selected].count(source_day) == 1
+    assert selected[-1]["source_node_date"] == source_day
+
+
+@pytest.mark.parametrize(
+    ("roles", "expected"),
+    [
+        (["star", "star", "star"], "stable"),
+        (["star", "star", "potential"], "light_fluctuation"),
+        (["star", "potential", "star"], "volatile"),
+    ],
+)
+def test_historical_stability_uses_share_and_switch_rate(roles, expected):
+    first = date(2026, 1, 1)
+    windows = [
+        {
+            **_normal_node(first + timedelta(days=30 * role_index + day_index), role),
+            "stability_role": role,
+        }
+        for role_index, role in enumerate(roles)
+        for day_index in range(30)
+    ]
+
+    result = classify_historical_stability(windows, reference_role=roles[-1])
+
+    assert result["historical_stability"] == expected
+
+
+def test_historical_stability_requires_daily_evidence_and_uses_reference_role_for_tie():
+    first = date(2026, 1, 1)
+    insufficient = classify_historical_stability(
+        [
+            {**_normal_node(first + timedelta(days=index * 3), "star"), "stability_role": "star"}
+            for index in range(29)
+        ],
+        reference_role="star",
+    )
+    tied = classify_historical_stability(
+        [
+            {**_normal_node(first + timedelta(days=index), "star"), "stability_role": "star"}
+            for index in range(15)
+        ]
+        + [
+            {
+                **_normal_node(first + timedelta(days=60 + index), "potential"),
+                "stability_role": "potential",
+            }
+            for index in range(15)
+        ],
+        reference_role="potential",
+    )
+
+    assert insufficient["historical_stability"] == "insufficient"
+    assert tied["dominant_role"] == "potential"
+
+
+@pytest.mark.parametrize(
+    ("values", "kind", "expected"),
+    [
+        ([1.00, 1.19], "daily_sales", "stable"),
+        ([1.00, 1.21], "daily_sales", "improving"),
+        ([0.00, 0.19], "daily_sales", "stable"),
+        ([0.00, 0.20], "daily_sales", "improving"),
+        ([0.10, 0.13], "margin", "stable"),
+        ([0.10, 0.1301], "margin", "improving"),
+    ],
+)
+def test_metric_direction_uses_confirmed_thresholds(values, kind, expected):
+    assert classify_metric_direction(values, kind=kind) == expected
+
+
+def test_metric_direction_checks_cumulative_change_and_ignores_small_noise():
+    assert classify_metric_direction([1.00, 1.11, 1.23], kind="daily_sales") == "improving"
+    assert classify_metric_direction([1.00, 1.05, 0.99], kind="daily_sales") == "stable"
+    assert classify_metric_direction([1.00, 1.30, 0.90], kind="daily_sales") == "fluctuating"
+
+
+@pytest.mark.parametrize(
+    ("roles", "expected"),
+    [
+        (["potential", "potential", "star"], "improving"),
+        (["star", "potential", "potential"], "declining"),
+        (["star", "potential", "star"], "fluctuating"),
+    ],
+)
+def test_recent_role_trend_has_priority_over_metric_changes(roles, expected):
+    windows = [
+        {
+            **_normal_node(date(2026, 1, 30) + timedelta(days=30 * index), role),
+            "daily_sales": 6 + index,
+            "margin_rate": 0.20,
+        }
+        for index, role in enumerate(roles)
+    ]
+
+    result = classify_recent_trend(windows)
+
+    assert result["recent_trend"] == expected
+    assert result["daily_sales_trend"] is None
+    assert result["margin_trend"] is None
+
+
+def test_same_roles_use_metrics_and_decline_has_priority_over_improvement():
+    windows = [
+        {**_normal_node(date(2026, 1, 30), "star"), "daily_sales": 6.0, "margin_rate": 0.20},
+        {**_normal_node(date(2026, 3, 1), "star"), "daily_sales": 6.5, "margin_rate": 0.18},
+        {**_normal_node(date(2026, 3, 31), "star"), "daily_sales": 7.5, "margin_rate": 0.16},
+    ]
+
+    trend = classify_recent_trend(windows)
+    label = compose_operating_label("star", trend)
+
+    assert trend["daily_sales_trend"] == "improving"
+    assert trend["margin_trend"] == "declining"
+    assert label["combined_label"] == "明星·毛利下降"
+    assert label["auxiliary_metric"] == "日销改善"
+
+
+def test_same_roles_and_stable_metrics_produce_continuous_stability():
+    windows = [
+        {
+            **_normal_node(date(2026, 1, 30) + timedelta(days=30 * index), "star"),
+            "daily_sales": 6.0,
+            "margin_rate": 0.20,
+        }
+        for index in range(3)
+    ]
+
+    label = compose_operating_label("star", classify_recent_trend(windows))
+
+    assert label["combined_label"] == "明星·持续稳定"
+
+
+def test_confirmed_role_model_is_not_blocked_by_legacy_current_gate():
+    history_start = date(2026, 1, 1)
+    oos_start = history_start + timedelta(days=100)
+    rows = [_row(history_start + timedelta(days=index), 10, sales=6) for index in range(100)]
+    rows.append(_row(oos_start, 0, sales=0))
+
+    result = evaluate_stockout_history(
+        rows,
+        current_date=oos_start,
+        current_gate_status="not_evaluable",
+        current_gate_reason="legacy_gate",
+        scope_mode="business_unit",
+    )
+
+    assert result["pre_oos_role"] == "star"
+    assert result["combined_label"] == "明星·持续稳定"
+    assert sum(node.get("selected_for_stability", False) for node in result["confirmed_role_nodes"]) == result["valid_window_count"]
+
+
+def test_confirmed_role_model_counts_daily_normal_nodes_but_excludes_stockout_carry():
+    history_start = date(2026, 1, 1)
+    rows = [_row(history_start + timedelta(days=index), 10, sales=6) for index in range(33)]
+    rows.extend(_row(date(2026, 2, 3) + timedelta(days=index), 0, sales=0) for index in range(4))
+    rows.extend(_row(date(2026, 2, 7) + timedelta(days=index), 10, sales=6) for index in range(59))
+    current_oos = date(2026, 4, 7)
+    rows.append(_row(current_oos, 0, sales=0))
+
+    result = evaluate_stockout_history(
+        rows,
+        current_date=current_oos,
+        current_gate_status="evaluable",
+        scope_mode="business_unit",
+    )
+
+    selected = [node for node in result["confirmed_role_nodes"] if node.get("selected_for_stability")]
+    assert result["valid_window_count"] == 34
+    assert len(selected) == 34
+    assert all(node["state"] == "normal" for node in selected)
+    assert all(node["effective_operating_days"] == 30 for node in selected)
+    assert result["confirmed_historical_stability"] == "stable"
+
+
+def test_pre_oos_history_shorter_than_thirty_days_uses_valid_fourteen_day_role():
+    history_start = date(2026, 1, 1)
+    oos_start = date(2026, 1, 25)
+    rows = [_row(history_start + timedelta(days=index), 10, sales=2) for index in range(24)]
+    rows.append(_row(oos_start, 0, sales=0))
+
+    result = evaluate_stockout_history(
+        rows,
+        current_date=oos_start,
+        current_gate_status="evaluable",
+        scope_mode="business_unit",
+    )
+
+    assert result["role_evidence_status"] == "short_period_fallback"
+    assert result["combined_label_code"] == "potential.insufficient"
+    assert result["combined_label"] == "潜力·趋势依据不足"
+    assert result["pre_oos_role"] == "potential"
+    assert result["period_roles"]["14d"]["role"] == "potential"
+    assert result["historical_evaluable_reason"] == "history_span_lt_90"
+    assert result["confirmed_historical_stability"] == "insufficient"
+
+
+def test_pre_oos_period_excludes_the_stockout_start_day():
+    history_start = date(2026, 1, 1)
+    oos_start = date(2026, 1, 30)
+    rows = [_row(history_start + timedelta(days=index), 10, sales=2) for index in range(29)]
+    rows.append(_row(oos_start, 0, sales=0))
+
+    result = evaluate_stockout_history(
+        rows,
+        current_date=oos_start,
+        current_gate_status="evaluable",
+        scope_mode="business_unit",
+    )
+
+    assert result["role_evidence_status"] == "short_period_fallback"
+    assert result["combined_label"] == "潜力·趋势依据不足"
+    assert result["role_source_date"] == date(2026, 1, 29)
+
+
+def test_pre_oos_history_without_a_valid_fourteen_day_period_remains_insufficient():
+    history_start = date(2026, 1, 1)
+    oos_start = date(2026, 1, 10)
+    rows = [_row(history_start + timedelta(days=index), 10, sales=2) for index in range(9)]
+    rows.append(_row(oos_start, 0, sales=0))
+
+    result = evaluate_stockout_history(
+        rows,
+        current_date=oos_start,
+        current_gate_status="evaluable",
+        scope_mode="business_unit",
+    )
+
+    assert result["role_evidence_status"] == "pre_oos_period_insufficient"
+    assert result["combined_label"] == "断货前周期不足"
+    assert result["pre_oos_role"] is None
+
+
+def test_complete_pre_oos_window_with_unusable_margin_remains_data_anomaly():
+    history_start = date(2026, 1, 1)
+    oos_start = date(2026, 1, 31)
+    rows = [_row(history_start + timedelta(days=index), 10, sales=1) for index in range(30)]
+    for row in rows:
+        row["sales_amount"] = 0
+        row["order_gross_profit"] = 0
+    rows.append(_row(oos_start, 0, sales=0))
+
+    result = evaluate_stockout_history(
+        rows,
+        current_date=oos_start,
+        current_gate_status="evaluable",
+        scope_mode="business_unit",
+    )
+
+    assert result["role_evidence_status"] == "data_anomaly"
+    assert result["combined_label"] == "数据异常待核实"
+    assert result["period_roles"]["14d"]["role"] == "unavailable"
+    assert result["period_roles"]["14d"]["reason"] == "positive_sales_margin_missing"
+
+
+def test_fourteen_day_window_provides_fallback_when_no_standard_role_exists():
+    history_start = date(2026, 1, 1)
+    rows = [_row(history_start + timedelta(days=index), 10, sales=2, margin=0.20) for index in range(14)]
+    rows.extend(_row(date(2026, 1, 15) + timedelta(days=index), 0, sales=0) for index in range(17))
+    rows.extend(_row(date(2026, 2, 1) + timedelta(days=index), 10, sales=2, margin=0.20) for index in range(9))
+    rows.append(_row(date(2026, 2, 10), 0, sales=0))
+
+    result = evaluate_stockout_history(
+        rows,
+        current_date=date(2026, 2, 10),
+        current_gate_status="evaluable",
+        scope_mode="business_unit",
+    )
+
+    assert result["role_evidence_status"] == "short_period_fallback"
+    assert result["pre_oos_role"] == "potential"
+    assert result["role_source_date"] == date(2026, 1, 14)
+    assert result["valid_window_count"] == 0
+    assert result["confirmed_historical_stability"] == "insufficient"
+    assert result["combined_label"] == "潜力·趋势依据不足"
+
+
+def test_thirteen_day_window_does_not_provide_short_period_fallback():
+    history_start = date(2026, 1, 1)
+    rows = [_row(history_start + timedelta(days=index), 10, sales=2, margin=0.20) for index in range(13)]
+    rows.extend(_row(date(2026, 1, 14) + timedelta(days=index), 0, sales=0) for index in range(18))
+    rows.extend(_row(date(2026, 2, 1) + timedelta(days=index), 10, sales=2, margin=0.20) for index in range(9))
+    rows.append(_row(date(2026, 2, 10), 0, sales=0))
+
+    result = evaluate_stockout_history(
+        rows,
+        current_date=date(2026, 2, 10),
+        current_gate_status="evaluable",
+        scope_mode="business_unit",
+    )
+
+    assert result["role_evidence_status"] == "no_valid_role"
+    assert result["pre_oos_role"] is None
 
 
 def test_period_role_uses_total_sales_divided_by_fixed_calendar_days():
@@ -128,6 +625,61 @@ def test_period_role_uses_total_sales_divided_by_fixed_calendar_days():
     assert role["role_daily_sales"] == pytest.approx(0.7)
     assert role["role_daily_sales_basis"] == "calendar_period_days"
     assert role["role"] == "dog"
+
+
+def test_fourteen_day_role_is_kept_when_historical_stability_gate_fails():
+    history_start = date(2026, 1, 1)
+    oos_start = history_start + timedelta(days=100)
+    rows = [
+        _row(
+            history_start + timedelta(days=index),
+            10 if index >= 90 else 0,
+            sales=2 if index >= 90 else 0,
+        )
+        for index in range(100)
+    ]
+    rows.append(_row(oos_start, 0, sales=0))
+
+    result = evaluate_stockout_history(
+        rows,
+        current_date=oos_start,
+        current_gate_status="evaluable",
+        scope_mode="business_unit",
+    )
+
+    assert result["historical_evaluable_status"] == "stockout_history_only"
+    assert result["historical_evaluable_reason"] == "effective_days_or_weeks_insufficient"
+    assert result["period_roles"]["14d"]["role"] == "potential"
+    assert result["pre_oos_role"] == "potential"
+    assert result["role_evidence_status"] == "short_period_fallback"
+    assert result["confirmed_historical_stability"] == "insufficient"
+
+
+def test_seven_day_role_is_visible_but_does_not_become_the_main_role():
+    history_start = date(2026, 1, 1)
+    oos_start = history_start + timedelta(days=100)
+    rows = [
+        _row(
+            history_start + timedelta(days=index),
+            10 if index >= 95 else 0,
+            sales=1 if index >= 95 else 0,
+        )
+        for index in range(100)
+    ]
+    rows.append(_row(oos_start, 0, sales=0))
+
+    result = evaluate_stockout_history(
+        rows,
+        current_date=oos_start,
+        current_gate_status="evaluable",
+        scope_mode="business_unit",
+    )
+
+    assert result["historical_evaluable_status"] == "stockout_history_only"
+    assert result["period_roles"]["7d"]["role"] == "dog"
+    assert result["period_roles"]["14d"]["role"] == "unavailable"
+    assert result["pre_oos_role"] is None
+    assert result["role_evidence_status"] == "no_valid_role"
 
 
 def test_period_role_keeps_zero_inventory_sales_in_calendar_daily_sales_and_flags_conflict():

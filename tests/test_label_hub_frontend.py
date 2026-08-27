@@ -102,7 +102,7 @@ def test_current_stockout_card_expands_period_role_summary_and_drills_to_details
     assert ".label-hub-stockout-role-row" in styles
 
 
-def test_current_stockout_card_has_mutually_exclusive_action_queue_without_primary_period_switching():
+def test_current_stockout_card_exposes_its_dimension_switch_in_the_header():
     script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
     active_shell = script.rsplit("function stockoutOperatingStatusPanelShell()", 1)[1].split(
         "function stockoutHistoryAttributes", 1
@@ -112,32 +112,57 @@ def test_current_stockout_card_has_mutually_exclusive_action_queue_without_prima
         "data-stockout-operating-status-toggle",
         'app.apiGet("/api/label-hub/stockout-operating-status"',
         "断货前经营表现（当前断货中）",
-        "eligibility_path",
-        "payload.action_queue",
-        "data-stockout-action-queue",
-        "今日运营队列",
-        "行动队列合计",
+        "role_stability_matrix",
+        "role_coverage",
+        "combined_label_groups",
     ):
         assert token in script
     assert "data-stockout-operating-status-period" not in active_shell
+    assert "data-stockout-operating-status-scope" in active_shell
+    assert "国家站点经营视角" in active_shell
 
 
-def test_stockout_operating_status_has_a_question_mark_rules_popover():
+def test_stockout_summary_separates_reconciled_operating_level_and_stability_groups():
     script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
     styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
 
     for token in (
-        "data-stockout-operating-status-rules",
-        "data-stockout-operating-status-rules-panel",
-        "历史窗口固定从 2026-01-01 到每条记录的 T0",
-        "覆盖率至少 80%",
-        "有效经营日至少 30 天",
-        "滚动 30 天、每 7 天一个节点",
-        "不使用综合评分",
+        "payload.operating_summary_groups",
+        "label-hub-stockout-summary-groups",
+        "label-hub-stockout-summary-group",
+        "data-summary-group",
+        "group.reconciled_count",
+        "合计 ",
     ):
         assert token in script
-    assert ".label-hub-stockout-status-rules" in styles
-    assert ".label-hub-stockout-status-rules-trigger" in styles
+    assert "grid-template-columns: repeat(3, minmax(0, 1fr))" in styles
+    assert ".label-hub-stockout-summary-group .tone-general dd" in styles
+    assert ".label-hub-stockout-summary-group .tone-unavailable dd" in styles
+
+
+def test_stockout_summary_metric_help_is_not_clipped_by_the_metric_title():
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+    summary_title_rule = styles.rsplit(
+        ".label-hub-stockout-action-summary .label-hub-stockout-summary-group dt {", 1
+    )[1].split("}", 1)[0]
+
+    assert "overflow: visible" in summary_title_rule
+    assert "overflow: hidden" not in summary_title_rule
+
+
+def test_stockout_operating_status_keeps_confirmed_rules_in_a_collapsed_footer():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+
+    for token in (
+        "label-hub-stockout-redesign-rules",
+        "历史范围从 2026-01-01 到最近一次断货日前",
+        "恢复库存后每天回滚30天",
+        "沿用节点不重复计入",
+        "稳定”合并历史稳定与轻度波动",
+    ):
+        assert token in script
+    assert ".label-hub-stockout-redesign-rules" in styles
 
 
 def test_stockout_action_queue_exposes_explain_first_conclusion_navigation():
@@ -178,40 +203,151 @@ def test_stockout_conclusion_explains_why_star_and_potential_products_did_not_ad
     assert ".label-hub-stockout-gap-reason" in styles
 
 
-def test_stockout_result_cards_show_rule_tooltips_on_hover_and_keyboard_focus():
+def test_stockout_result_cards_are_keyboard_accessible_direct_drilldowns():
     script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
     styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
     active_render = script.rsplit("function renderStockoutOperatingStatusPanelContent()", 1)[1].split(
         "function renderStockoutOperatingStatusPanelError", 1
     )[0]
 
-    assert "function stockoutHistoryRuleTooltip" in script
-    assert "item.rule_description" in active_render
-    assert 'role="tooltip"' in script
-    assert "判断规则：" in script
-    assert ".label-hub-stockout-rule-tooltip" in styles
-    assert ":hover > .label-hub-stockout-rule-tooltip" in styles
-    assert ":focus-visible > .label-hub-stockout-rule-tooltip" in styles
+    assert 'button type="button" class="stability-cell' in active_render
+    assert 'class="label-hub-stockout-combined-table"' in active_render
+    assert 'button type="button" class="label-hub-stockout-unformed-reason"' in active_render
+    assert "stockoutHistoryAttributes(" in active_render
+    assert ".stability-cell:focus-visible" in styles
+    assert ".label-hub-stockout-combined-table td button:focus-visible" in styles
 
 
-def test_stockout_summary_metrics_and_action_queue_expose_metric_help():
+def test_stockout_summary_exposes_counts_without_replenishment_actions():
     script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
     styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
     active_render = script.rsplit("function renderStockoutOperatingStatusPanelContent()", 1)[1].split(
         "function renderStockoutOperatingStatusPanelError", 1
     )[0]
 
-    assert "function stockoutOperatingHelpTooltip" in script
-    for code in ("historical_evaluable", "quality", "stable", "risk"):
-        assert f'stockoutOperatingHelpTooltip("{code}"' in active_render
-    for code in ("priority_recovery", "review_recovery", "cautious_recovery", "observe", "unassessable"):
-        assert f"{code}:" in script
-    assert "stockoutOperatingHelpTooltip(item.code, item.label)" in active_render
-    assert 'data-stockout-help' in script
-    assert 'role="tooltip"' in script
-    assert ".label-hub-stockout-help" in styles
-    assert ".label-hub-stockout-help:hover" in styles
-    assert ".label-hub-stockout-help:focus-visible" in styles
+    for token in ("total_count", "formed_role_count", "unformed_role_count", "share_of_role"):
+        assert token in active_render
+    for removed in ("priority_recovery", "review_recovery", "运营建议"):
+        assert removed not in active_render
+
+
+def test_stockout_operating_panel_can_switch_to_historical_dominant_role_view():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+    active_render = script.rsplit("function renderStockoutOperatingStatusPanelContent()", 1)[1].split(
+        "function renderStockoutOperatingStatusPanelError", 1
+    )[0]
+
+    for token in (
+        "data-stockout-role-view",
+        "断货前视角",
+        "历史主导视角",
+        "historical_primary_summary",
+        'stockoutHistoryAttributes("dominant_role_stability"',
+        'stockoutHistoryAttributes("dominant_pre_oos_role"',
+        "断货前角色相对历史主导角色的变化",
+    ):
+        assert token in active_render or token in script
+    assert ".label-hub-stockout-view-switch" in styles
+    assert "@media (max-width: 720px)" in styles
+    assert "if (!historicalView) topLabels.sort" in active_render
+
+
+def test_stockout_pre_oos_view_folds_a_four_period_comparison_below_the_fixed_main_result():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+    active_render = script.rsplit("function renderStockoutOperatingStatusPanelContent()", 1)[1].split(
+        "function renderStockoutOperatingStatusPanelError", 1
+    )[0]
+
+    for token in (
+        "period_role_matrix",
+        '<details class="label-hub-stockout-period-comparison"',
+        "多周期角色对比（辅助分析）",
+        'stockoutHistoryAttributes("period_role", roleCode, period.period)',
+        'data-stockout-unformed-period=',
+        "仅用于观察角色对周期的敏感程度",
+        "组合大标签固定主口径",
+        "30天主角色，无法形成时14天兜底",
+        "不随下方多周期辅助对比变化",
+    ):
+        assert token in active_render
+    assert 'var periodMatrixHtml = historicalView ? "" :' in active_render
+    assert "viewSwitchHtml + accordionHtml + periodMatrixHtml + unformedHtml" in active_render
+    assert "data-stockout-history-role-period" not in active_render
+    assert "不跟随上方周期切换" not in active_render
+    assert 'unformed: "周期角色未形成"' in script
+    for selector in (
+        ".label-hub-stockout-period-comparison",
+        ".label-hub-stockout-period-summary",
+        ".label-hub-stockout-period-table",
+    ):
+        assert selector in styles
+    matrix_rule = re.search(r"\.label-hub-stockout-period-comparison\s*\{(?P<body>[^}]*)\}", styles)
+    assert matrix_rule is not None
+    assert "min-width: 0;" in matrix_rule.group("body")
+
+
+def test_stockout_period_unformed_cells_expand_reason_attribution_before_detail_drilldown():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+    active_render = script.rsplit("function renderStockoutOperatingStatusPanelContent()", 1)[1].split(
+        "function renderStockoutOperatingStatusPanelError", 1
+    )[0]
+
+    for token in (
+        "unformed_reasons",
+        "data-stockout-unformed-period",
+        "暂未形成归因",
+        "原因代码",
+        "查看MSKU",
+        'stockoutHistoryAttributes("period_unformed_reason", reason.code, activeUnformedPeriod.period)',
+    ):
+        assert token in active_render or token in script
+    assert ".label-hub-stockout-period-attribution" in styles
+    assert ".label-hub-stockout-period-reason-grid" in styles
+
+
+def test_both_stockout_role_views_explain_their_decision_rules_on_hover_and_focus():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+    active_render = script.rsplit("function renderStockoutOperatingStatusPanelContent()", 1)[1].split(
+        "function renderStockoutOperatingStatusPanelError", 1
+    )[0]
+
+    for token in (
+        "data-decision-tip",
+        "优先取最近断货日前最近一个可用30天角色节点",
+        "出现次数最多的角色作为历史主导角色",
+        "主导角色占比≥70%且角色切换率≤35%",
+        "主导角色占比≥60%且角色切换率≤50%",
+        "断货前角色相对历史主导角色的等级变化",
+        "组合标签以断货前角色为主",
+    ):
+        assert token in active_render
+    for selector in (
+        ".decision-tip:hover::after",
+        ".decision-tip:focus::after",
+        ".decision-tip:focus-visible",
+    ):
+        assert selector in styles
+
+
+def test_each_stockout_combined_label_row_explains_its_own_decision_rule():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+    active_render = script.rsplit("function renderStockoutOperatingStatusPanelContent()", 1)[1].split(
+        "function renderStockoutOperatingStatusPanelError", 1
+    )[0]
+
+    for token in (
+        "combinedLabelDecisionRule",
+        "transitionLabelDecisionRule",
+        "最近3个有效角色节点",
+        "日销单次变化至少0.2且相对变化超过20%",
+        "毛利率单次变化超过3个百分点",
+        "data-combined-label-decision-tip",
+    ):
+        assert token in active_render
 
 
 def test_stockout_metric_help_explains_thresholds_and_unavailable_history_nodes():
@@ -270,7 +406,42 @@ def test_stockout_visible_result_labels_expose_their_complete_operating_rules():
     assert "stockoutHistoryDetailedHelp(dimension, code)" in script
     assert "stockoutHistoryExplanationText(focusGroup.dimension, focusItem.code" in script
     assert ".label-hub-stockout-explanation-option:hover > .label-hub-stockout-rule-tooltip" in styles
-    assert "js/label_hub.js') }}?v=20260824stockoutlive1" in template
+    assert "js/label_hub.js') }}?v=20260826stockoutevidence2" in template
+
+
+def test_stockout_big_label_view_renders_good_to_bad_role_accordion():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+    active_render = script.rsplit("function renderStockoutOperatingStatusPanelContent()", 1)[1].split(
+        "function renderStockoutOperatingStatusPanelError", 1
+    )[0]
+
+    for token in (
+        "已形成角色（按历史经营表现排序）",
+        "label-hub-stockout-role-accordion",
+        "data-stockout-role-accordion",
+        "按历史稳定性查看",
+        "组合大标签（从好到差）",
+        "暂未形成角色",
+        'stockoutHistoryAttributes("role_stability", role.code + "|" + cell.code, "")',
+        'stockoutHistoryAttributes("combined_label_display", item.code, "")',
+        'stockoutHistoryAttributes("role_evidence_status", item.code, "")',
+    ):
+        assert token in active_render
+    for removed in ("今日运营队列", "运营建议", "明星/潜力晋级差距", "P1"):
+        assert removed not in active_render
+
+
+def test_stockout_role_rows_remove_rank_numbers_and_emphasize_msku_counts():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+    active_render = script.rsplit("function renderStockoutOperatingStatusPanelContent()", 1)[1].split(
+        "function renderStockoutOperatingStatusPanelError", 1
+    )[0]
+
+    assert 'class="role-rank"' not in active_render
+    assert 'class="role-count"><strong>' in active_render
+    assert ".label-hub-stockout-role-accordion-head .role-count strong" in styles
+    assert "font-weight: 800" in styles
 
 
 def test_stockout_detailed_help_uses_a_quiet_themed_scrollbar():
@@ -283,7 +454,7 @@ def test_stockout_detailed_help_uses_a_quiet_themed_scrollbar():
     assert "scrollbar-width: thin" in styles
     assert "scrollbar-color: rgba(143, 208, 255, .48) transparent" in styles
     assert "scrollbar-gutter: stable" in styles
-    assert "css/styles.css') }}?v=20260824stockoutpreview8" in template
+    assert "css/styles.css') }}?v=20260826stockoutevidence2" in template
 
 
 def test_stockout_explanation_tooltip_anchors_to_its_own_chip_without_clipping():
@@ -311,44 +482,61 @@ def test_stockout_period_rule_tooltips_stay_hidden_until_their_card_is_active():
     )
 
 
-def test_stockout_action_detail_uses_conclusion_navigation_and_separate_drilldown():
+def test_stockout_new_summary_drills_directly_into_existing_details():
     script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
     styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
     active_render = script.rsplit("function renderStockoutOperatingStatusPanelContent()", 1)[1].split(
         "function renderStockoutOperatingStatusPanelError", 1
     )[0]
 
-    assert 'data-stockout-conclusion-nav=' in active_render
-    assert 'data-stockout-conclusion-detail' in active_render
-    assert 'data-stockout-explain-dimension=' in active_render
-    assert '标签只用于查看解释，不会直接打开商品明细' in active_render
-    assert 'stockoutHistoryAttributes(drillDimension, drillCode, drillPeriod)' in active_render
-    assert ".label-hub-stockout-conclusion-explorer" in styles
-    assert "grid-template-columns: 270px minmax(0, 1fr)" in styles
-    assert ".label-hub-stockout-conclusion-copy" in styles
+    assert "stockoutHistoryAttributes(" in active_render
+    assert "openStockoutHistoricalDetails(" in script
+    assert 'document.getElementById("labelHubDetailSection").scrollIntoView' in script
+    assert ".label-hub-stockout-role-accordion" in styles
+    assert "function stockoutHistoricalColumns()" in script
+    assert 'headerName: "库存历史首次可见"' in script
+    assert "identityColumns().concat(stockoutHistoricalColumns())" in script
+    assert "label-hub-stockout-inline-detail" not in active_render
 
 
-def test_stockout_operating_status_has_scope_switch_snapshot_drilldown_and_country_inventory_note():
+def test_stockout_operating_status_exposes_msku_and_country_views():
     script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
     styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+    active_render = script.rsplit("function renderStockoutOperatingStatusPanelContent()", 1)[1].split(
+        "function renderStockoutOperatingStatusPanelError", 1
+    )[0]
 
     for token in (
         'scope: "business_unit"',
-        'data-stockout-operating-status-scope',
-        'MSKU汇总',
-        '国家维度',
         'scope: stockoutOperatingStatusState.scope',
-        'stockout_history_dimension: detailState.stockout_history_dimension',
-        'detailState.stockout_history_dimension = dimension',
-        'detailState.detail_view = stockoutOperatingStatusState.scope === "country" ? "country" : "business_unit"',
-        '库存及断货起点继承 MSKU，经营与排名按国家独立计算',
+        'data-stockout-operating-status-scope="business_unit"',
+        'data-stockout-operating-status-scope="country"',
+        "MSKU经营视角",
+        "国家站点经营视角",
     ):
         assert token in script
-    assert ".label-hub-stockout-status-controls" in styles
+    assert 'data-stockout-operating-status-scope' not in active_render
+    assert ".label-hub-stockout-scope-switch" in styles
     assert "@media (max-width: 720px)" in styles
 
 
-def test_stockout_operating_scope_switch_uses_country_payload_and_country_details():
+def test_stockout_operating_scope_switch_is_a_compact_header_control_with_hover_help():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+    shell = script.rsplit("function stockoutOperatingStatusPanelShell()", 1)[1].split(
+        "function stockoutHistoryAttributes", 1
+    )[0]
+
+    assert 'id="labelHubStockoutOperatingScopeSwitch"' in shell
+    assert "stockoutOperatingScopeSwitchHtml()" in shell
+    assert 'title="按店铺商品汇总判断"' in script
+    assert 'title="销售、毛利、排名按国家独立判断"' in script
+    assert ".label-hub-stockout-scope-switch-slot" in styles
+    assert ".label-hub-stockout-scope-switch button.active" in styles
+    assert "max-width: calc(100vw - 146px);" in styles
+
+
+def test_stockout_operating_scope_switch_changes_summary_without_forcing_detail_dimension():
     script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
     scope_block = script.rsplit("function selectStockoutOperatingStatusScope(scope)", 1)[1].split(
         "function openStockoutHistoricalDetails", 1
@@ -356,12 +544,14 @@ def test_stockout_operating_scope_switch_uses_country_payload_and_country_detail
     load_block = script.rsplit("function loadStockoutOperatingStatus()", 1)[1].split(
         "function toggleStockoutOperatingStatusPanel", 1
     )[0]
+    drilldown_block = script.rsplit("function openStockoutHistoricalDetails", 1)[1].split(
+        "function openStockoutRoleDetails", 1
+    )[0]
 
     assert "stockoutOperatingStatusState.requestToken += 1;" in scope_block
-    assert 'detailState.detail_view = scope === "country" ? "country" : "business_unit";' in scope_block
-    assert "detailState.current_stockout_only = true;" in scope_block
-    assert "detailState.stockout_operating_scope = scope;" in scope_block
-    assert "renderDetails();" in scope_block
+    assert "detailState.detail_view" not in scope_block
+    assert "renderDetails();" not in scope_block
+    assert 'detailState.detail_view = "business_unit";' not in drilldown_block
     assert "var requestedScope = stockoutOperatingStatusState.scope;" in load_block
     assert "payload.scope_mode !== requestedScope" in load_block
     assert 'new Error("历史经营结果返回维度与当前选择不一致")' in load_block
@@ -412,7 +602,7 @@ def test_stockout_historical_requests_follow_selected_data_date():
     assert "detailState.stockout_history_dimension ? stockoutHistoricalDataDate() : state.data_date" in detail_payload
     assert "data_date: stockoutHistoricalDataDate()" in evidence_request
     assert "row.stockout_history_dimension ? stockoutHistoricalDataDate() : state.data_date" not in evidence_request
-    assert "js/label_hub.js') }}?v=20260824stockoutlive1" in template
+    assert "js/label_hub.js') }}?v=20260826stockoutevidence2" in template
 
 
 def test_country_detail_uses_country_scoped_stockout_role_evidence():
@@ -422,12 +612,12 @@ def test_country_detail_uses_country_scoped_stockout_role_evidence():
 
     assert 'country: detailState.detail_view === "country" ? (row.country || "") : ""' in script
     assert 'payload.scope === "country"' in script
-    assert '断货前销售角色依据（站点）' in script
+    assert '断货前经营画像' in script
     assert 'row.stockout_before_role_scope === "country"' in script
     assert 'row.stockout_before_role' in script
     assert 'class="label-hub-stockout-country-role"' in script
     assert ".label-hub-stockout-country-role" in styles
-    assert "js/label_hub.js') }}?v=20260824stockoutlive1" in template
+    assert "js/label_hub.js') }}?v=20260826stockoutevidence2" in template
 
 
 def test_stockout_evidence_summary_keeps_long_calculation_mode_inside_its_cell():
@@ -444,28 +634,27 @@ def test_stockout_evidence_summary_keeps_long_calculation_mode_inside_its_cell()
     assert "overflow-wrap: anywhere;" in body
 
 
-def test_stockout_evidence_shows_only_start_date_and_elapsed_days():
+def test_stockout_evidence_header_distinguishes_start_date_kind_and_elapsed_days():
     template = (ROOT / "app" / "templates" / "label_hub.html").read_text(encoding="utf-8")
     script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
     styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
 
-    summary_block = script.split("'<div class=\"label-hub-stockout-evidence-summary\">'", 1)[1].split("'</div>'", 1)[0]
-    assert 'evidenceSummaryItem("开始断货", startDate || "暂无")' in summary_block
+    summary_block = script.split("function renderStockoutEvidenceModal(payload)", 1)[1].split("function renderStockoutProfileChain", 1)[0]
+    assert 'evidenceSummaryItem(stockoutEvent.date_label || stockoutEventDateLabel(dateKind), startDate || "暂无")' in summary_block
     assert 'evidenceSummaryItem("已断货", evidenceStockoutDays(startDate, identity.data_date))' in summary_block
     assert "计算方式" not in summary_block
     assert "数据快照" not in summary_block
 
-    timeline_block = script.split("var timelineItems = [", 1)[1].split("];", 1)[0]
-    assert "oos.oos_start_date" in timeline_block
-    assert "evidenceStockoutDays" in timeline_block
-    for obsolete_field in ("history_start_date", "previous_gt5_date", "snapshot_end_date", "oos_start_method"):
-        assert obsolete_field not in timeline_block
+    assert 'stockoutEvent.date_kind || "pending"' in script
+    assert "最近断货开始日" in script
+    assert "最早观察到断货" in script
+    assert "断货起点待确认" in script
 
     summary_rule = re.search(r"\.label-hub-stockout-evidence-summary\s*\{(?P<body>[^}]*)\}", styles)
     assert summary_rule is not None
     assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in summary_rule.group("body")
-    assert "css/styles.css') }}?v=20260824stockoutpreview8" in template
-    assert "js/label_hub.js') }}?v=20260824stockoutlive1" in template
+    assert "css/styles.css') }}?v=20260826stockoutevidence2" in template
+    assert "js/label_hub.js') }}?v=20260826stockoutevidence2" in template
 
 
 def test_label_hub_detail_workbench_uses_independent_post_flow_and_dual_views():
@@ -518,7 +707,7 @@ def test_label_hub_detail_export_uses_current_filters_and_downloads_csv_blob():
     assert "URL.revokeObjectURL" in script
     assert "function setDetailExportLoading(isLoading)" in script
     assert 'elements.labelHubDetailExport.textContent = isLoading ? "导出中…" : "导出 CSV";' in script
-    assert "js/label_hub.js') }}?v=20260824stockoutlive1" in template
+    assert "js/label_hub.js') }}?v=20260826stockoutevidence2" in template
 
 
 def test_detail_role_reason_filter_replaces_sales_trend_and_follows_detail_scope():
@@ -641,7 +830,7 @@ def test_detail_filters_match_compact_reference_visual_language():
     assert ".label-hub-detail-filter-control .ss-main:has(.ss-value)" in styles
     assert ".ss-value .ss-value-text" in styles
     assert "color: #155ba6;" in styles
-    assert "styles.css') }}?v=20260824stockoutpreview8" in template
+    assert "styles.css') }}?v=20260826stockoutevidence2" in template
     assert ".label-hub-detail-workbench select[multiple] { min-height: 64px" not in styles
 
 
@@ -1106,7 +1295,7 @@ def test_remote_breakdown_nodes_have_enough_distinct_colors_for_long_status_list
     assert len(colors) >= 12
     assert len(set(colors)) == len(colors)
     assert "remoteBucketColor(panel, bucket)" in script
-    assert "?v=20260824stockoutlive1" in template
+    assert "?v=20260826stockoutevidence2" in template
 
 
 def test_label_hub_issue_overview_shows_selected_group_problem_counts():
@@ -1267,7 +1456,7 @@ def test_current_category_detail_uses_period_scoped_distribution():
     assert "distributionById" in script
     assert 'cache: "no-store"' in common
     assert "js/common.js') }}?v=20260818labeltimeout1" in base
-    assert "js/label_hub.js') }}?v=20260824stockoutlive1" in template
+    assert "js/label_hub.js') }}?v=20260826stockoutevidence2" in template
 
 
 def test_country_detail_overview_matches_label_hub_information_structure():
@@ -1376,7 +1565,7 @@ def test_country_diagnostics_use_expandable_role_distribution_without_attention_
     assert "label-hub-diagnostics-attention" not in script
 
 
-def test_stockout_before_role_evidence_uses_tabbed_modal_and_on_demand_api():
+def test_stockout_before_role_evidence_uses_single_scroll_operating_profile_modal():
     template = (ROOT / "app" / "templates" / "label_hub.html").read_text(encoding="utf-8")
     script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
     styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
@@ -1396,22 +1585,31 @@ def test_stockout_before_role_evidence_uses_tabbed_modal_and_on_demand_api():
         "openStockoutBeforeEvidence",
         "closeStockoutBeforeEvidence",
         "renderStockoutEvidenceModal",
-        "renderStockoutEvidenceTab",
     ):
         assert f"function {function_name}" in script
-    for tab in ("断货时间线", "断货前表现", "角色判定", "历史角色轨迹", "计算与来源", "原始 JSON"):
-        assert tab in script
+    assert "function renderStockoutEvidenceTab" not in script
+    assert 'class="label-hub-stockout-evidence-tabs"' not in script
+    for section in ("断货前经营画像", "结论关系", "历史稳定性", "近期指标变化", "断货前角色及历史轨迹", "计算与数据来源", "原始 JSON"):
+        assert section in script
+    for token in ("historical_primary_role", "pre_oos_role", "combined_conclusion", "metric_trend_nodes"):
+        assert token in script
+    assert 'fluctuating: "角色近期波动"' in script
+    assert "可信度" not in script.split("function renderStockoutEvidenceModal", 1)[1].split("function evidenceSummaryItem", 1)[0]
     assert "function renderHistoricalRoleHistory" in script
     assert 'history.status === "insufficient"' in script
     assert 'class="label-hub-stockout-history-distribution"' in script
     assert 'class="label-hub-stockout-history-timeline"' in script
-    assert '>查看完整计算依据</button>' in script
+    for token in ("个正常计算", "个沿用", "个恢复观察", "个真正不可判"):
+        assert token in script
+    assert " 个不可判</small>" not in script
+    assert '<details class="label-hub-stockout-evidence-audit"' in script
     assert "JSON.stringify(evidence, null, 2)" in script
     assert 'document.body.classList.add("has-label-hub-stockout-evidence-modal")' in script
     assert 'document.body.classList.remove("has-label-hub-stockout-evidence-modal")' in script
     assert ".label-hub-stockout-evidence-card" in styles
-    assert ".label-hub-stockout-evidence-tabs" in styles
-    assert ".label-hub-stockout-evidence-timeline" in styles
+    assert ".label-hub-stockout-profile-chain" in styles
+    assert ".label-hub-stockout-stability" in styles
+    assert ".label-hub-stockout-metric-trend" in styles
     assert ".label-hub-stockout-history-distribution" in styles
     assert ".label-hub-stockout-history-timeline" in styles
     assert ".label-hub-stockout-evidence-foot .primary-button" in styles
@@ -1421,11 +1619,13 @@ def test_stockout_before_role_evidence_uses_tabbed_modal_and_on_demand_api():
 def test_stockout_historical_role_timeline_puts_the_pre_stockout_node_first():
     template = (ROOT / "app" / "templates" / "label_hub.html").read_text(encoding="utf-8")
     script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
-    renderer = script.split("function renderHistoricalRoleHistory(history)", 1)[1].split(
+    renderer = script.split("function renderHistoricalRoleHistory(history, stockoutEvent)", 1)[1].split(
         "function stockoutOperatingColumns", 1
     )[0]
 
     assert "nodes.slice().reverse().map(function (node)" in renderer
+    assert 'class="label-hub-stockout-history-event' in renderer
+    assert "is-pre-oos-source" in renderer
     assert "最新在左，越靠左越接近断货" in renderer
     assert "由左到右，越靠右越接近断货" not in renderer
-    assert "js/label_hub.js') }}?v=20260824stockoutlive1" in template
+    assert "js/label_hub.js') }}?v=20260826stockoutevidence2" in template
