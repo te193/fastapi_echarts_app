@@ -171,6 +171,79 @@ class ExportHeaderTests(unittest.TestCase):
         self.assertEqual(2295, worksheet["B2"].value)
         self.assertTrue(all(cell.fill.fgColor.rgb.endswith("FFF2CC") for cell in worksheet[2]))
 
+    def test_replenishment_xlsx_hides_secondary_export_columns_without_removing_values(self):
+        payload = {
+            "columns": [
+                {"name": "seller_sku_adj", "label": "MSKU"},
+                {"name": "replenish_qty", "label": "补货数量"},
+                {"name": "fba_local_quantity", "label": "FBA本地库存"},
+                {"name": "stock_up_num", "label": "在途数量"},
+                {"name": "purchase_lead_status", "label": "采购交期状态"},
+                {"name": "supplier_moq", "label": "供应商最小起订量"},
+            ],
+            "rows": [
+                {
+                    "seller_sku_adj": "MSKU-1",
+                    "replenish_qty": 30,
+                    "fba_local_quantity": 100,
+                    "stock_up_num": 20,
+                    "purchase_lead_status": "正常",
+                    "supplier_moq": 50,
+                }
+            ],
+        }
+
+        workbook = load_workbook(BytesIO(main.build_replenishment_xlsx(payload)), read_only=False)
+        worksheet = workbook.active
+
+        self.assertEqual(100, worksheet["C2"].value)
+        self.assertEqual(20, worksheet["D2"].value)
+        self.assertTrue(worksheet.column_dimensions["C"].hidden)
+        self.assertTrue(worksheet.column_dimensions["D"].hidden)
+        self.assertTrue(worksheet.column_dimensions["E"].hidden)
+        self.assertTrue(worksheet.column_dimensions["F"].hidden)
+        self.assertFalse(worksheet.column_dimensions["A"].hidden)
+        self.assertFalse(worksheet.column_dimensions["B"].hidden)
+
+    def test_replenishment_xlsx_hides_long_cycle_and_audit_columns(self):
+        hidden_column_names = [
+            "onsale_sites",
+            "unsale_sites",
+            "marketplace_concat",
+            "predict_abcd_category",
+            "r_90d_salable_days",
+            "sales_180d",
+            "sales_90d",
+            "amount_180d",
+            "amount_90d",
+            "pprofit_180d",
+            "pprofit_90d",
+            "pprofit_ratio_180d",
+            "pprofit_ratio_90d",
+            "60d_stocko_qty",
+            "90d_stocko_qty",
+            "180d_stocko_qty",
+            "amz_instock_sales_ratio",
+            "instock_intrans_pur_sales_ratio",
+            "created_at",
+            "updated_at",
+        ]
+        payload = {
+            "columns": [
+                {"name": "seller_sku_adj", "label": "MSKU"},
+                *[{"name": name, "label": name} for name in hidden_column_names],
+            ],
+            "rows": [{"seller_sku_adj": "MSKU-1", **{name: 1 for name in hidden_column_names}}],
+        }
+
+        workbook = load_workbook(BytesIO(main.build_replenishment_xlsx(payload)), read_only=False)
+        worksheet = workbook.active
+
+        for column_index in range(2, len(payload["columns"]) + 1):
+            self.assertEqual(1, worksheet.cell(2, column_index).value)
+            self.assertTrue(worksheet.column_dimensions[worksheet.cell(1, column_index).column_letter].hidden)
+        self.assertFalse(worksheet.column_dimensions["A"].hidden)
+
     def test_replenishment_xlsx_highlights_concentrated_sales_row(self):
         payload = {
             "columns": [

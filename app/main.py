@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 from openpyxl import Workbook
 from openpyxl.comments import Comment
 from openpyxl.styles import PatternFill
+from openpyxl.utils import get_column_letter
 from pydantic import BaseModel, Field
 
 from etl.dashboard_daily_update import COLUMN_COMMENTS
@@ -81,6 +82,59 @@ REPLENISHMENT_COMBINED_WARNING_FILL = PatternFill(
     fill_type="solid",
     fgColor="F4B183",
 )
+REPLENISHMENT_EXPORT_HIDDEN_COLUMNS = {
+    "onsale_sites",
+    "unsale_sites",
+    "marketplace_concat",
+    "fba_local_quantity",
+    "stock_up_num",
+    "pre_daily_avg_sales",
+    "pre_normal_replenish_need_qty",
+    "pre_replenish_trigger_qty",
+    "hist_90d_instock_days",
+    "hist_90d_instock_sales",
+    "hist_90d_instock_daily_sales",
+    "history_recovery_need_qty",
+    "history_recovery_flag",
+    "support_inventory_qty",
+    "predict_abcd_category",
+    "r_90d_salable_days",
+    "sales_180d",
+    "sales_90d",
+    "amount_180d",
+    "amount_90d",
+    "pprofit_180d",
+    "pprofit_90d",
+    "pprofit_ratio_180d",
+    "pprofit_ratio_90d",
+    "60d_stocko_qty",
+    "90d_stocko_qty",
+    "180d_stocko_qty",
+    "amz_instock_sales_ratio",
+    "instock_intrans_pur_sales_ratio",
+    "purchase_lead_days_raw",
+    "effective_purchase_lead_days",
+    "purchase_lead_status",
+    "arrival_inventory_support_days",
+    "arrival_inventory_qty",
+    "lead_time_demand_qty",
+    "lead_time_stockout_flag",
+    "lead_time_stockout_days",
+    "fllow_flag",
+    "followed_flag",
+    "followed_by_count",
+    "followed_by_links",
+    "follow_origin_link",
+    "replenish_block_reason",
+    "asin_merge_flag",
+    "asin_merge_target",
+    "asin_merge_reason",
+    "supplier_moq",
+    "moq_status",
+    "moq_shortfall_qty",
+    "created_at",
+    "updated_at",
+}
 CSV_HEADER_LABELS = {
     "snapshot_date": "快照日期",
     "period_start": "周期开始",
@@ -305,6 +359,8 @@ def build_replenishment_xlsx(payload: dict, disabled_stores: set[str] | None = N
 
     for column_index, column in enumerate(columns, start=1):
         cell = worksheet.cell(row=1, column=column_index, value=column["label"])
+        if column["name"] in REPLENISHMENT_EXPORT_HIDDEN_COLUMNS:
+            worksheet.column_dimensions[get_column_letter(column_index)].hidden = True
         comment_text = REPLENISHMENT_EXPORT_HEADER_COMMENTS.get(column["name"])
         if comment_text:
             cell.comment = Comment(comment_text, "看板系统")
