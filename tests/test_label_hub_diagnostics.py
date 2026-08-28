@@ -20,9 +20,9 @@ class LabelHubDiagnosticsTests(unittest.TestCase):
                 "country": "德国",
                 "store": "StoreA",
                 "msku": "A1",
-                "label_id": 1604,
+                "label_id": 1602,
                 "label_period": "30d",
-                "sub_label_name": "潜力产品(站点)-排名不足",
+                "sub_label_name": "潜力产品（站点）-提升毛利",
                 "evidence": {"metrics": {"small_rank": 88}, "matched_rule": {"small_rank": "> 50"}},
             },
             {
@@ -30,9 +30,9 @@ class LabelHubDiagnosticsTests(unittest.TestCase):
                 "country": "法国",
                 "store": "StoreA",
                 "msku": "A1",
-                "label_id": 1604,
+                "label_id": 1602,
                 "label_period": "30d",
-                "sub_label_name": "潜力产品(站点)-排名不足",
+                "sub_label_name": "潜力产品（站点）-提升毛利",
                 "evidence": {"metrics": {"small_rank": 92}, "matched_rule": {"small_rank": "> 50"}},
             },
             {
@@ -55,7 +55,7 @@ class LabelHubDiagnosticsTests(unittest.TestCase):
             period="30d",
         )
 
-        bucket = next(item for item in payload["buckets"] if item["child_id"] == 1604)
+        bucket = next(item for item in payload["buckets"] if item["child_id"] == 1602)
         self.assertEqual(2, bucket["country_record_count"])
         self.assertEqual(1, bucket["business_unit_count"])
         self.assertEqual(2, bucket["country_count"])
@@ -70,6 +70,46 @@ class LabelHubDiagnosticsTests(unittest.TestCase):
         self.assertEqual(1, distribution["potential"]["business_unit_count"])
         self.assertEqual(2 / 3, distribution["potential"]["ratio"])
         self.assertEqual(2, distribution["potential"]["delta"])
-        self.assertEqual([1604], [item["child_id"] for item in distribution["potential"]["children"]])
+        self.assertEqual([1602], [item["child_id"] for item in distribution["potential"]["children"]])
         self.assertEqual(1, distribution["star"]["country_record_count"])
+        self.assertEqual(0, distribution["dog"]["country_record_count"])
+
+    def test_country_problem_role_uses_latest_remote_child_ids(self):
+        rows = [
+            {
+                "country_category": "欧洲站",
+                "store": "StoreA",
+                "msku": "A1",
+                "sales_amount": 100,
+                "order_gross_profit": 5,
+            }
+        ]
+        facts = [
+            {
+                "country_category": "欧洲站",
+                "country": "德国",
+                "store": "StoreA",
+                "msku": "A1",
+                "label_id": 1607,
+                "label_period": "30d",
+                "sub_label_name": "问题产品（站点）-提升销量",
+                "evidence_available": True,
+            }
+        ]
+
+        payload = build_diagnostic_payload(
+            rows=rows,
+            facts=facts,
+            previous_facts=[],
+            scope="country",
+            period="30d",
+        )
+
+        distribution = {
+            item["role_id"]: item for item in payload["country_role_distribution"]
+        }
+        self.assertEqual(1, distribution["problem"]["country_record_count"])
+        self.assertEqual([1607], [
+            item["child_id"] for item in distribution["problem"]["children"]
+        ])
         self.assertEqual(0, distribution["dog"]["country_record_count"])

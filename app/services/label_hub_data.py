@@ -6,7 +6,6 @@ import threading
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 from typing import Any, Callable
-from urllib.parse import urlencode
 
 from .dashboard_db import dashboard_service
 from .label_hub_local_metrics import METRIC_PERIODS, label_hub_local_metrics_service
@@ -117,6 +116,11 @@ SALES_ROLE_PARENT_ID = 1
 PROBLEM_PRODUCT_CHILD_ID = 104
 RETURN_STAGE_PARENT_ID = 5
 ACTIVE_RETURN_STAGE_CHILD_IDS = frozenset({501, 502, 503})
+
+
+class LabelHubRefreshBusyError(RuntimeError):
+    """Raised when a manual label snapshot refresh is already running."""
+
 
 REMOTE_PARENT_CHILD_PRIORITY = {
     1: [101, 102, 103, 104],
@@ -466,6 +470,10 @@ def _parse_code_pipe(value: Any, allowed: set[str], field: str) -> set[str]:
     return values
 
 
+def _msku_identity(value: Any) -> str:
+    return str(value or "").strip().casefold()
+
+
 def _business_unit_key(row: dict[str, Any]) -> tuple[str, str, str]:
     return (
         str(row.get("country_category") or ""),
@@ -592,6 +600,7 @@ class LabelHubDataService:
         self._source_validation_started_at = datetime.now()
         self._source_generation = 0
         self._source_invalidation_callbacks: list[Callable[[], None]] = []
+        self._manual_refresh_lock = threading.Lock()
 
     @staticmethod
     def _payload_cache_key(data_date: str, metric_period: str, filters: dict[str, Any]) -> tuple[Any, ...]:
@@ -721,16 +730,22 @@ class LabelHubDataService:
         ).start()
 
     def force_source_refresh(self) -> dict[str, Any]:
-        quick_fingerprint = self._fetch_quick_source_fingerprint()
-        self._invalidate_remote_caches()
-        with self._source_state_lock:
-            self._source_quick_fingerprint = quick_fingerprint
-            self._source_quick_checked_at = datetime.now()
-            # The next background validation rebuilds the deep fingerprint.
-            # A manual refresh must not synchronously scan the full remote table.
-            self._source_content_fingerprint = None
-            self._source_content_checked_at = None
-        return {"status": "refreshed", "generation": self._source_generation}
+        if not self._manual_refresh_lock.acquire(blocking=False):
+            raise LabelHubRefreshBusyError("label snapshot refresh is already running")
+        try:
+            from etl.label_rule_evidence_snapshot_update import run_update
+
+            result = run_update()
+            quick_fingerprint = self._fetch_quick_source_fingerprint()
+            self._invalidate_remote_caches()
+            with self._source_state_lock:
+                self._source_quick_fingerprint = quick_fingerprint
+                self._source_quick_checked_at = datetime.now()
+                self._source_content_fingerprint = None
+                self._source_content_checked_at = None
+            return {**result, "generation": self._source_generation}
+        finally:
+            self._manual_refresh_lock.release()
 
     def parse_conditions(self, value: str) -> dict[int, set[int]]:
         value = str(value or "").strip()
@@ -846,14 +861,14 @@ class LabelHubDataService:
             "available_periods": list(STOCKOUT_BEFORE_ROLE_PERIODS),
             "scope": {
                 "business_unit_count": total,
-                "unique_msku_count": len({key[2] for key in stockout_keys}),
+                "unique_msku_count": len({_msku_identity(key[2]) for key in stockout_keys}),
             },
             "roles": [
                 {
                     "id": role_id,
                     "label": STOCKOUT_BEFORE_ROLE_LABELS[role_id],
                     "business_unit_count": len(role_keys[role_id]),
-                    "unique_msku_count": len({key[2] for key in role_keys[role_id]}),
+                    "unique_msku_count": len({_msku_identity(key[2]) for key in role_keys[role_id]}),
                     "share": round(len(role_keys[role_id]) / total, 4) if total else 0,
                 }
                 for role_id in STOCKOUT_BEFORE_ROLE_IDS
@@ -1263,13 +1278,13 @@ class LabelHubDataService:
                 {
                     "country_record_count": total,
                     "matched_business_unit_count": len({(key[0], key[2], key[3]) for key in stockout_by_key}),
-                    "unique_msku_count": len({key[3] for key in stockout_by_key}),
+                    "unique_msku_count": len({_msku_identity(key[3]) for key in stockout_by_key}),
                     "business_unit_count": total,
                 }
                 if scope == "country"
                 else {
                     "business_unit_count": total,
-                    "unique_msku_count": len({key[2] for key in stockout_by_key}),
+                    "unique_msku_count": len({_msku_identity(key[2]) for key in stockout_by_key}),
                 }
             ),
             "supply": {
@@ -1532,7 +1547,11 @@ class LabelHubDataService:
 
     @staticmethod
     def _unique_msku_count(rows: list[dict[str, Any]], predicate: Callable[[dict[str, Any]], bool] | None = None) -> int:
-        return len({row["msku"] for row in rows if predicate is None or predicate(row)})
+        return len({
+            _msku_identity(row["msku"])
+            for row in rows
+            if predicate is None or predicate(row)
+        })
 
     @staticmethod
     def _bucket_stats(rows: list[dict[str, Any]], predicate: Callable[[dict[str, Any]], bool], total_rows: int) -> dict[str, Any]:
@@ -1792,7 +1811,7 @@ class LabelHubDataService:
 
         overview = []
         base_count = len(baseline_rows)
-        base_mskus = {row["msku"] for row in baseline_rows}
+        base_mskus = {_msku_identity(row["msku"]) for row in baseline_rows}
         base_unique_count = len(base_mskus)
         msku_scopes: dict[str, set[tuple[str, str]]] = defaultdict(set)
         parent_counts: dict[int, int] = defaultdict(int)
@@ -1801,13 +1820,14 @@ class LabelHubDataService:
         child_mskus: dict[tuple[int, int], set[str]] = defaultdict(set)
         parent_periods: dict[int, set[str]] = defaultdict(set)
         for row in baseline_rows:
-            msku_scopes[row["msku"]].add((row["country_category"], row["store"]))
+            msku_identity = _msku_identity(row["msku"])
+            msku_scopes[msku_identity].add((row["country_category"], row["store"]))
             for parent_id, child_ids in row["_by_parent"].items():
                 parent_counts[parent_id] += 1
-                parent_mskus[parent_id].add(row["msku"])
+                parent_mskus[parent_id].add(msku_identity)
                 for child_id in child_ids:
                     child_counts[(parent_id, child_id)] += 1
-                    child_mskus[(parent_id, child_id)].add(row["msku"])
+                    child_mskus[(parent_id, child_id)].add(msku_identity)
             for parent_id, periods in row["_by_parent_period"].items():
                 parent_periods[parent_id].update(period for period in periods if period)
         for category in categories:
@@ -2761,7 +2781,6 @@ class LabelHubDataService:
         sorted_tags = sorted(tags, key=lambda item: (item["parent_id"], item["id"], item["period"]))
         analysis_labels = [item for item in sorted_tags if item["parent_id"] not in EXCLUDED_ANALYSIS_PARENT_IDS]
         site_scope_labels = [item for item in sorted_tags if item["parent_id"] in EXCLUDED_ANALYSIS_PARENT_IDS]
-        query = {"period": metric_period, "country_category": country, "seller_name_new": store, "keyword": msku}
         return {
             "identity": {"data_date": data_date, "country_category": country, "store": store, "msku": msku},
             "tag_profile": {
@@ -2772,10 +2791,6 @@ class LabelHubDataService:
             },
             "metric_profile": metric or {},
             "data_status": {"local_metrics_status": metric_scope.get("status") or "unavailable", "metric_window": metric_scope.get("window") or {}, "has_local_metric": metric is not None},
-            "navigation_links": {
-                "sales_role": f"/sales-role?{urlencode({**query, 'view': 'role'})}",
-                "lifecycle": f"/sales-role?{urlencode({**query, 'view': 'lifecycle'})}",
-            },
         }
 
     def _source_connection(self):

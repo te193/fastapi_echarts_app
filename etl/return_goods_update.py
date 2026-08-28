@@ -215,6 +215,16 @@ group by seller_name_new, country_category, seller_sku_adj
 having stockout_days > 0;
 """
 
+INSERT_STOCKOUT_POOL_ROW_SQL = """
+insert into etl_datasync_test.dashboard_return_goods_stockout_pool (
+    snapshot_date, item_key, seller_name_new, country_category, seller_sku_adj,
+    local_sku, first_stockout_date, last_stockout_date, stockout_days, period_sales_qty
+) values (
+    %(snapshot_date)s, %(item_key)s, %(seller_name_new)s, %(country_category)s, %(seller_sku_adj)s,
+    %(local_sku)s, %(first_stockout_date)s, %(last_stockout_date)s, %(stockout_days)s, %(period_sales_qty)s
+);
+"""
+
 INSERT_STAGE_DAILY_SUMMARY_SQL = """
 insert into etl_datasync_test.dashboard_return_goods_stage_daily_summary (
     snapshot_date, stage_key, segment_key, segment_name, stage_day, return_day,
@@ -318,18 +328,12 @@ event_calendar_with_cumulative as (
         ec.event_return_days,
         ec.sales_qty,
         ec.fba_sellable,
-        sum(coalesce(p2.sales_qty, 0)) as event_cumulative_sales_qty
+        sum(ec.sales_qty) over (
+            partition by ec.stage_key, ec.segment_key, ec.return_event_id
+            order by ec.return_day
+            rows between unbounded preceding and current row
+        ) as event_cumulative_sales_qty
     from event_calendar ec
-    left join daily_msku p2
-           on p2.dt_date between
-                date_add(ec.return_start_date, interval case when ec.segment_key = 'observe' then 0 else 7 end day)
-                and date_add(ec.return_start_date, interval ec.return_day - 1 day)
-          and p2.seller_name_new = ec.seller_name_new
-          and p2.country_category = ec.country_category
-          and p2.seller_sku_adj = ec.seller_sku_adj
-    group by
-        ec.stage_key, ec.segment_key, ec.segment_name, ec.stage_day, ec.return_day,
-        ec.return_event_id, ec.event_return_days, ec.sales_qty, ec.fba_sellable
 ),
 current_summary as (
     select
@@ -952,6 +956,80 @@ def flush_events(cursor, schemas, snapshot_date: date, rows: list[dict[str, Any]
     return len(rows)
 
 
+def build_stockout_pool_row(
+    rows: list[dict[str, Any]],
+    snapshot_date: date,
+    lookback_days: int,
+) -> dict[str, Any] | None:
+    source_start_date = snapshot_date - timedelta(days=lookback_days - 1)
+    period_rows = [
+        row for row in rows
+        if source_start_date <= row["dt_date"] <= snapshot_date
+    ]
+    stockout_rows = [
+        row for row in period_rows
+        if to_decimal(row.get("afn_fulfillable_quantity")) == 0
+    ]
+    if not stockout_rows:
+        return None
+
+    latest_row = rows[-1]
+    return {
+        "snapshot_date": snapshot_date,
+        "item_key": latest_row["item_key"],
+        "seller_name_new": latest_row["seller_name_new"],
+        "country_category": latest_row["country_category"],
+        "seller_sku_adj": latest_row["seller_sku_adj"],
+        "local_sku": max(
+            (str(row["local_sku"]) for row in period_rows if row.get("local_sku") is not None),
+            default=None,
+        ),
+        "first_stockout_date": min(row["dt_date"] for row in stockout_rows),
+        "last_stockout_date": max(row["dt_date"] for row in stockout_rows),
+        "stockout_days": len(stockout_rows),
+        "period_sales_qty": sum(
+            (to_decimal(row.get("sales_qty")) for row in period_rows),
+            Decimal("0"),
+        ),
+    }
+
+
+def stockout_pool_identity(row: dict[str, Any]) -> tuple[str, str, str]:
+    return (
+        str(row["seller_name_new"]).casefold(),
+        str(row["country_category"]).casefold(),
+        str(row["seller_sku_adj"]).casefold(),
+    )
+
+
+def merge_stockout_pool_row(
+    current: dict[str, Any],
+    incoming: dict[str, Any],
+) -> dict[str, Any]:
+    current["first_stockout_date"] = min(
+        current["first_stockout_date"],
+        incoming["first_stockout_date"],
+    )
+    current["last_stockout_date"] = max(
+        current["last_stockout_date"],
+        incoming["last_stockout_date"],
+    )
+    current["stockout_days"] += incoming["stockout_days"]
+    current["period_sales_qty"] += incoming["period_sales_qty"]
+    current["local_sku"] = max(
+        (value for value in (current.get("local_sku"), incoming.get("local_sku")) if value is not None),
+        default=None,
+    )
+    return current
+
+
+def flush_stockout_pool(cursor, schemas, rows: list[dict[str, Any]]) -> int:
+    if not rows:
+        return 0
+    cursor.executemany(render_sql(INSERT_STOCKOUT_POOL_ROW_SQL, schemas), rows)
+    return len(rows)
+
+
 def ensure_return_events_schema(cursor, schemas) -> None:
     cursor.execute(render_sql(CREATE_RETURN_EVENTS_SQL, schemas))
     cursor.execute(render_sql(CREATE_STOCKOUT_POOL_SQL, schemas))
@@ -1026,20 +1104,29 @@ def rebuild_return_events(snapshot_date: date, lookback_days: int = DEFAULT_LOOK
         with target_conn.cursor() as cursor:
             ensure_return_events_schema(cursor, schemas)
             cursor.execute(render_sql(DELETE_RETURN_EVENTS_SQL, schemas), {"snapshot_date": snapshot_date})
-            rebuild_stockout_pool(cursor, schemas, snapshot_date, lookback_days)
+            cursor.execute(render_sql(DELETE_STOCKOUT_POOL_SQL, schemas), {"snapshot_date": snapshot_date})
         target_conn.commit()
 
     affected = 0
-    batch: list[dict[str, Any]] = []
+    event_batch: list[dict[str, Any]] = []
+    stockout_pool_rows: dict[tuple[str, str, str], dict[str, Any]] = {}
     with connect_stream_target() as source_conn, connect_target() as target_conn:
         with target_conn.cursor() as cursor:
             for group in iter_grouped_rows(source_conn, schemas, snapshot_date, lookback_days):
-                batch.extend(build_events(group, snapshot_date, lookback_days))
-                if len(batch) >= batch_size:
-                    affected += flush_events(cursor, schemas, snapshot_date, batch)
+                pool_row = build_stockout_pool_row(group, snapshot_date, lookback_days)
+                if pool_row is not None:
+                    pool_key = stockout_pool_identity(pool_row)
+                    if pool_key in stockout_pool_rows:
+                        merge_stockout_pool_row(stockout_pool_rows[pool_key], pool_row)
+                    else:
+                        stockout_pool_rows[pool_key] = pool_row
+                event_batch.extend(build_events(group, snapshot_date, lookback_days))
+                if len(event_batch) >= batch_size:
+                    affected += flush_events(cursor, schemas, snapshot_date, event_batch)
                     target_conn.commit()
-                    batch.clear()
-            affected += flush_events(cursor, schemas, snapshot_date, batch)
+                    event_batch.clear()
+            affected += flush_events(cursor, schemas, snapshot_date, event_batch)
+            flush_stockout_pool(cursor, schemas, list(stockout_pool_rows.values()))
             rebuild_country_metrics(cursor, schemas, snapshot_date, lookback_days)
             rebuild_stage_daily_summary(cursor, schemas, snapshot_date, lookback_days)
             target_conn.commit()

@@ -29,7 +29,6 @@
         <section class="nav-v2-favorites" aria-label="常用页面">
           <div class="nav-v2-section-title compact"><span>☆ 常用</span></div>
           <div class="nav-v2-chips">
-            <a href="/sales-role">销售角色</a>
             <a href="/detail">产品明细</a>
             <a href="/alerts">异常预警</a>
           </div>
@@ -61,10 +60,10 @@
             </div>
           </section>
 
-          <section class="nav-v2-group {% if page in ['alerts', 'opportunities', 'sales_role', 'label_hub', 'price_review', 'ad_budget'] %}open{% endif %}" data-nav-group="operation">
-            <button class="nav-v2-group-toggle" type="button" aria-expanded="{% if page in ['alerts', 'opportunities', 'sales_role', 'label_hub', 'price_review', 'ad_budget'] %}true{% else %}false{% endif %}">
+          <section class="nav-v2-group {% if page in ['alerts', 'opportunities', 'label_hub', 'price_review', 'ad_budget'] %}open{% endif %}" data-nav-group="operation">
+            <button class="nav-v2-group-toggle" type="button" aria-expanded="{% if page in ['alerts', 'opportunities', 'label_hub', 'price_review', 'ad_budget'] %}true{% else %}false{% endif %}">
               <span><i>⌄</i> 经营诊断</span>
-              <b>6</b>
+              <b>5</b>
             </button>
             <div class="nav-v2-group-links">
               <a class="nav-v2-link {% if page == 'alerts' %}active{% endif %}" href="/alerts">
@@ -74,10 +73,6 @@
               <a class="nav-v2-link {% if page == 'opportunities' %}active{% endif %}" href="/opportunities">
                 <span class="nav-v2-icon">机</span>
                 <span><strong>机会池</strong><small>机会识别 / 优先级</small></span>
-              </a>
-              <a class="nav-v2-link {% if page == 'sales_role' %}active{% endif %}" href="/sales-role">
-                <span class="nav-v2-icon">销</span>
-                <span><strong>销售角色分析</strong><small>MSKU角色 / 毛利 / 日销</small></span>
               </a>
               <a class="nav-v2-link {% if page == 'label_hub' %}active{% endif %}" href="/label-hub">
                 <span class="nav-v2-icon">标</span>

@@ -57,13 +57,12 @@ class FakeSalesRoleService:
 
 
 class SalesRoleApiTests(unittest.TestCase):
-    def test_sales_role_page_route_exists(self):
+    def test_sales_role_page_route_is_removed(self):
         client = TestClient(main.app)
 
         response = client.get("/sales-role")
 
-        self.assertEqual(200, response.status_code)
-        self.assertIn("销售角色分析", response.text)
+        self.assertEqual(404, response.status_code)
 
     def test_sales_role_meta_uses_dashboard_service(self):
         service = FakeSalesRoleService()

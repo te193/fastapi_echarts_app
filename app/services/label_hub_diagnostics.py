@@ -10,9 +10,9 @@ from .label_hub_data import label_hub_service
 DIAGNOSTIC_PARENT_BY_SCOPE = {"global": 15, "country": 16}
 COUNTRY_ROLE_DEFINITIONS = (
     ("star", "站点明星", frozenset({1601})),
-    ("potential", "站点潜力", frozenset(range(1602, 1607))),
-    ("dog", "站点瘦狗", frozenset(range(1607, 1614))),
-    ("problem", "站点问题/异常", frozenset(range(1614, 1619))),
+    ("potential", "站点潜力", frozenset({1602, 1603})),
+    ("dog", "站点瘦狗", frozenset({1604, 1605})),
+    ("problem", "站点问题/异常", frozenset({1606, 1607})),
 )
 
 

@@ -11,6 +11,7 @@ def test_daily_update_task_runs_tracking_summary_between_replenishment_and_retur
     assert "-m etl.dashboard_daily_update" in script
     assert "-m etl.product_performance_history_sync" in script
     assert "-m etl.sales_role_snapshot_update" in script
+    assert "-m etl.stockout_historical_operating_update" in script
     assert "-m etl.replenishment_update" in script
     assert "-m etl.replenishment_tracking_summary_update" in script
     assert "-m etl.replenishment_tracking_update" not in script
@@ -20,6 +21,7 @@ def test_daily_update_task_runs_tracking_summary_between_replenishment_and_retur
         < script.index("-m etl.dashboard_daily_update")
         < script.index("-m etl.product_performance_history_sync")
         < script.index("-m etl.sales_role_snapshot_update")
+        < script.index("-m etl.stockout_historical_operating_update")
         < script.index("-m etl.replenishment_update")
         < script.index("-m etl.replenishment_tracking_summary_update")
         < script.index("-m etl.return_goods_update")
@@ -36,6 +38,8 @@ def test_daily_update_task_writes_separate_tracking_summary_logs():
     assert "etl_replenishment_run_$RunStamp.err.log" in script
     assert "etl_sales_role_run_$RunStamp.log" in script
     assert "etl_sales_role_run_$RunStamp.err.log" in script
+    assert "etl_stockout_historical_operating_run_$RunStamp.log" in script
+    assert "etl_stockout_historical_operating_run_$RunStamp.err.log" in script
     assert "etl_replenishment_tracking_summary_run_$RunStamp.log" in script
     assert "etl_replenishment_tracking_summary_run_$RunStamp.err.log" in script
     assert "etl_return_goods_run_$RunStamp.log" in script
@@ -50,6 +54,7 @@ def test_daily_update_task_sends_dingtalk_notifications():
     assert 'Send-DashboardDingTalkNotification -Status "failed"' in script
     assert '-Stage "source_preflight"' in script
     assert '-Stage "dashboard"' in script
+    assert '-Stage "stockout_historical_operating"' in script
     assert '-Stage "replenishment"' in script
     assert '-Stage "replenishment_tracking"' in script
     assert '-Stage "return_goods"' in script
@@ -97,6 +102,7 @@ def test_daily_update_runs_label_evidence_after_sales_role_before_replenishment(
     assert (
         script.index("-m etl.sales_role_snapshot_update")
         < script.index("-m etl.label_rule_evidence_snapshot_update")
+        < script.index("-m etl.stockout_historical_operating_update")
         < script.index("-m etl.replenishment_update")
     )
 
@@ -119,6 +125,15 @@ def test_label_evidence_failure_warns_and_continues_daily_chain():
     assert '-Status "failed" -Stage "label_evidence"' in failure_block
     assert "exit $LabelEvidenceExitCode" not in failure_block
     assert script.index(failure_block) < script.index("-m etl.replenishment_update")
+
+
+def test_stockout_historical_failure_notifies_and_stops_daily_chain():
+    script = SCRIPT.read_text(encoding="utf-8")
+    failure_block = script.split("if ($StockoutHistoricalExitCode -ne 0) {", 1)[1].split("}", 1)[0]
+
+    assert '-Status "failed" -Stage "stockout_historical_operating"' in failure_block
+    assert "exit $StockoutHistoricalExitCode" in failure_block
+    assert script.index("exit $StockoutHistoricalExitCode") < script.index("-m etl.replenishment_update")
 
 
 def test_source_preflight_failure_notifies_and_exits_before_dashboard_etl():

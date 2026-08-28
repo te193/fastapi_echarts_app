@@ -970,7 +970,7 @@ def test_label_hub_frontend_renders_six_linked_panels_and_structured_profile():
     assert "function toggleLocalCondition(dimension, value)" in script
     assert "profile.tag_profile" in script
     assert "profile.metric_profile" in script
-    assert "profile.navigation_links" in script
+    assert "profile.navigation_links" not in script
     assert 'data-negative="' in script
     assert "rowHeight: 52" in script
 
@@ -1497,6 +1497,21 @@ def test_current_category_detail_uses_period_scoped_distribution():
     assert "js/label_hub.js') }}?v=20260828stockoutstabilitycue1" in template
 
 
+def test_label_hub_manual_refresh_is_low_emphasis_and_reloads_latest_data():
+    template = (ROOT / "app" / "templates" / "label_hub.html").read_text(encoding="utf-8")
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "static" / "css" / "styles.css").read_text(encoding="utf-8")
+
+    assert 'id="labelHubRefresh"' in template
+    assert 'id="labelHubRefreshStatus"' in template
+    assert 'fetch("/api/label-hub/refresh"' in script
+    assert 'method: "POST"' in script
+    assert "button.disabled = true;" in script
+    assert "window.location.reload();" in script
+    assert ".label-hub-refresh-action" in styles
+    assert "background: rgba(255, 255, 255, 0.06);" in styles
+
+
 def test_country_detail_overview_matches_label_hub_information_structure():
     script = (ROOT / "app" / "static" / "js" / "country_label_hub.js").read_text(encoding="utf-8")
 
@@ -1538,13 +1553,6 @@ def test_main_dashboard_renders_before_change_tracking_request():
     render_block = script[script.index("  function render() {"):script.index("  function buildChangeParams() {")]
 
     assert render_block.index("lastPayload = payload;") < render_block.index("loadChanges();")
-
-
-def test_sales_role_has_label_hub_return_link():
-    script = (ROOT / "app" / "static" / "js" / "sales_role.js").read_text(encoding="utf-8")
-
-    assert 'href = "/label-hub?" + params.toString();' in script
-    assert '查看全部标签' in script
 
 
 def test_detail_advanced_filters_use_balanced_responsive_layout():
@@ -1601,6 +1609,14 @@ def test_country_diagnostics_use_expandable_role_distribution_without_attention_
     assert ".label-hub-diagnostic-child-row:has(+ .label-hub-diagnostic-role-row)" in styles
     assert ".is-country-role-table td:nth-child(4) i" in styles
     assert "label-hub-diagnostics-attention" not in script
+
+
+def test_country_diagnostic_filters_use_latest_remote_child_ids():
+    script = (ROOT / "app" / "static" / "js" / "label_hub.js").read_text(encoding="utf-8")
+
+    assert '"102": { "15": ["1502", "1503"], "16": ["1602", "1603"] }' in script
+    assert '"103": { "15": ["1504", "1505", "1506"], "16": ["1604", "1605"] }' in script
+    assert '"104": { "15": ["1507", "1508"], "16": ["1606", "1607"] }' in script
 
 
 def test_stockout_before_role_evidence_uses_single_scroll_operating_profile_modal():

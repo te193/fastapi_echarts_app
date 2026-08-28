@@ -287,7 +287,7 @@
   function init() {
     [
       "labelHubMetricPeriod", "labelHubCountry", "labelHubStore", "labelHubParent",
-      "labelHubPeriod", "labelHubPeriodField", "labelHubKeyword", "labelHubClear", "labelHubScope",
+      "labelHubPeriod", "labelHubPeriodField", "labelHubKeyword", "labelHubClear", "labelHubRefresh", "labelHubRefreshStatus", "labelHubScope",
       "labelHubPopulationSummary", "labelHubCategories", "labelHubCategoryDetail", "labelHubDiagnosis", "labelHubBreakdowns",
       "labelHubMeasureTabs", "labelHubCompare", "labelHubMatrix", "labelHubConditionRow", "labelHubConditions",
       "labelHubTable", "labelHubTableSummary", "labelHubTableView", "labelHubPageSize", "labelHubPagination", "labelHubHint", "labelHubDrawer",
@@ -440,6 +440,7 @@
       if (button) removeDetailFilter(button.dataset.detailFilterField, button.dataset.detailFilterValue || "");
     });
     elements.labelHubClear.addEventListener("click", clearAllFilters);
+    elements.labelHubRefresh.addEventListener("click", refreshSourceData);
     elements.labelHubMeasureTabs.addEventListener("click", function (event) {
       var button = event.target.closest("[data-measure]");
       if (!button) return;
@@ -1712,9 +1713,9 @@
     if (roles.length === 1) {
       var allowedDiagnostics = {
         "101": { "15": ["1501"], "16": ["1601"] },
-        "102": { "15": ["1502", "1503"], "16": ["1602", "1603", "1604", "1605", "1606"] },
-        "103": { "15": ["1504", "1505", "1506"], "16": ["1607", "1608", "1609", "1610", "1611", "1612", "1613"] },
-        "104": { "15": ["1507", "1508"], "16": ["1614", "1615", "1616", "1617", "1618"] }
+        "102": { "15": ["1502", "1503"], "16": ["1602", "1603"] },
+        "103": { "15": ["1504", "1505", "1506"], "16": ["1604", "1605"] },
+        "104": { "15": ["1507", "1508"], "16": ["1606", "1607"] }
       }[roles[0]] || {};
       ["15", "16"].forEach(function (parent) {
         if (!value[parent]) return;
@@ -1792,6 +1793,34 @@
     state.page = 1;
     populateControls();
     render();
+  }
+
+  function refreshSourceData() {
+    var button = elements.labelHubRefresh;
+    var status = elements.labelHubRefreshStatus;
+    if (button.disabled) return;
+    button.disabled = true;
+    button.textContent = "正在刷新";
+    status.classList.remove("is-error");
+    status.textContent = "正在从远端重新拉取数据…";
+    fetch("/api/label-hub/refresh", {
+      method: "POST",
+      headers: { "Accept": "application/json" },
+      cache: "no-store"
+    }).then(function (response) {
+      return response.json().catch(function () { return {}; }).then(function (payload) {
+        if (!response.ok) throw new Error(payload.detail || "刷新失败，请稍后重试");
+        return payload;
+      });
+    }).then(function (payload) {
+      status.textContent = "已更新至 " + (payload.latest_date || "最新数据") + "，正在重新加载…";
+      window.location.reload();
+    }).catch(function (error) {
+      button.disabled = false;
+      button.textContent = "刷新数据";
+      status.classList.add("is-error");
+      status.textContent = (error && error.message) || "刷新失败，请稍后重试";
+    });
   }
 
   function render() {
@@ -4338,12 +4367,11 @@
       var metricsHtml = metricItems.map(function (item) { var value = item[1]; if (value === null || value === undefined) value = "暂无数据"; else if (item[2] === "currency") value = app.formatCompactCurrency(value); else if (item[2] === "percent") value = app.formatPercent(value); else value = formatNumber(value); return '<div><span>' + item[0] + '</span><strong>' + value + "</strong></div>"; }).join("");
       var identity = profile.identity || {};
       var status = profile.data_status || {};
-      var links = profile.navigation_links || {};
       var metricWindowText = metricWindowLabel(status.metric_window || {});
       var metricStatusText = status.has_local_metric
         ? "经营指标来自本地周期快照"
         : (status.local_metrics_status === "available" ? "该 MSKU 暂无本地经营指标" : (status.local_metrics_status === "no_snapshot" ? "当前日期无本地经营快照" : "本地经营指标暂不可用"));
-      elements.labelHubDrawerContent.innerHTML = '<div class="label-hub-drawer-head"><p class="section-kicker">MSKU 画像</p><h2 id="labelHubDrawerTitle">' + app.escapeHtml(identity.msku || row.msku) + '</h2><p>' + app.escapeHtml(identity.country_category || "") + " · " + app.escapeHtml(identity.store || "") + '</p></div><section><h3>MSKU 口径标签</h3><div class="label-hub-profile-tags">' + analysisTags + '</div></section><section><div class="label-hub-profile-section-head"><h3>本地经营画像</h3><span class="label-hub-profile-period">' + app.escapeHtml(metricWindowText) + '</span></div><p class="summary-hint">' + app.escapeHtml(metricStatusText) + '</p><div class="label-hub-profile-metrics">' + metricsHtml + '</div></section><div class="label-hub-profile-links"><a href="' + app.escapeHtml(links.sales_role || "#") + '">查看销售角色</a><a href="' + app.escapeHtml(links.lifecycle || "#") + '">查看生命周期</a></div>';
+      elements.labelHubDrawerContent.innerHTML = '<div class="label-hub-drawer-head"><p class="section-kicker">MSKU 画像</p><h2 id="labelHubDrawerTitle">' + app.escapeHtml(identity.msku || row.msku) + '</h2><p>' + app.escapeHtml(identity.country_category || "") + " · " + app.escapeHtml(identity.store || "") + '</p></div><section><h3>MSKU 口径标签</h3><div class="label-hub-profile-tags">' + analysisTags + '</div></section><section><div class="label-hub-profile-section-head"><h3>本地经营画像</h3><span class="label-hub-profile-period">' + app.escapeHtml(metricWindowText) + '</span></div><p class="summary-hint">' + app.escapeHtml(metricStatusText) + '</p><div class="label-hub-profile-metrics">' + metricsHtml + '</div></section>';
     }).catch(function (error) { elements.labelHubDrawerContent.innerHTML = '<div class="empty-state compact">画像加载失败：' + app.escapeHtml((error && error.message) || "请稍后重试") + "</div>"; });
   }
 

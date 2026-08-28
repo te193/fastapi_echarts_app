@@ -26,6 +26,9 @@ class FakeDetailExportService:
 
 
 class FakeReplenishmentExportService:
+    def get_non_replenishment_stores(self):
+        return set()
+
     def get_export_payload(self, **_filters):
         columns = [
             {"name": "fba_local_quantity", "label": "FBA本地库存"},
@@ -277,6 +280,77 @@ class ExportHeaderTests(unittest.TestCase):
         self.assertTrue(all(cell.fill.fill_type == "solid" for cell in worksheet[2]))
         self.assertTrue(all(cell.fill.fgColor.rgb.endswith("FFF2CC") for cell in worksheet[2]))
         self.assertTrue(all(cell.fill.fill_type is None for cell in worksheet[3]))
+
+    def test_disabled_replenishment_store_requires_positive_exported_quantity(self):
+        disabled_stores = {"tboke"}
+        cases = [
+            ({"seller_name_new": "Tboke", "replenish_qty": 50}, True),
+            ({"seller_name_new": "TBOKE", "replenish_qty": Decimal("0.01")}, True),
+            ({"seller_name_new": "Tboke", "replenish_qty": 0}, False),
+            ({"seller_name_new": "booyee", "replenish_qty": 50}, False),
+            ({"seller_name_new": "", "replenish_qty": 50}, False),
+        ]
+
+        for row, expected in cases:
+            with self.subTest(row=row):
+                self.assertEqual(
+                    expected,
+                    main.is_disabled_replenishment_store_with_qty(row, disabled_stores),
+                )
+
+    def test_replenishment_xlsx_uses_red_and_orange_without_changing_yellow_rule(self):
+        payload = {
+            "columns": [
+                {"name": "seller_name_new", "label": "Store"},
+                {"name": "seller_sku_adj", "label": "MSKU"},
+                {"name": "replenish_qty", "label": "Replenish Qty"},
+            ],
+            "rows": [
+                {
+                    "seller_name_new": "Tboke",
+                    "seller_sku_adj": "RED-1",
+                    "replenish_qty": 50,
+                    "support_replenish_level_sort": 1,
+                    "final_sales_3d": 1,
+                    "final_sales_7d": 10,
+                },
+                {
+                    "seller_name_new": "Tboke",
+                    "seller_sku_adj": "ORANGE-1",
+                    "replenish_qty": 50,
+                    "support_replenish_level_sort": 1,
+                    "final_sales_3d": 7,
+                    "final_sales_7d": 10,
+                },
+                {
+                    "seller_name_new": "booyee",
+                    "seller_sku_adj": "YELLOW-1",
+                    "replenish_qty": 50,
+                    "support_replenish_level_sort": 1,
+                    "final_sales_3d": 7,
+                    "final_sales_7d": 10,
+                },
+                {
+                    "seller_name_new": "Tboke",
+                    "seller_sku_adj": "NORMAL-1",
+                    "replenish_qty": 0,
+                    "support_replenish_level_sort": 1,
+                    "final_sales_3d": 1,
+                    "final_sales_7d": 10,
+                },
+            ],
+        }
+
+        workbook = load_workbook(
+            BytesIO(main.build_replenishment_xlsx(payload, {"tboke"})),
+            read_only=False,
+        )
+        worksheet = workbook.active
+
+        self.assertTrue(all(cell.fill.fgColor.rgb.endswith("F4CCCC") for cell in worksheet[2]))
+        self.assertTrue(all(cell.fill.fgColor.rgb.endswith("F4B183") for cell in worksheet[3]))
+        self.assertTrue(all(cell.fill.fgColor.rgb.endswith("FFF2CC") for cell in worksheet[4]))
+        self.assertTrue(all(cell.fill.fill_type is None for cell in worksheet[5]))
 
 
 if __name__ == "__main__":
