@@ -3108,9 +3108,9 @@
     var roleView = stockoutOperatingStatusState.roleView || "pre_oos";
     var historicalView = roleView === "historical";
     var preOosRoleRule = "优先取最近断货日前最近一个可用30天角色节点；不足时使用14天兜底角色。断货期间沿用，恢复后累计足够30个经营日再重新计算。";
-    var historicalRoleRule = "从2026-01-01至最近断货日前，只统计正常计算且不重复的有效角色节点；出现次数最多的角色作为历史主导角色。并列时优先断货前角色，否则取最近出现的并列角色。";
-    var stabilityRule = "有效历史角色节点少于3个为依据不足；主导角色占比≥70%且角色切换率≤35%为历史稳定；主导角色占比≥60%且角色切换率≤50%为轻度波动，页面合并展示为稳定；其余为波动。";
-    var combinedLabelRule = "组合标签以断货前角色为主，再结合近期角色、日销和毛利变化形成持续、改善、波动、下降或依据不足。";
+    var historicalRoleRule = "从2026-01-01至最近断货日前，只统计正常计算且完成连续5日确认的有效角色节点；出现次数最多的角色作为历史主导角色。并列时优先断货前角色，否则取最近出现的并列角色。";
+    var stabilityRule = "正常确认角色节点至少30个且首尾证据跨度至少60天，才判断历史稳定性；主导角色占比≥70%且角色切换率≤35%为历史稳定；主导角色占比≥60%且角色切换率≤50%为轻度波动，页面合并展示为稳定；其余为波动。";
+    var combinedLabelRule = "组合标签以断货前角色为主，再结合最近3个独立30天经营周期的角色、日销和毛利变化形成持续、改善、波动、下降或依据不足。";
     var transitionRule = "断货前角色相对历史主导角色的等级变化：明星＞潜力＞瘦狗＞问题；相同为持续，升到更高等级为升为，降到更低等级为降为。";
 
     function decisionTipAttributes(text) {
@@ -3122,9 +3122,19 @@
     }
 
     function stabilityCellRule(code) {
-      if (code === "stable") return "稳定合并两档：主导角色占比≥70%且角色切换率≤35%，或主导角色占比≥60%且角色切换率≤50%。至少需要3个有效且不重复的历史角色节点。";
-      if (code === "volatile") return "有效且不重复的历史角色节点不少于3个，但未达到稳定或轻度波动阈值，归为波动。";
-      return "有效且不重复的历史角色节点少于3个，稳定性依据不足，不参与稳定或波动判断。";
+      if (code === "stable") return "正常确认角色节点至少30个、首尾证据跨度至少60天；达到历史稳定或轻度波动阈值，页面合并展示为稳定。";
+      if (code === "volatile") return "已满足30个正常确认节点和60天证据跨度，但未达到稳定或轻度波动阈值，归为波动。";
+      return "正常确认角色节点不足30个，或首尾证据跨度不足60天，暂不判断历史稳定性。";
+    }
+
+    function stabilityExplanationHtml() {
+      return '<details class="label-hub-stockout-stability-explanation"><summary><span class="label-hub-stockout-stability-explanation-lead"><span class="label-hub-stockout-stability-explanation-icon" aria-hidden="true">i</span><span><b>判断依据说明</b><small>了解历史证据不足的判定口径</small></span></span><span class="label-hub-stockout-stability-explanation-action"><span class="is-closed">点击展开</span><span class="is-open">收起说明</span><i aria-hidden="true"></i></span></summary><div>' +
+        '<section><b>历史稳定性怎么判断</b><p>只统计正常计算且完成连续5日确认的角色节点；至少需要30个节点，并且首尾证据跨度达到60天。</p></section>' +
+        '<section><b>什么是有效节点</b><p>节点必须使用完整30天有货经营数据正常算出角色。断货沿用、恢复观察、数据异常和角色不可判的日期都不计入。</p></section>' +
+        '<section><b>近期趋势为什么要用独立周期</b><p>近期趋势另取最近3个彼此不重叠的有效30天经营周期，用来判断改善、退化或波动；这不是历史稳定性的节点门槛。</p></section>' +
+        '<section><b>什么是独立30天周期</b><p>6月1日—6月30日与7月1日—7月30日日期不重叠，可以分别计数；6月1日—6月30日与6月2日—7月1日重叠29天，只能选其中一个。</p></section>' +
+        '<p class="reason">每天滚动的相邻30天窗口通常有29天相同；如果全部作为独立证据，会把同一段经营表现重复放大。</p>' +
+      '</div></details>';
     }
 
     var viewSwitchHtml = '<nav class="label-hub-stockout-view-switch" aria-label="经营角色观察视角"><button type="button" data-stockout-role-view="pre_oos" class="decision-tip ' + (historicalView ? "" : "active") + '"' + decisionTipAttributes(preOosRoleRule + combinedLabelRule) + '><b>断货前视角</b><small>断货前角色为主，历史表现为辅</small></button><button type="button" data-stockout-role-view="historical" class="decision-tip ' + (historicalView ? "active" : "") + '"' + decisionTipAttributes(historicalRoleRule + transitionRule) + '><b>历史主导视角</b><small>历史主导角色为主，断货前变化为辅</small></button></nav>';
@@ -3205,10 +3215,10 @@
     function combinedLabelDecisionRule(item) {
       var label = String(item.label || item.code || "");
       var metricRule = "角色保持不变时，再比较最近3个有效角色节点的日销与毛利：日销单次变化至少0.2且相对变化超过20%才计为变化；毛利率单次变化超过3个百分点才计为变化。";
-      if (label.indexOf("趋势依据不足") >= 0) return "最近不足3个有效角色节点，或节点中的角色无法有效比较，因此暂不判断近期趋势。";
-      if (label.indexOf("近期改善") >= 0) return "最近3个有效角色节点中，销售角色等级只出现向上变化，判为近期改善；此时不再用日销、毛利覆盖角色变化结论。";
-      if (label.indexOf("近期退化") >= 0) return "最近3个有效角色节点中，销售角色等级只出现向下变化，判为近期退化；此时不再用日销、毛利覆盖角色变化结论。";
-      if (label.indexOf("近期波动") >= 0) return "最近3个有效角色节点中，销售角色等级同时出现向上和向下变化，判为近期波动。";
+      if (label.indexOf("趋势依据不足") >= 0) return "最近不足3个独立30天经营周期，或周期中的角色无法有效比较，因此暂不判断近期趋势。";
+      if (label.indexOf("近期改善") >= 0) return "最近3个独立30天经营周期中，销售角色等级只出现向上变化，判为近期改善；此时不再用日销、毛利覆盖角色变化结论。";
+      if (label.indexOf("近期退化") >= 0) return "最近3个独立30天经营周期中，销售角色等级只出现向下变化，判为近期退化；此时不再用日销、毛利覆盖角色变化结论。";
+      if (label.indexOf("近期波动") >= 0) return "最近3个独立30天经营周期中，销售角色等级同时出现向上和向下变化，判为近期波动。";
       if (label.indexOf("持续稳定") >= 0) return metricRule + " 日销和毛利均未出现达到阈值的变化，判为持续稳定。";
       if (label.indexOf("日销毛利改善") >= 0) return metricRule + " 日销与毛利均只出现达到阈值的向上变化，判为日销毛利改善。";
       if (label.indexOf("日销毛利下降") >= 0) return metricRule + " 日销与毛利均只出现达到阈值的向下变化，判为日销毛利下降。";
@@ -3267,7 +3277,11 @@
       var tableTitle = historicalView ? "断货前角色变化" : "组合大标签（从好到差）";
       var firstColumn = historicalView ? "断货前变化" : "组合大标签";
       var labelRule = historicalView ? transitionRule : combinedLabelRule;
-      var body = isOpen ? '<div class="label-hub-stockout-role-accordion-body"><section><h4>按历史稳定性查看' + decisionTipIcon(stabilityRule) + '</h4><p>稳定包含历史稳定与轻度波动；稳定表示历史表现可重复，不代表经营表现一定好。</p><div class="label-hub-stockout-accordion-stability">' + stabilityCells + '</div></section><section><h4>' + tableTitle + decisionTipIcon(labelRule) + '</h4><div class="label-hub-stockout-combined-table"><table><thead><tr><th>' + firstColumn + '</th><th>' + recordLabel + '数量</th><th>占该角色</th><th>说明</th><th>操作</th></tr></thead><tbody>' + combinedRows + '</tbody></table></div></section></div>' : "";
+      var hasInsufficientStability = (role.cells || []).some(function (cell) {
+        return cell.code === "insufficient" && Number(cell.count || 0) > 0;
+      });
+      var stabilityExplanation = hasInsufficientStability ? stabilityExplanationHtml() : "";
+      var body = isOpen ? '<div class="label-hub-stockout-role-accordion-body"><section><h4>按历史稳定性查看' + decisionTipIcon(stabilityRule) + '</h4><p>稳定包含历史稳定与轻度波动；稳定表示历史表现可重复，不代表经营表现一定好。</p><div class="label-hub-stockout-accordion-stability">' + stabilityCells + '</div>' + stabilityExplanation + '</section><section><h4>' + tableTitle + decisionTipIcon(labelRule) + '</h4><div class="label-hub-stockout-combined-table"><table><thead><tr><th>' + firstColumn + '</th><th>' + recordLabel + '数量</th><th>占该角色</th><th>说明</th><th>操作</th></tr></thead><tbody>' + combinedRows + '</tbody></table></div></section></div>' : "";
       var displayRoleLabel = historicalView ? "历史" + (role.label || role.code) : (role.label || role.code);
       return '<article class="label-hub-stockout-role-accordion-item role-' + app.escapeHtml(role.code || "") + (isOpen ? " is-open" : "") + '"><button type="button" class="label-hub-stockout-role-accordion-head" data-stockout-role-accordion="' + app.escapeHtml(role.code || "") + '" aria-expanded="' + isOpen + '"><span class="role-name"><b>' + app.escapeHtml(displayRoleLabel) + '</b><span class="role-count"><strong>' + formatNumber(roleCount) + ' 条</strong><small>占已形成角色 ' + formatPercent(roleShare) + '</small></span></span><span class="role-stability-summary">' + stabilitySummary(role) + '</span><span class="role-label-preview">' + preview + '</span><i aria-hidden="true">' + (isOpen ? "⌃" : "⌄") + "</i></button>" + body + "</article>";
     }
@@ -3289,7 +3303,7 @@
     }).join("");
     var unformedHtml = '<section class="label-hub-stockout-unformed"><header><div><span>数据覆盖</span><h3>暂未形成角色</h3><p>不参与经营好坏与稳定性判断，按实际证据缺口单独展示。</p></div><strong>' + formatNumber(unformed) + ' 条</strong></header><div>' + reasonItems + "</div></section>";
 
-    var rulesHtml = '<details class="label-hub-stockout-redesign-rules"><summary><span><b>查看判断口径</b><small>角色、稳定性与沿用规则</small></span><i aria-hidden="true">展开</i></summary><div><ul><li>历史范围从 2026-01-01 到最近一次断货日前，断货期间沿用断货前角色。</li><li>恢复库存后每天回滚30天；累计足够的恢复后经营天数后，重新计算销售角色。</li><li>历史稳定性只统计正常计算且不重复的角色节点，沿用节点不重复计入。</li><li>本页的“稳定”合并历史稳定与轻度波动；波动、依据不足分别展示。</li></ul></div></details>';
+    var rulesHtml = '<details class="label-hub-stockout-redesign-rules"><summary><span><b>查看判断口径</b><small>角色、稳定性与沿用规则</small></span><i aria-hidden="true">展开</i></summary><div><ul><li>历史范围从 2026-01-01 到最近一次断货日前，断货期间沿用断货前角色。</li><li>恢复库存后每天回滚30天；累计足够的恢复后经营天数后，重新计算销售角色。</li><li>历史稳定性只统计正常计算且完成连续5日确认的角色节点；沿用与恢复观察节点不计入，沿用节点不重复计入。</li><li>近期趋势使用最近3个彼此不重叠的有效30天经营周期，避免重复放大同一段经营表现。</li><li>本页的“稳定”合并历史稳定与轻度波动；波动、依据不足分别展示。</li></ul></div></details>';
     var note = '<p class="label-hub-stockout-status-note"><span>数据日期 ' + app.escapeHtml(payload.data_date || "-") + ' · 规则版本 ' + app.escapeHtml(payload.rule_version || "-") + "</span><span>本区域只分析断货前经营表现，不提供补货建议</span></p>";
 
     content.innerHTML = stale + lagging + coverageHtml + viewSwitchHtml + accordionHtml + periodMatrixHtml + unformedHtml + rulesHtml + note;
