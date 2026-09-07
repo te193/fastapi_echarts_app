@@ -33,7 +33,7 @@
       <label>站点<select id="ap-country"><option value="">全部站点</option></select></label>
       <label>投放方式<select id="ap-targeting"><option value="">全部方式</option><option value="auto">自动</option><option value="manual">手动</option></select></label>
       <label id="ap-rec-status-label" hidden>建议状态<select id="ap-rec-status"><option value="">全部状态</option></select></label>
-      <label id="ap-rec-priority-label" hidden>优先级<select id="ap-rec-priority"><option value="">全部优先级</option><option value="highest">最高</option><option value="high">高</option><option value="medium">中</option><option value="none">观察</option></select></label>
+      <label id="ap-rec-priority-label" hidden>优先级<select id="ap-rec-priority"><option value="">全部优先级</option><option value="highest">最高</option><option value="high">高</option><option value="medium">中</option><option value="none">无操作</option></select></label>
     </div>
     <div class="ap-filter-row ap-filter-actions">
       <label class="ap-search">对象搜索<input id="ap-keyword" type="search" placeholder="活动、广告组、关键词或搜索词"></label>
@@ -88,4 +88,4 @@
 </aside>
 {% endblock %}
 
-{% block scripts %}<script src="{{ url_for('static', path='js/ad_performance.js') }}?v=20260907m"></script>{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', path='js/ad_performance.js') }}?v=20260907n"></script>{% endblock %}

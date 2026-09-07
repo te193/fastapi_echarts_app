@@ -36,10 +36,11 @@ def test_recommendation_tables_show_concrete_actions():
         assert field in js
 
 
-def test_add_recommendations_default_to_actionable_rows():
+def test_add_recommendations_keep_all_rows_and_show_explicit_actions():
     js = JS.read_text(encoding="utf-8")
-    assert 'if(mode==="add") $("ap-rec-status").value="recommended"' in js
-    assert 'mode==="add"?"未达到加词标准":"未达到否词标准"' in js
+    assert '$("ap-rec-status").value="recommended"' not in js
+    for label in ("建议新增", "无需新增（已存在）", "先核对商品归属", "暂不新增（未达标准）", "建议动作"):
+        assert label in js
 
 
 def test_hidden_overview_sections_cannot_be_overridden_by_layout_css():
