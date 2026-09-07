@@ -60,13 +60,22 @@ def test_add_term_protects_existing_or_ambiguous_mapping():
     assert ambiguous["status"] == "manual_review"
 
 
-def test_negative_term_requires_100_clicks_and_zero_orders():
-    result = calculate_negative_recommendation(
-        {"search_term": "free sample", "clicks": 100, "orders": 0}
+def test_negative_term_requires_10_clicks_and_zero_orders():
+    below = calculate_negative_recommendation(
+        {"search_term": "free sample", "clicks": 9, "orders": 0}
     )
-    assert result["status"] == "recommended"
-    assert result["priority"] == "high"
-    assert result["suggestion_type"] == "negative_exact"
+    boundary = calculate_negative_recommendation(
+        {"search_term": "free sample", "clicks": 10, "orders": 0}
+    )
+    with_order = calculate_negative_recommendation(
+        {"search_term": "free sample", "clicks": 10, "orders": 1}
+    )
+    assert below["status"] == "observe"
+    assert boundary["status"] == "recommended"
+    assert boundary["priority"] == "high"
+    assert boundary["suggestion_type"] == "negative_exact"
+    assert boundary["reason_codes"] == ["clicks_ge_10_orders_zero"]
+    assert with_order["status"] == "observe"
 
 
 def test_negative_asin_uses_negative_product_target():

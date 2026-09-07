@@ -102,7 +102,7 @@ def calculate_negative_recommendation(row: Mapping[str, Any]) -> dict[str, Any]:
         "suggestion_value": term,
         "priority": "none",
     }
-    if clicks < 100 or orders != 0:
+    if clicks < 10 or orders != 0:
         return {**base, "status": "observe", "reason_codes": ["threshold_not_met"]}
 
     reasons = []
@@ -124,7 +124,7 @@ def calculate_negative_recommendation(row: Mapping[str, Any]) -> dict[str, Any]:
         **base,
         "status": "recommended",
         "priority": "high",
-        "reason_codes": ["clicks_ge_100_orders_zero"],
+        "reason_codes": ["clicks_ge_10_orders_zero"],
     }
 
 
@@ -221,4 +221,3 @@ def calculate_bid_recommendation(row: Mapping[str, Any]) -> dict[str, Any]:
         "reference_cpc_333": reference_333.quantize(FOUR_PLACES),
         "reason_codes": ["theoretical_cpc_guard"],
     }
-
