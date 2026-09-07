@@ -43,6 +43,13 @@ def test_add_recommendations_keep_all_rows_and_show_explicit_actions():
         assert label in js
 
 
+def test_negative_recommendations_disclose_that_term_protection_is_not_connected():
+    js = JS.read_text(encoding="utf-8")
+    assert "保护词数据源尚未接入" in js
+    assert "protection_record_missing" not in js
+    assert "brand_name_missing" not in js
+
+
 def test_hidden_overview_sections_cannot_be_overridden_by_layout_css():
     css = CSS.read_text(encoding="utf-8")
     for selector in ("#ap-window-bar[hidden]", "#ap-kpis[hidden]", "#ap-trend-panel[hidden]", "#ap-tabs[hidden]"):

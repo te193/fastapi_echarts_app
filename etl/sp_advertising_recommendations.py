@@ -24,7 +24,7 @@ from app.services.sp_recommendation_rules import (
 from etl.replenishment_update import apply_database_ini_env
 
 
-RULE_VERSION = "sp-recommendation-v3-context-warnings"
+RULE_VERSION = "sp-recommendation-v5-no-budget-term-protection"
 TASK_NAME = "sp_advertising_recommendations"
 MARGIN_STEPS = (0, 5, 10, 15, 20, 25, 30, 35)
 COUNTRY_ALIASES = {
@@ -303,11 +303,6 @@ def build_recommendations(cutoff: date | None = None, dry_run: bool = False, con
             source.update(product)
             term = str(source.get("search_term") or "")
             source["existing_enabled"] = ((source.get("profile_id"), source.get("ad_group_id"), term) in existing_keywords or (source.get("profile_id"), source.get("ad_group_id"), term.upper()) in existing_products)
-            budget = _lookup(budgets, source.get("seller_name"), source.get("country_code"), source.get("msku"))
-            source["protection_complete"] = budget is not None and bool(budget.get("max_brand_name"))
-            brand = str((budget or {}).get("max_brand_name") or "").strip()
-            source["is_brand_term"] = bool(brand and brand.casefold() in term.casefold())
-            source["is_new_product_term"] = "新品" in str((budget or {}).get("product_type") or "")
             add_rule = calculate_add_recommendation(source)
             negative_rule = calculate_negative_recommendation(source)
             common = {**source, "batch_id": None, "recommendation_key": _key(*group_key, source.get("target_id"), term, source.get("match_type"))}

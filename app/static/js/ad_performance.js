@@ -12,7 +12,7 @@
   var recMeta = {
     bid: ["竞价优化", "逐项展示当前竞价、建议竞价和具体调整金额。"],
     add: ["加词建议", "业务指标决定建议动作；MSKU映射异常在数据提示中单独标注。"],
-    negative: ["否词建议", "搜索词指标决定建议动作；MSKU和保护信息异常在数据提示中单独标注。"]
+    negative: ["否词建议", "搜索词指标决定建议动作；保护词数据源尚未接入，结果需人工复核。"]
   };
   function text(value) { return value === null || value === undefined || value === "" ? "—" : String(value); }
   function number(value, digits) { return value === null || value === undefined ? "—" : Number(value).toLocaleString("zh-CN", { maximumFractionDigits: digits === undefined ? 2 : digits }); }
@@ -106,7 +106,7 @@
   }
   function suggestionLabel(value) { return ({exact_keyword:"新增精准关键词",product_target:"新增商品投放",negative_exact:"精准否定",negative_product_target:"否定商品投放"})[value] || text(value); }
   function priorityLabel(value) { return ({highest:"最高",high:"高",medium:"中",none:"—"})[value] || text(value); }
-  function reasonLabel(value) { return ({theoretical_cpc_guard:"按定价毛利段理论CPC调整",inventory_blocks_increase:"库存保护阻止提价",budget_blocks_increase:"自然月预算保护阻止提价",metric_missing:"点击、订单、当前竞价或价格数据不足",multiple_msku:"广告组关联多个MSKU",msku_missing:"广告组未映射MSKU",price_not_mapped:"Listing价格未匹配",margin_ladder_missing:"毛利价格阶梯缺失",below_zero_margin_price:"当前价格低于0%毛利价格",existing_enabled:"同广告组已存在启用对象",orders_ge_10_acos_le_10:"订单不少于10且ACOS不高于10%",orders_ge_10_acos_le_15:"订单不少于10且ACOS不高于15%",clicks_ge_10_orders_zero:"点击不少于10且订单为0",threshold_not_met:"未达到建议阈值",protection_missing:"品牌、新品或类目保护信息缺失",brand_term:"品牌词保护",core_category_term:"核心类目词保护",new_product_term:"新品词保护"})[value] || text(value); }
+  function reasonLabel(value) { return ({theoretical_cpc_guard:"按定价毛利段理论CPC调整",inventory_blocks_increase:"库存保护阻止提价",budget_blocks_increase:"自然月预算保护阻止提价",metric_missing:"点击、订单、当前竞价或价格数据不足",multiple_msku:"广告组关联多个MSKU",msku_missing:"广告组未映射MSKU",price_not_mapped:"Listing价格未匹配",margin_ladder_missing:"毛利价格阶梯缺失",below_zero_margin_price:"当前价格低于0%毛利价格",existing_enabled:"同广告组已存在启用对象",orders_ge_10_acos_le_10:"订单不少于10且ACOS不高于10%",orders_ge_10_acos_le_15:"订单不少于10且ACOS不高于15%",clicks_ge_10_orders_zero:"点击不少于10且订单为0",threshold_not_met:"未达到建议阈值",brand_term:"品牌词保护",core_category_term:"核心类目词保护",new_product_term:"新品词保护"})[value] || text(value); }
   function recommendationColumns(kind) {
     var common=[objectColumn("seller_name","店铺",140),{field:"country_code",headerName:"站点",width:82},objectColumn("msku","MSKU",145)];
     var metric=[{field:"clicks",headerName:"点击",width:88,valueFormatter:function(p){return number(p.value,0);}},{field:"cost",headerName:"花费",width:98,valueFormatter:function(p){return number(p.value);}},{field:"orders",headerName:"订单",width:88,valueFormatter:function(p){return number(p.value,0);}},{field:"sales",headerName:"销售额",width:105,valueFormatter:function(p){return number(p.value);}}];
@@ -213,7 +213,7 @@
     try { state.options=await fetch("/api/ad-performance/options").then(function(r){if(!r.ok)throw new Error("选项读取失败");return r.json();});
       $("ap-start").value=state.options.min_date;$("ap-end").value=state.options.max_date;fillSelect("ap-currency",state.options.currencies,"value");$("ap-currency").value=state.options.default_currency;
       fillSelect("ap-store",state.options.stores);fillSelect("ap-country",state.options.countries);$("ap-data-date").textContent="截至 "+state.options.max_date;$("ap-updated").textContent="批次 "+state.options.batch_id+" · "+text(state.options.updated_at);
-      state.recOptions=await fetch("/api/ad-performance/recommendations/options").then(function(r){return r.ok?r.json():{status:"no_data",rules:{}};});await load();
+      state.recOptions=await fetch("/api/ad-performance/recommendations/options").then(function(r){return r.ok?r.json():{status:"no_data",rules:{}};});switchMode(state.mode);await load();
     } catch(error){showError(error);}
   }
   $("ap-query").onclick=function(){state.page=1;state.scope={};load();}; $("ap-reset").onclick=function(){["ap-store","ap-country","ap-targeting","ap-keyword","ap-msku","ap-rec-status","ap-rec-priority"].forEach(function(id){$(id).value="";});$("ap-currency").value=state.options.default_currency;$("ap-start").value=state.options.min_date;$("ap-end").value=state.options.max_date;state.scope={};state.trendMode="amount";$("ap-trend-modes").querySelectorAll("button[data-mode]").forEach(function(x){x.classList.toggle("active",x.dataset.mode==="amount");});state.page=1;load();};

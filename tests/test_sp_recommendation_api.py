@@ -52,10 +52,10 @@ def test_recommendation_ids_and_decimals_are_serialized_safely():
 
 def test_recommendation_context_warnings_are_exposed_separately_from_action():
     payload = serialize(
-        {"status": "recommended", "reason_codes": '["clicks_ge_10_orders_zero", "msku_missing", "protection_missing"]'}
+        {"status": "recommended", "reason_codes": '["clicks_ge_10_orders_zero", "msku_missing"]'}
     )
     assert payload["status"] == "recommended"
-    assert payload["data_warning"] == "未找到推广MSKU，需人工排查；保护信息缺失，需人工排查"
+    assert payload["data_warning"] == "未找到推广MSKU，需人工排查"
 
 
 def test_recommendation_csv_protects_ids_and_formulas():

@@ -90,20 +90,38 @@ def test_negative_asin_uses_negative_product_target():
     assert result["suggestion_type"] == "negative_product_target"
 
 
-def test_negative_term_recommends_by_performance_and_flags_missing_context():
+def test_negative_term_recommends_by_performance_and_flags_missing_msku_only():
     result = calculate_negative_recommendation(
         {
             "search_term": "brand phrase",
             "clicks": 100,
             "orders": 0,
             "associated_msku_count": 0,
-            "protection_complete": False,
+            "protection_record_mapped": False,
+            "brand_name_complete": False,
         }
     )
     assert result["status"] == "recommended"
     assert result["priority"] == "high"
     assert "msku_missing" in result["reason_codes"]
-    assert "protection_missing" in result["reason_codes"]
+    assert "protection_record_missing" not in result["reason_codes"]
+    assert "brand_name_missing" not in result["reason_codes"]
+
+
+def test_negative_term_does_not_treat_budget_context_as_a_term_warning():
+    result = calculate_negative_recommendation(
+        {
+            "search_term": "generic phrase",
+            "clicks": 10,
+            "orders": 0,
+            "associated_msku_count": 1,
+            "protection_record_mapped": False,
+            "brand_name_complete": False,
+        }
+    )
+
+    assert result["status"] == "recommended"
+    assert result["reason_codes"] == ["clicks_ge_10_orders_zero"]
 
 
 def test_bid_change_is_capped_and_rounded_safely():

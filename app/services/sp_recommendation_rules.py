@@ -94,8 +94,6 @@ def calculate_negative_recommendation(row: Mapping[str, Any]) -> dict[str, Any]:
     }
     mapping_reason = _mapping_reason(row)
     warnings = [mapping_reason] if mapping_reason else []
-    if row.get("protection_complete", True) is False:
-        warnings.append("protection_missing")
     if clicks < 10 or orders != 0:
         return {**base, "status": "observe", "reason_codes": ["threshold_not_met", *warnings]}
 
