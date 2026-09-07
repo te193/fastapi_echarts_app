@@ -40,3 +40,9 @@ def test_hidden_overview_sections_cannot_be_overridden_by_layout_css():
     css = CSS.read_text(encoding="utf-8")
     for selector in ("#ap-window-bar[hidden]", "#ap-kpis[hidden]", "#ap-trend-panel[hidden]", "#ap-tabs[hidden]"):
         assert selector in css
+
+
+def test_long_recommendation_object_text_is_clipped_to_its_grid_cell():
+    css = CSS.read_text(encoding="utf-8")
+    assert ".ap-grid .ag-cell-wrapper,.ap-grid .ag-cell-value{min-width:0;max-width:100%;overflow:hidden}" in css
+    assert ".ap-object{display:block;width:100%;min-width:0;max-width:100%;overflow:hidden" in css
