@@ -39,7 +39,7 @@ def test_recommendation_tables_show_concrete_actions():
 def test_add_recommendations_keep_all_rows_and_show_explicit_actions():
     js = JS.read_text(encoding="utf-8")
     assert '$("ap-rec-status").value="recommended"' not in js
-    for label in ("建议新增", "无需新增（已存在）", "先核对商品归属", "暂不新增（未达标准）", "建议动作"):
+    for label in ("建议新增", "无需新增（已存在）", "暂不新增（未达标准）", "建议动作", "数据提示"):
         assert label in js
 
 

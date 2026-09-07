@@ -24,7 +24,7 @@ from app.services.sp_recommendation_rules import (
 from etl.replenishment_update import apply_database_ini_env
 
 
-RULE_VERSION = "sp-recommendation-v2-negative-clicks-10"
+RULE_VERSION = "sp-recommendation-v3-context-warnings"
 TASK_NAME = "sp_advertising_recommendations"
 MARGIN_STEPS = (0, 5, 10, 15, 20, 25, 30, 35)
 COUNTRY_ALIASES = {

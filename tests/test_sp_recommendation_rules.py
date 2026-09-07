@@ -37,7 +37,7 @@ def test_add_term_thresholds_are_inclusive():
     assert (medium["status"], medium["priority"]) == ("recommended", "medium")
 
 
-def test_add_term_protects_existing_or_ambiguous_mapping():
+def test_add_term_keeps_existing_object_out_of_the_action_list():
     existing = calculate_add_recommendation(
         {
             "search_term": "alpha",
@@ -47,6 +47,10 @@ def test_add_term_protects_existing_or_ambiguous_mapping():
             "existing_enabled": True,
         }
     )
+    assert existing["status"] == "existing"
+
+
+def test_add_term_recommends_by_performance_and_flags_ambiguous_mapping():
     ambiguous = calculate_add_recommendation(
         {
             "search_term": "alpha",
@@ -56,8 +60,9 @@ def test_add_term_protects_existing_or_ambiguous_mapping():
             "associated_msku_count": 2,
         }
     )
-    assert existing["status"] == "existing"
-    assert ambiguous["status"] == "manual_review"
+    assert ambiguous["status"] == "recommended"
+    assert ambiguous["priority"] == "highest"
+    assert "multiple_msku" in ambiguous["reason_codes"]
 
 
 def test_negative_term_requires_10_clicks_and_zero_orders():
@@ -85,16 +90,19 @@ def test_negative_asin_uses_negative_product_target():
     assert result["suggestion_type"] == "negative_product_target"
 
 
-def test_negative_term_requires_manual_review_when_protection_is_unknown():
+def test_negative_term_recommends_by_performance_and_flags_missing_context():
     result = calculate_negative_recommendation(
         {
             "search_term": "brand phrase",
             "clicks": 100,
             "orders": 0,
+            "associated_msku_count": 0,
             "protection_complete": False,
         }
     )
-    assert result["status"] == "manual_review"
+    assert result["status"] == "recommended"
+    assert result["priority"] == "high"
+    assert "msku_missing" in result["reason_codes"]
     assert "protection_missing" in result["reason_codes"]
 
 

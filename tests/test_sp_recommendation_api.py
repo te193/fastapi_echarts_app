@@ -50,6 +50,14 @@ def test_recommendation_ids_and_decimals_are_serialized_safely():
     assert payload == {"campaign_id": "9007199254740999", "cost": 1.2}
 
 
+def test_recommendation_context_warnings_are_exposed_separately_from_action():
+    payload = serialize(
+        {"status": "recommended", "reason_codes": '["clicks_ge_10_orders_zero", "msku_missing", "protection_missing"]'}
+    )
+    assert payload["status"] == "recommended"
+    assert payload["data_warning"] == "未找到推广MSKU，需人工排查；保护信息缺失，需人工排查"
+
+
 def test_recommendation_csv_protects_ids_and_formulas():
     assert csv_cell("campaign_id", 9007199254740999) == "'9007199254740999"
     assert csv_cell("search_term", "=cmd()") == "'=cmd()"

@@ -11,8 +11,8 @@
   };
   var recMeta = {
     bid: ["竞价优化", "逐项展示当前竞价、建议竞价和具体调整金额。"],
-    add: ["加词建议", "展示搜索词候选，并明确标注建议新增、无需新增或暂不新增。"],
-    negative: ["否词建议", "展示否定词候选，并明确标注建议否定或暂不否定。"]
+    add: ["加词建议", "业务指标决定建议动作；MSKU映射异常在数据提示中单独标注。"],
+    negative: ["否词建议", "搜索词指标决定建议动作；MSKU和保护信息异常在数据提示中单独标注。"]
   };
   function text(value) { return value === null || value === undefined || value === "" ? "—" : String(value); }
   function number(value, digits) { return value === null || value === undefined ? "—" : Number(value).toLocaleString("zh-CN", { maximumFractionDigits: digits === undefined ? 2 : digits }); }
@@ -101,7 +101,7 @@
   }
   function statusLabel(value, kind) {
     if(kind==="add") return ({recommended:"建议新增",manual_review:"先核对商品归属",existing:"无需新增（已存在）",observe:"暂不新增（未达标准）"})[value] || text(value);
-    if(kind==="negative") return ({recommended:"建议否定",manual_review:"先人工核对",existing:"无需否定（已存在）",observe:"暂不否定（未达标准）"})[value] || text(value);
+    if(kind==="negative") return ({recommended:"建议否定",manual_review:"暂不否定（保护词）",existing:"无需否定（已存在）",observe:"暂不否定（未达标准）"})[value] || text(value);
     return ({increase:"建议提价",decrease:"建议降价",keep:"建议保持",manual_review:"人工复核",insufficient_data:"数据不足"})[value] || text(value);
   }
   function suggestionLabel(value) { return ({exact_keyword:"新增精准关键词",product_target:"新增商品投放",negative_exact:"精准否定",negative_product_target:"否定商品投放"})[value] || text(value); }
@@ -112,7 +112,7 @@
     var metric=[{field:"clicks",headerName:"点击",width:88,valueFormatter:function(p){return number(p.value,0);}},{field:"cost",headerName:"花费",width:98,valueFormatter:function(p){return number(p.value);}},{field:"orders",headerName:"订单",width:88,valueFormatter:function(p){return number(p.value,0);}},{field:"sales",headerName:"销售额",width:105,valueFormatter:function(p){return number(p.value);}}];
     var detail={headerName:"详情",width:78,pinned:"right",sortable:false,filter:false,cellRenderer:function(){return '<button class="ap-detail-button">查看</button>';},onCellClicked:function(p){openDetail(p.data);}};
     if(kind==="bid") return common.concat([objectColumn("object_text",state.bidType==="ad_group"?"广告组（当前）":"关键词",190),{field:"match_type",headerName:"匹配",width:90,hide:state.bidType==="ad_group"},{field:"current_bid",headerName:"当前竞价",width:105,valueFormatter:function(p){return number(p.value);}},{field:"suggested_bid",headerName:"建议竞价",width:105,valueFormatter:function(p){return number(p.value);}},{field:"change_amount",headerName:"调整金额",width:108,valueFormatter:function(p){return p.value===null?"—":(Number(p.value)>0?"提高 ":Number(p.value)<0?"降低 ":"保持 ")+number(Math.abs(Number(p.value)));}},{field:"change_rate",headerName:"调整比例",width:100,valueFormatter:function(p){return percent(p.value);}},{field:"theoretical_cpc",headerName:"理论CPC",width:105,valueFormatter:function(p){return number(p.value);} }].concat(metric,[{field:"status",headerName:"建议",width:105,valueFormatter:function(p){return statusLabel(p.value);}},detail]));
-    return common.concat([objectColumn("suggestion_value",kind==="add"?"候选新增内容":"候选否定内容",210),{field:"suggestion_type",headerName:"建议类型",width:135,valueFormatter:function(p){return suggestionLabel(p.value);}},{field:"status",headerName:"建议动作",width:170,valueFormatter:function(p){return statusLabel(p.value,kind);}},{field:"priority",headerName:"优先级",width:90,valueFormatter:function(p){return priorityLabel(p.value);}},objectColumn("campaign_name_current","广告活动（当前）",170),objectColumn("ad_group_name_current","广告组（当前）",170)].concat(metric,[{field:"acos",headerName:"ACOS",width:90,valueFormatter:function(p){return percent(p.value);}},detail]));
+    return common.concat([objectColumn("suggestion_value",kind==="add"?"候选新增内容":"候选否定内容",210),{field:"suggestion_type",headerName:"建议类型",width:135,valueFormatter:function(p){return suggestionLabel(p.value);}},{field:"status",headerName:"建议动作",width:170,valueFormatter:function(p){return statusLabel(p.value,kind);}},{field:"data_warning",headerName:"数据提示",width:245,sortable:false,filter:false,cellRenderer:function(p){return '<span class="ap-data-warning" title="'+escapeHtml(text(p.value))+'">'+escapeHtml(text(p.value))+'</span>'; }},{field:"priority",headerName:"优先级",width:90,valueFormatter:function(p){return priorityLabel(p.value);}},objectColumn("campaign_name_current","广告活动（当前）",170),objectColumn("ad_group_name_current","广告组（当前）",170)].concat(metric,[{field:"acos",headerName:"ACOS",width:90,valueFormatter:function(p){return percent(p.value);}},detail]));
   }
   function renderRows(payload) {
     payload.rows.forEach(function(row){row.__view=payload.view;});
@@ -141,7 +141,7 @@
     $("ap-view-title").textContent=viewMeta[view][0];$("ap-view-note").textContent=viewMeta[view][1];
   }
   function fillRecommendationStatuses(mode) {
-    var values=mode==="bid"?[["increase","建议提价"],["decrease","建议降价"],["keep","建议保持"],["manual_review","人工复核"],["insufficient_data","数据不足"]]:mode==="add"?[["recommended","建议新增"],["manual_review","先核对商品归属"],["existing","无需新增（已存在）"],["observe","暂不新增（未达标准）"]]:[["recommended","建议否定"],["manual_review","先人工核对"],["existing","无需否定（已存在）"],["observe","暂不否定（未达标准）"]];
+    var values=mode==="bid"?[["increase","建议提价"],["decrease","建议降价"],["keep","建议保持"],["manual_review","人工复核"],["insufficient_data","数据不足"]]:mode==="add"?[["recommended","建议新增"],["existing","无需新增（已存在）"],["observe","暂不新增（未达标准）"]]:[["recommended","建议否定"],["manual_review","暂不否定（保护词）"],["existing","无需否定（已存在）"],["observe","暂不否定（未达标准）"]];
     $("ap-rec-status").innerHTML='<option value="">全部状态</option>'+values.map(function(x){return '<option value="'+x[0]+'">'+x[1]+'</option>';}).join("");
   }
   function renderBidType() {

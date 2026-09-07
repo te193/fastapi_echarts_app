@@ -47,7 +47,8 @@ def calculate_add_recommendation(row: Mapping[str, Any]) -> dict[str, Any]:
     cost = _decimal(row.get("cost")) or Decimal(0)
     sales = _decimal(row.get("sales")) or Decimal(0)
     acos = _ratio(cost, sales)
-    reasons: list[str] = []
+    mapping_reason = _mapping_reason(row)
+    warnings = [mapping_reason] if mapping_reason else []
 
     if row.get("existing_enabled"):
         return {
@@ -56,36 +57,25 @@ def calculate_add_recommendation(row: Mapping[str, Any]) -> dict[str, Any]:
             "suggestion_type": suggestion_type,
             "suggestion_value": term,
             "acos": acos,
-            "reason_codes": ["existing_enabled"],
-        }
-
-    mapping_reason = _mapping_reason(row)
-    if mapping_reason:
-        return {
-            "status": "manual_review",
-            "priority": "none",
-            "suggestion_type": suggestion_type,
-            "suggestion_value": term,
-            "acos": acos,
-            "reason_codes": [mapping_reason],
+            "reason_codes": ["existing_enabled", *warnings],
         }
 
     if orders >= 10 and acos is not None and acos <= Decimal("0.10"):
         status, priority = "recommended", "highest"
-        reasons.append("orders_ge_10_acos_le_10")
+        decision_reason = "orders_ge_10_acos_le_10"
     elif orders >= 10 and acos is not None and acos <= Decimal("0.15"):
         status, priority = "recommended", "medium"
-        reasons.append("orders_ge_10_acos_le_15")
+        decision_reason = "orders_ge_10_acos_le_15"
     else:
         status, priority = "observe", "none"
-        reasons.append("threshold_not_met")
+        decision_reason = "threshold_not_met"
     return {
         "status": status,
         "priority": priority,
         "suggestion_type": suggestion_type,
         "suggestion_value": term,
         "acos": acos,
-        "reason_codes": reasons,
+        "reason_codes": [decision_reason, *warnings],
     }
 
 
@@ -102,29 +92,28 @@ def calculate_negative_recommendation(row: Mapping[str, Any]) -> dict[str, Any]:
         "suggestion_value": term,
         "priority": "none",
     }
-    if clicks < 10 or orders != 0:
-        return {**base, "status": "observe", "reason_codes": ["threshold_not_met"]}
-
-    reasons = []
     mapping_reason = _mapping_reason(row)
-    if mapping_reason:
-        reasons.append(mapping_reason)
+    warnings = [mapping_reason] if mapping_reason else []
     if row.get("protection_complete", True) is False:
-        reasons.append("protection_missing")
+        warnings.append("protection_missing")
+    if clicks < 10 or orders != 0:
+        return {**base, "status": "observe", "reason_codes": ["threshold_not_met", *warnings]}
+
+    protected_reasons = []
     for field, reason in (
         ("is_brand_term", "brand_term"),
         ("is_core_category_term", "core_category_term"),
         ("is_new_product_term", "new_product_term"),
     ):
         if row.get(field):
-            reasons.append(reason)
-    if reasons:
-        return {**base, "status": "manual_review", "reason_codes": reasons}
+            protected_reasons.append(reason)
+    if protected_reasons:
+        return {**base, "status": "manual_review", "reason_codes": [*protected_reasons, *warnings]}
     return {
         **base,
         "status": "recommended",
         "priority": "high",
-        "reason_codes": ["clicks_ge_10_orders_zero"],
+        "reason_codes": ["clicks_ge_10_orders_zero", *warnings],
     }
 
 

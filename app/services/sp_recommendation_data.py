@@ -28,10 +28,15 @@ SORTS = {
 PAGE_SIZES = {50, 100, 200}
 ID_FIELDS = {"id", "batch_id", "profile_id", "campaign_id", "ad_group_id", "target_id", "object_id"}
 FORMULA_PREFIXES = ("=", "+", "-", "@")
+CONTEXT_WARNING_LABELS = {
+    "msku_missing": "未找到推广MSKU，需人工排查",
+    "multiple_msku": "关联多个MSKU，需人工排查",
+    "protection_missing": "保护信息缺失，需人工排查",
+}
 RULE_COPY = {
     "bid": "定价毛利段理论CPC=平均客单价×CVR×毛利段系数；单次提价不超过20%，单次降价不超过30%，并受库存、预算和数据完整性保护。",
-    "add": "成熟30天内广告订单≥10且ACOS≤10%为最高优先级；订单≥10且10%<ACOS≤15%为中优先级。文本词建议精准匹配，ASIN建议商品投放。",
-    "negative": "成熟30天内点击量≥10且广告订单为0进入高优先级。文本词建议精准否定，ASIN建议否定商品投放；保护信息缺失时须人工复核。",
+    "add": "成熟30天内广告订单≥10且ACOS≤10%为最高优先级；订单≥10且10%<ACOS≤15%为中优先级。文本词建议精准匹配，ASIN建议商品投放；MSKU映射异常单独提示，不覆盖建议结论。",
+    "negative": "成熟30天内点击量≥10且广告订单为0进入高优先级。文本词建议精准否定，ASIN建议否定商品投放；MSKU或保护信息缺失单独提示，已识别保护词不直接建议否定。",
 }
 
 
@@ -107,6 +112,13 @@ def serialize(value: Any) -> Any:
                     result[key] = [item]
             else:
                 result[key] = serialize(item)
+        reason_codes = result.get("reason_codes")
+        if isinstance(reason_codes, list):
+            result["data_warning"] = "；".join(
+                CONTEXT_WARNING_LABELS[code]
+                for code in reason_codes
+                if code in CONTEXT_WARNING_LABELS
+            )
         return result
     if isinstance(value, (list, tuple)):
         return [serialize(item) for item in value]
