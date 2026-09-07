@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', path='css/ad_performance.css') }}?v=20260907d">
+{% endblock %}
+
+{% block content %}
+<section class="ap-page" aria-labelledby="ap-title">
+  <header class="ap-hero">
+    <div><p class="ap-eyebrow">SP ADVERTISING PERFORMANCE</p><h1 id="ap-title">广告效果分析</h1><p>从 MSKU 定位到活动、广告组、关键词与用户搜索词。</p></div>
+    <div class="ap-freshness"><span>本地数据</span><strong id="ap-data-date">读取中…</strong><small id="ap-updated"></small></div>
+  </header>
+
+  <nav id="ap-analysis-tabs" class="ap-analysis-tabs" aria-label="广告分析功能">
+    <button class="active" data-mode="overview" type="button">经营总览</button>
+    <button data-mode="bid" type="button">竞价优化</button>
+    <button data-mode="add" type="button">加词建议</button>
+    <button data-mode="negative" type="button">否词建议</button>
+    <a href="/label-hub">产品诊断</a>
+    <a href="/ad-budget">预算管理</a>
+  </nav>
+
+  <div id="ap-rule-copy" class="ap-rule-copy" hidden>
+    <strong>建议规则：</strong><span></span><small>仅供人工决策参考，不会修改广告。</small>
+  </div>
+
+  <section class="ap-filter-panel" aria-label="广告效果筛选">
+    <div class="ap-filter-row">
+      <label>开始日期<input id="ap-start" type="date"></label>
+      <label>结束日期<input id="ap-end" type="date"></label>
+      <label>币种<select id="ap-currency"></select></label>
+      <label>店铺<select id="ap-store"><option value="">全部店铺</option></select></label>
+      <label>站点<select id="ap-country"><option value="">全部站点</option></select></label>
+      <label>投放方式<select id="ap-targeting"><option value="">全部方式</option><option value="auto">自动</option><option value="manual">手动</option></select></label>
+      <label id="ap-rec-status-label" hidden>建议状态<select id="ap-rec-status"><option value="">全部状态</option></select></label>
+      <label id="ap-rec-priority-label" hidden>优先级<select id="ap-rec-priority"><option value="">全部优先级</option><option value="highest">最高</option><option value="high">高</option><option value="medium">中</option><option value="none">观察</option></select></label>
+    </div>
+    <div class="ap-filter-row ap-filter-actions">
+      <label class="ap-search">对象搜索<input id="ap-keyword" type="search" placeholder="活动、广告组、关键词或搜索词"></label>
+      <label class="ap-search">关联 MSKU<input id="ap-msku" type="search" placeholder="MSKU"></label>
+      <button id="ap-query" class="ap-primary" type="button">查询</button>
+      <button id="ap-reset" type="button">重置</button>
+      <span id="ap-scope-note">金额按所选币种展示</span>
+    </div>
+  </section>
+
+  <div id="ap-window-bar" class="ap-window-bar"><span>转化归因窗口</span><div id="ap-windows" role="group" aria-label="转化归因窗口">
+    <button data-window="1">1天</button><button class="active" data-window="7">7天</button><button data-window="14">14天</button><button data-window="30">30天</button>
+  </div><small>订单、销量、销售额及 CVR、ACOS、ROAS 随窗口切换</small></div>
+
+  <section id="ap-kpis" class="ap-kpis" aria-label="广告效果摘要">
+    <article><span>花费</span><strong id="ap-cost">—</strong><small id="ap-cost-currency"></small></article>
+    <article><span>广告销售额</span><strong id="ap-sales">—</strong><small id="ap-sales-window">7 天归因</small></article>
+    <article><span>广告订单</span><strong id="ap-orders">—</strong><small id="ap-cvr">CVR —</small></article>
+    <article><span>曝光</span><strong id="ap-impressions">—</strong><small id="ap-ctr">CTR —</small></article>
+    <article><span>点击</span><strong id="ap-clicks">—</strong><small id="ap-cpc">CPC —</small></article>
+    <article class="ap-acos"><span>ACOS</span><strong id="ap-acos">—</strong><small id="ap-roas">ROAS —</small></article>
+  </section>
+
+  <section id="ap-rec-kpis" class="ap-kpis" aria-label="广告建议摘要" hidden>
+    <article><span>全部记录</span><strong id="ap-rec-total">—</strong><small>当前筛选</small></article>
+    <article><span>明确建议</span><strong id="ap-rec-recommended">—</strong><small>可供人工处理</small></article>
+    <article><span>人工复核</span><strong id="ap-rec-review">—</strong><small>保护或映射异常</small></article>
+    <article><span>涉及花费</span><strong id="ap-rec-cost">—</strong><small id="ap-rec-currency">成熟30天</small></article>
+    <article><span>归因销售额</span><strong id="ap-rec-sales">—</strong><small>7天归因</small></article>
+  </section>
+
+  <section id="ap-trend-panel" class="ap-trend-panel">
+    <header><div><span>每日趋势</span><h2 id="ap-trend-title">投入与转化走势</h2></div><div class="ap-trend-actions" id="ap-trend-modes"><button class="active" data-mode="amount">花费与销售额</button><button data-mode="traffic">曝光与点击</button><button data-mode="rate">CTR 与 CVR</button><button id="ap-trend-toggle" type="button" aria-expanded="true">收起</button></div></header>
+    <div id="ap-trend" class="ap-trend" role="img" aria-label="广告效果每日趋势"></div>
+  </section>
+
+  <section id="ap-table-panel" class="ap-table-panel" aria-busy="false">
+    <nav id="ap-tabs" class="ap-tabs" aria-label="分析层级">
+      <button class="active" data-view="product">MSKU 表现</button><button data-view="campaign">广告活动</button><button data-view="ad_group">广告组</button><button data-view="keyword">关键词</button><button data-view="search_term">搜索词</button>
+    </nav>
+    <header class="ap-table-head"><div><h2 id="ap-view-title">MSKU 表现</h2><p id="ap-view-note">指标来自广告商品报表，可直接归属到 MSKU。</p><div id="ap-filter-tags" class="ap-tags"></div></div><div><button id="ap-columns" type="button">列设置</button><button id="ap-export" type="button">导出 CSV</button></div></header>
+    <div id="ap-grid" class="ag-theme-quartz ap-grid" aria-label="广告效果明细表"></div>
+    <footer class="ap-pagination"><span id="ap-page-summary">正在加载…</span><div><label>每页<select id="ap-page-size"><option>50</option><option>100</option><option>200</option></select></label><button id="ap-prev">上一页</button><span id="ap-page">1 / 1</span><button id="ap-next">下一页</button></div></footer>
+  </section>
+  <div id="ap-error" class="ap-error" hidden><strong>数据加载失败</strong><span></span><button type="button">重试</button></div>
+</section>
+
+<div id="ap-drawer-backdrop" class="ap-drawer-backdrop" hidden></div>
+<aside id="ap-drawer" class="ap-drawer" aria-hidden="true">
+  <header><div><span>效果详情</span><h2 id="ap-drawer-title">—</h2></div><button id="ap-drawer-close" aria-label="关闭">×</button></header>
+  <div id="ap-drawer-content"></div>
+</aside>
+{% endblock %}
+
+{% block scripts %}<script src="{{ url_for('static', path='js/ad_performance.js') }}?v=20260907j"></script>{% endblock %}

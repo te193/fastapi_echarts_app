@@ -60,10 +60,10 @@
             </div>
           </section>
 
-          <section class="nav-v2-group {% if page in ['alerts', 'opportunities', 'label_hub', 'price_review', 'ad_budget'] %}open{% endif %}" data-nav-group="operation">
-            <button class="nav-v2-group-toggle" type="button" aria-expanded="{% if page in ['alerts', 'opportunities', 'label_hub', 'price_review', 'ad_budget'] %}true{% else %}false{% endif %}">
+          <section class="nav-v2-group {% if page in ['alerts', 'opportunities', 'label_hub', 'price_review', 'ad_budget', 'ad_performance'] %}open{% endif %}" data-nav-group="operation">
+            <button class="nav-v2-group-toggle" type="button" aria-expanded="{% if page in ['alerts', 'opportunities', 'label_hub', 'price_review', 'ad_budget', 'ad_performance'] %}true{% else %}false{% endif %}">
               <span><i>⌄</i> 经营诊断</span>
-              <b>5</b>
+              <b>6</b>
             </button>
             <div class="nav-v2-group-links">
               <a class="nav-v2-link {% if page == 'alerts' %}active{% endif %}" href="/alerts">
@@ -85,6 +85,10 @@
               <a class="nav-v2-link {% if page == 'ad_budget' %}active{% endif %}" href="/ad-budget">
                 <span class="nav-v2-icon">广</span>
                 <span><strong>广告预算</strong><small>预算执行 / 投放异常</small></span>
+              </a>
+              <a class="nav-v2-link {% if page == 'ad_performance' %}active{% endif %}" href="/ad-performance">
+                <span class="nav-v2-icon">效</span>
+                <span><strong>广告效果分析</strong><small>MSKU / 关键词 / 搜索词</small></span>
               </a>
             </div>
           </section>

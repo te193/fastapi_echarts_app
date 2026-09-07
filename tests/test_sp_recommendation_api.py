@@ -1,0 +1,40 @@
+from decimal import Decimal
+
+import pytest
+
+from app.services.sp_recommendation_data import (
+    RecommendationFilters,
+    csv_cell,
+    serialize,
+    table_for_kind,
+)
+
+
+def test_recommendation_kind_and_sort_are_whitelisted():
+    with pytest.raises(ValueError):
+        RecommendationFilters({"kind": "bad_table"})
+    with pytest.raises(ValueError):
+        RecommendationFilters({"kind": "bid", "sort": "cost desc;drop table x"})
+
+
+def test_recommendation_page_size_is_whitelisted():
+    assert RecommendationFilters({"page_size": 100}).page_size == 100
+    with pytest.raises(ValueError):
+        RecommendationFilters({"page_size": 75})
+
+
+def test_recommendation_table_mapping_is_fixed():
+    assert table_for_kind("bid") == "dashboard_sp_bid_recommendation"
+    assert table_for_kind("add") == "dashboard_sp_add_term_recommendation"
+    assert table_for_kind("negative") == "dashboard_sp_negative_term_recommendation"
+
+
+def test_recommendation_ids_and_decimals_are_serialized_safely():
+    payload = serialize({"campaign_id": 9007199254740999, "cost": Decimal("1.20")})
+    assert payload == {"campaign_id": "9007199254740999", "cost": 1.2}
+
+
+def test_recommendation_csv_protects_ids_and_formulas():
+    assert csv_cell("campaign_id", 9007199254740999) == "'9007199254740999"
+    assert csv_cell("search_term", "=cmd()") == "'=cmd()"
+
