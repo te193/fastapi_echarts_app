@@ -11,7 +11,9 @@ def test_recommendation_tabs_and_read_only_copy_exist():
     assert "竞价优化" in html
     assert "加词建议" in html
     assert "否词建议" in html
-    assert "产品诊断" in html
+    assert "产品诊断（待建设）" in html
+    assert 'data-pending-feature="product-diagnosis"' in html
+    assert 'href="/label-hub">产品诊断' not in html
     assert "预算管理" in html
     assert "仅供人工决策参考" in html
 

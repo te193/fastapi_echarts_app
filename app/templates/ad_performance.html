@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block extra_head %}
-<link rel="stylesheet" href="{{ url_for('static', path='css/ad_performance.css') }}?v=20260907g">
+<link rel="stylesheet" href="{{ url_for('static', path='css/ad_performance.css') }}?v=20260907h">
 {% endblock %}
 
 {% block content %}
@@ -16,7 +16,7 @@
     <button data-mode="bid" type="button">竞价优化</button>
     <button data-mode="add" type="button">加词建议</button>
     <button data-mode="negative" type="button">否词建议</button>
-    <a href="/label-hub">产品诊断</a>
+    <button data-pending-feature="product-diagnosis" type="button" disabled title="广告产品诊断规则尚未建设">产品诊断（待建设）</button>
     <a href="/ad-budget">预算管理</a>
   </nav>
 
