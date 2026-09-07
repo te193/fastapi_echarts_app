@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  var state = { mode: "overview", view: "product", window: 7, page: 1, pageSize: 50, sort: "cost", direction: "desc", total: 0, options: null, recOptions: null, grid: null, chart: null, controller: null, requestId: 0, trendMode: "amount", trendRows: [], scope: {} };
+  var state = { mode: "overview", bidType: "ad_group", view: "product", window: 7, page: 1, pageSize: 50, sort: "cost", direction: "desc", total: 0, options: null, recOptions: null, grid: null, chart: null, controller: null, requestId: 0, trendMode: "amount", trendRows: [], scope: {} };
   var $ = function (id) { return document.getElementById(id); };
   var viewMeta = {
     product: ["MSKU 表现", "指标来自广告商品报表，可直接归属到 MSKU。"],
@@ -32,6 +32,7 @@
       country: $("ap-country").value, targeting: $("ap-targeting").value, status: $("ap-rec-status").value,
       priority: $("ap-rec-priority").value, keyword: $("ap-keyword").value.trim(), msku: $("ap-msku").value.trim(),
       page: state.page, page_size: state.pageSize, sort: state.sort, direction: state.direction });
+    if (state.mode === "bid") p.set("object_type", state.bidType);
     Object.keys(extra || {}).forEach(function (key) { p.set(key, extra[key]); }); return p;
   }
   function recommendationEndpoint(path, extra) { return "/api/ad-performance/recommendations/" + path + "?" + recommendationParams(extra).toString(); }
@@ -98,7 +99,10 @@
       { headerName: "详情", width: 82, pinned: "right", sortable: false, filter: false, cellRenderer: function(){return '<button class="ap-detail-button">查看</button>';}, onCellClicked: function(p){openDetail(p.data);} }];
     return common.concat(objects, metrics);
   }
-  function statusLabel(value) { return ({increase:"建议提价",decrease:"建议降价",keep:"建议保持",recommended:"建议处理",manual_review:"人工复核",insufficient_data:"数据不足",existing:"已存在",observe:"暂时观察"})[value] || text(value); }
+  function statusLabel(value, kind) {
+    if(value==="observe") return kind==="add"?"未达到加词标准":kind==="negative"?"未达到否词标准":"暂时观察";
+    return ({increase:"建议提价",decrease:"建议降价",keep:"建议保持",recommended:"建议处理",manual_review:"人工复核",insufficient_data:"数据不足",existing:"已存在"})[value] || text(value);
+  }
   function suggestionLabel(value) { return ({exact_keyword:"新增精准关键词",product_target:"新增商品投放",negative_exact:"精准否定",negative_product_target:"否定商品投放"})[value] || text(value); }
   function priorityLabel(value) { return ({highest:"最高",high:"高",medium:"中",none:"观察"})[value] || text(value); }
   function reasonLabel(value) { return ({theoretical_cpc_guard:"按定价毛利段理论CPC调整",inventory_blocks_increase:"库存保护阻止提价",budget_blocks_increase:"自然月预算保护阻止提价",metric_missing:"点击、订单、当前竞价或价格数据不足",multiple_msku:"广告组关联多个MSKU",msku_missing:"广告组未映射MSKU",price_not_mapped:"Listing价格未匹配",margin_ladder_missing:"毛利价格阶梯缺失",below_zero_margin_price:"当前价格低于0%毛利价格",existing_enabled:"同广告组已存在启用对象",orders_ge_10_acos_le_10:"订单不少于10且ACOS不高于10%",orders_ge_10_acos_le_15:"订单不少于10且ACOS不高于15%",clicks_ge_100_orders_zero:"点击不少于100且订单为0",threshold_not_met:"未达到建议阈值",protection_missing:"品牌、新品或类目保护信息缺失",brand_term:"品牌词保护",core_category_term:"核心类目词保护",new_product_term:"新品词保护"})[value] || text(value); }
@@ -106,8 +110,8 @@
     var common=[objectColumn("seller_name","店铺",140),{field:"country_code",headerName:"站点",width:82},objectColumn("msku","MSKU",145)];
     var metric=[{field:"clicks",headerName:"点击",width:88,valueFormatter:function(p){return number(p.value,0);}},{field:"cost",headerName:"花费",width:98,valueFormatter:function(p){return number(p.value);}},{field:"orders",headerName:"订单",width:88,valueFormatter:function(p){return number(p.value,0);}},{field:"sales",headerName:"销售额",width:105,valueFormatter:function(p){return number(p.value);}}];
     var detail={headerName:"详情",width:78,pinned:"right",sortable:false,filter:false,cellRenderer:function(){return '<button class="ap-detail-button">查看</button>';},onCellClicked:function(p){openDetail(p.data);}};
-    if(kind==="bid") return common.concat([objectColumn("object_text","竞价对象",190),{field:"match_type",headerName:"匹配",width:90},{field:"current_bid",headerName:"当前竞价",width:105,valueFormatter:function(p){return number(p.value);}},{field:"suggested_bid",headerName:"建议竞价",width:105,valueFormatter:function(p){return number(p.value);}},{field:"change_amount",headerName:"调整金额",width:108,valueFormatter:function(p){return p.value===null?"—":(Number(p.value)>0?"提高 ":Number(p.value)<0?"降低 ":"保持 ")+number(Math.abs(Number(p.value)));}},{field:"change_rate",headerName:"调整比例",width:100,valueFormatter:function(p){return percent(p.value);}},{field:"theoretical_cpc",headerName:"理论CPC",width:105,valueFormatter:function(p){return number(p.value);} }].concat(metric,[{field:"status",headerName:"建议",width:105,valueFormatter:function(p){return statusLabel(p.value);}},detail]));
-    return common.concat([objectColumn("suggestion_value",kind==="add"?"建议新增内容":"建议否定内容",210),{field:"suggestion_type",headerName:"建议类型",width:135,valueFormatter:function(p){return suggestionLabel(p.value);}},objectColumn("campaign_name_current","广告活动（当前）",170),objectColumn("ad_group_name_current","广告组（当前）",170)].concat(metric,[{field:"acos",headerName:"ACOS",width:90,valueFormatter:function(p){return percent(p.value);}},{field:"priority",headerName:"优先级",width:90,valueFormatter:function(p){return priorityLabel(p.value);}},{field:"status",headerName:"状态",width:105,valueFormatter:function(p){return statusLabel(p.value);}},detail]));
+    if(kind==="bid") return common.concat([objectColumn("object_text",state.bidType==="ad_group"?"广告组（当前）":"关键词",190),{field:"match_type",headerName:"匹配",width:90,hide:state.bidType==="ad_group"},{field:"current_bid",headerName:"当前竞价",width:105,valueFormatter:function(p){return number(p.value);}},{field:"suggested_bid",headerName:"建议竞价",width:105,valueFormatter:function(p){return number(p.value);}},{field:"change_amount",headerName:"调整金额",width:108,valueFormatter:function(p){return p.value===null?"—":(Number(p.value)>0?"提高 ":Number(p.value)<0?"降低 ":"保持 ")+number(Math.abs(Number(p.value)));}},{field:"change_rate",headerName:"调整比例",width:100,valueFormatter:function(p){return percent(p.value);}},{field:"theoretical_cpc",headerName:"理论CPC",width:105,valueFormatter:function(p){return number(p.value);} }].concat(metric,[{field:"status",headerName:"建议",width:105,valueFormatter:function(p){return statusLabel(p.value);}},detail]));
+    return common.concat([objectColumn("suggestion_value",kind==="add"?"建议新增内容":"建议否定内容",210),{field:"suggestion_type",headerName:"建议类型",width:135,valueFormatter:function(p){return suggestionLabel(p.value);}},objectColumn("campaign_name_current","广告活动（当前）",170),objectColumn("ad_group_name_current","广告组（当前）",170)].concat(metric,[{field:"acos",headerName:"ACOS",width:90,valueFormatter:function(p){return percent(p.value);}},{field:"priority",headerName:"优先级",width:90,valueFormatter:function(p){return priorityLabel(p.value);}},{field:"status",headerName:"状态",width:135,valueFormatter:function(p){return statusLabel(p.value,kind);}},detail]));
   }
   function renderRows(payload) {
     payload.rows.forEach(function(row){row.__view=payload.view;});
@@ -136,11 +140,22 @@
     $("ap-view-title").textContent=viewMeta[view][0];$("ap-view-note").textContent=viewMeta[view][1];
   }
   function fillRecommendationStatuses(mode) {
-    var values=mode==="bid"?[["increase","建议提价"],["decrease","建议降价"],["keep","建议保持"],["manual_review","人工复核"],["insufficient_data","数据不足"]]:[["recommended","建议处理"],["manual_review","人工复核"],["existing","已存在"],["observe","暂时观察"]];
+    var values=mode==="bid"?[["increase","建议提价"],["decrease","建议降价"],["keep","建议保持"],["manual_review","人工复核"],["insufficient_data","数据不足"]]:[["recommended","建议处理"],["manual_review","人工复核"],["existing","已存在"],["observe",mode==="add"?"未达到加词标准":"未达到否词标准"]];
     $("ap-rec-status").innerHTML='<option value="">全部状态</option>'+values.map(function(x){return '<option value="'+x[0]+'">'+x[1]+'</option>';}).join("");
+    if(mode==="add") $("ap-rec-status").value="recommended";
+  }
+  function renderBidType() {
+    $("ap-bid-types").hidden=state.mode!=="bid";
+    $("ap-bid-types").querySelectorAll("button").forEach(function(button){
+      var active=button.dataset.bidType===state.bidType;
+      button.classList.toggle("active",active);button.setAttribute("aria-pressed",String(active));
+    });
+    if(state.mode==="bid") $("ap-view-note").textContent=state.bidType==="ad_group"?
+      "自动广告组默认竞价：展示当前默认竞价、建议竞价和调整金额。":
+      "关键词竞价：按所属广告组和匹配方式分别展示当前竞价、建议竞价和调整金额。";
   }
   function switchMode(mode) {
-    state.mode=mode;state.page=1;state.sort="cost";state.direction="desc";state.scope={};
+    state.mode=mode;renderBidType();state.page=1;state.sort="cost";state.direction="desc";state.scope={};
     $("ap-analysis-tabs").querySelectorAll("button[data-mode]").forEach(function(x){x.classList.toggle("active",x.dataset.mode===mode);});
     var recommendation=mode!=="overview";["ap-window-bar","ap-kpis","ap-trend-panel","ap-tabs","ap-start-label","ap-end-label"].forEach(function(id){$(id).hidden=recommendation;});
     $("ap-rec-kpis").hidden=!recommendation;$("ap-rule-copy").hidden=!recommendation;$("ap-rec-status-label").hidden=!recommendation;$("ap-rec-priority-label").hidden=!recommendation||mode==="bid";
@@ -148,6 +163,7 @@
     else if(state.options){$("ap-data-date").textContent="截至 "+state.options.max_date;$("ap-updated").textContent="批次 "+state.options.batch_id+" · "+text(state.options.updated_at);$("ap-view-title").textContent=viewMeta[state.view][0];$("ap-view-note").textContent=viewMeta[state.view][1];}
   }
   async function loadRecommendations(signal,requestId) {
+    renderBidType();
     function recFetch(path){return fetch(recommendationEndpoint(path),{signal:signal}).then(async function(r){if(!r.ok)throw new Error((await r.json()).detail||"建议读取失败");return r.json();});}
     recFetch("summary").then(function(result){if(requestId===state.requestId)renderRecommendationSummary(result.summary);}).catch(function(error){if(error.name!=="AbortError")showError(error);});
     var payload=await recFetch("rows");if(requestId===state.requestId)renderRecommendationRows(payload);
@@ -188,7 +204,7 @@
   async function openRecommendationDetail(row) {
     $("ap-drawer-title").textContent=row.suggestion_value||row.object_text||"建议详情";$("ap-drawer-content").innerHTML="<p>正在读取建议详情…</p>";$("ap-drawer-backdrop").hidden=false;$("ap-drawer").classList.add("open");$("ap-drawer").setAttribute("aria-hidden","false");
     try{var response=await fetch(recommendationEndpoint("detail",{kind:row.__kind,key:row.recommendation_key}));if(!response.ok)throw new Error((await response.json()).detail||"建议详情读取失败");var data=await response.json(),item=data.item;
-      var fields=[["建议状态",statusLabel(item.status)],["建议内容",item.suggestion_value||item.object_text],["建议类型",item.suggestion_type?suggestionLabel(item.suggestion_type):item.object_type],["当前竞价",item.current_bid],["建议竞价",item.suggested_bid],["调整金额",item.change_amount],["调整比例",percent(item.change_rate)],["理论CPC",item.theoretical_cpc],["店铺",item.seller_name],["站点",item.country_code],["MSKU",item.msku],["活动（当前）",item.campaign_name_current],["广告组（当前）",item.ad_group_name_current],["点击",item.clicks],["花费",item.cost],["订单",item.orders],["销售额",item.sales]];
+      var fields=[["建议状态",statusLabel(item.status,row.__kind)],["建议内容",item.suggestion_value||item.object_text],["建议类型",item.suggestion_type?suggestionLabel(item.suggestion_type):item.object_type],["当前竞价",item.current_bid],["建议竞价",item.suggested_bid],["调整金额",item.change_amount],["调整比例",percent(item.change_rate)],["理论CPC",item.theoretical_cpc],["店铺",item.seller_name],["站点",item.country_code],["MSKU",item.msku],["活动（当前）",item.campaign_name_current],["广告组（当前）",item.ad_group_name_current],["点击",item.clicks],["花费",item.cost],["订单",item.orders],["销售额",item.sales]];
       $("ap-drawer-content").innerHTML='<p class="ap-readonly-note">仅供人工决策参考，不会修改广告。</p><div class="ap-detail-grid">'+fields.filter(function(x){return x[1]!==null&&x[1]!==undefined&&x[1]!=="—";}).map(function(x){return '<div><span>'+escapeHtml(x[0])+'</span><strong title="'+escapeHtml(text(x[1]))+'">'+escapeHtml(text(x[1]))+'</strong></div>';}).join("")+'</div><section class="ap-reasons"><h3>计算与保护原因</h3><p>'+escapeHtml((item.reason_codes||[]).map(reasonLabel).join("、")||"—")+'</p></section>';
     }catch(error){$("ap-drawer-content").innerHTML='<p>详情读取失败：'+escapeHtml(error.message)+'</p>';}
   }
@@ -200,7 +216,7 @@
       state.recOptions=await fetch("/api/ad-performance/recommendations/options").then(function(r){return r.ok?r.json():{status:"no_data",rules:{}};});await load();
     } catch(error){showError(error);}
   }
-  $("ap-query").onclick=function(){state.page=1;state.scope={};load();}; $("ap-reset").onclick=function(){["ap-store","ap-country","ap-targeting","ap-keyword","ap-msku","ap-rec-status","ap-rec-priority"].forEach(function(id){$(id).value="";});$("ap-currency").value=state.options.default_currency;$("ap-start").value=state.options.min_date;$("ap-end").value=state.options.max_date;state.scope={};state.trendMode="amount";$("ap-trend-modes").querySelectorAll("button[data-mode]").forEach(function(x){x.classList.toggle("active",x.dataset.mode==="amount");});state.page=1;load();};
+  $("ap-query").onclick=function(){state.page=1;state.scope={};load();}; $("ap-reset").onclick=function(){["ap-store","ap-country","ap-targeting","ap-keyword","ap-msku","ap-rec-status","ap-rec-priority"].forEach(function(id){$(id).value="";});if(state.mode==="add")$("ap-rec-status").value="recommended";$("ap-currency").value=state.options.default_currency;$("ap-start").value=state.options.min_date;$("ap-end").value=state.options.max_date;state.scope={};state.trendMode="amount";$("ap-trend-modes").querySelectorAll("button[data-mode]").forEach(function(x){x.classList.toggle("active",x.dataset.mode==="amount");});state.page=1;load();};
   $("ap-windows").onclick=function(e){var b=e.target.closest("button");if(!b)return;state.window=Number(b.dataset.window);$("ap-windows").querySelectorAll("button").forEach(function(x){x.classList.toggle("active",x===b);});state.page=1;load();};
   $("ap-tabs").onclick=function(e){var b=e.target.closest("button");if(!b)return;switchView(b.dataset.view,false);load();};
   $("ap-page-size").onchange=function(){state.pageSize=Number(this.value);state.page=1;load();};$("ap-prev").onclick=function(){if(state.page>1){state.page--;load();}};$("ap-next").onclick=function(){if(state.page*state.pageSize<state.total){state.page++;load();}};
@@ -208,6 +224,10 @@
   $("ap-trend-toggle").onclick=function(){var chart=$("ap-trend"),hidden=!chart.hidden;chart.hidden=hidden;this.textContent=hidden?"展开":"收起";this.setAttribute("aria-expanded",String(!hidden));if(!hidden&&state.chart)state.chart.resize();};
   $("ap-trend-modes").onclick=function(e){var b=e.target.closest("button[data-mode]");if(!b)return;state.trendMode=b.dataset.mode;$("ap-trend-modes").querySelectorAll("button[data-mode]").forEach(function(x){x.classList.toggle("active",x===b);});renderTrend(state.trendRows);};
   $("ap-filter-tags").onclick=function(e){var b=e.target.closest("button[data-clear]");if(!b)return;if(b.dataset.scope==="1")delete state.scope[b.dataset.clear];else $(b.dataset.clear).value="";state.page=1;load();};
+  $("ap-bid-types").onclick=function(e){
+    var button=e.target.closest("button[data-bid-type]");if(!button||button.dataset.bidType===state.bidType)return;
+    state.bidType=button.dataset.bidType;state.page=1;closeDrawer();renderBidType();load();
+  };
   $("ap-analysis-tabs").onclick=function(e){var b=e.target.closest("button[data-mode]");if(!b)return;switchMode(b.dataset.mode);load();};
   $("ap-drawer-close").onclick=closeDrawer;$("ap-drawer-backdrop").onclick=closeDrawer;$("ap-error").querySelector("button").onclick=load;window.addEventListener("resize",function(){if(state.chart)state.chart.resize();});init();
 }());

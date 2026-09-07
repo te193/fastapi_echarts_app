@@ -49,6 +49,7 @@ def _escape_like(value: str) -> str:
 @dataclass
 class RecommendationFilters:
     kind: str = "bid"
+    object_type: str = ""
     currency: str = ""
     store: str = ""
     country: str = ""
@@ -67,6 +68,11 @@ class RecommendationFilters:
         source = dict(values or {}) | kwargs
         self.kind = str(source.get("kind") or "bid")
         table_for_kind(self.kind)
+        self.object_type = str(source.get("object_type") or "")
+        if self.object_type not in {"", "ad_group", "keyword"}:
+            raise ValueError("unsupported bid object type")
+        if self.object_type and self.kind != "bid":
+            raise ValueError("object type only applies to bid recommendations")
         self.currency = str(source.get("currency") or "")
         self.store = str(source.get("store") or "")
         self.country = str(source.get("country") or "")
@@ -123,6 +129,9 @@ def csv_cell(field: str, value: Any) -> Any:
 def _where(filters: RecommendationFilters, batch_id: int) -> tuple[str, list[Any]]:
     clauses = ["batch_id=%s"]
     params: list[Any] = [batch_id]
+    if filters.object_type:
+        clauses.append("object_type=%s")
+        params.append(filters.object_type)
     for column, value in (
         ("currency_code", filters.currency),
         ("seller_name", filters.store),

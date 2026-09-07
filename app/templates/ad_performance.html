@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block extra_head %}
-<link rel="stylesheet" href="{{ url_for('static', path='css/ad_performance.css') }}?v=20260907e">
+<link rel="stylesheet" href="{{ url_for('static', path='css/ad_performance.css') }}?v=20260907f">
 {% endblock %}
 
 {% block content %}
@@ -74,7 +74,7 @@
     <nav id="ap-tabs" class="ap-tabs" aria-label="分析层级">
       <button class="active" data-view="product">MSKU 表现</button><button data-view="campaign">广告活动</button><button data-view="ad_group">广告组</button><button data-view="keyword">关键词</button><button data-view="search_term">搜索词</button>
     </nav>
-    <header class="ap-table-head"><div><h2 id="ap-view-title">MSKU 表现</h2><p id="ap-view-note">指标来自广告商品报表，可直接归属到 MSKU。</p><div id="ap-filter-tags" class="ap-tags"></div></div><div><button id="ap-columns" type="button">列设置</button><button id="ap-export" type="button">导出 CSV</button></div></header>
+    <header class="ap-table-head"><div><div class="ap-table-heading"><h2 id="ap-view-title">MSKU 表现</h2><div id="ap-bid-types" role="group" aria-label="竞价层级" hidden><button type="button" data-bid-type="ad_group" class="active" aria-pressed="true">广告组竞价</button><button type="button" data-bid-type="keyword" aria-pressed="false">关键词竞价</button></div></div><p id="ap-view-note">指标来自广告商品报表，可直接归属到 MSKU。</p><div id="ap-filter-tags" class="ap-tags"></div></div><div><button id="ap-columns" type="button">列设置</button><button id="ap-export" type="button">导出 CSV</button></div></header>
     <div id="ap-grid" class="ag-theme-quartz ap-grid" aria-label="广告效果明细表"></div>
     <footer class="ap-pagination"><span id="ap-page-summary">正在加载…</span><div><label>每页<select id="ap-page-size"><option>50</option><option>100</option><option>200</option></select></label><button id="ap-prev">上一页</button><span id="ap-page">1 / 1</span><button id="ap-next">下一页</button></div></footer>
   </section>
@@ -88,4 +88,4 @@
 </aside>
 {% endblock %}
 
-{% block scripts %}<script src="{{ url_for('static', path='js/ad_performance.js') }}?v=20260907k"></script>{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', path='js/ad_performance.js') }}?v=20260907m"></script>{% endblock %}

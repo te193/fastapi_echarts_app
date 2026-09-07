@@ -8,6 +8,7 @@ from app.services.sp_recommendation_data import (
     order_by,
     serialize,
     table_for_kind,
+    _where,
 )
 
 
@@ -28,6 +29,20 @@ def test_recommendation_table_mapping_is_fixed():
     assert table_for_kind("bid") == "dashboard_sp_bid_recommendation"
     assert table_for_kind("add") == "dashboard_sp_add_term_recommendation"
     assert table_for_kind("negative") == "dashboard_sp_negative_term_recommendation"
+
+
+@pytest.mark.parametrize("object_type", ["ad_group", "keyword"])
+def test_bid_type_is_parameterized_for_shared_summary_rows_and_export(object_type):
+    clause, params = _where(RecommendationFilters(kind="bid", object_type=object_type), 2)
+    assert clause == "batch_id=%s and object_type=%s"
+    assert params == [2, object_type]
+
+
+def test_invalid_or_non_bid_object_type_is_rejected():
+    with pytest.raises(ValueError):
+        RecommendationFilters(object_type="keyword' or 1=1")
+    with pytest.raises(ValueError):
+        RecommendationFilters(kind="add", object_type="keyword")
 
 
 def test_recommendation_ids_and_decimals_are_serialized_safely():

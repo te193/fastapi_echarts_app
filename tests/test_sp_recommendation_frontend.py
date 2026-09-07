@@ -36,6 +36,12 @@ def test_recommendation_tables_show_concrete_actions():
         assert field in js
 
 
+def test_add_recommendations_default_to_actionable_rows():
+    js = JS.read_text(encoding="utf-8")
+    assert 'if(mode==="add") $("ap-rec-status").value="recommended"' in js
+    assert 'mode==="add"?"未达到加词标准":"未达到否词标准"' in js
+
+
 def test_hidden_overview_sections_cannot_be_overridden_by_layout_css():
     css = CSS.read_text(encoding="utf-8")
     for selector in ("#ap-window-bar[hidden]", "#ap-kpis[hidden]", "#ap-trend-panel[hidden]", "#ap-tabs[hidden]"):
