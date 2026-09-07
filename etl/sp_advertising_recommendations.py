@@ -5,8 +5,9 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import socket
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -26,6 +27,14 @@ from etl.replenishment_update import apply_database_ini_env
 RULE_VERSION = "sp-recommendation-v1"
 TASK_NAME = "sp_advertising_recommendations"
 MARGIN_STEPS = (0, 5, 10, 15, 20, 25, 30, 35)
+COUNTRY_ALIASES = {
+    "美国": "us", "加拿大": "ca", "墨西哥": "mx", "巴西": "br",
+    "英国": "uk", "德国": "de", "法国": "fr", "意大利": "it",
+    "西班牙": "es", "荷兰": "nl", "瑞典": "se", "波兰": "pl",
+    "比利时": "be", "日本": "jp", "澳大利亚": "au", "阿联酋": "ae",
+    "沙特阿拉伯": "sa", "沙特": "sa", "印度": "in", "新加坡": "sg",
+    "土耳其": "tr",
+}
 
 
 def recommendation_ddl() -> str:
@@ -61,6 +70,8 @@ create table if not exists dashboard_sp_bid_recommendation (
   reason_codes json not null, created_at datetime not null default current_timestamp,
   unique key uq_bid_batch_key(batch_id, recommendation_key),
   key idx_bid_filter(batch_id, currency_code, status, priority_rank, cost),
+  key idx_bid_default(batch_id, currency_code, priority_rank, cost, id),
+  key idx_bid_default_v2(batch_id, currency_code, priority_rank asc, cost desc, id asc),
   key idx_bid_store(batch_id, seller_name, country_code), key idx_bid_msku(batch_id, msku)
 ) engine=InnoDB default charset=utf8mb4;
 create table if not exists dashboard_sp_add_term_recommendation (
@@ -79,6 +90,8 @@ create table if not exists dashboard_sp_add_term_recommendation (
   reason_codes json not null, created_at datetime not null default current_timestamp,
   unique key uq_add_batch_key(batch_id, recommendation_key),
   key idx_add_filter(batch_id, currency_code, status, priority_rank, cost),
+  key idx_add_default(batch_id, currency_code, priority_rank, cost, id),
+  key idx_add_default_v2(batch_id, currency_code, priority_rank asc, cost desc, id asc),
   key idx_add_store(batch_id, seller_name, country_code), key idx_add_msku(batch_id, msku)
 ) engine=InnoDB default charset=utf8mb4;
 create table if not exists dashboard_sp_negative_term_recommendation like dashboard_sp_add_term_recommendation;
@@ -102,6 +115,14 @@ def margin_band_rate(price: Decimal | None, ladder: Mapping[int, Decimal | None]
     return Decimal(matched) / Decimal(100)
 
 
+def business_key(store: Any, country: Any, msku: Any) -> tuple[str, str, str]:
+    store_key = str(store or "").strip().casefold()
+    store_key = re.sub(r"-(?:eu-)?[a-z]{2}$", "", store_key)
+    country_text = str(country or "").strip().casefold().replace("站", "")
+    country_key = COUNTRY_ALIASES.get(country_text, country_text)
+    return store_key, country_key, str(msku or "").strip().casefold()
+
+
 def _connect(autocommit: bool = False):
     return pymysql.connect(
         host=os.environ["DASHBOARD_DB_HOST"],
@@ -122,6 +143,21 @@ def ensure_recommendation_tables(conn) -> None:
         for statement in recommendation_ddl().split(";"):
             if statement.strip():
                 cur.execute(statement)
+        for table, index_name in (
+            ("dashboard_sp_bid_recommendation", "idx_bid_default_v2"),
+            ("dashboard_sp_add_term_recommendation", "idx_add_default_v2"),
+            ("dashboard_sp_negative_term_recommendation", "idx_negative_default_v2"),
+        ):
+            cur.execute(
+                "select count(*) n from information_schema.statistics "
+                "where table_schema=database() and table_name=%s and index_name=%s",
+                (table, index_name),
+            )
+            if not cur.fetchone()["n"]:
+                cur.execute(
+                    f"alter table {table} add key {index_name} "
+                    "(batch_id,currency_code,priority_rank asc,cost desc,id asc)"
+                )
     conn.commit()
 
 
@@ -155,21 +191,19 @@ def _latest_snapshot_rows(conn, table: str, date_column: str, cutoff: date) -> l
 def _business_lookups(conn, cutoff: date) -> tuple[dict, dict, dict]:
     listings = {}
     for row in _latest_snapshot_rows(conn, "dashboard_listing_price_daily_snapshot", "snapshot_date", cutoff):
-        key = (str(row.get("seller_name_new") or row.get("seller_name") or "").casefold(), str(row.get("country") or row.get("country_category") or "").casefold(), str(row.get("seller_sku") or "").casefold())
-        listings[key] = row
+        for store in {row.get("seller_name"), row.get("seller_name_new")}:
+            listings[business_key(store, row.get("country"), row.get("seller_sku"))] = row
     ladders = {}
     for row in _latest_snapshot_rows(conn, "dashboard_limit_price_daily_snapshot", "snapshot_date", cutoff):
-        key = (str(row.get("seller_name_new") or "").casefold(), str(row.get("country") or row.get("country_category") or "").casefold(), str(row.get("seller_sku") or "").casefold())
-        ladders[key] = row
+        ladders[business_key(row.get("seller_name_new"), row.get("country"), row.get("seller_sku"))] = row
     budgets = {}
     for row in _latest_snapshot_rows(conn, "dashboard_ad_budget_snapshot", "biz_date", cutoff):
-        key = (str(row.get("seller_name_new") or "").casefold(), str(row.get("country") or row.get("country_category") or "").casefold(), str(row.get("seller_sku_adj") or "").casefold())
-        budgets[key] = row
+        budgets[business_key(row.get("seller_name_new"), row.get("country"), row.get("seller_sku_adj"))] = row
     return listings, ladders, budgets
 
 
 def _lookup(mapping: dict, store: Any, country: Any, msku: Any) -> dict[str, Any] | None:
-    target = (str(store or "").casefold(), str(country or "").casefold(), str(msku or "").casefold())
+    target = business_key(store, country, msku)
     if target in mapping:
         return mapping[target]
     store_key, country_key, sku_key = target
@@ -315,7 +349,7 @@ def build_recommendations(cutoff: date | None = None, dry_run: bool = False, con
             if not cur.fetchone()["acquired"]:
                 raise RuntimeError("another recommendation build is running")
             cur.execute("""insert into dashboard_sp_recommendation_batch(task_name,rule_version,cutoff_date,mature_start,mature_end,status,dry_run,source_days,host_name,started_at)
-                values(%s,%s,%s,%s,%s,'running',0,%s,%s,%s)""", (TASK_NAME, RULE_VERSION, cutoff, start, end, len(set(days)), socket.gethostname(), datetime.now()))
+                values(%s,%s,%s,%s,%s,'running',0,%s,%s,now())""", (TASK_NAME, RULE_VERSION, cutoff, start, end, len(set(days)), socket.gethostname()))
             batch_id = cur.lastrowid
         conn.commit()
         common_columns = ["batch_id", "recommendation_key", "profile_id", "seller_name", "country_code", "currency_code", "campaign_id", "campaign_name_current", "ad_group_id", "ad_group_name_current"]

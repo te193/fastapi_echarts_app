@@ -5,6 +5,7 @@ import pytest
 from app.services.sp_recommendation_data import (
     RecommendationFilters,
     csv_cell,
+    order_by,
     serialize,
     table_for_kind,
 )
@@ -38,3 +39,7 @@ def test_recommendation_csv_protects_ids_and_formulas():
     assert csv_cell("campaign_id", 9007199254740999) == "'9007199254740999"
     assert csv_cell("search_term", "=cmd()") == "'=cmd()"
 
+
+def test_default_order_prioritizes_actionable_rows_before_cost():
+    filters = RecommendationFilters({"kind": "bid", "sort": "cost", "direction": "desc"})
+    assert order_by(filters) == "priority_rank asc,cost desc,id asc"

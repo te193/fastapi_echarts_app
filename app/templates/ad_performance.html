@@ -26,8 +26,8 @@
 
   <section class="ap-filter-panel" aria-label="广告效果筛选">
     <div class="ap-filter-row">
-      <label>开始日期<input id="ap-start" type="date"></label>
-      <label>结束日期<input id="ap-end" type="date"></label>
+      <label id="ap-start-label">开始日期<input id="ap-start" type="date"></label>
+      <label id="ap-end-label">结束日期<input id="ap-end" type="date"></label>
       <label>币种<select id="ap-currency"></select></label>
       <label>店铺<select id="ap-store"><option value="">全部店铺</option></select></label>
       <label>站点<select id="ap-country"><option value="">全部站点</option></select></label>
@@ -88,4 +88,4 @@
 </aside>
 {% endblock %}
 
-{% block scripts %}<script src="{{ url_for('static', path='js/ad_performance.js') }}?v=20260907j"></script>{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', path='js/ad_performance.js') }}?v=20260907k"></script>{% endblock %}

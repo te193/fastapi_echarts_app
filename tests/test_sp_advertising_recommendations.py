@@ -2,6 +2,7 @@ from datetime import date
 from decimal import Decimal
 
 from etl.sp_advertising_recommendations import (
+    business_key,
     coverage_is_complete,
     margin_band_rate,
     recommendation_ddl,
@@ -17,6 +18,8 @@ def test_recommendation_ddl_has_all_tables_and_business_keys():
     assert ddl.count("unique key") >= 2
     assert "dashboard_sp_negative_term_recommendation like dashboard_sp_add_term_recommendation" in ddl
     assert "utf8mb4_bin" in ddl
+    assert "idx_bid_default_v2" in ddl
+    assert "idx_add_default_v2" in ddl
 
 
 def test_coverage_requires_every_day_in_mature_window():
@@ -40,3 +43,9 @@ def test_margin_band_uses_lower_interval():
     assert margin_band_rate(Decimal("14.99"), ladder) == Decimal("0.20")
     assert margin_band_rate(Decimal("17.99"), ladder) == Decimal("0.35")
     assert margin_band_rate(Decimal("9.99"), ladder) is None
+
+
+def test_business_key_normalizes_account_suffix_and_country_name():
+    assert business_key("xinmu-eu-FR", "FR", "XM036a") == business_key(
+        "xinmu", "法国", "XM036a"
+    )

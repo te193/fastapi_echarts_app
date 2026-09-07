@@ -19,6 +19,7 @@ TABLES = {
     "add": "dashboard_sp_add_term_recommendation",
     "negative": "dashboard_sp_negative_term_recommendation",
 }
+DEFAULT_INDEXES = {"bid": "idx_bid_default_v2", "add": "idx_add_default_v2", "negative": "idx_negative_default_v2"}
 SORTS = {
     "bid": {"cost", "clicks", "orders", "sales", "current_bid", "suggested_bid", "change_amount", "change_rate", "priority_rank"},
     "add": {"cost", "clicks", "orders", "sales", "acos", "priority_rank"},
@@ -143,6 +144,12 @@ def _where(filters: RecommendationFilters, batch_id: int) -> tuple[str, list[Any
     return " and ".join(clauses), params
 
 
+def order_by(filters: RecommendationFilters) -> str:
+    if filters.sort == "cost" and filters.direction == "desc":
+        return "priority_rank asc,cost desc,id asc"
+    return f"{filters.sort} {filters.direction},id asc"
+
+
 class SpRecommendationService:
     def __init__(self) -> None:
         config = configparser.ConfigParser()
@@ -206,7 +213,8 @@ class SpRecommendationService:
         with self.connect() as conn, conn.cursor() as cur:
             cur.execute(f"select count(*) total from {table} where {clause}", params)
             total = int(cur.fetchone()["total"])
-            cur.execute(f"select * from {table} where {clause} order by {filters.sort} {filters.direction},id asc{limit}", query_params)
+            index_hint = f" force index ({DEFAULT_INDEXES[filters.kind]})" if filters.sort == "cost" and filters.direction == "desc" else ""
+            cur.execute(f"select * from {table}{index_hint} where {clause} order by {order_by(filters)}{limit}", query_params)
             rows = cur.fetchall()
         return serialize({"batch_id": batch["batch_id"], "kind": filters.kind, "rows": rows, "total": total,
                           "page": filters.page, "page_size": filters.page_size})
