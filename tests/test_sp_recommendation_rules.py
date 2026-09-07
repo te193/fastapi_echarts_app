@@ -90,7 +90,7 @@ def test_negative_asin_uses_negative_product_target():
     assert result["suggestion_type"] == "negative_product_target"
 
 
-def test_negative_term_recommends_by_performance_and_flags_missing_msku_only():
+def test_negative_term_requires_manual_review_when_msku_is_missing():
     result = calculate_negative_recommendation(
         {
             "search_term": "brand phrase",
@@ -101,7 +101,7 @@ def test_negative_term_recommends_by_performance_and_flags_missing_msku_only():
             "brand_name_complete": False,
         }
     )
-    assert result["status"] == "recommended"
+    assert result["status"] == "manual_review"
     assert result["priority"] == "high"
     assert "msku_missing" in result["reason_codes"]
     assert "protection_record_missing" not in result["reason_codes"]
@@ -122,6 +122,43 @@ def test_negative_term_does_not_treat_budget_context_as_a_term_warning():
 
     assert result["status"] == "recommended"
     assert result["reason_codes"] == ["clicks_ge_10_orders_zero"]
+
+
+def test_negative_term_requires_manual_review_for_incomplete_term_protection_context():
+    result = calculate_negative_recommendation(
+        {
+            "search_term": "generic phrase",
+            "clicks": 10,
+            "orders": 0,
+            "associated_msku_count": 1,
+            "term_protection_complete": False,
+            "protection_missing_codes": ["category_context_missing"],
+        }
+    )
+
+    assert result["status"] == "manual_review"
+    assert result["reason_codes"] == ["category_context_missing"]
+
+
+def test_negative_term_requires_manual_review_for_brand_category_or_new_product():
+    for field, reason in (
+        ("is_brand_term", "brand_term"),
+        ("is_core_category_term", "core_category_term"),
+        ("is_new_product_term", "new_product_term"),
+    ):
+        result = calculate_negative_recommendation(
+            {
+                "search_term": "protected phrase",
+                "clicks": 10,
+                "orders": 0,
+                "associated_msku_count": 1,
+                "term_protection_complete": True,
+                field: True,
+            }
+        )
+        assert result["status"] == "manual_review"
+        assert result["priority"] == "high"
+        assert reason in result["reason_codes"]
 
 
 def test_bid_change_is_capped_and_rounded_safely():

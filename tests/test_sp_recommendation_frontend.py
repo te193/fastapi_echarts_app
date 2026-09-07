@@ -45,9 +45,15 @@ def test_add_recommendations_keep_all_rows_and_show_explicit_actions():
 
 def test_negative_recommendations_disclose_that_term_protection_is_not_connected():
     js = JS.read_text(encoding="utf-8")
-    assert "保护词数据源尚未接入" in js
+    assert "品牌词、核心类目词和新品推广词命中后转人工审核" in js
     assert "protection_record_missing" not in js
     assert "brand_name_missing" not in js
+
+
+def test_negative_recommendations_use_clear_manual_review_labels():
+    js = JS.read_text(encoding="utf-8")
+    assert 'manual_review:"人工审核"' in js
+    assert 'kind==="negative"?"人工审核原因":"数据提示"' in js
 
 
 def test_hidden_overview_sections_cannot_be_overridden_by_layout_css():

@@ -20,6 +20,9 @@ def test_recommendation_ddl_has_all_tables_and_business_keys():
     assert "utf8mb4_bin" in ddl
     assert "idx_bid_default_v2" in ddl
     assert "idx_add_default_v2" in ddl
+    assert "protection_brand" in ddl
+    assert "protection_category" in ddl
+    assert "product_launch_date" in ddl
 
 
 def test_coverage_requires_every_day_in_mature_window():

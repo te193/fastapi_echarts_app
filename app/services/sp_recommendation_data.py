@@ -31,11 +31,16 @@ FORMULA_PREFIXES = ("=", "+", "-", "@")
 CONTEXT_WARNING_LABELS = {
     "msku_missing": "未找到推广MSKU，需人工排查",
     "multiple_msku": "关联多个MSKU，需人工排查",
+    "term_protection_context_missing": "未匹配Listing保护信息，需人工排查",
+    "brand_context_missing": "产品品牌信息缺失，需人工排查",
+    "category_context_missing": "本地化叶子类目信息缺失，需人工排查",
+    "launch_date_missing": "首单及开售日期缺失，需人工排查",
+    "launch_date_invalid": "首单或开售日期晚于数据截止日，需人工排查",
 }
 RULE_COPY = {
     "bid": "定价毛利段理论CPC=平均客单价×CVR×毛利段系数；单次提价不超过20%，单次降价不超过30%，并受库存、预算和数据完整性保护。",
     "add": "成熟30天内广告订单≥10且ACOS≤10%为最高优先级；订单≥10且10%<ACOS≤15%为中优先级。文本词建议精准匹配，ASIN建议商品投放；MSKU映射异常单独提示，不覆盖建议结论。",
-    "negative": "成熟30天内点击量≥10且广告订单为0进入高优先级。文本词建议精准否定，ASIN建议否定商品投放。品牌词、核心类目词和新品词保护数据源尚未接入，当前结果仅供人工复核。",
+    "negative": "成熟30天内点击量≥10且广告订单为0进入高优先级。品牌词、核心类目词和首单/开售90天内的新品推广词转人工审核；文本词建议精准否定，ASIN建议否定商品投放。",
 }
 
 
@@ -113,11 +118,18 @@ def serialize(value: Any) -> Any:
                 result[key] = serialize(item)
         reason_codes = result.get("reason_codes")
         if isinstance(reason_codes, list):
-            result["data_warning"] = "；".join(
-                CONTEXT_WARNING_LABELS[code]
-                for code in reason_codes
-                if code in CONTEXT_WARNING_LABELS
-            )
+            warnings = []
+            for code in reason_codes:
+                if code == "brand_term":
+                    warnings.append(f"品牌词：{result.get('protection_brand') or '已命中'}")
+                elif code == "core_category_term":
+                    warnings.append(f"核心类目词：{result.get('protection_category') or '已命中'}")
+                elif code == "new_product_term":
+                    launch_date = result.get("product_launch_date") or "日期缺失"
+                    warnings.append(f"新品推广词：首单/开售日期 {launch_date}")
+                elif code in CONTEXT_WARNING_LABELS:
+                    warnings.append(CONTEXT_WARNING_LABELS[code])
+            result["data_warning"] = "；".join(warnings)
         return result
     if isinstance(value, (list, tuple)):
         return [serialize(item) for item in value]

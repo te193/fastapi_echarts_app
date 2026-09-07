@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -56,6 +57,22 @@ def test_recommendation_context_warnings_are_exposed_separately_from_action():
     )
     assert payload["status"] == "recommended"
     assert payload["data_warning"] == "未找到推广MSKU，需人工排查"
+
+
+def test_negative_review_reason_includes_the_matched_protection_value():
+    payload = serialize(
+        {
+            "status": "manual_review",
+            "reason_codes": '["brand_term", "core_category_term", "new_product_term"]',
+            "protection_brand": "Radianeroryi",
+            "protection_category": "Federmäppchen",
+            "product_launch_date": date(2026, 6, 20),
+        }
+    )
+    assert payload["data_warning"] == (
+        "品牌词：Radianeroryi；核心类目词：Federmäppchen；"
+        "新品推广词：首单/开售日期 2026-06-20"
+    )
 
 
 def test_recommendation_csv_protects_ids_and_formulas():

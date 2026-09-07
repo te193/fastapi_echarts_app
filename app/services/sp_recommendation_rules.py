@@ -97,6 +97,22 @@ def calculate_negative_recommendation(row: Mapping[str, Any]) -> dict[str, Any]:
     if clicks < 10 or orders != 0:
         return {**base, "status": "observe", "reason_codes": ["threshold_not_met", *warnings]}
 
+    if mapping_reason:
+        return {
+            **base,
+            "status": "manual_review",
+            "priority": "high",
+            "reason_codes": warnings,
+        }
+    if row.get("term_protection_complete", True) is False:
+        missing_codes = list(row.get("protection_missing_codes") or ["term_protection_context_missing"])
+        return {
+            **base,
+            "status": "manual_review",
+            "priority": "high",
+            "reason_codes": missing_codes,
+        }
+
     protected_reasons = []
     for field, reason in (
         ("is_brand_term", "brand_term"),
@@ -106,7 +122,12 @@ def calculate_negative_recommendation(row: Mapping[str, Any]) -> dict[str, Any]:
         if row.get(field):
             protected_reasons.append(reason)
     if protected_reasons:
-        return {**base, "status": "manual_review", "reason_codes": [*protected_reasons, *warnings]}
+        return {
+            **base,
+            "status": "manual_review",
+            "priority": "high",
+            "reason_codes": protected_reasons,
+        }
     return {
         **base,
         "status": "recommended",

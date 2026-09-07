@@ -21,10 +21,15 @@ from app.services.sp_recommendation_rules import (
     calculate_negative_recommendation,
     mature_window,
 )
+from app.services.sp_term_protection import classify_term_protection
 from etl.replenishment_update import apply_database_ini_env
+from etl.sp_term_protection_update import (
+    ensure_protection_context_table,
+    refresh_term_protection_context,
+)
 
 
-RULE_VERSION = "sp-recommendation-v5-no-budget-term-protection"
+RULE_VERSION = "sp-recommendation-v6-term-protection-review"
 TASK_NAME = "sp_advertising_recommendations"
 MARGIN_STEPS = (0, 5, 10, 15, 20, 25, 30, 35)
 COUNTRY_ALIASES = {
@@ -83,6 +88,8 @@ create table if not exists dashboard_sp_add_term_recommendation (
   target_id bigint null, targeting_type varchar(50) null, match_type varchar(100) null,
   search_term varchar(1000) collate utf8mb4_bin not null, target_text varchar(1000) null,
   msku varchar(100) null, asin varchar(50) null, associated_msku_count int not null default 0,
+  protection_brand varchar(255) null, protection_category varchar(500) null,
+  product_launch_date date null, product_age_days int null,
   impressions bigint null, clicks bigint null, cost decimal(20,4) null,
   orders decimal(20,4) null, sales decimal(20,4) null, acos decimal(20,8) null,
   suggestion_type varchar(50) not null, suggestion_value varchar(1000) collate utf8mb4_bin not null,
@@ -158,6 +165,24 @@ def ensure_recommendation_tables(conn) -> None:
                     f"alter table {table} add key {index_name} "
                     "(batch_id,currency_code,priority_rank asc,cost desc,id asc)"
                 )
+        for table in (
+            "dashboard_sp_add_term_recommendation",
+            "dashboard_sp_negative_term_recommendation",
+        ):
+            for column, definition in (
+                ("protection_brand", "varchar(255) null"),
+                ("protection_category", "varchar(500) null"),
+                ("product_launch_date", "date null"),
+                ("product_age_days", "int null"),
+            ):
+                cur.execute(
+                    "select count(*) n from information_schema.columns "
+                    "where table_schema=database() and table_name=%s and column_name=%s",
+                    (table, column),
+                )
+                if not cur.fetchone()["n"]:
+                    cur.execute(f"alter table {table} add column {column} {definition}")
+    ensure_protection_context_table(conn)
     conn.commit()
 
 
@@ -209,6 +234,16 @@ def _lookup(mapping: dict, store: Any, country: Any, msku: Any) -> dict[str, Any
     store_key, country_key, sku_key = target
     candidates = [v for (s, c, k), v in mapping.items() if s == store_key and k == sku_key and (c == country_key or not c or not country_key)]
     return candidates[0] if len(candidates) == 1 else None
+
+
+def _protection_contexts(conn) -> dict[tuple[str, str, str], dict[str, Any]]:
+    with conn.cursor() as cur:
+        cur.execute("select * from dashboard_sp_term_protection_current")
+        rows = cur.fetchall()
+    return {
+        business_key(row.get("seller_name"), row.get("country_code"), row.get("msku")): row
+        for row in rows
+    }
 
 
 def _search_term_rows(conn, start: date, end: date) -> list[dict[str, Any]]:
@@ -293,6 +328,7 @@ def build_recommendations(cutoff: date | None = None, dry_run: bool = False, con
 
         products = _group_products(conn)
         listings, ladders, budgets = _business_lookups(conn, cutoff)
+        protection_contexts = _protection_contexts(conn)
         existing_keywords, existing_products = _existing_objects(conn)
         term_rows = _search_term_rows(conn, start, end)
         add_rows, negative_rows = [], []
@@ -303,6 +339,14 @@ def build_recommendations(cutoff: date | None = None, dry_run: bool = False, con
             source.update(product)
             term = str(source.get("search_term") or "")
             source["existing_enabled"] = ((source.get("profile_id"), source.get("ad_group_id"), term) in existing_keywords or (source.get("profile_id"), source.get("ad_group_id"), term.upper()) in existing_products)
+            if int(source.get("associated_msku_count") or 0) == 1:
+                context = _lookup(
+                    protection_contexts,
+                    source.get("seller_name"),
+                    source.get("country_code"),
+                    source.get("msku"),
+                )
+                source.update(classify_term_protection(term, context, cutoff=cutoff))
             add_rule = calculate_add_recommendation(source)
             negative_rule = calculate_negative_recommendation(source)
             common = {**source, "batch_id": None, "recommendation_key": _key(*group_key, source.get("target_id"), term, source.get("match_type"))}
@@ -349,7 +393,7 @@ def build_recommendations(cutoff: date | None = None, dry_run: bool = False, con
         conn.commit()
         common_columns = ["batch_id", "recommendation_key", "profile_id", "seller_name", "country_code", "currency_code", "campaign_id", "campaign_name_current", "ad_group_id", "ad_group_name_current"]
         bid_columns = common_columns + ["targeting_type", "object_type", "object_id", "object_text", "match_type", "object_state_current", "msku", "asin", "associated_msku_count", "impressions", "clicks", "cost", "orders", "sales", "aov", "cvr", "current_bid", "listing_price", "margin_rate", "theoretical_cpc", "reference_cpc_20", "reference_cpc_333", "suggested_bid", "change_direction", "change_amount", "change_rate", "status", "priority_rank", "reason_codes"]
-        term_columns = common_columns + ["target_id", "targeting_type", "match_type", "search_term", "target_text", "msku", "asin", "associated_msku_count", "impressions", "clicks", "cost", "orders", "sales", "acos", "suggestion_type", "suggestion_value", "status", "priority", "priority_rank", "reason_codes"]
+        term_columns = common_columns + ["target_id", "targeting_type", "match_type", "search_term", "target_text", "msku", "asin", "associated_msku_count", "protection_brand", "protection_category", "product_launch_date", "product_age_days", "impressions", "clicks", "cost", "orders", "sales", "acos", "suggestion_type", "suggestion_value", "status", "priority", "priority_rank", "reason_codes"]
         for row in (*bid_rows, *add_rows, *negative_rows):
             row["batch_id"] = batch_id
         _insert_many(conn, "dashboard_sp_bid_recommendation", bid_columns, bid_rows)
@@ -383,6 +427,8 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     cutoff = date.fromisoformat(args.cutoff_date) if args.cutoff_date else None
+    if not args.dry_run:
+        print(json.dumps(refresh_term_protection_context(), ensure_ascii=False, default=str))
     print(json.dumps(build_recommendations(cutoff, args.dry_run), ensure_ascii=False, default=str, indent=2))
     return 0
 
