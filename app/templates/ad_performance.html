@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block extra_head %}
-<link rel="stylesheet" href="{{ url_for('static', path='css/ad_performance.css') }}?v=20260907h">
+<link rel="stylesheet" href="{{ url_for('static', path='css/ad_performance.css') }}?v=20260907v">
 {% endblock %}
 
 {% block content %}
@@ -16,7 +16,7 @@
     <button data-mode="bid" type="button">竞价优化</button>
     <button data-mode="add" type="button">加词建议</button>
     <button data-mode="negative" type="button">否词建议</button>
-    <button data-pending-feature="product-diagnosis" type="button" disabled title="广告产品诊断规则尚未建设">产品诊断（待建设）</button>
+    <button data-mode="diagnosis" type="button">产品诊断</button>
     <a href="/ad-budget">预算管理</a>
   </nav>
 
@@ -28,16 +28,18 @@
     <div class="ap-filter-row">
       <label id="ap-start-label">开始日期<input id="ap-start" type="date"></label>
       <label id="ap-end-label">结束日期<input id="ap-end" type="date"></label>
+      <label id="ap-diagnosis-period-label" hidden>统计周期<select id="ap-diagnosis-period"><option value="7d">近7天</option><option value="14d">近14天</option><option value="30d" selected>近30天</option><option value="90d">近90天</option></select></label>
       <label>币种<select id="ap-currency"></select></label>
       <label>店铺<select id="ap-store"><option value="">全部店铺</option></select></label>
       <label>站点<select id="ap-country"><option value="">全部站点</option></select></label>
       <label>投放方式<select id="ap-targeting"><option value="">全部方式</option><option value="auto">自动</option><option value="manual">手动</option></select></label>
       <label id="ap-rec-status-label" hidden>建议状态<select id="ap-rec-status"><option value="">全部状态</option></select></label>
       <label id="ap-rec-priority-label" hidden>优先级<select id="ap-rec-priority"><option value="">全部优先级</option><option value="highest">最高</option><option value="high">高</option><option value="medium">中</option><option value="none">无操作</option></select></label>
+      <label id="ap-diagnosis-action-label" hidden>处理动作<select id="ap-diagnosis-action"><option value="">全部产品</option><option value="bid">有竞价动作</option><option value="add">建议加词</option><option value="negative">建议否词/审核</option><option value="manual_review">需要人工审核</option></select></label>
     </div>
     <div class="ap-filter-row ap-filter-actions">
-      <label class="ap-search">对象搜索<input id="ap-keyword" type="search" placeholder="活动、广告组、关键词或搜索词"></label>
-      <label class="ap-search">关联 MSKU<input id="ap-msku" type="search" placeholder="MSKU"></label>
+      <label id="ap-keyword-label" class="ap-search">对象搜索<input id="ap-keyword" type="search" placeholder="活动、广告组、关键词或搜索词"></label>
+      <label id="ap-msku-label" class="ap-search"><span id="ap-msku-label-text">关联 MSKU</span><input id="ap-msku" type="search" placeholder="MSKU"></label>
       <button id="ap-query" class="ap-primary" type="button">查询</button>
       <button id="ap-reset" type="button">重置</button>
       <span id="ap-scope-note">金额按所选币种展示</span>
@@ -65,9 +67,22 @@
     <article><span>归因销售额</span><strong id="ap-rec-sales">—</strong><small>7天归因</small></article>
   </section>
 
+  <section id="ap-diagnosis-kpis" class="ap-kpis" aria-label="产品诊断摘要" hidden>
+    <article><span>广告产品数</span><strong id="ap-diag-products">—</strong><small>店铺＋站点＋MSKU</small></article>
+    <article><span>需处理产品数</span><strong id="ap-diag-actionable">—</strong><small>存在明确动作</small></article>
+    <article><span>经营销售额</span><strong id="ap-diag-op-sales">—</strong><small>所选统计周期</small></article>
+    <article><span>经营毛利润</span><strong id="ap-diag-profit">—</strong><small>订单毛利润</small></article>
+    <article><span>广告花费</span><strong id="ap-diag-cost">—</strong><small>SP广告</small></article>
+    <article><span>广告销售额</span><strong id="ap-diag-ad-sales">—</strong><small id="ap-diag-window">7天归因</small></article>
+  </section>
+
   <section id="ap-trend-panel" class="ap-trend-panel">
     <header><div><span>每日趋势</span><h2 id="ap-trend-title">投入与转化走势</h2></div><div class="ap-trend-actions" id="ap-trend-modes"><button class="active" data-mode="amount">花费与销售额</button><button data-mode="traffic">曝光与点击</button><button data-mode="rate">CTR 与 CVR</button><button id="ap-trend-toggle" type="button" aria-expanded="true">收起</button></div></header>
     <div id="ap-trend" class="ap-trend" role="img" aria-label="广告效果每日趋势"></div>
+  </section>
+  <section id="ap-diagnosis-action-panel" class="ap-trend-panel" hidden>
+    <header><div><span>动作分布</span><h2>竞价、加词、否词与人工审核</h2></div><small>数量来自最新成功建议批次</small></header>
+    <div id="ap-diagnosis-actions-chart" class="ap-diagnosis-actions-chart" role="img" aria-label="产品诊断动作分布"></div>
   </section>
 
   <section id="ap-table-panel" class="ap-table-panel" aria-busy="false">
@@ -88,4 +103,4 @@
 </aside>
 {% endblock %}
 
-{% block scripts %}<script src="{{ url_for('static', path='js/ad_performance.js') }}?v=20260907t"></script>{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', path='js/ad_performance.js') }}?v=20260907v"></script>{% endblock %}

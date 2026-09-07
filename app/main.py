@@ -23,6 +23,7 @@ from .services.dashboard_db import dashboard_service
 from .services.ad_budget_data import ad_budget_service
 from .services.ad_performance_data import ad_performance_service
 from .services.sp_recommendation_data import sp_recommendation_service
+from .services.sp_product_diagnosis_data import sp_product_diagnosis_service
 from .services.country_label_hub_data import country_label_hub_service
 from .services.label_hub_data import LabelHubRefreshBusyError, label_hub_service
 from .services.label_hub_diagnostics import label_hub_diagnostics_service
@@ -585,6 +586,63 @@ def api_sp_recommendation_export(request: Request) -> StreamingResponse:
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": "attachment; filename*=UTF-8''sp-ad-recommendations.csv"},
     )
+
+
+@app.get("/api/ad-performance/product-diagnosis/options")
+def api_sp_product_diagnosis_options() -> dict:
+    return sp_product_diagnosis_service.options()
+
+
+@app.get("/api/ad-performance/product-diagnosis/summary")
+def api_sp_product_diagnosis_summary(request: Request) -> dict:
+    try:
+        return sp_product_diagnosis_service.summary(_ad_performance_params(request))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/ad-performance/product-diagnosis/trend")
+def api_sp_product_diagnosis_trend(request: Request) -> dict:
+    try:
+        return sp_product_diagnosis_service.trend(_ad_performance_params(request))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/ad-performance/product-diagnosis/rows")
+def api_sp_product_diagnosis_rows(request: Request) -> dict:
+    try:
+        return sp_product_diagnosis_service.rows(_ad_performance_params(request))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/ad-performance/product-diagnosis/detail")
+def api_sp_product_diagnosis_detail(request: Request) -> dict:
+    try:
+        return sp_product_diagnosis_service.detail(_ad_performance_params(request))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/ad-performance/product-diagnosis/export")
+def api_sp_product_diagnosis_export(request: Request) -> StreamingResponse:
+    try:
+        content = sp_product_diagnosis_service.export_csv(_ad_performance_params(request))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return StreamingResponse(iter([content]), media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": "attachment; filename*=UTF-8''sp-product-diagnosis.csv"})
 
 
 @app.get("/api/ad-budget/meta")

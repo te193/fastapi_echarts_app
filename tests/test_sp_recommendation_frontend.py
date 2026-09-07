@@ -11,8 +11,8 @@ def test_recommendation_tabs_and_read_only_copy_exist():
     assert "竞价优化" in html
     assert "加词建议" in html
     assert "否词建议" in html
-    assert "产品诊断（待建设）" in html
-    assert 'data-pending-feature="product-diagnosis"' in html
+    assert ">产品诊断</button>" in html
+    assert 'data-mode="diagnosis"' in html
     assert 'href="/label-hub">产品诊断' not in html
     assert "预算管理" in html
     assert "仅供人工决策参考" in html
@@ -30,6 +30,16 @@ def test_frontend_uses_read_only_recommendation_endpoints():
     assert "/recommendations/" in js
     assert "/execute" not in js
     assert "/apply" not in js
+
+
+def test_product_diagnosis_controls_and_read_only_endpoints_exist():
+    html = HTML.read_text(encoding="utf-8")
+    js = JS.read_text(encoding="utf-8")
+    for control in ("ap-diagnosis-period", "ap-diagnosis-action", "ap-diagnosis-kpis"):
+        assert f'id="{control}"' in html
+    assert "/product-diagnosis/" in js
+    assert "diagnosisColumns" in js
+    assert "switchToRecommendation" in js
 
 
 def test_recommendation_tables_show_concrete_actions():
