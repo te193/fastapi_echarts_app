@@ -29,7 +29,7 @@ from etl.sp_term_protection_update import (
 )
 
 
-RULE_VERSION = "sp-recommendation-v6-term-protection-review"
+RULE_VERSION = "sp-recommendation-v7-missing-protection-unknown"
 TASK_NAME = "sp_advertising_recommendations"
 MARGIN_STEPS = (0, 5, 10, 15, 20, 25, 30, 35)
 COUNTRY_ALIASES = {
@@ -192,6 +192,22 @@ def _key(*values: Any) -> str:
 
 def _dec(value: Any) -> Decimal | None:
     return None if value is None else Decimal(str(value))
+
+
+def bid_protection_values(
+    budget: Mapping[str, Any] | None, cost: Any
+) -> dict[str, bool | None]:
+    """Keep missing protection data unknown instead of treating it as insufficient."""
+    if not budget:
+        return {"inventory_sufficient": None, "budget_sufficient": None}
+    inventory_flag = budget.get("inventory_sufficient_flag")
+    monthly_budget = _dec(budget.get("monthly_ad_budget_original"))
+    return {
+        "inventory_sufficient": None if inventory_flag is None else bool(inventory_flag),
+        "budget_sufficient": None
+        if monthly_budget is None
+        else monthly_budget >= (_dec(cost) or Decimal(0)),
+    }
 
 
 def _group_products(conn) -> dict[tuple[Any, Any, Any], dict[str, Any]]:
@@ -371,8 +387,7 @@ def build_recommendations(cutoff: date | None = None, dry_run: bool = False, con
                           margin_rate=margin, price_mapped=listing is not None,
                           margin_ladder_complete=bool(ladder_row and all(ladder.values())),
                           below_zero_margin_price=bool(price is not None and ladder.get(0) is not None and price < ladder[0]),
-                          inventory_sufficient=bool((budget or {}).get("inventory_sufficient_flag")),
-                          budget_sufficient=bool(budget and _dec(budget.get("monthly_ad_budget_original")) is not None and (_dec(budget.get("monthly_ad_budget_original")) or Decimal(0)) >= _dec(source.get("cost") or 0)))
+                          **bid_protection_values(budget, source.get("cost")))
             rule = calculate_bid_recommendation(source)
             bid_rows.append({**source, **rule, "listing_price": price, "batch_id": None,
                              "recommendation_key": _key(source.get("object_type"), *group_key, source.get("object_id"), source.get("object_text"), source.get("match_type")),

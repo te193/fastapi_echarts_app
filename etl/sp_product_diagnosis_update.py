@@ -259,20 +259,23 @@ def build_product_diagnosis(cutoff: date | None = None, dry_run: bool = False, c
                 cur.execute(period_insert_sql(), {"batch_id": batch_id, "recommendation_batch_id": rec_id, "period": code, "start": start, "end": end})
             cur.execute("select count(*) rows_n,count(distinct diagnosis_key) keys_n,sum(operating_matched_flag) matched from dashboard_sp_product_diagnosis_period_snapshot where batch_id=%s and period_code='30d'", (batch_id,))
             check = cur.fetchone()
+            row_count = int(check["rows_n"] or 0)
+            key_count = int(check["keys_n"] or 0)
+            matched_count = int(check["matched"] or 0)
             cur.execute("select count(*) n from dashboard_sp_product_diagnosis_period_snapshot where batch_id=%s", (batch_id,)); period_rows=cur.fetchone()["n"]
             cur.execute("select count(*) n from (select diagnosis_key from dashboard_sp_product_diagnosis_daily where batch_id=%s group by diagnosis_key having count(distinct coalesce(currency_code,''))>1) c", (batch_id,)); currency_conflicts=cur.fetchone()["n"]
             cur.execute("select sum(impressions) impressions,sum(clicks) clicks,sum(cost) cost,sum(orders_7d) orders_7d,sum(sales_7d) sales_7d from dashboard_sp_product_ad_daily where report_date between %s and %s and coalesce(trim(msku),'')<>''", period_bounds(cutoff,"30d"))
             source_totals=cur.fetchone()
             cur.execute("select sum(ad_impressions) impressions,sum(ad_clicks) clicks,sum(ad_cost) cost,sum(ad_orders_7d) orders_7d,sum(ad_sales_7d) sales_7d from dashboard_sp_product_diagnosis_period_snapshot where batch_id=%s and period_code='30d'", (batch_id,)); snapshot_totals=cur.fetchone()
-            quality = {"period_30d_rows": check["rows_n"], "duplicate_30d_keys": check["rows_n"]-check["keys_n"],
-                       "operating_unmatched_keys": check["keys_n"]-check["matched"], "currency_conflicts": currency_conflicts,
+            quality = {"period_30d_rows": row_count, "duplicate_30d_keys": row_count-key_count,
+                       "operating_unmatched_keys": key_count-matched_count, "currency_conflicts": currency_conflicts,
                        "ad_totals_match": source_totals == snapshot_totals}
             if quality["duplicate_30d_keys"]:
                 raise RuntimeError("产品诊断快照存在重复业务键")
             if currency_conflicts or not quality["ad_totals_match"]:
                 raise RuntimeError("产品诊断币种或广告指标核对失败")
             cur.execute("update dashboard_sp_product_diagnosis_batch set status='success',ad_product_keys=%s,operating_matched_keys=%s,unmatched_keys=%s,daily_rows=%s,period_rows=%s,quality_json=%s,finished_at=now() where batch_id=%s",
-                        (check["keys_n"],check["matched"],check["keys_n"]-check["matched"],daily_rows,period_rows,json.dumps(quality,ensure_ascii=False),batch_id))
+                        (key_count,matched_count,key_count-matched_count,daily_rows,period_rows,json.dumps(quality,ensure_ascii=False),batch_id))
         conn.commit()
         return {"status":"success","batch_id":batch_id,"data_start_90d":start_90,"data_end":cutoff,"recommendation_batch_id":rec_id,"daily_rows":daily_rows,"period_rows":period_rows,**quality}
     except Exception as exc:

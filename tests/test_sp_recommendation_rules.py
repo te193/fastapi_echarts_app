@@ -8,6 +8,7 @@ from app.services.sp_recommendation_rules import (
     classify_search_term,
     mature_window,
 )
+from etl.sp_advertising_recommendations import bid_protection_values
 
 
 def test_mature_window_excludes_latest_seven_days():
@@ -196,6 +197,24 @@ def test_bid_increase_is_limited_to_twenty_percent():
     assert result["suggested_bid"] == Decimal("1.20")
     assert result["change_amount"] == Decimal("0.20")
     assert result["status"] == "increase"
+
+
+def test_missing_bid_protection_snapshot_is_unknown_not_insufficient():
+    assert bid_protection_values(None, "12.50") == {
+        "inventory_sufficient": None,
+        "budget_sufficient": None,
+    }
+
+
+def test_bid_protection_only_blocks_explicit_shortage():
+    assert bid_protection_values(
+        {"inventory_sufficient_flag": 0, "monthly_ad_budget_original": "10"},
+        "12.50",
+    ) == {"inventory_sufficient": False, "budget_sufficient": False}
+    assert bid_protection_values(
+        {"inventory_sufficient_flag": 1, "monthly_ad_budget_original": "20"},
+        "12.50",
+    ) == {"inventory_sufficient": True, "budget_sufficient": True}
 
 
 def test_bid_protection_blocks_price_when_mapping_is_ambiguous():
