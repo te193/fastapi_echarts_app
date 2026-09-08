@@ -5,6 +5,7 @@ import pytest
 
 from app.services.sp_product_diagnosis_data import (
     ProductDiagnosisFilters,
+    SUGGESTION_ACTION_STATUSES,
     calculate_diagnosis_rates,
     product_key,
 )
@@ -79,6 +80,14 @@ def test_filters_validate_period_window_action_and_page_size():
         ProductDiagnosisFilters({"window": "3"})
     with pytest.raises(ValueError):
         ProductDiagnosisFilters({"action": "execute"})
+
+
+def test_detail_only_loads_actionable_suggestion_statuses():
+    assert SUGGESTION_ACTION_STATUSES == {
+        "bid": ("increase", "decrease", "manual_review"),
+        "add": ("recommended",),
+        "negative": ("recommended", "manual_review"),
+    }
 
 
 def test_ddl_and_insert_sql_use_local_sources_and_preserve_all_windows():

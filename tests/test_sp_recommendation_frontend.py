@@ -40,6 +40,10 @@ def test_product_diagnosis_controls_and_read_only_endpoints_exist():
     assert "/product-diagnosis/" in js
     assert "diagnosisColumns" in js
     assert "switchToRecommendation" in js
+    assert "具体处理建议" in js
+    assert "调整竞价 " in js
+    assert "suggestion_counts" in js
+    assert "(data.suggestions.bid||[]).length" not in js
 
 
 def test_recommendation_tables_show_concrete_actions():

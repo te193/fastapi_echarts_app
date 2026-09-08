@@ -26,6 +26,11 @@ SORTS = {
     "negative_recommended_count", "negative_manual_review_count",
 }
 FORMULA_PREFIXES = ("=", "+", "-", "@")
+SUGGESTION_ACTION_STATUSES = {
+    "bid": ("increase", "decrease", "manual_review"),
+    "add": ("recommended",),
+    "negative": ("recommended", "manual_review"),
+}
 
 
 def product_key(store: Any, country: Any, msku: Any) -> str:
@@ -224,7 +229,13 @@ class SpProductDiagnosisService:
         key_params=(batch["recommendation_batch_id"],item["seller_name"],item["country_code"],item["msku"])
         with self.connect() as conn, conn.cursor() as cur:
             for kind,table in (("bid","dashboard_sp_bid_recommendation"),("add","dashboard_sp_add_term_recommendation"),("negative","dashboard_sp_negative_term_recommendation")):
-                cur.execute(f"select * from {table} where batch_id=%s and seller_name=%s and country_code=%s and msku=%s order by priority_rank,cost desc,id limit 500",key_params)
+                statuses = SUGGESTION_ACTION_STATUSES[kind]
+                placeholders = ",".join(["%s"] * len(statuses))
+                cur.execute(
+                    f"select * from {table} where batch_id=%s and seller_name=%s and country_code=%s and msku=%s "
+                    f"and status in ({placeholders}) order by priority_rank,cost desc,id limit 500",
+                    (*key_params, *statuses),
+                )
                 result[kind]=_serialize(cur.fetchall())
         return result
 
@@ -241,7 +252,19 @@ class SpProductDiagnosisService:
         for w in WINDOWS:
             x={"impressions":item["ad_impressions"],"clicks":item["ad_clicks"],"ad_cost":item["ad_cost"],"ad_orders":item[f"ad_orders_{w}d"],"ad_sales":item[f"ad_sales_{w}d"],"operating_sales":item["operating_sales_amount"],"operating_gross_profit":item["operating_gross_profit"]}
             windows[str(w)]={**x,**_serialize(calculate_diagnosis_rates(x))}
-        return _serialize({"item":item,"daily":daily,"windows":windows,"suggestions":self._suggestions(item,batch)})
+        suggestion_counts = {
+            "bid_adjust": int(item["bid_increase_count"] or 0) + int(item["bid_decrease_count"] or 0),
+            "add": int(item["add_recommended_count"] or 0),
+            "negative": int(item["negative_recommended_count"] or 0),
+            "manual_review": int(item["bid_manual_review_count"] or 0) + int(item["negative_manual_review_count"] or 0),
+        }
+        return _serialize({
+            "item": item,
+            "daily": daily,
+            "windows": windows,
+            "suggestion_counts": suggestion_counts,
+            "suggestions": self._suggestions(item,batch),
+        })
 
     def export_csv(self, values: Mapping[str, Any]) -> bytes:
         payload=self.rows(values,export=True)
