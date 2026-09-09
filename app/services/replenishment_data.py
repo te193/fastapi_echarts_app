@@ -403,6 +403,7 @@ class ReplenishmentDataService:
             items, total = self._items(conn, filters, params, sort_field, sort_dir, page, page_size, period_metrics)
             meta = self._meta(conn)
 
+        self._attach_product_tags(items, "sku")
         safe_page_size = max(10, min(100, int(page_size or 20)))
         total_pages = max(1, math.ceil(total / safe_page_size))
         safe_page = min(max(1, int(page or 1)), total_pages)
@@ -533,7 +534,39 @@ class ReplenishmentDataService:
                 selected_columns,
                 period_metrics=period_metrics,
             )
+            self._attach_product_tags(rows, "max_sku")
+            tag_index = next(
+                (index + 1 for index, column in enumerate(columns) if column["name"] == "global_tags"),
+                len(columns),
+            )
+            columns.insert(tag_index, {"name": "product_tags", "label": "产品标签"})
             return {"columns": columns, "rows": rows, "snapshot_date": format_day(selected_date)}
+
+    def _attach_product_tags(self, rows: list[dict[str, Any]], sku_field: str) -> None:
+        """Enrich existing results with current product tags, without multiplying rows."""
+        skus = sorted({row[sku_field] for row in rows if row.get(sku_field)})
+        tags_by_sku: dict[str, set[str]] = {}
+        if skus:
+            with self.connect_source() as conn:
+                with conn.cursor() as cursor:
+                    for offset in range(0, len(skus), 500):
+                        batch = skus[offset:offset + 500]
+                        placeholders = ", ".join(["%s"] * len(batch))
+                        cursor.execute(
+                            f"""
+                            select sku, tag_name
+                            from dwd_datasync.lx_product_local_product_info
+                            where sku in ({placeholders})
+                              and tag_name is not null and tag_name <> ''
+                            """,
+                            batch,
+                        )
+                        for product in cursor.fetchall():
+                            tag = (product.get("tag_name") or "").strip()
+                            if tag:
+                                tags_by_sku.setdefault(product["sku"], set()).add(tag)
+        for row in rows:
+            row["product_tags"] = " | ".join(sorted(tags_by_sku.get(row.get(sku_field), set())))
 
     def get_country_metrics(
         self,
