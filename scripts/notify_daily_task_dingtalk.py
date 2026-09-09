@@ -462,10 +462,11 @@ def _label_evidence_result(path: Path) -> tuple[str, int]:
         stripped = line.strip()
         if stripped.startswith("label_dates") and ":" in stripped:
             label_date = stripped.split(":", 1)[1].split(",", 1)[0].strip()
-        elif stripped.startswith("rows") and ":" in stripped:
+        elif stripped.startswith(("rows", "evidence")) and ":" in stripped:
             value = stripped.split(":", 1)[1].strip()
-            if value.isdigit():
-                rows = int(value)
+            normalized_value = value.replace(",", "")
+            if normalized_value.isdigit():
+                rows = int(normalized_value)
     return label_date, rows
 
 

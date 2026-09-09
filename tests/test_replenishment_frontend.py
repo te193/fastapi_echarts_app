@@ -20,7 +20,7 @@ def test_margin_price_assets_use_cache_busting_versions():
     replenishment_template = (ROOT / "app" / "templates" / "replenishment.html").read_text(encoding="utf-8")
 
     assert "styles.css') }}?v=20260818rolegrid1" in base_template
-    assert "replenishment.js') }}?v=20260909producttags1" in replenishment_template
+    assert "replenishment.js') }}?v=20260909producttags-layerthreshold1" in replenishment_template
     assert "replenishment_tracking_summary.js') }}?v=20260727stagefilters1" in replenishment_template
 
 
@@ -62,6 +62,20 @@ def test_replenishment_layers_do_not_show_purchase_tracking_jump_button():
     assert "data-tracking-level-entry" not in script
     assert "openTrackingPage" not in script
     assert ".layer-tracking-button" not in styles
+
+
+def test_replenishment_layer_help_uses_extended_support_day_thresholds():
+    script = (ROOT / "app" / "static" / "js" / "replenishment.js").read_text(encoding="utf-8")
+
+    assert r"\u6570 <= 50 \u5929" in script
+    assert r"\u5224\u5b9a\uff1a50 \u5929 <" in script
+    assert r"\u6570 <= 80 \u5929" in script
+    assert r"\u5224\u5b9a\uff1a80 \u5929 <" in script
+    assert r"\u6570 <= 105 \u5929" in script
+    assert "库存支撑天数 > 105 天" in script
+    assert r"\u6570 <= 35 \u5929" not in script
+    assert r"\u6570 <= 65 \u5929" not in script
+    assert r"\u6570 <= 90 \u5929" not in script
 
 
 def test_replenishment_tracking_summary_allows_selecting_page_size():

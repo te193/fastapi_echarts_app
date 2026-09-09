@@ -398,7 +398,7 @@ def test_success_markdown_covers_new_daily_modules_without_duplicate_acceptance(
         "Label rule evidence snapshot updated\n"
         "  label_dates : 2026-07-20, 2026-07-19\n"
         "  periods     : 7d, 14d, 30d, 90d\n"
-        "  rows        : 66214\n",
+        "  evidence    : 66,214\n",
         encoding="utf-8",
     )
     return_goods_log.write_text(

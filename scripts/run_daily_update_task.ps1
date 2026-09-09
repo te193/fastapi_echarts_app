@@ -54,6 +54,66 @@ New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
 $RunStamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $IsDryRun = $args -contains "--dry-run"
+
+function Select-DashboardTaskArguments {
+    param(
+        [string[]]$SourceArgs,
+        [string[]]$ValueOptions = @(),
+        [string[]]$SwitchOptions = @()
+    )
+
+    $Selected = @()
+    for ($Index = 0; $Index -lt $SourceArgs.Count; $Index++) {
+        $Argument = [string]$SourceArgs[$Index]
+        $Matched = $false
+
+        foreach ($Option in $ValueOptions) {
+            if ($Argument -eq $Option) {
+                if ($Index + 1 -ge $SourceArgs.Count) {
+                    throw "Missing value for task argument $Option."
+                }
+                $Selected += $Argument
+                $Index += 1
+                $Selected += [string]$SourceArgs[$Index]
+                $Matched = $true
+                break
+            }
+            if ($Argument.StartsWith("$Option=", [System.StringComparison]::Ordinal)) {
+                $Selected += $Argument
+                $Matched = $true
+                break
+            }
+        }
+
+        if (-not $Matched -and $SwitchOptions -contains $Argument) {
+            $Selected += $Argument
+        }
+    }
+    return $Selected
+}
+
+$SalesRoleArgs = @(Select-DashboardTaskArguments -SourceArgs $args `
+    -ValueOptions @("--snapshot-date", "--period-end", "--periods") `
+    -SwitchOptions @("--skip-ddl", "--dry-run"))
+$LabelEvidenceArgs = @(Select-DashboardTaskArguments -SourceArgs $args `
+    -ValueOptions @("--periods") `
+    -SwitchOptions @("--dry-run"))
+$StockoutHistoricalArgs = @(Select-DashboardTaskArguments -SourceArgs $args `
+    -ValueOptions @("--biz-date", "--data-date") `
+    -SwitchOptions @("--allow-source-max-mismatch", "--dry-run"))
+$ReplenishmentArgs = @(Select-DashboardTaskArguments -SourceArgs $args `
+    -ValueOptions @(
+        "--biz-date", "--snapshot-date", "--candidate-days", "--steps",
+        "--history-start-date", "--history-end-date", "--batch-size"
+    ) `
+    -SwitchOptions @("--skip-ddl", "--dry-run"))
+$ReplenishmentTrackingArgs = @(Select-DashboardTaskArguments -SourceArgs $args `
+    -ValueOptions @("--cutoff-date") `
+    -SwitchOptions @("--dry-run"))
+$ReturnGoodsArgs = @(Select-DashboardTaskArguments -SourceArgs $args `
+    -ValueOptions @("--snapshot-date", "--lookback-days", "--batch-size") `
+    -SwitchOptions @("--dry-run"))
+
 $PreflightStdoutLog = Join-Path $LogDir "etl_source_preflight_run_$RunStamp.log"
 $PreflightStderrLog = Join-Path $LogDir "etl_source_preflight_run_$RunStamp.err.log"
 $StdoutLog = Join-Path $LogDir "etl_daily_run_$RunStamp.log"
@@ -196,7 +256,7 @@ Write-Host "Sales role stderr log : $SalesRoleStderrLog"
 
 $PreviousErrorActionPreference = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
-& $PythonExe -m etl.sales_role_snapshot_update @args > $SalesRoleStdoutLog 2> $SalesRoleStderrLog
+& $PythonExe -m etl.sales_role_snapshot_update @SalesRoleArgs > $SalesRoleStdoutLog 2> $SalesRoleStderrLog
 $SalesRoleExitCode = $LASTEXITCODE
 $ErrorActionPreference = $PreviousErrorActionPreference
 
@@ -213,7 +273,7 @@ Write-Host "Label evidence stderr log : $LabelEvidenceStderrLog"
 
 $PreviousErrorActionPreference = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
-& $PythonExe -m etl.label_rule_evidence_snapshot_update @args > $LabelEvidenceStdoutLog 2> $LabelEvidenceStderrLog
+& $PythonExe -m etl.label_rule_evidence_snapshot_update @LabelEvidenceArgs > $LabelEvidenceStdoutLog 2> $LabelEvidenceStderrLog
 $LabelEvidenceExitCode = $LASTEXITCODE
 $ErrorActionPreference = $PreviousErrorActionPreference
 
@@ -230,7 +290,7 @@ Write-Host "Stockout historical stderr log : $StockoutHistoricalStderrLog"
 
 $PreviousErrorActionPreference = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
-& $PythonExe -m etl.stockout_historical_operating_update @args > $StockoutHistoricalStdoutLog 2> $StockoutHistoricalStderrLog
+& $PythonExe -m etl.stockout_historical_operating_update @StockoutHistoricalArgs > $StockoutHistoricalStdoutLog 2> $StockoutHistoricalStderrLog
 $StockoutHistoricalExitCode = $LASTEXITCODE
 $ErrorActionPreference = $PreviousErrorActionPreference
 
@@ -247,7 +307,7 @@ Write-Host "Replenishment stderr log : $ReplenishmentStderrLog"
 
 $PreviousErrorActionPreference = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
-& $PythonExe -m etl.replenishment_update @args > $ReplenishmentStdoutLog 2> $ReplenishmentStderrLog
+& $PythonExe -m etl.replenishment_update @ReplenishmentArgs > $ReplenishmentStdoutLog 2> $ReplenishmentStderrLog
 $ReplenishmentExitCode = $LASTEXITCODE
 $ErrorActionPreference = $PreviousErrorActionPreference
 
@@ -264,7 +324,7 @@ Write-Host "Replenishment tracking summary stderr log : $ReplenishmentTrackingSt
 
 $PreviousErrorActionPreference = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
-& $PythonExe -m etl.replenishment_tracking_summary_update @args > $ReplenishmentTrackingStdoutLog 2> $ReplenishmentTrackingStderrLog
+& $PythonExe -m etl.replenishment_tracking_summary_update @ReplenishmentTrackingArgs > $ReplenishmentTrackingStdoutLog 2> $ReplenishmentTrackingStderrLog
 $ReplenishmentTrackingExitCode = $LASTEXITCODE
 $ErrorActionPreference = $PreviousErrorActionPreference
 
@@ -281,7 +341,7 @@ Write-Host "Return goods stderr log : $ReturnGoodsStderrLog"
 
 $PreviousErrorActionPreference = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
-& $PythonExe -m etl.return_goods_update @args > $ReturnGoodsStdoutLog 2> $ReturnGoodsStderrLog
+& $PythonExe -m etl.return_goods_update @ReturnGoodsArgs > $ReturnGoodsStdoutLog 2> $ReturnGoodsStderrLog
 $ReturnGoodsExitCode = $LASTEXITCODE
 $ErrorActionPreference = $PreviousErrorActionPreference
 

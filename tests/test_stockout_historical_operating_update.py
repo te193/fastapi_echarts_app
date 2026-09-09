@@ -266,6 +266,18 @@ def test_historical_target_can_be_rebuilt_after_both_sources_advance():
     )
 
 
+def test_daily_source_validation_allows_next_day_inventory_snapshot():
+    validate_source_dates(
+        target_date=date(2026, 8, 26),
+        label_max_date=date(2026, 8, 26),
+        performance_max_date=date(2026, 8, 26),
+        inventory_max_date=date(2026, 8, 27),
+        label_partition_exists=True,
+        performance_partition_exists=True,
+        inventory_partition_exists=True,
+    )
+
+
 def test_source_validation_stops_when_latest_dates_disagree_or_history_partition_is_missing():
     with pytest.raises(RuntimeError, match="latest source date mismatch"):
         validate_source_dates(
@@ -277,6 +289,29 @@ def test_source_validation_stops_when_latest_dates_disagree_or_history_partition
             performance_partition_exists=True,
             inventory_partition_exists=True,
         )
+
+    with pytest.raises(RuntimeError, match="latest source date mismatch"):
+        validate_source_dates(
+            target_date=date(2026, 8, 21),
+            label_max_date=date(2026, 8, 21),
+            performance_max_date=date(2026, 8, 21),
+            inventory_max_date=date(2026, 8, 23),
+            label_partition_exists=True,
+            performance_partition_exists=True,
+            inventory_partition_exists=True,
+        )
+
+    with pytest.raises(RuntimeError, match="latest source date mismatch"):
+        validate_source_dates(
+            target_date=date(2026, 8, 20),
+            label_max_date=date(2026, 8, 21),
+            performance_max_date=date(2026, 8, 21),
+            inventory_max_date=date(2026, 8, 20),
+            label_partition_exists=True,
+            performance_partition_exists=True,
+            inventory_partition_exists=True,
+        )
+
     with pytest.raises(RuntimeError, match="target source partition missing"):
         validate_source_dates(
             target_date=date(2026, 8, 20),

@@ -444,10 +444,10 @@ def build_verification_queries(production_schema: str, test_schema: str) -> dict
                              and lead_adjusted_replenish_need_qty > 0
                              and abs(arrival_inventory_qty
                                      + lead_adjusted_replenish_need_qty
-                                     - 120 * daily_avg_sales) > 0.02)
+                                     - 150 * daily_avg_sales) > 0.02)
                          or (arrival_inventory_support_days < 0
                              and abs(lead_adjusted_replenish_need_qty
-                                     - 120 * daily_avg_sales) > 0.02)
+                                     - 150 * daily_avg_sales) > 0.02)
                          or (arrival_inventory_support_days < 0
                              and abs(lead_time_lost_sales_qty
                                      - (-arrival_inventory_support_days * daily_avg_sales)) > 0.02)

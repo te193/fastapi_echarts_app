@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Iterable, Mapping
 
 from app.services.stockout_historical_operating import RULE_VERSION, evaluate_stockout_history
@@ -426,7 +426,17 @@ def validate_source_dates(
 ) -> None:
     if label_max_date is None or performance_max_date is None or inventory_max_date is None:
         raise RuntimeError("stockout historical operating source tables have no available date")
-    if len({label_max_date, performance_max_date, inventory_max_date}) > 1 and not allow_latest_mismatch:
+    expected_inventory_dates = {
+        label_max_date,
+        label_max_date + timedelta(days=1),
+    }
+    if (
+        not allow_latest_mismatch
+        and (
+            label_max_date != performance_max_date
+            or inventory_max_date not in expected_inventory_dates
+        )
+    ):
         raise RuntimeError(
             "latest source date mismatch: "
             f"label={label_max_date}, performance={performance_max_date}, inventory={inventory_max_date}"

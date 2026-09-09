@@ -1870,7 +1870,7 @@ from (
             as purchase_lead_status,
         l.max_cg_price,
         l.max_cg_transport_costs,
-        4 as pre_replenish_comp_months,
+        5 as pre_replenish_comp_months,
         coalesce(f.available_total, 0) + coalesce(f.stock_up_num, 0) + coalesce(r.local_quantity, 0) as support_inventory_qty
     from tmp_pur_plan_candidate_keys c
     left join tmp_prod_perf_sku_metrics m
@@ -1943,7 +1943,7 @@ select
     - available_total
     - stock_up_num
     - local_quantity as pre_normal_replenish_need_qty,
-    hist_90d_instock_daily_sales * 120
+    hist_90d_instock_daily_sales * 150
     - available_total
     - stock_up_num
     - local_quantity as history_recovery_need_qty,
@@ -1959,18 +1959,18 @@ select
     arrival.*,
     case
         when coalesce(arrival.daily_avg_sales, 0) <= 0 then 5
-        when arrival.arrival_inventory_support_days <= 35 then 1
-        when arrival.arrival_inventory_support_days <= 65 then 2
-        when arrival.arrival_inventory_support_days <= 90 then 3
-        when arrival.arrival_inventory_support_days > 90 then 4
+        when arrival.arrival_inventory_support_days <= 50 then 1
+        when arrival.arrival_inventory_support_days <= 80 then 2
+        when arrival.arrival_inventory_support_days <= 105 then 3
+        when arrival.arrival_inventory_support_days > 105 then 4
         else 2
     end as support_replenish_level_sort,
     case
         when coalesce(arrival.daily_avg_sales, 0) <= 0 then '日销为0'
-        when arrival.arrival_inventory_support_days <= 35 then '紧急补货'
-        when arrival.arrival_inventory_support_days <= 65 then '建议补货'
-        when arrival.arrival_inventory_support_days <= 90 then '计划补货'
-        when arrival.arrival_inventory_support_days > 90 then '库存充足'
+        when arrival.arrival_inventory_support_days <= 50 then '紧急补货'
+        when arrival.arrival_inventory_support_days <= 80 then '建议补货'
+        when arrival.arrival_inventory_support_days <= 105 then '计划补货'
+        when arrival.arrival_inventory_support_days > 105 then '库存充足'
         else '建议补货'
     end as support_replenish_level
 from (
@@ -1990,10 +1990,10 @@ select
         0
     ) as arrival_inventory_qty,
     base.effective_purchase_lead_days * coalesce(base.daily_avg_sales, 0) as lead_time_demand_qty,
-    greatest(120 * coalesce(base.daily_avg_sales, 0) - base.support_inventory_qty, 0)
+    greatest(150 * coalesce(base.daily_avg_sales, 0) - base.support_inventory_qty, 0)
         as base_replenish_need_qty,
     greatest(
-        120 * coalesce(base.daily_avg_sales, 0)
+        150 * coalesce(base.daily_avg_sales, 0)
         - greatest(
             base.support_inventory_qty
             - base.effective_purchase_lead_days * base.daily_avg_sales,
@@ -2030,7 +2030,7 @@ drop temporary table if exists tmp_pur_plan_replenish_calc;
 create temporary table tmp_pur_plan_replenish_calc as
 select
     support.*,
-    greatest(120 * support.daily_avg_sales - support.arrival_inventory_qty, 0)
+    greatest(150 * support.daily_avg_sales - support.arrival_inventory_qty, 0)
         as normal_replenish_need_qty,
     case
         when support.pre_normal_replenish_need_qty < support.pre_replenish_trigger_qty
@@ -2073,7 +2073,7 @@ select
             else 0
         end
     ) as group_new_product_daily_weight_flag,
-    max(coalesce(pre_replenish_comp_months, 4)) as group_replenish_comp_months,
+    max(coalesce(pre_replenish_comp_months, 5)) as group_replenish_comp_months,
     sum(coalesce(support_inventory_qty, 0)) as group_support_inventory_qty,
     max(coalesce(purchase_source.effective_purchase_lead_days, 0))
         as group_effective_purchase_lead_days,
@@ -2235,7 +2235,7 @@ select
     group_effective_purchase_lead_days * group_daily_avg_sales
         as group_lead_time_demand_qty,
     greatest(
-        120 * group_daily_avg_sales - group_support_inventory_qty,
+        150 * group_daily_avg_sales - group_support_inventory_qty,
         0
     ) as group_base_replenish_need_qty,
     greatest(
@@ -2282,13 +2282,13 @@ select
     case
         when group_daily_avg_sales <= 0 then 5
         when group_support_inventory_qty / group_daily_avg_sales
-            - group_effective_purchase_lead_days <= 35 then 1
+            - group_effective_purchase_lead_days <= 50 then 1
         when group_support_inventory_qty / group_daily_avg_sales
-            - group_effective_purchase_lead_days <= 65 then 2
+            - group_effective_purchase_lead_days <= 80 then 2
         when group_support_inventory_qty / group_daily_avg_sales
-            - group_effective_purchase_lead_days <= 90 then 3
+            - group_effective_purchase_lead_days <= 105 then 3
         when group_support_inventory_qty / group_daily_avg_sales
-            - group_effective_purchase_lead_days > 90 then 4
+            - group_effective_purchase_lead_days > 105 then 4
         else 2
     end as group_support_replenish_level_sort
 from (

@@ -95,6 +95,21 @@ def test_daily_update_dry_run_skips_dingtalk_transmission():
     assert "DingTalk notification skipped in dry-run mode." in script
 
 
+def test_daily_update_filters_arguments_for_each_downstream_stage():
+    script = SCRIPT.read_text(encoding="utf-8")
+
+    assert "function Select-DashboardTaskArguments" in script
+    assert "& $PythonExe -m etl.sales_role_snapshot_update @SalesRoleArgs" in script
+    assert "& $PythonExe -m etl.label_rule_evidence_snapshot_update @LabelEvidenceArgs" in script
+    assert "& $PythonExe -m etl.stockout_historical_operating_update @StockoutHistoricalArgs" in script
+    assert "& $PythonExe -m etl.replenishment_update @ReplenishmentArgs" in script
+    assert "& $PythonExe -m etl.replenishment_tracking_summary_update @ReplenishmentTrackingArgs" in script
+    assert "& $PythonExe -m etl.return_goods_update @ReturnGoodsArgs" in script
+    assert '-ValueOptions @("--snapshot-date", "--period-end", "--periods")' in script
+    assert '-ValueOptions @("--biz-date", "--data-date")' in script
+    assert '-ValueOptions @("--cutoff-date")' in script
+
+
 def test_daily_update_runs_label_evidence_after_sales_role_before_replenishment():
     script = SCRIPT.read_text(encoding="utf-8")
 
