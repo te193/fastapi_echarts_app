@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', path='css/ad_performance.css') }}?v=20260909c">
+{% endblock %}
+
+{% block content %}
+<section class="ap-page" aria-labelledby="ap-title">
+  <header class="ap-hero">
+    <div><p class="ap-eyebrow">SP ADVERTISING PERFORMANCE</p><h1 id="ap-title">广告效果分析</h1><p>从 MSKU 定位到活动、广告组、关键词与用户搜索词。</p></div>
+    <div class="ap-freshness"><span>本地数据</span><strong id="ap-data-date">读取中…</strong><small id="ap-updated"></small></div>
+  </header>
+
+  <nav id="ap-analysis-tabs" class="ap-analysis-tabs" aria-label="广告分析功能">
+    <button class="active" data-mode="overview" type="button">经营总览</button>
+    <button data-mode="governance" type="button">治理总览</button>
+    <button data-mode="bid" type="button">竞价优化</button>
+    <button data-mode="add" type="button">加词建议</button>
+    <button data-mode="negative" type="button">否词建议</button>
+    <button data-mode="diagnosis" type="button">产品诊断</button>
+  </nav>
+
+  <div id="ap-rule-copy" class="ap-rule-copy" hidden>
+    <strong>建议规则：</strong><span></span><small>仅供人工决策参考，不会修改广告。</small>
+  </div>
+
+  <section id="ap-filter-panel" class="ap-filter-panel" aria-label="广告效果筛选">
+    <div class="ap-filter-row">
+      <label id="ap-start-label">开始日期<input id="ap-start" type="date"></label>
+      <label id="ap-end-label">结束日期<input id="ap-end" type="date"></label>
+      <label id="ap-diagnosis-period-label" hidden>统计周期<select id="ap-diagnosis-period"><option value="7d">近7天</option><option value="14d">近14天</option><option value="30d" selected>近30天</option><option value="90d">近90天</option></select></label>
+      <label id="ap-currency-label">币种<select id="ap-currency"></select></label>
+      <label>店铺<input id="ap-store" type="search" list="ap-store-options" placeholder="全部店铺，可输入"><datalist id="ap-store-options"></datalist></label>
+      <label>站点<input id="ap-country" type="search" list="ap-country-options" placeholder="全部站点，可输入"><datalist id="ap-country-options"></datalist></label>
+      <label>投放方式<select id="ap-targeting"><option value="">全部方式</option><option value="auto">自动</option><option value="manual">手动</option><option value="__unknown__">未知类型</option></select></label>
+      <label id="ap-rec-status-label" hidden>建议状态<select id="ap-rec-status"><option value="">全部状态</option></select></label>
+      <label id="ap-rec-priority-label" hidden>优先级<select id="ap-rec-priority"><option value="">全部优先级</option><option value="highest">最高</option><option value="high">高</option><option value="medium">中</option><option value="none">无操作</option></select></label>
+      <label id="ap-diagnosis-action-label" hidden>处理动作<select id="ap-diagnosis-action"><option value="">全部产品</option><option value="bid">有竞价动作</option><option value="add">建议加词</option><option value="negative">建议否词/审核</option><option value="manual_review">需要人工审核</option></select></label>
+    </div>
+    <div class="ap-filter-row ap-filter-actions">
+      <label id="ap-campaign-label" class="ap-object-search">广告活动<input id="ap-campaign" type="search" placeholder="输入活动名称"></label>
+      <label id="ap-ad-group-label" class="ap-object-search">广告组<input id="ap-ad-group" type="search" placeholder="输入广告组名称"></label>
+      <label id="ap-keyword-text-label" class="ap-object-search">关键词/投放内容<input id="ap-keyword-text" type="search" placeholder="输入关键词或投放内容"></label>
+      <label id="ap-search-term-label" class="ap-object-search">用户搜索词<input id="ap-search-term" type="search" placeholder="输入用户实际搜索词"></label>
+      <label id="ap-msku-label" class="ap-search"><span id="ap-msku-label-text">关联 MSKU</span><input id="ap-msku" type="search" placeholder="MSKU"></label>
+      <button id="ap-query" class="ap-primary" type="button">查询</button>
+      <button id="ap-reset" type="button">重置</button>
+      <span id="ap-scope-note">金额按所选币种展示</span>
+    </div>
+  </section>
+
+  <section id="ap-governance-filter-panel" class="ap-filter-panel ap-governance-filters" aria-label="广告治理筛选" hidden>
+    <div class="ap-filter-row">
+      <label>店铺主体<input id="ap-governance-base-store" type="search" list="ap-governance-store-options" placeholder="全部店铺主体"><datalist id="ap-governance-store-options"></datalist></label>
+      <label>具体店铺<input id="ap-governance-store" type="search" list="ap-governance-site-options" placeholder="全部具体店铺"><datalist id="ap-governance-site-options"></datalist></label>
+      <label>站点<input id="ap-governance-country" type="search" placeholder="全部站点"></label>
+      <label>广告投放方式<select id="ap-governance-targeting"><option value="">全部方式</option><option value="auto">自动广告</option><option value="manual">手动广告</option><option value="__unknown__">未知类型</option></select></label>
+      <label>活动/广告组状态<select id="ap-governance-state"><option value="active">启用＋暂停</option><option value="enabled">仅启用</option><option value="paused">仅暂停</option><option value="archived">仅归档</option><option value="all">全部状态</option></select></label>
+      <label>待办类型<select id="ap-governance-action"><option value="">全部待办</option><option value="bid">竞价</option><option value="add">加词</option><option value="negative">否词</option><option value="manual_review">人工审核</option></select></label>
+      <label class="ap-search">活动、广告组或 MSKU<input id="ap-governance-keyword" type="search" placeholder="输入名称、MSKU或ASIN"></label>
+      <button id="ap-governance-query" class="ap-primary" type="button">查询</button>
+      <button id="ap-governance-reset" type="button">重置</button>
+    </div>
+  </section>
+
+  <section id="ap-governance-panel" class="ap-governance-panel" aria-label="SP广告治理总览" hidden>
+    <header class="ap-governance-head">
+      <div><span>SP GOVERNANCE</span><h2>广告治理待办</h2><p>按店铺主体定位需要复核的活动和广告组，点击动作数量进入对应建议页。</p></div>
+      <small id="ap-governance-batch">读取最新建议批次…</small>
+    </header>
+    <div class="ap-governance-kpis">
+      <article><span>有效活动</span><strong id="ap-governance-campaigns">—</strong><small>当前启用＋暂停</small></article>
+      <article><span>有效广告组</span><strong id="ap-governance-groups">—</strong><small>当前筛选范围</small></article>
+      <article class="attention"><span>需处理广告组</span><strong id="ap-governance-actionable">—</strong><small id="ap-governance-rate">覆盖率 —</small></article>
+      <article class="review"><span>人工审核广告组</span><strong id="ap-governance-review">—</strong><small>已计入需处理</small></article>
+    </div>
+    <div class="ap-governance-action-cards">
+      <button type="button" data-governance-card="bid"><span>竞价待办</span><strong id="ap-governance-bid">—</strong><small id="ap-governance-bid-detail">提价 — · 降价 —</small></button>
+      <button type="button" data-governance-card="add"><span>加词建议</span><strong id="ap-governance-add">—</strong><small>建议记录数</small></button>
+      <button type="button" data-governance-card="negative"><span>否词建议</span><strong id="ap-governance-negative">—</strong><small>建议记录数</small></button>
+    </div>
+    <div class="ap-governance-workspace">
+      <aside class="ap-governance-stores">
+        <header><div><h3>店铺主体</h3><small>全部店铺，待办多的优先</small></div><span id="ap-governance-store-count">—</span></header>
+        <div id="ap-governance-store-list" class="ap-governance-store-list"></div>
+      </aside>
+      <section class="ap-governance-detail">
+        <header><div><span>当前对象</span><h3 id="ap-governance-selection">请选择店铺主体</h3></div><div id="ap-governance-sites" class="ap-governance-sites"></div></header>
+        <nav id="ap-governance-levels"><button class="active" data-level="campaign" type="button">广告活动</button><button data-level="ad_group" type="button">广告组</button><button data-level="msku" type="button">MSKU</button></nav>
+        <div id="ap-governance-entity-grid" class="ag-theme-quartz ap-governance-grid" aria-label="广告治理对象明细"></div>
+      </section>
+    </div>
+  </section>
+
+  <div id="ap-window-bar" class="ap-window-bar"><span>转化归因窗口</span><div id="ap-windows" role="group" aria-label="转化归因窗口">
+    <button data-window="1">1天</button><button class="active" data-window="7">7天</button><button data-window="14">14天</button><button data-window="30">30天</button>
+  </div><small>订单、销量、销售额及 CVR、ACOS、ROAS 随窗口切换</small></div>
+
+  <section id="ap-kpis" class="ap-kpis" aria-label="广告效果摘要">
+    <article><span>花费</span><strong id="ap-cost">—</strong><small id="ap-cost-currency"></small></article>
+    <article><span>广告销售额</span><strong id="ap-sales">—</strong><small id="ap-sales-window">7 天归因</small></article>
+    <article><span>广告订单</span><strong id="ap-orders">—</strong><small id="ap-cvr">CVR —</small></article>
+    <article><span>曝光</span><strong id="ap-impressions">—</strong><small id="ap-ctr">CTR —</small></article>
+    <article><span>点击</span><strong id="ap-clicks">—</strong><small id="ap-cpc">CPC —</small></article>
+    <article class="ap-acos"><span>ACOS</span><strong id="ap-acos">—</strong><small id="ap-roas">ROAS —</small></article>
+  </section>
+
+  <section id="ap-rec-summary-panel" class="ap-rec-summary-panel" aria-label="广告建议分类汇总" hidden>
+    <header>
+      <div><span>建议分类</span><h2 id="ap-rec-summary-title">建议实际分布</h2><p>点击分类卡或图表，可快速筛选下方明细；再次点击取消。</p></div>
+      <small id="ap-rec-summary-meta">成熟30天</small>
+    </header>
+    <div id="ap-rec-status-cards" class="ap-rec-status-cards" role="group" aria-label="建议分类快速筛选"></div>
+    <div class="ap-rec-summary-body">
+      <div id="ap-rec-status-chart" class="ap-rec-status-chart" role="img" aria-label="建议状态分布"></div>
+    </div>
+  </section>
+
+  <section id="ap-diagnosis-kpis" class="ap-kpis" aria-label="产品诊断摘要" hidden>
+    <article><span>广告产品数</span><strong id="ap-diag-products">—</strong><small>店铺＋站点＋MSKU</small></article>
+    <article><span>需处理产品数</span><strong id="ap-diag-actionable">—</strong><small>存在明确动作</small></article>
+    <article><span>经营销售额</span><strong id="ap-diag-op-sales">—</strong><small>所选统计周期</small></article>
+    <article><span>经营毛利润</span><strong id="ap-diag-profit">—</strong><small>订单毛利润</small></article>
+    <article><span>广告花费</span><strong id="ap-diag-cost">—</strong><small>SP广告</small></article>
+    <article><span>广告销售额</span><strong id="ap-diag-ad-sales">—</strong><small id="ap-diag-window">7天归因</small></article>
+  </section>
+
+  <section id="ap-trend-panel" class="ap-trend-panel">
+    <header><div><span>每日趋势</span><h2 id="ap-trend-title">投入与转化走势</h2></div><div class="ap-trend-actions" id="ap-trend-modes"><button class="active" data-mode="amount">花费与销售额</button><button data-mode="traffic">曝光与点击</button><button data-mode="rate">CTR 与 CVR</button><button id="ap-trend-toggle" type="button" aria-expanded="true">收起</button></div></header>
+    <div id="ap-trend" class="ap-trend" role="img" aria-label="广告效果每日趋势"></div>
+  </section>
+  <section id="ap-diagnosis-action-panel" class="ap-trend-panel" hidden>
+    <header><div><span>动作分布</span><h2>竞价、加词、否词与人工审核</h2></div><small>数量来自最新成功建议批次</small></header>
+    <div id="ap-diagnosis-actions-chart" class="ap-diagnosis-actions-chart" role="img" aria-label="产品诊断动作分布"></div>
+  </section>
+
+  <section id="ap-table-panel" class="ap-table-panel" aria-busy="false">
+    <nav id="ap-tabs" class="ap-tabs" aria-label="分析层级">
+      <button class="active" data-view="product">MSKU 表现</button><button data-view="campaign">广告活动</button><button data-view="ad_group">广告组</button><button data-view="keyword">关键词</button><button data-view="search_term">搜索词</button>
+    </nav>
+    <header class="ap-table-head"><div><div class="ap-table-heading"><h2 id="ap-view-title">MSKU 表现</h2><div id="ap-bid-types" role="group" aria-label="竞价层级" hidden><button type="button" data-bid-type="" aria-pressed="false">全部竞价</button><button type="button" data-bid-type="ad_group" class="active" aria-pressed="true">广告组竞价</button><button type="button" data-bid-type="keyword" aria-pressed="false">关键词竞价</button></div></div><p id="ap-view-note">指标来自广告商品报表，可直接归属到 MSKU。</p><div id="ap-filter-tags" class="ap-tags"></div></div><div><button id="ap-columns" type="button">列设置</button><button id="ap-export" type="button">导出 CSV</button></div></header>
+    <div id="ap-grid" class="ag-theme-quartz ap-grid" aria-label="广告效果明细表"></div>
+    <footer class="ap-pagination"><span id="ap-page-summary">正在加载…</span><div><label>每页<select id="ap-page-size"><option>50</option><option>100</option><option>200</option></select></label><button id="ap-prev">上一页</button><span id="ap-page">1 / 1</span><button id="ap-next">下一页</button></div></footer>
+  </section>
+  <div id="ap-error" class="ap-error" hidden><strong>数据加载失败</strong><span></span><button type="button">重试</button></div>
+</section>
+
+<div id="ap-drawer-backdrop" class="ap-drawer-backdrop" hidden></div>
+<aside id="ap-drawer" class="ap-drawer" aria-hidden="true">
+  <header><div><span>效果详情</span><h2 id="ap-drawer-title">—</h2></div><button id="ap-drawer-close" aria-label="关闭">×</button></header>
+  <div id="ap-drawer-content"></div>
+</aside>
+{% endblock %}
+
+{% block scripts %}<script src="{{ url_for('static', path='js/ad_currency.js') }}?v=20260908a"></script><script src="{{ url_for('static', path='js/ad_performance.js') }}?v=20260910b"></script>{% endblock %}
