@@ -3,6 +3,7 @@ from __future__ import annotations
 import configparser
 import csv
 import io
+import os
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
@@ -214,10 +215,20 @@ class AdPerformanceService:
     def __init__(self) -> None:
         config = configparser.ConfigParser()
         config.read(Path(__file__).resolve().parents[2] / "config" / "database.ini", encoding="utf-8")
-        target = config["target"]
-        self.settings = dict(host=target["host"], port=int(target.get("port", 3306)), user=target["user"],
-                             password=target["password"], database=target.get("database", "etl_datasync_test"),
-                             charset="utf8mb4", cursorclass=DictCursor, autocommit=True)
+        target = config["target"] if config.has_section("target") else {}
+        self.settings = dict(
+            host=os.getenv("DASHBOARD_DB_HOST", os.getenv("MYSQL_HOST", target.get("host", "127.0.0.1"))),
+            port=int(os.getenv("DASHBOARD_DB_PORT", os.getenv("MYSQL_PORT", target.get("port", "3306")))),
+            user=os.getenv("DASHBOARD_DB_USER", os.getenv("MYSQL_USER", target.get("user", ""))),
+            password=os.getenv("DASHBOARD_DB_PASSWORD", os.getenv("MYSQL_PASSWORD", target.get("password", ""))),
+            database=os.getenv(
+                "DASHBOARD_DB_NAME",
+                os.getenv("MYSQL_DATABASE", target.get("database", "etl_datasync_test")),
+            ),
+            charset="utf8mb4",
+            cursorclass=DictCursor,
+            autocommit=True,
+        )
 
     def connect(self):
         return pymysql.connect(**self.settings)

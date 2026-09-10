@@ -13,6 +13,8 @@ from typing import Any, Mapping
 import pymysql
 from pymysql.cursors import DictCursor
 
+from etl.replenishment_update import apply_database_ini_env
+
 from etl.sp_advertising_recommendations import business_key
 
 
@@ -272,12 +274,19 @@ from base b left join bid using(diagnosis_key) left join adds using(diagnosis_ke
 
 
 def _settings() -> dict[str, Any]:
-    config = configparser.ConfigParser()
-    config.read(Path(__file__).resolve().parents[1] / "config" / "database.ini", encoding="utf-8")
-    target = config["target"]
-    return dict(host=target["host"], port=int(target.get("port", 3306)), user=target["user"], password=target["password"],
-                database=target.get("database", "etl_datasync_test"), charset="utf8mb4", cursorclass=DictCursor,
-                autocommit=False, read_timeout=600, write_timeout=600)
+    apply_database_ini_env(Path("config/database.ini"))
+    return dict(
+        host=os.getenv("DASHBOARD_DB_HOST", os.getenv("MYSQL_HOST", "127.0.0.1")),
+        port=int(os.getenv("DASHBOARD_DB_PORT", os.getenv("MYSQL_PORT", "3306"))),
+        user=os.getenv("DASHBOARD_DB_USER", os.getenv("MYSQL_USER", "")),
+        password=os.getenv("DASHBOARD_DB_PASSWORD", os.getenv("MYSQL_PASSWORD", "")),
+        database=os.getenv("DASHBOARD_DB_NAME", os.getenv("MYSQL_DATABASE", "etl_datasync_test")),
+        charset="utf8mb4",
+        cursorclass=DictCursor,
+        autocommit=False,
+        read_timeout=600,
+        write_timeout=600,
+    )
 
 
 def ensure_tables(conn) -> None:
