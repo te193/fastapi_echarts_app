@@ -24,6 +24,7 @@ from .services.ad_budget_data import ad_budget_service
 from .services.ad_performance_data import ad_performance_service
 from .services.sp_recommendation_data import sp_recommendation_service
 from .services.sp_product_diagnosis_data import sp_product_diagnosis_service
+from .services.sp_governance_data import sp_governance_service
 from .services.country_label_hub_data import country_label_hub_service
 from .services.label_hub_data import LabelHubRefreshBusyError, label_hub_service
 from .services.label_hub_diagnostics import label_hub_diagnostics_service
@@ -541,6 +542,44 @@ def api_ad_performance_export(request: Request) -> StreamingResponse:
 @app.get("/api/ad-performance/recommendations/options")
 def api_sp_recommendation_options() -> dict:
     return sp_recommendation_service.options()
+
+
+@app.get("/api/ad-performance/governance/options")
+def api_sp_governance_options() -> dict:
+    try:
+        return sp_governance_service.options()
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/ad-performance/governance/summary")
+def api_sp_governance_summary(request: Request) -> dict:
+    try:
+        return sp_governance_service.summary(_ad_performance_params(request))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/ad-performance/governance/stores")
+def api_sp_governance_stores(request: Request) -> dict:
+    try:
+        return sp_governance_service.stores(_ad_performance_params(request))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/ad-performance/governance/entities")
+def api_sp_governance_entities(request: Request) -> dict:
+    try:
+        return sp_governance_service.entities(_ad_performance_params(request))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.get("/api/ad-performance/recommendations/summary")

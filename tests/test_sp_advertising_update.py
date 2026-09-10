@@ -49,6 +49,54 @@ def test_missing_keys_keep_separate_source_records():
     assert first['cost'] == Decimal('3.10')
 
 
+def test_missing_account_uses_store_suffix_for_safe_site_and_currency_fallback():
+    m = api()
+    dims = m.Dimensions()
+    dims.finish()
+    source = fact(seller_name='MyiTong-IT', sku='MT001a')
+    source['profile_id'] = None
+
+    result = m.prepare_fact('product_ad', source, dims)
+
+    assert result['seller_name'] == 'MyiTong-IT'
+    assert result['country_code'] == 'IT'
+    assert result['currency_code'] == 'EUR'
+    assert result['missing_account_dimension'] == 1
+
+
+def test_all_fact_sources_read_ods_reports_directly_without_relate_id_join():
+    m = api()
+
+    for kind, (_, source_table, _) in m.FACTS.items():
+        sql = m._source_sql(kind, source_table).lower()
+        assert f"from ods_datasync.{source_table}" in sql
+        assert "dwd_datasync" not in sql
+        assert " join " not in sql
+        assert "delete_flag" in sql
+        assert "_source_ods_id" in sql
+
+
+def test_direct_ods_source_keeps_source_provenance():
+    m = api()
+    dims = m.Dimensions()
+    dims.finish()
+
+    result = m.prepare_fact(
+        'keyword',
+        fact(_source_ods_id=10, _source_dwd_id=None),
+        dims,
+    )
+
+    assert result['source_ods_id'] == 10
+    assert result['source_dwd_id'] is None
+
+
+def test_fact_schema_allows_ods_rows_without_dwd_source_id():
+    ddl = api()._ddl('dashboard_sp_keyword_daily').lower()
+
+    assert 'source_dwd_id bigint null' in ddl
+
+
 def test_exact_search_term_identity_and_different_ad_groups_are_preserved():
     m = api()
     dims = m.Dimensions()

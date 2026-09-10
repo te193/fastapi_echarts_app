@@ -77,6 +77,10 @@ class Filters:
     country: str = ""
     targeting: str = ""
     keyword: str = ""
+    campaign: str = ""
+    ad_group: str = ""
+    keyword_text: str = ""
+    search_term: str = ""
     msku: str = ""
     window: int = 7
     page: int = 1
@@ -98,6 +102,10 @@ class Filters:
         self.country = str(source.get("country") or "")
         self.targeting = str(source.get("targeting") or "")
         self.keyword = str(source.get("keyword") or "").strip()
+        self.campaign = str(source.get("campaign") or "").strip()
+        self.ad_group = str(source.get("ad_group") or "").strip()
+        self.keyword_text = str(source.get("keyword_text") or "").strip()
+        self.search_term = str(source.get("search_term") or "").strip()
         self.msku = str(source.get("msku") or "").strip()
         self.page = max(1, int(source.get("page") or 1))
         self.page_size = min(200, max(1, int(source.get("page_size") or 50)))
@@ -123,11 +131,22 @@ def _escape_like(value: str) -> str:
 
 def where(filters: Filters) -> tuple[str, list[Any]]:
     clauses, params = ["report_date between %s and %s"], [filters.start, filters.end]
-    for column, value in (("currency_code", filters.currency), ("seller_name", filters.store),
-                          ("country_code", filters.country), ("targeting_type", filters.targeting)):
+    for column, value in (("currency_code", filters.currency), ("targeting_type", filters.targeting)):
         if value:
             clauses.append(f"coalesce({column}, '')=%s")
             params.append("" if value == "__unknown__" else value)
+    for column, value in (("seller_name", filters.store), ("country_code", filters.country),
+                          ("campaign_name_current", filters.campaign),
+                          ("ad_group_name_current", filters.ad_group)):
+        if value:
+            clauses.append(f"coalesce({column}, '') like %s escape '!'")
+            params.append(f"%{_escape_like(value)}%")
+    if filters.keyword_text:
+        clauses.append("coalesce(keyword_text, target_text, '') like %s escape '!'")
+        params.append(f"%{_escape_like(filters.keyword_text)}%")
+    if filters.search_term:
+        clauses.append("coalesce(search_term, '') like %s escape '!'")
+        params.append(f"%{_escape_like(filters.search_term)}%")
     for column, value in (("profile_id", filters.profile_id), ("campaign_id", filters.campaign_id),
                           ("ad_group_id", filters.ad_group_id)):
         if value:

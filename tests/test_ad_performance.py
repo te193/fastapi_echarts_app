@@ -64,3 +64,30 @@ def test_long_trend_range_avoids_the_date_order_index():
     one_day = m.Filters({'start': '2026-09-06', 'end': '2026-09-06'})
     assert 'ignore index' in m.trend_index_hint(long_range).lower()
     assert m.trend_index_hint(one_day) == ''
+
+
+def test_object_filters_are_independent_and_combined_with_and():
+    m = api()
+    filters = m.Filters({
+        'view': 'search_term',
+        'start': '2026-08-08',
+        'end': '2026-09-06',
+        'store': 'jingjie',
+        'country': 'US',
+        'campaign': 'JJ068a',
+        'ad_group': 'KW',
+        'keyword_text': 'float switch',
+        'search_term': '12volt',
+    })
+
+    sql, params = m.where(filters)
+
+    assert "coalesce(seller_name, '') like %s escape '!'" in sql
+    assert "coalesce(country_code, '') like %s escape '!'" in sql
+    assert "coalesce(campaign_name_current, '') like %s escape '!'" in sql
+    assert "coalesce(ad_group_name_current, '') like %s escape '!'" in sql
+    assert "coalesce(keyword_text, target_text, '') like %s escape '!'" in sql
+    assert "coalesce(search_term, '') like %s escape '!'" in sql
+    assert params[-6:] == [
+        '%jingjie%', '%US%', '%JJ068a%', '%KW%', '%float switch%', '%12volt%'
+    ]

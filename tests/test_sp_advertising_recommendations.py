@@ -2,11 +2,86 @@ from datetime import date
 from decimal import Decimal
 
 from etl.sp_advertising_recommendations import (
+    _group_products,
+    _resolve_group_product,
     business_key,
     coverage_is_complete,
     margin_band_rate,
     recommendation_ddl,
 )
+
+
+def test_group_product_mapping_requires_same_single_msku_in_period_and_current_state():
+    safe = _resolve_group_product(
+        {"enabled_msku_count": 1, "msku": "SKU-A", "asin": "ASIN-A"},
+        {"period_msku_count": 1, "msku": "sku-a", "asin": "ASIN-A"},
+    )
+    changed = _resolve_group_product(
+        {"enabled_msku_count": 1, "msku": "SKU-B", "asin": "ASIN-B"},
+        {"period_msku_count": 1, "msku": "SKU-A", "asin": "ASIN-A"},
+    )
+    historical_multi = _resolve_group_product(
+        {"enabled_msku_count": 1, "msku": "SKU-B", "asin": "ASIN-B"},
+        {"period_msku_count": 2, "msku": None, "asin": None},
+    )
+    current_multi = _resolve_group_product(
+        {"enabled_msku_count": 2, "msku": None, "asin": None},
+        {"period_msku_count": 1, "msku": "SKU-A", "asin": "ASIN-A"},
+    )
+
+    assert safe == {
+        "associated_msku_count": 1,
+        "msku": "sku-a",
+        "asin": "ASIN-A",
+        "msku_mapping_status": "mapped",
+    }
+    assert changed["msku"] is None
+    assert changed["msku_mapping_status"] == "msku_changed"
+    assert historical_multi["msku_mapping_status"] == "period_multiple_msku"
+    assert current_multi["msku_mapping_status"] == "current_multiple_msku"
+
+
+def test_group_products_cross_checks_current_enabled_and_period_products():
+    class Cursor:
+        def __init__(self):
+            self.calls = []
+
+        def execute(self, sql, params=None):
+            self.calls.append((sql, params))
+
+        def fetchall(self):
+            if len(self.calls) == 1:
+                return [{
+                    "profile_id": 1, "campaign_id": 2, "ad_group_id": 3,
+                    "enabled_msku_count": 1, "msku": "SKU-A", "asin": "ASIN-A",
+                }]
+            return [{
+                "profile_id": 1, "campaign_id": 2, "ad_group_id": 3,
+                "period_msku_count": 1, "msku": "SKU-A", "asin": "ASIN-A",
+            }]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    class Connection:
+        def __init__(self):
+            self.cursor_instance = Cursor()
+
+        def cursor(self):
+            return self.cursor_instance
+
+    connection = Connection()
+    result = _group_products(connection, date(2026, 8, 1), date(2026, 8, 30))
+
+    assert result[(1, 2, 3)]["msku"] == "SKU-A"
+    assert result[(1, 2, 3)]["msku_mapping_status"] == "mapped"
+    assert connection.cursor_instance.calls[1][1] == (
+        date(2026, 8, 1),
+        date(2026, 8, 30),
+    )
 
 
 def test_recommendation_ddl_has_all_tables_and_business_keys():

@@ -24,6 +24,7 @@ SORTS = {
     "ctr", "cpc", "cvr", "acos", "tacos", "roas", "msku", "asin", "seller_name", "country_code", "currency_code",
     "bid_increase_count", "bid_decrease_count", "bid_manual_review_count", "add_recommended_count",
     "negative_recommended_count", "negative_manual_review_count",
+    "monthly_ad_budget_cny", "month_spend_cny", "remaining_budget_cny", "budget_usage_rate", "budget_support_status",
 }
 FORMULA_PREFIXES = ("=", "+", "-", "@")
 SUGGESTION_ACTION_STATUSES = {
@@ -113,10 +114,13 @@ def _where(filters: ProductDiagnosisFilters, batch_id: int, alias: str = "s") ->
     p = f"{alias}." if alias else ""
     clauses = [f"{p}batch_id=%s", f"{p}period_code=%s"]
     params: list[Any] = [batch_id, filters.period]
-    for column, value in (("currency_code", filters.currency), ("seller_name", filters.store), ("country_code", filters.country)):
+    if filters.currency:
+        clauses.append(f"coalesce({p}currency_code,'')=%s")
+        params.append("" if filters.currency == "__unknown__" else filters.currency)
+    for column, value in (("seller_name", filters.store), ("country_code", filters.country)):
         if value:
-            clauses.append(f"coalesce({p}{column},'')=%s")
-            params.append("" if value == "__unknown__" else value)
+            clauses.append(f"coalesce({p}{column},'') like %s escape '!'")
+            params.append(f"%{_escape_like(value)}%")
     if filters.keyword:
         like = "%" + _escape_like(filters.keyword) + "%"
         clauses.append(f"({p}msku like %s escape '!' or coalesce({p}asin,'') like %s escape '!')")
@@ -268,9 +272,10 @@ class SpProductDiagnosisService:
 
     def export_csv(self, values: Mapping[str, Any]) -> bytes:
         payload=self.rows(values,export=True)
-        headers=[("msku","MSKU"),("asin","ASIN"),("seller_name","店铺"),("country_code","站点"),("currency_code","币种"),
+        headers=[("msku","MSKU"),("asin","ASIN"),("seller_name","店铺"),("country_code","站点"),("currency_code","币种"),("targeting_type","广告类型"),
                  ("operating_sales_qty","经营销量"),("operating_sales_amount","经营销售额"),("operating_gross_profit","经营毛利润"),("operating_gross_margin","经营毛利率"),("operating_inventory_qty","FBA可售库存"),
                  ("ad_impressions","曝光"),("ad_clicks","点击"),("ctr","CTR"),("ad_cost","广告花费"),("cpc","CPC"),("ad_orders","广告订单"),("ad_sales","广告销售额"),("cvr","CVR"),("acos","ACOS"),("tacos","TACOS"),("roas","ROAS"),
+                 ("monthly_ad_budget_cny","月预算（人民币）"),("month_spend_cny","本月已用（人民币）"),("remaining_budget_cny","剩余预算（人民币）"),("budget_usage_rate","预算使用率"),("budget_support_status","提价支持"),
                  ("bid_increase_count","提价数"),("bid_decrease_count","降价数"),("bid_manual_review_count","竞价复核数"),("add_recommended_count","建议加词数"),("negative_recommended_count","建议否词数"),("negative_manual_review_count","否词人工审核数"),("data_warning","数据提示")]
         out=io.StringIO(); writer=csv.writer(out); writer.writerow([label for _,label in headers])
         for row in payload["rows"]:

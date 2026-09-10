@@ -31,6 +31,16 @@ def classify_search_term(text: str) -> Literal["keyword", "product_target"]:
 
 
 def _mapping_reason(row: Mapping[str, Any]) -> str | None:
+    status = str(row.get("msku_mapping_status") or "").strip()
+    if status == "mapped":
+        return None
+    if status in {
+        "msku_missing",
+        "period_multiple_msku",
+        "current_multiple_msku",
+        "msku_changed",
+    }:
+        return status
     count = int(row.get("associated_msku_count", 1) or 0)
     if count == 0:
         return "msku_missing"
@@ -50,7 +60,8 @@ def calculate_add_recommendation(row: Mapping[str, Any]) -> dict[str, Any]:
     mapping_reason = _mapping_reason(row)
     warnings = [mapping_reason] if mapping_reason else []
 
-    if row.get("existing_enabled"):
+    existing_state = str(row.get("existing_state") or "")
+    if row.get("existing_enabled") or existing_state == "enabled":
         return {
             "status": "existing",
             "priority": "none",
@@ -58,6 +69,15 @@ def calculate_add_recommendation(row: Mapping[str, Any]) -> dict[str, Any]:
             "suggestion_value": term,
             "acos": acos,
             "reason_codes": ["existing_enabled", *warnings],
+        }
+    if existing_state == "inactive":
+        return {
+            "status": "existing_inactive",
+            "priority": "none",
+            "suggestion_type": suggestion_type,
+            "suggestion_value": term,
+            "acos": acos,
+            "reason_codes": ["existing_inactive", *warnings],
         }
 
     if orders >= 10 and acos is not None and acos <= Decimal("0.10"):
@@ -165,7 +185,7 @@ def calculate_bid_recommendation(row: Mapping[str, Any]) -> dict[str, Any]:
             "reason_codes": reasons,
         }
 
-    if current is None or current <= 0 or aov is None or cvr is None or margin is None:
+    if current is None or current <= 0:
         return {
             "status": "insufficient_data",
             "suggested_bid": None,
@@ -178,10 +198,55 @@ def calculate_bid_recommendation(row: Mapping[str, Any]) -> dict[str, Any]:
             "reason_codes": ["metric_missing"],
         }
 
-    theoretical = aov * cvr * margin
-    reference_20 = aov * cvr * Decimal("0.20")
-    reference_333 = aov * cvr * Decimal("0.333")
-    if theoretical > current and (
+    clicks = _decimal(row.get("clicks")) or Decimal(0)
+    orders = _decimal(row.get("orders")) or Decimal(0)
+    cost = _decimal(row.get("cost")) or Decimal(0)
+    sales = _decimal(row.get("sales")) or Decimal(0)
+    acos = cost / sales if sales > 0 else None
+    theoretical = aov * cvr * margin if aov is not None and cvr is not None and margin is not None else None
+    reference_20 = aov * cvr * Decimal("0.20") if aov is not None and cvr is not None else None
+    reference_333 = aov * cvr * Decimal("0.333") if aov is not None and cvr is not None else None
+
+    def result(suggested: Decimal | None, status: str, reason_codes: list[str]) -> dict[str, Any]:
+        change = suggested - current if suggested is not None else None
+        effective_status = status
+        effective_reasons = list(reason_codes)
+        if change == 0 and status in {"increase", "decrease"}:
+            effective_status = "keep"
+            effective_reasons.append("minimum_bid_increment_blocks_change")
+        return {
+            "status": effective_status,
+            "suggested_bid": suggested,
+            "change_direction": "increase" if change is not None and change > 0 else "decrease" if change is not None and change < 0 else "keep" if change is not None else None,
+            "change_amount": change.quantize(CENT) if change is not None else None,
+            "change_rate": (change / current).quantize(FOUR_PLACES) if change is not None else None,
+            "theoretical_cpc": theoretical.quantize(FOUR_PLACES) if theoretical is not None else None,
+            "reference_cpc_20": reference_20.quantize(FOUR_PLACES) if reference_20 is not None else None,
+            "reference_cpc_333": reference_333.quantize(FOUR_PLACES) if reference_333 is not None else None,
+            "reason_codes": effective_reasons,
+        }
+
+    def decrease(min_rate: Decimal, max_rate: Decimal, reason: str) -> dict[str, Any]:
+        ideal_rate = max_rate if theoretical is None else max(Decimal(0), (current - theoretical) / current)
+        rate = min(max(ideal_rate, min_rate), max_rate)
+        suggested = (current * (Decimal(1) - rate)).quantize(CENT, rounding=ROUND_CEILING)
+        return result(suggested, "decrease", [reason, "theoretical_cpc_guard"] if theoretical is not None else [reason])
+
+    if clicks >= 15 and orders == 0:
+        return decrease(Decimal("0.20"), Decimal("0.30"), "clicks_ge_15_orders_zero")
+    if clicks >= 20 and orders >= 1 and acos is not None and acos > Decimal("0.50"):
+        return decrease(Decimal("0.20"), Decimal("0.30"), "acos_gt_50")
+    if clicks >= 20 and orders >= 1 and acos is not None and acos > Decimal("0.333"):
+        return decrease(Decimal("0.10"), Decimal("0.20"), "acos_gt_333")
+
+    if theoretical is None:
+        return result(None, "insufficient_data", ["metric_missing"])
+
+    site_avg = _decimal(row.get("site_cvr_avg"))
+    site_p75 = _decimal(row.get("site_cvr_p75"))
+    high_increase = clicks >= 20 and orders >= 3 and acos is not None and acos <= Decimal("0.15") and site_p75 is not None and cvr >= site_p75 and theoretical > current
+    small_increase = clicks >= 20 and orders >= 3 and acos is not None and acos <= Decimal("0.20") and site_avg is not None and cvr >= site_avg and theoretical > current
+    if (high_increase or small_increase) and (
         row.get("inventory_sufficient", True) is False
         or row.get("budget_sufficient", True) is False
     ):
@@ -190,42 +255,13 @@ def calculate_bid_recommendation(row: Mapping[str, Any]) -> dict[str, Any]:
             protection.append("inventory_blocks_increase")
         if row.get("budget_sufficient", True) is False:
             protection.append("budget_blocks_increase")
-        return {
-            "status": "keep",
-            "suggested_bid": current.quantize(CENT),
-            "change_direction": "keep",
-            "change_amount": Decimal("0.00"),
-            "change_rate": Decimal("0.00"),
-            "theoretical_cpc": theoretical.quantize(FOUR_PLACES),
-            "reference_cpc_20": reference_20.quantize(FOUR_PLACES),
-            "reference_cpc_333": reference_333.quantize(FOUR_PLACES),
-            "reason_codes": protection,
-        }
+        return result(current.quantize(CENT), "keep", protection)
 
-    if theoretical > current:
-        raw_suggestion = min(theoretical, current * Decimal("1.20"))
+    if high_increase or small_increase:
+        increase_cap = Decimal("1.20") if high_increase else Decimal("1.10")
+        raw_suggestion = min(theoretical, current * increase_cap)
         suggested = raw_suggestion.quantize(CENT, rounding=ROUND_FLOOR)
-    elif theoretical < current:
-        raw_suggestion = max(theoretical, current * Decimal("0.70"))
-        suggested = raw_suggestion.quantize(CENT, rounding=ROUND_CEILING)
-    else:
-        suggested = current.quantize(CENT)
-
-    change = suggested - current
-    if change > 0:
-        status, direction = "increase", "increase"
-    elif change < 0:
-        status, direction = "decrease", "decrease"
-    else:
-        status, direction = "keep", "keep"
-    return {
-        "status": status,
-        "suggested_bid": suggested,
-        "change_direction": direction,
-        "change_amount": change.quantize(CENT),
-        "change_rate": (change / current).quantize(FOUR_PLACES),
-        "theoretical_cpc": theoretical.quantize(FOUR_PLACES),
-        "reference_cpc_20": reference_20.quantize(FOUR_PLACES),
-        "reference_cpc_333": reference_333.quantize(FOUR_PLACES),
-        "reason_codes": ["theoretical_cpc_guard"],
-    }
+        return result(suggested, "increase", ["high_cvr_increase" if high_increase else "site_avg_cvr_increase", "theoretical_cpc_guard"])
+    if clicks >= 10 and acos is not None and acos <= Decimal("0.333"):
+        return result(current.quantize(CENT), "keep", ["performance_within_guardrail"])
+    return result(None, "insufficient_data", ["threshold_not_met"])

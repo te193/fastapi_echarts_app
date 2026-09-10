@@ -32,6 +32,13 @@ FACTS = {
     "search_term": ("dashboard_sp_search_term_daily", "lx_advertising_sp_query_word_reports", "target_id"),
 }
 
+SITE_CURRENCY = {
+    "AE": "AED", "AU": "AUD", "BE": "EUR", "CA": "CAD", "DE": "EUR",
+    "ES": "EUR", "FR": "EUR", "IN": "INR", "IT": "EUR", "JP": "JPY",
+    "MX": "MXN", "NL": "EUR", "PL": "PLN", "SA": "SAR", "SE": "SEK",
+    "SG": "SGD", "TR": "TRY", "UK": "GBP", "US": "USD",
+}
+
 
 def date_range(start: str | None, end: str | None, today: date | None = None) -> tuple[date, date]:
     today = today or date.today()
@@ -105,6 +112,14 @@ def _key_text(value: Any) -> str:
     return "" if value is None else str(value)
 
 
+def _site_from_seller_name(seller_name: Any) -> str | None:
+    """Infer a marketplace only from a recognized final store-name suffix."""
+    if not seller_name:
+        return None
+    suffix = str(seller_name).strip().rsplit("-", 1)[-1].upper()
+    return suffix if suffix in SITE_CURRENCY else None
+
+
 def prepare_fact(kind: str, source: dict[str, Any], dims: Dimensions) -> dict[str, Any]:
     row = dict(source)
     profile = row.get("profile_id")
@@ -118,6 +133,9 @@ def prepare_fact(kind: str, source: dict[str, Any], dims: Dimensions) -> dict[st
     portfolio = dims.get("portfolio", (profile, campaign.get("portfolio_id")))
     products = dims.products_by_group.get((profile, campaign_id, ad_group_id), [])
     targets = dims.targets.get((profile, campaign_id, ad_group_id, row.get("target_id")), [])
+    seller_name = row.get("seller_name") or account.get("name")
+    country_code = account.get("country_code") or _site_from_seller_name(seller_name)
+    currency_code = account.get("currency_code") or SITE_CURRENCY.get(country_code)
     required = {
         "campaign": (profile, campaign_id),
         "ad_group": (profile, campaign_id, ad_group_id),
@@ -133,10 +151,11 @@ def prepare_fact(kind: str, source: dict[str, Any], dims: Dimensions) -> dict[st
         identity.append(row.get("id"))
     row_key = hashlib.sha256("\x1f".join(_key_text(v) for v in identity).encode("utf-8")).hexdigest()
     result: dict[str, Any] = {
-        "row_key": row_key, "report_date": row.get("report_date"), "source_dwd_id": row.get("id"),
-        "source_ods_id": row.get("relate_id"), "profile_id": profile,
-        "sid": account.get("sid") or row.get("sid"), "seller_name": row.get("seller_name") or account.get("name"),
-        "country_code": account.get("country_code"), "currency_code": account.get("currency_code"),
+        "row_key": row_key, "report_date": row.get("report_date"),
+        "source_dwd_id": row.get("_source_dwd_id", row.get("id")),
+        "source_ods_id": row.get("_source_ods_id") or row.get("relate_id"), "profile_id": profile,
+        "sid": account.get("sid") or row.get("sid"), "seller_name": seller_name,
+        "country_code": country_code, "currency_code": currency_code,
         "campaign_id": campaign_id, "campaign_name_current": campaign.get("name") or row.get("name"),
         "portfolio_id": campaign.get("portfolio_id"), "portfolio_name_current": portfolio.get("name"),
         "targeting_type": campaign.get("targeting_type") or row.get("targeting_type"),
@@ -205,7 +224,7 @@ def _ddl(table: str) -> str:
     money_cols = ["cost decimal(20,4) null"]
     money_cols += [f"{p}{suffix} decimal(20,4) null" for p in MONEY_METRICS for suffix in ("", "_1d", "_7d", "_14d", "_30d")]
     return f"""create table if not exists {table} (
-      row_key char(64) not null, report_date date not null, source_dwd_id bigint not null, source_ods_id bigint null,
+      row_key char(64) not null, report_date date not null, source_dwd_id bigint null, source_ods_id bigint null,
       profile_id bigint null, sid bigint null, seller_name varchar(255) null, country_code varchar(20) null,
       currency_code varchar(20) null, campaign_id bigint null, campaign_name_current varchar(255) null,
       portfolio_id bigint null, portfolio_name_current varchar(255) null, targeting_type varchar(50) null,
@@ -256,6 +275,15 @@ def ensure_tables(conn) -> None:
         for table, _, _ in FACTS.values():
             cur.execute(_ddl(table))
             cur.execute(f"create table if not exists {table}_stage like {table}")
+            for source_table in (table, f"{table}_stage"):
+                cur.execute(
+                    "select is_nullable as nullable_flag from information_schema.columns "
+                    "where table_schema=database() and table_name=%s and column_name='source_dwd_id'",
+                    (source_table,),
+                )
+                source_column = cur.fetchone()
+                if source_column and source_column["nullable_flag"] == "NO":
+                    cur.execute(f"alter table {source_table} modify column source_dwd_id bigint null")
             cur.execute(
                 "select count(*) n from information_schema.statistics "
                 "where table_schema=database() and table_name=%s and index_name='idx_profile_date'",
@@ -273,7 +301,7 @@ def load_dimensions(conn) -> Dimensions:
         "campaign": "select * from dwd_datasync.lx_advertising_sp_campaigns",
         "ad_group": "select * from dwd_datasync.lx_advertising_sp_ad_groups",
         "keyword": "select * from dwd_datasync.lx_advertising_sp_keywords",
-        "product": "select * from dwd_datasync.lx_advertising_sp_product_ads",
+        "product": "select * from dwd_datasync.lx_advertising_sp_product_ads where coalesce(delete_flag,0)=0",
         "target": "select * from dwd_datasync.lx_advertising_sp_targets",
         "portfolio": "select * from dwd_datasync.lx_advertising_portfolios",
     }
@@ -291,15 +319,12 @@ def load_dimensions(conn) -> Dimensions:
 
 
 def _source_sql(kind: str, table: str) -> str:
-    if kind == "search_term":
-        return f"select d.* from dwd_datasync.{table} d where d.report_date between %s and %s order by d.id"
-    extra = {
-        "campaign": "o.profile_id,o.campaign_id,o.targeting_type,o.sid",
-        "ad_group": "o.profile_id,o.campaign_id,o.ad_group_id,o.sid",
-        "product_ad": "o.profile_id,o.campaign_id,o.ad_group_id,o.ad_id,o.sid",
-        "keyword": "o.profile_id,o.campaign_id,o.ad_group_id,o.keyword_id,o.sid",
-    }[kind]
-    return f"select d.*,{extra} from dwd_datasync.{table} d left join ods_datasync.{table} o on o.id=d.relate_id where d.report_date between %s and %s order by d.id"
+    return (
+        f"select o.*,null as _source_dwd_id,o.id as _source_ods_id "
+        f"from ods_datasync.{table} o "
+        "where o.report_date between %s and %s and coalesce(o.delete_flag,0)=0 "
+        "order by o.id"
+    )
 
 
 def _insert_rows(conn, table: str, rows: list[dict[str, Any]], batch_id: int) -> None:
