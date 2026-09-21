@@ -1541,7 +1541,7 @@ def _tracking_insert_sql(target_schema: str) -> str:
             max(coalesce(b.product_name, p.local_sku)) as product_name,
             max(b.country) as country
         from base b
-        left join {performance} p
+        left join {performance} p force index (idx_price_review_lookup)
           on p.seller_name = b.store
          and p.seller_sku_adj = b.msku
          and p.dt_date between b.period_start and b.period_after_end
@@ -1555,7 +1555,7 @@ def _tracking_insert_sql(target_schema: str) -> str:
             max(case when p.dt_date = b.period_end then p.ranking end) as rank_before,
             max(case when p.dt_date = b.period_after_end then p.ranking end) as rank_after
         from base b
-        left join {performance} p
+        left join {performance} p force index (idx_price_review_lookup)
           on p.seller_name = b.store
          and p.seller_sku_adj = b.msku
          and p.dt_date in (b.period_end, b.period_after_end)

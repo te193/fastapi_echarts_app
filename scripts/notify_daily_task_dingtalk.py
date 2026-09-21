@@ -87,6 +87,37 @@ def _extract_failure_reason_lines(
     limit: int = 8,
 ) -> list[str]:
     normalized = [_normalize_log_line(line) for line in stderr_lines if _normalize_log_line(line)]
+    combined = "\n".join(normalized)
+
+    if "Lost connection to MySQL server during query" in combined or "(2013," in combined:
+        return [
+            "- 远端数据库连接中断，标签证据只完成了部分读取，本次没有继续执行后续补货。",
+            "- 建议：等待远端标签表稳定并确认目标日期数据已生成后，再重新执行标签证据和后续 ETL。",
+        ]
+
+    mismatch_match = re.search(
+        r"latest source date mismatch:\s*label=(\d{4}-\d{2}-\d{2}),\s*"
+        r"performance=(\d{4}-\d{2}-\d{2}),\s*inventory=(\d{4}-\d{2}-\d{2})",
+        combined,
+    )
+    if mismatch_match:
+        label_date, performance_date, inventory_date = mismatch_match.groups()
+        return [
+            f"- 远端数据日期不一致：标签证据到 {label_date}，商品表现到 {performance_date}，库存到 {inventory_date}。",
+            f"- 建议：先等待标签证据补齐到 {performance_date}，再重跑标签证据和步骤八之后的 ETL。",
+        ]
+
+    missing_match = re.search(
+        r"Remote source preflight failed:.*?;\s*(.+)",
+        combined,
+    )
+    if missing_match:
+        detail = missing_match.group(1).replace("required_date=", "目标日期=").replace("rows=", "记录数=")
+        return [
+            f"- 远端源数据未齐：{detail}。",
+            "- 建议：补齐目标日期的远端数据后，再启动今天的 ETL。",
+        ]
+
     priority_markers = (
         "Remote source preflight failed:",
         "Business result validation failed:",
@@ -602,6 +633,7 @@ def _stage_label(stage: str) -> str:
         "dashboard": "总 ETL",
         "sales_role": "销售角色 ETL",
         "label_evidence": "标签证据 ETL",
+        "stockout_historical_operating": "步骤八：缺货历史运营 ETL",
         "replenishment": "补货 ETL",
         "replenishment_tracking": "补货追踪 ETL",
         "return_goods": "返厂品 ETL",
@@ -672,9 +704,7 @@ def _format_failure_summary(
         f"- 退出码：{exit_code}",
         "",
         "#### 失败原因",
-        "```text",
-        "\n".join(reason_lines),
-        "```",
+        *reason_lines,
         "",
         "#### 已完成数据",
         *completed_lines,
@@ -757,6 +787,8 @@ def build_markdown(
     sales_role_stderr: Path | None = None,
     label_evidence_stdout: Path | None = None,
     label_evidence_stderr: Path | None = None,
+    stockout_stdout: Path | None = None,
+    stockout_stderr: Path | None = None,
     error_message: str = "",
 ) -> str:
     preflight_stdout = preflight_stdout or project_root / "logs" / "source-preflight-not-created.log"
@@ -769,6 +801,8 @@ def build_markdown(
     sales_role_stderr = sales_role_stderr or project_root / "logs" / "sales-role-not-created.err.log"
     label_evidence_stdout = label_evidence_stdout or project_root / "logs" / "label-evidence-not-created.log"
     label_evidence_stderr = label_evidence_stderr or project_root / "logs" / "label-evidence-not-created.err.log"
+    stockout_stdout = stockout_stdout or project_root / "logs" / "stockout-historical-not-created.log"
+    stockout_stderr = stockout_stderr or project_root / "logs" / "stockout-historical-not-created.err.log"
     is_success = status == "success"
     title = "看板定时任务执行成功" if is_success else "看板定时任务执行失败"
     icon = "✅" if is_success else "❌"
@@ -816,6 +850,7 @@ def build_markdown(
             "source_preflight": preflight_stderr,
             "sales_role": sales_role_stderr,
             "label_evidence": label_evidence_stderr,
+            "stockout_historical_operating": stockout_stderr,
             "replenishment": replenishment_stderr,
             "replenishment_tracking": tracking_stderr,
             "return_goods": return_goods_stderr,
@@ -953,6 +988,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sales-role-stderr", type=Path)
     parser.add_argument("--label-evidence-stdout", type=Path)
     parser.add_argument("--label-evidence-stderr", type=Path)
+    parser.add_argument("--stockout-stdout", type=Path)
+    parser.add_argument("--stockout-stderr", type=Path)
     parser.add_argument("--error-message", default="")
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
@@ -980,6 +1017,8 @@ def main() -> int:
         sales_role_stderr=args.sales_role_stderr,
         label_evidence_stdout=args.label_evidence_stdout,
         label_evidence_stderr=args.label_evidence_stderr,
+        stockout_stdout=args.stockout_stdout,
+        stockout_stderr=args.stockout_stderr,
         error_message=args.error_message,
     )
 

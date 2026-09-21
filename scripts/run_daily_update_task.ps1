@@ -103,7 +103,7 @@ $StockoutHistoricalArgs = @(Select-DashboardTaskArguments -SourceArgs $args `
     -SwitchOptions @("--allow-source-max-mismatch", "--dry-run"))
 $ReplenishmentArgs = @(Select-DashboardTaskArguments -SourceArgs $args `
     -ValueOptions @(
-        "--biz-date", "--snapshot-date", "--candidate-days", "--steps",
+        "--biz-date", "--snapshot-date", "--candidate-days",
         "--history-start-date", "--history-end-date", "--batch-size"
     ) `
     -SwitchOptions @("--skip-ddl", "--dry-run"))
@@ -171,6 +171,8 @@ function Send-DashboardDingTalkNotification {
         "--sales-role-stderr", $SalesRoleStderrLog,
         "--label-evidence-stdout", $LabelEvidenceStdoutLog,
         "--label-evidence-stderr", $LabelEvidenceStderrLog,
+        "--stockout-stdout", $StockoutHistoricalStdoutLog,
+        "--stockout-stderr", $StockoutHistoricalStderrLog,
         "--replenishment-stdout", $ReplenishmentStdoutLog,
         "--replenishment-stderr", $ReplenishmentStderrLog,
         "--tracking-stdout", $ReplenishmentTrackingStdoutLog,

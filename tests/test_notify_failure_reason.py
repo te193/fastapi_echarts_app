@@ -85,3 +85,74 @@ def test_failure_markdown_omits_log_paths(tmp_path):
     assert "#### 日志" not in text
     assert "logs\\" not in text
     assert "not-created" not in text
+
+
+def test_failure_markdown_explains_label_date_mismatch(tmp_path):
+    stderr_log = tmp_path / "stockout.err.log"
+    stderr_log.write_text(
+        "RuntimeError: latest source date mismatch: "
+        "label=2026-09-16, performance=2026-09-17, inventory=2026-09-18",
+        encoding="utf-8",
+    )
+    dashboard_log = tmp_path / "dashboard.log"
+    dashboard_log.write_text(
+        "Dashboard daily ETL plan\n"
+        "  biz_date      : 2026-09-17\n"
+        "  snapshot_date : 2026-09-18\n",
+        encoding="utf-8",
+    )
+
+    payload = build_markdown(
+        status="failed",
+        stage="stockout_historical_operating",
+        exit_code=1,
+        run_stamp="20260918_120000",
+        project_root=tmp_path,
+        dashboard_stdout=dashboard_log,
+        dashboard_stderr=tmp_path / "dashboard.err.log",
+        replenishment_stdout=tmp_path / "replenishment.log",
+        replenishment_stderr=tmp_path / "replenishment.err.log",
+        stockout_stderr=stderr_log,
+    )
+    text = json.loads(payload)["markdown"]["text"]
+
+    assert "步骤八：缺货历史运营 ETL" in text
+    assert "标签证据到 2026-09-16" in text
+    assert "先等待标签证据补齐到 2026-09-17" in text
+    assert "Traceback" not in text
+    assert "```text" not in text
+
+
+def test_failure_markdown_explains_remote_connection_loss(tmp_path):
+    stderr_log = tmp_path / "label.err.log"
+    stderr_log.write_text(
+        "pymysql.err.OperationalError: (2013, "
+        "'Lost connection to MySQL server during query')\n"
+        "AttributeError: 'NoneType' object has no attribute 'settimeout'",
+        encoding="utf-8",
+    )
+    dashboard_log = tmp_path / "dashboard.log"
+    dashboard_log.write_text(
+        "Dashboard daily ETL plan\n"
+        "  biz_date      : 2026-09-17\n"
+        "  snapshot_date : 2026-09-18\n",
+        encoding="utf-8",
+    )
+
+    payload = build_markdown(
+        status="failed",
+        stage="label_evidence",
+        exit_code=1,
+        run_stamp="20260918_120000",
+        project_root=tmp_path,
+        dashboard_stdout=dashboard_log,
+        dashboard_stderr=tmp_path / "dashboard.err.log",
+        replenishment_stdout=tmp_path / "replenishment.log",
+        replenishment_stderr=tmp_path / "replenishment.err.log",
+        label_evidence_stderr=stderr_log,
+    )
+    text = json.loads(payload)["markdown"]["text"]
+
+    assert "远端数据库连接中断" in text
+    assert "等待远端标签表稳定" in text
+    assert "AttributeError" not in text

@@ -52,6 +52,17 @@ SOURCE_READINESS_CHECKS = (
         """,
     ),
     SourceReadinessCheck(
+        "label_evidence_source",
+        "label evidence",
+        "biz_date",
+        """
+        /* label_evidence_source */
+        select count(*) as row_count
+        from dws_datasync.dws_标签表
+        where data_date = %(biz_date)s
+        """,
+    ),
+    SourceReadinessCheck(
         "restock_snapshot_source",
         "restock snapshot",
         "snapshot_date",

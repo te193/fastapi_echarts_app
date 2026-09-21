@@ -10,6 +10,7 @@ def test_source_preflight_rejects_missing_required_business_date():
     conn = FakePreflightConnection(
         {
             "product_performance_daily_source": 0,
+            "label_evidence_source": 49804,
             "restock_snapshot_source": 49804,
             "inventory_snapshot_source": 16575,
             "listing_price_snapshot_source": 61000,
@@ -25,6 +26,7 @@ def test_source_preflight_returns_counts_when_all_required_sources_are_ready():
     conn = FakePreflightConnection(
         {
             "product_performance_daily_source": 18527,
+            "label_evidence_source": 49804,
             "restock_snapshot_source": 49804,
             "inventory_snapshot_source": 16575,
             "listing_price_snapshot_source": 61000,
@@ -36,6 +38,7 @@ def test_source_preflight_returns_counts_when_all_required_sources_are_ready():
 
     assert [result.name for result in results] == [
         "product_performance_daily_source",
+        "label_evidence_source",
         "restock_snapshot_source",
         "inventory_snapshot_source",
         "listing_price_snapshot_source",
