@@ -298,6 +298,101 @@ class ExportHeaderTests(unittest.TestCase):
                     main.is_disabled_replenishment_store_with_qty(row, disabled_stores),
                 )
 
+    def test_follow_replenishment_highlight_requires_follow_status_and_positive_quantity(self):
+        cases = [
+            ({"fllow_flag": "是", "replenish_qty": 50}, True),
+            ({"fllow_flag": 0, "replenish_qty": Decimal("0.01")}, True),
+            ({"fllow_flag": "是", "replenish_qty": 0}, False),
+            ({"fllow_flag": "否", "replenish_qty": 50}, False),
+            ({"followed_flag": "是", "replenish_qty": 50}, False),
+            ({"fllow_flag": None, "replenish_qty": 50}, False),
+        ]
+
+        for row, expected in cases:
+            with self.subTest(row=row):
+                self.assertEqual(expected, main.is_follow_replenishment_with_qty(row))
+
+    def test_replenishment_xlsx_marks_follow_rows_with_blue_fill_or_outline(self):
+        payload = {
+            "columns": [
+                {"name": "seller_name_new", "label": "Store"},
+                {"name": "seller_sku_adj", "label": "MSKU"},
+                {"name": "fllow_flag", "label": "Follow"},
+                {"name": "replenish_qty", "label": "Replenish Qty"},
+            ],
+            "rows": [
+                {
+                    "seller_name_new": "booyee",
+                    "seller_sku_adj": "BLUE-1",
+                    "fllow_flag": "是",
+                    "replenish_qty": 50,
+                    "support_replenish_level_sort": 1,
+                    "final_sales_3d": 1,
+                    "final_sales_7d": 10,
+                },
+                {
+                    "seller_name_new": "booyee",
+                    "seller_sku_adj": "NO-FILL-1",
+                    "fllow_flag": "是",
+                    "replenish_qty": 0,
+                },
+                {
+                    "seller_name_new": "booyee",
+                    "seller_sku_adj": "YELLOW-1",
+                    "fllow_flag": "是",
+                    "replenish_qty": 50,
+                    "support_replenish_level_sort": 1,
+                    "final_sales_3d": 7,
+                    "final_sales_7d": 10,
+                },
+                {
+                    "seller_name_new": "Tboke",
+                    "seller_sku_adj": "RED-1",
+                    "fllow_flag": "是",
+                    "replenish_qty": 50,
+                    "support_replenish_level_sort": 1,
+                    "final_sales_3d": 1,
+                    "final_sales_7d": 10,
+                },
+                {
+                    "seller_name_new": "Tboke",
+                    "seller_sku_adj": "ORANGE-1",
+                    "fllow_flag": "是",
+                    "replenish_qty": 50,
+                    "support_replenish_level_sort": 1,
+                    "final_sales_3d": 7,
+                    "final_sales_7d": 10,
+                },
+            ],
+        }
+
+        workbook = load_workbook(
+            BytesIO(main.build_replenishment_xlsx(payload, {"tboke"})),
+            read_only=False,
+        )
+        worksheet = workbook.active
+
+        expected_fills = {
+            2: "DDEBF7",
+            4: "FFF2CC",
+            5: "F4CCCC",
+            6: "F4B183",
+        }
+        for row_index, expected_fill in expected_fills.items():
+            self.assertTrue(
+                all(cell.fill.fgColor.rgb.endswith(expected_fill) for cell in worksheet[row_index])
+            )
+            self.assertTrue(
+                all(cell.border.top.color.rgb.endswith("4472C4") for cell in worksheet[row_index])
+            )
+            self.assertTrue(
+                all(cell.border.bottom.color.rgb.endswith("4472C4") for cell in worksheet[row_index])
+            )
+        self.assertTrue(worksheet["A2"].border.left.color.rgb.endswith("4472C4"))
+        self.assertTrue(worksheet["D2"].border.right.color.rgb.endswith("4472C4"))
+        self.assertTrue(all(cell.fill.fill_type is None for cell in worksheet[3]))
+        self.assertTrue(all(cell.border.top.style is None for cell in worksheet[3]))
+
     def test_replenishment_xlsx_uses_red_and_orange_without_changing_yellow_rule(self):
         payload = {
             "columns": [
