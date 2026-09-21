@@ -241,10 +241,7 @@ class DashboardDailyUpdateSqlTests(unittest.TestCase):
         self.assertIsInstance(step, SourceLoadStep)
         self.assertEqual("etl_datasync.dashboard_ad_budget_snapshot", step.target_table)
         self.assertEqual(40, len(AD_BUDGET_COLUMNS))
-        self.assertIn(
-            "primary key (biz_date, country_category, country, seller_name_new, seller_sku_adj)",
-            CREATE_AD_BUDGET_SNAPSHOT_SQL,
-        )
+        self.assertIn("primary key (biz_date, country_category, country, seller_name_new, seller_sku_adj)", CREATE_AD_BUDGET_SNAPSHOT_SQL)
         self.assertIn("where biz_date >= %(budget_start_date)s", SELECT_AD_BUDGET_SNAPSHOT_SQL)
         self.assertIn("where biz_date >= %(budget_start_date)s", DELETE_AD_BUDGET_SNAPSHOT_SQL)
 

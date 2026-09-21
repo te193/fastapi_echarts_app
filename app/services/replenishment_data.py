@@ -187,10 +187,6 @@ REPLENISHMENT_COLUMN_LABELS = {
     "updated_at": "更新时间",
 }
 
-REPLENISHMENT_EXPORT_LABEL_OVERRIDES = {
-    "final_profit_rate": "订单原始毛利率",
-}
-
 REPLENISHMENT_COLUMN_LABELS.update({
     "supplier_moq": "\u6700\u5c0f\u8d77\u8ba2\u91cf",
     "moq_status": "MOQ\u72b6\u6001",
@@ -213,6 +209,10 @@ REPLENISHMENT_COLUMN_LABELS.update({
     "lead_time_stockout_days": "\u4ea4\u671f\u5185\u9884\u8ba1\u65ad\u8d27\u5929\u6570",
     "lead_time_lost_sales_qty": "\u4ea4\u671f\u5185\u9884\u8ba1\u635f\u5931\u9500\u91cf",
 })
+
+REPLENISHMENT_EXPORT_LABEL_OVERRIDES = {
+    "final_profit_rate": "订单原始毛利率",
+}
 
 REPLENISHMENT_EXPORT_HIDDEN_HIGHLIGHT_COLUMNS = (
     "sales_spike_status",

@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from openpyxl import Workbook
 from openpyxl.comments import Comment
-from openpyxl.styles import PatternFill
+from openpyxl.styles import Border, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from pydantic import BaseModel, Field
 
@@ -85,6 +85,14 @@ REPLENISHMENT_DISABLED_STORE_FILL = PatternFill(
 REPLENISHMENT_COMBINED_WARNING_FILL = PatternFill(
     fill_type="solid",
     fgColor="F4B183",
+)
+REPLENISHMENT_FOLLOW_FILL = PatternFill(
+    fill_type="solid",
+    fgColor="DDEBF7",
+)
+REPLENISHMENT_FOLLOW_BORDER_SIDE = Side(
+    style="thick",
+    color="4472C4",
 )
 REPLENISHMENT_EXPORT_HIDDEN_COLUMNS = {
     "onsale_sites",
@@ -350,6 +358,25 @@ def is_disabled_replenishment_store_with_qty(row: dict, disabled_stores: set[str
         return False
 
 
+def is_follow_replenishment_with_qty(row: dict) -> bool:
+    follow_value = row.get("fllow_flag")
+    if follow_value is None or isinstance(follow_value, bool):
+        return False
+    if isinstance(follow_value, str):
+        is_follow = follow_value.strip().casefold() in {"是", "yes", "true", "0", "0.0"}
+    else:
+        try:
+            is_follow = Decimal(str(follow_value)) == 0
+        except (ArithmeticError, TypeError, ValueError):
+            return False
+    if not is_follow:
+        return False
+    try:
+        return Decimal(str(row.get("replenish_qty") or 0)) > 0
+    except (ArithmeticError, TypeError, ValueError):
+        return False
+
+
 def build_replenishment_xlsx(payload: dict, disabled_stores: set[str] | None = None) -> bytes:
     workbook = Workbook()
     worksheet = workbook.active
@@ -375,6 +402,7 @@ def build_replenishment_xlsx(payload: dict, disabled_stores: set[str] | None = N
             row,
             normalized_disabled_stores,
         )
+        follow_replenishment_row = is_follow_replenishment_with_qty(row)
         row_fill = None
         if highlight_row and disabled_store_row:
             row_fill = REPLENISHMENT_COMBINED_WARNING_FILL
@@ -382,6 +410,8 @@ def build_replenishment_xlsx(payload: dict, disabled_stores: set[str] | None = N
             row_fill = REPLENISHMENT_DISABLED_STORE_FILL
         elif highlight_row:
             row_fill = REPLENISHMENT_SALES_CONCENTRATION_FILL
+        elif follow_replenishment_row:
+            row_fill = REPLENISHMENT_FOLLOW_FILL
         for column_index, column in enumerate(columns, start=1):
             cell = worksheet.cell(
                 row=row_index,
@@ -392,6 +422,17 @@ def build_replenishment_xlsx(payload: dict, disabled_stores: set[str] | None = N
                 cell.number_format = "0.00"
             if row_fill:
                 cell.fill = row_fill
+            if follow_replenishment_row:
+                cell.border = Border(
+                    left=REPLENISHMENT_FOLLOW_BORDER_SIDE if column_index == 1 else Side(),
+                    right=(
+                        REPLENISHMENT_FOLLOW_BORDER_SIDE
+                        if column_index == len(columns)
+                        else Side()
+                    ),
+                    top=REPLENISHMENT_FOLLOW_BORDER_SIDE,
+                    bottom=REPLENISHMENT_FOLLOW_BORDER_SIDE,
+                )
 
     output = io.BytesIO()
     workbook.save(output)
