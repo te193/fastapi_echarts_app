@@ -33,6 +33,48 @@ class DashboardDailyUpdateSqlTests(unittest.TestCase):
     def test_create_schema_sql_uses_canonical_local_target_schema(self):
         self.assertIn("create schema if not exists etl_datasync_test", CREATE_SCHEMA_SQL)
 
+    def test_product_daily_declares_replenishment_lookup_index(self):
+        normalized = " ".join(dashboard_update.CREATE_PRODUCT_DAILY_SQL.lower().split())
+
+        self.assertIn(
+            "key idx_replenishment_lookup "
+            "(country_category, seller_name_new, seller_sku_adj, dt_date)",
+            normalized,
+        )
+
+    def test_product_daily_replenishment_index_is_added_only_when_missing(self):
+        class Cursor:
+            def __init__(self, rows):
+                self.rows = rows
+                self.executed = []
+
+            def execute(self, sql, params=None):
+                self.executed.append((sql, params))
+
+            def fetchall(self):
+                return self.rows
+
+        schemas = SchemaConfig(
+            target_schema="etl_datasync_test",
+            etl_source_schema="etl_datasync",
+            dwd_source_schema="dwd_datasync",
+            pricing_source_schema="temporary_dwd",
+        )
+
+        missing_cursor = Cursor([])
+        dashboard_update.ensure_product_daily_replenishment_index(missing_cursor, schemas)
+        self.assertEqual(2, len(missing_cursor.executed))
+        self.assertIn(
+            "alter table `etl_datasync_test`.`dashboard_product_performance_daily` "
+            "add key `idx_replenishment_lookup` "
+            "(`country_category`, `seller_name_new`, `seller_sku_adj`, `dt_date`)",
+            " ".join(missing_cursor.executed[1][0].lower().split()),
+        )
+
+        existing_cursor = Cursor([{"index_name": "idx_replenishment_lookup"}])
+        dashboard_update.ensure_product_daily_replenishment_index(existing_cursor, schemas)
+        self.assertEqual(1, len(existing_cursor.executed))
+
     def test_render_sql_maps_canonical_local_target_schema(self):
         schemas = SchemaConfig(
             target_schema="etl_datasync_replenishment_test",
@@ -163,6 +205,41 @@ class DashboardDailyUpdateSqlTests(unittest.TestCase):
         ]
         self.assertEqual(end, delete_params[0]["product_start_date"])
         self.assertEqual(end, delete_params[0]["product_end_date"])
+
+    def test_incremental_product_load_fingerprints_entire_window_once(self):
+        start = date(2026, 8, 24)
+        end = date(2026, 8, 25)
+        fingerprints = {start: (10, 100, 10), end: (11, 200, 20)}
+        source = ProductIncrementalSourceConnection({})
+        target = FakeTargetConnection()
+        params = {
+            "biz_date": end,
+            "product_start_date": start,
+            "product_end_date": end,
+            "next_product_end_date": date(2026, 8, 26),
+            "product_full_load": 0,
+        }
+        schemas = SchemaConfig("etl_datasync_test", "etl_datasync", "dwd_datasync", "temporary_dwd")
+        step = STEPS["product_performance_daily"]
+
+        with (
+            patch.object(dashboard_update, "_load_product_source_fingerprints", return_value=fingerprints) as remote,
+            patch.object(dashboard_update, "_load_product_local_fingerprints", return_value=fingerprints) as local,
+        ):
+            affected, changed = dashboard_update._execute_incremental_product_source_load(
+                target, source, schemas, step,
+                render_sql(step.source_select_statement, schemas),
+                "insert into target values (%(dt_date)s, %(item_key)s)",
+                params, batch_size=1000,
+            )
+
+        self.assertEqual((0, ()), (affected, changed))
+        self.assertEqual(1, remote.call_count)
+        self.assertEqual(1, local.call_count)
+        self.assertEqual(start, remote.call_args.args[2]["product_start_date"])
+        self.assertEqual(end, remote.call_args.args[2]["product_end_date"])
+        self.assertEqual([], source.requested_start_dates)
+        self.assertEqual([], target.executed)
 
     def test_product_daily_sql_contains_complete_country_rules(self):
         self.assertIn("when country in ('美国', '加拿大', '巴西', '墨西哥') then '北美站'", INSERT_PRODUCT_DAILY_SQL)

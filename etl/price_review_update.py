@@ -1389,31 +1389,11 @@ def execute_price_review_tracking(target_conn, target_schema: str, params: dict[
 
         for period_days in TRACKING_PERIODS:
             cursor.execute(
-                f"""
-                delete from {target_table(target_schema, "price_review_sku_tracking")}
-                where period_days = %(period_days)s
-                  and adjust_date between %(adjust_start)s and %(adjust_end)s
-                  and date_add(adjust_date, interval %(period_days)s day) > %(local_max_data_date)s
-                """,
+                _tracking_delete_sql(target_schema),
                 {
                     "period_days": period_days,
                     "adjust_start": adjust_start,
                     "adjust_end": adjust_end,
-                    "local_max_data_date": local_max_data_date,
-                },
-            )
-            cursor.execute(
-                f"""
-                delete from {target_table(target_schema, "price_review_sku_tracking")}
-                where period_days = %(period_days)s
-                  and adjust_date between %(adjust_start)s and %(adjust_end)s
-                  and date_add(adjust_date, interval %(period_days)s day) <= %(local_max_data_date)s
-                """,
-                {
-                    "period_days": period_days,
-                    "adjust_start": adjust_start,
-                    "adjust_end": adjust_end,
-                    "local_max_data_date": local_max_data_date,
                 },
             )
             cursor.execute(
@@ -1478,6 +1458,15 @@ def _second_adjustment_update_sql(target_schema: str) -> str:
     """
 
 
+def _tracking_delete_sql(target_schema: str) -> str:
+    tracking = target_table(target_schema, "price_review_sku_tracking")
+    return f"""
+    delete from {tracking}
+    where period_days = %(period_days)s
+      and adjust_date between %(adjust_start)s and %(adjust_end)s
+    """
+
+
 def _tracking_insert_sql(target_schema: str) -> str:
     tracking = target_table(target_schema, "price_review_sku_tracking")
     adjustments = target_table(target_schema, "price_review_adjustment_source")
@@ -1538,6 +1527,8 @@ def _tracking_insert_sql(target_schema: str) -> str:
             sum(case when p.dt_date between b.period_after_start and b.period_after_end then p.ad_spend else 0 end) as ad_spend_after,
             sum(case when p.dt_date between b.period_start and b.period_end then p.ad_sales else 0 end) as ad_revenue_before,
             sum(case when p.dt_date between b.period_after_start and b.period_after_end then p.ad_sales else 0 end) as ad_revenue_after,
+            max(case when p.dt_date = b.period_end then p.ranking end) as rank_before,
+            max(case when p.dt_date = b.period_after_end then p.ranking end) as rank_after,
             max(coalesce(b.product_name, p.local_sku)) as product_name,
             max(b.country) as country
         from base b
@@ -1545,20 +1536,6 @@ def _tracking_insert_sql(target_schema: str) -> str:
           on p.seller_name = b.store
          and p.seller_sku_adj = b.msku
          and p.dt_date between b.period_start and b.period_after_end
-        group by b.adjust_date, b.store, b.msku
-    ),
-    ranks as (
-        select
-            b.adjust_date,
-            b.store,
-            b.msku,
-            max(case when p.dt_date = b.period_end then p.ranking end) as rank_before,
-            max(case when p.dt_date = b.period_after_end then p.ranking end) as rank_after
-        from base b
-        left join {performance} p force index (idx_price_review_lookup)
-          on p.seller_name = b.store
-         and p.seller_sku_adj = b.msku
-         and p.dt_date in (b.period_end, b.period_after_end)
         group by b.adjust_date, b.store, b.msku
     ),
     calc as (
@@ -1595,17 +1572,13 @@ def _tracking_insert_sql(target_schema: str) -> str:
             coalesce(p.ad_spend_after, 0) as ad_spend_after,
             coalesce(p.ad_revenue_before, 0) as ad_revenue_before,
             coalesce(p.ad_revenue_after, 0) as ad_revenue_after,
-            r.rank_before,
-            r.rank_after
+            p.rank_before,
+            p.rank_after
         from base b
         left join perf p
           on p.adjust_date = b.adjust_date
          and p.store = b.store
          and p.msku = b.msku
-        left join ranks r
-          on r.adjust_date = b.adjust_date
-         and r.store = b.store
-         and r.msku = b.msku
     )
     select
         adjust_date,

@@ -258,6 +258,7 @@ create table if not exists etl_datasync_test.dashboard_product_performance_daily
     key idx_period_group (dt_date, seller_name_new, seller_sku_adj, country_category, country, local_sku),
     key idx_price_review_lookup (seller_name, seller_sku_adj, dt_date),
     key idx_station_role_lookup (seller_name_new, country, seller_sku_adj, dt_date),
+    key idx_replenishment_lookup (country_category, seller_name_new, seller_sku_adj, dt_date),
     key idx_sku (seller_sku_adj)
 ) engine=InnoDB default charset=utf8mb4;
 """
@@ -3023,7 +3024,29 @@ def ensure_tables(conn, schemas: SchemaConfig) -> None:
         for sql in DDL_STATEMENTS:
             cursor.execute(with_mysql_comments(render_sql(sql, schemas)))
         ensure_inventory_weekly_columns(cursor, schemas)
+        ensure_product_daily_replenishment_index(cursor, schemas)
     conn.commit()
+
+
+def ensure_product_daily_replenishment_index(cursor, schemas: SchemaConfig) -> None:
+    cursor.execute(
+        """
+        select index_name
+        from information_schema.statistics
+        where table_schema = %(schema)s
+          and table_name = 'dashboard_product_performance_daily'
+          and index_name = 'idx_replenishment_lookup'
+        """,
+        {"schema": schemas.target_schema},
+    )
+    if cursor.fetchall():
+        return
+
+    cursor.execute(
+        f"alter table `{schemas.target_schema}`.`dashboard_product_performance_daily` "
+        "add key `idx_replenishment_lookup` "
+        "(`country_category`, `seller_name_new`, `seller_sku_adj`, `dt_date`)"
+    )
 
 
 def ensure_inventory_weekly_columns(cursor, schemas: SchemaConfig) -> None:

@@ -5,6 +5,7 @@ import unittest
 from argparse import Namespace
 from datetime import date
 from pathlib import Path
+from unittest.mock import patch
 
 from etl import replenishment_update
 
@@ -340,6 +341,87 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("create table etl_datasync_test.dashboard_replenishment_work_candidate_keys_v3 as", rendered)
         self.assertIn("insert into etl_datasync_test.dashboard_replenishment_work_candidate_keys_v3", rendered)
         self.assertIn("insert into etl_datasync_test.dashboard_pur_plan_replenish_data", rendered)
+
+    def test_replenishment_result_materializes_each_work_query_once(self):
+        schemas = replenishment_update.SchemaConfig(
+            target_schema="etl_datasync_test",
+            etl_source_schema="etl_datasync",
+            dwd_source_schema="dwd_datasync",
+            pricing_source_schema="temporary_dwd",
+        )
+
+        statements = replenishment_update.build_replenishment_result_statements(schemas)
+        work_table = "etl_datasync_test.dashboard_replenishment_work_candidate_keys_v3"
+        rendered_statements = [statement.lower() for statement in statements]
+        create_index = next(
+            index
+            for index, statement in enumerate(rendered_statements)
+            if statement.startswith(f"create table {work_table} as")
+        )
+        next_drop_index = next(
+            index
+            for index in range(create_index + 1, len(rendered_statements))
+            if rendered_statements[index].startswith("drop table if exists ")
+        )
+
+        self.assertRegex(rendered_statements[create_index], rf"create table {work_table} as\s+select")
+        self.assertFalse(
+            any(
+                statement.startswith(f"insert into {work_table}")
+                for statement in rendered_statements[create_index + 1:next_drop_index]
+            )
+        )
+
+    def test_sql_step_commits_once_after_all_statements(self):
+        class Cursor:
+            rowcount = 1
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def execute(self, _sql, _params=None):
+                return None
+
+        class Connection:
+            def __init__(self):
+                self.commit_count = 0
+                self.rollback_count = 0
+
+            def cursor(self):
+                return Cursor()
+
+            def commit(self):
+                self.commit_count += 1
+
+            def rollback(self):
+                self.rollback_count += 1
+
+        conn = Connection()
+        schemas = replenishment_update.SchemaConfig(
+            target_schema="etl_datasync_test",
+            etl_source_schema="etl_datasync",
+            dwd_source_schema="dwd_datasync",
+            pricing_source_schema="temporary_dwd",
+        )
+        step = replenishment_update.ReplenishmentStep(
+            "test_step",
+            ("delete from etl_datasync_test.example;", "update etl_datasync_test.example set value = 1;"),
+        )
+        params = {
+            "biz_date": date(2026, 6, 17),
+            "snapshot_date": date(2026, 6, 18),
+            "period_start": date(2026, 3, 20),
+            "period_end": date(2026, 6, 17),
+        }
+
+        with patch.object(replenishment_update, "log_task"):
+            replenishment_update.execute_sql_step(conn, schemas, step, params)
+
+        self.assertEqual(1, conn.commit_count)
+        self.assertEqual(0, conn.rollback_count)
 
     def test_replenishment_work_tables_are_recreated_each_run(self):
         schemas = replenishment_update.SchemaConfig(

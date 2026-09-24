@@ -21,6 +21,7 @@ from etl.dashboard_daily_update import (
     connect_source,
     connect_target,
     execute_source_load_step,
+    ensure_product_daily_replenishment_index,
     log_task,
     parse_day,
     render_sql,
@@ -3231,8 +3232,7 @@ def build_replenishment_result_statements(schemas: SchemaConfig) -> list[str]:
             expanded.extend(
                 [
                     f"drop table if exists {work_table}",
-                    f"create table {work_table} as select * from ({select_sql}) as seed where 1 = 0",
-                    f"insert into {work_table}\n{select_sql}",
+                    f"create table {work_table} as\n{select_sql}",
                 ]
             )
             continue
@@ -3273,6 +3273,7 @@ def ensure_tables(conn, schemas: SchemaConfig) -> None:
         for statement in DDL_STATEMENTS:
             cursor.execute(render_replenishment_sql(statement, schemas))
         ensure_replenishment_columns(cursor, schemas)
+        ensure_product_daily_replenishment_index(cursor, schemas)
     conn.commit()
 
 
@@ -3426,7 +3427,7 @@ def execute_sql_step(conn, schemas: SchemaConfig, step: ReplenishmentStep, param
                 cursor.execute(statement, params)
                 if statement.lstrip().lower().startswith(("insert", "delete")):
                     affected_rows += max(cursor.rowcount, 0)
-                conn.commit()
+            conn.commit()
         if step.name == "replenishment_result":
             try:
                 spike_rows = refresh_replenishment_sales_spike_flags(
