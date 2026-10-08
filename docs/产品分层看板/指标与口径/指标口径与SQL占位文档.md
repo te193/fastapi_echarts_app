@@ -7,7 +7,7 @@
 - 梳理当前看板指标 SQL 的表来源、字段来源、计算逻辑。
 - 对齐现有 FastAPI 页面和 API 所需字段。
 - 为后续数据库迁移预留 SQL 占位符。
-- 暂不改现有代码，等 SQL 口径确认后再替换 `MockDashboardService`。
+- 当前页面已使用数据库服务，旧的 `MockDashboardService` 已移除；本文仅保留 SQL 口径梳理和后续迁移参考。
 
 ## 2. 当前 SQL 总体链路
 
