@@ -36,6 +36,7 @@ DEFAULT_CANDIDATE_DAYS = 1
 DEFAULT_STEP_ORDER = [
     "listing_basic_sync",
     "self_asin_sync",
+    "disabled_store_sync",
     "fba_shipment_sync",
     "order_profit_source_sync",
     "supplier_moq_sync",
@@ -203,6 +204,14 @@ create table if not exists etl_datasync_test.dashboard_replenishment_self_asin_s
     synced_at datetime not null default current_timestamp,
     primary key (seller_name_new, seller_brand, asin),
     key idx_repl_self_asin_lookup (asin, seller_name_new)
+) engine=InnoDB default charset=utf8mb4;
+"""
+
+CREATE_DISABLED_STORE_SYNC_SQL = """
+create table if not exists etl_datasync_test.dashboard_replenishment_disabled_store_sync (
+    seller_name_new varchar(128) not null,
+    synced_at datetime not null default current_timestamp,
+    primary key (seller_name_new)
 ) engine=InnoDB default charset=utf8mb4;
 """
 
@@ -491,6 +500,7 @@ DDL_STATEMENTS = (
     CREATE_SALABLE_DAYS_STAT_SQL,
     CREATE_HISTORY_DAILY_SYNC_SQL,
     CREATE_SELF_ASIN_SYNC_SQL,
+    CREATE_DISABLED_STORE_SYNC_SQL,
     CREATE_LISTING_BASIC_SYNC_SQL,
     CREATE_FBA_SHIPMENT_SYNC_SQL,
     CREATE_ORDER_PROFIT_SOURCE_SYNC_SQL,
@@ -722,6 +732,17 @@ left join opt_db.store_brand_relation store
 where store.`店铺名` is not null
   and list.asin is not null
   and list.asin <> ''
+"""
+
+DISABLED_STORE_COLUMNS = ("seller_name_new",)
+
+DELETE_DISABLED_STORE_SYNC_SQL = "delete from etl_datasync_test.dashboard_replenishment_disabled_store_sync;"
+
+SELECT_DISABLED_STORE_SYNC_SQL = """
+select distinct lower(trim(`店铺名`)) as seller_name_new
+from opt_db.store_brand_relation
+where trim(coalesce(`是否补货`, '')) = '否'
+  and trim(coalesce(`店铺名`, '')) <> ''
 """
 
 FBA_SHIPMENT_COLUMNS = (
@@ -2078,7 +2099,11 @@ select
     sum(coalesce(support_inventory_qty, 0)) as group_support_inventory_qty,
     max(coalesce(purchase_source.effective_purchase_lead_days, 0))
         as group_effective_purchase_lead_days,
-    sum(case when coalesce(fllow_flag, 1) = 0 then 1 else 0 end) as eligible_target_link_count
+    sum(case when coalesce(fllow_flag, 1) = 0 then 1 else 0 end) as eligible_target_link_count,
+    count(distinct case
+        when coalesce(fllow_flag, 1) = 0 then lower(trim(group_base.seller_name_new))
+        else null
+    end) as follow_store_count
 from (
     select
         country_category,
@@ -2366,6 +2391,15 @@ from (
           and calc.seller_sku_adj = perf.seller_sku_adj
     where coalesce(calc.fllow_flag, 1) = 0
       and grp.eligible_target_link_count > 0
+      -- 单跟卖店铺沿用原逻辑，多店铺才排除明确不补货的店铺。
+      and (
+          grp.follow_store_count <= 1
+          or not exists (
+              select 1
+              from etl_datasync_test.dashboard_replenishment_disabled_store_sync disabled
+              where disabled.seller_name_new = lower(trim(calc.seller_name_new))
+          )
+      )
 ) ranked
 where ranked.rn = 1;
 
@@ -2383,6 +2417,7 @@ select
         when grp.group_replenish_need_qty <= 0
           or grp.group_support_replenish_level_sort not in (1, 2, 3)
             then '同ASIN库存充足不补货'
+        when grp.follow_store_count > 1 and target.asin_merge_target is null then '无可承接补货店铺'
         when target.asin_merge_target is null then '同ASIN库存充足不补货'
         when calc.seller_name_new = target.target_seller_name_new
          and calc.seller_sku_adj = target.target_seller_sku_adj
@@ -3076,6 +3111,13 @@ STEPS = {
         SELECT_SELF_ASIN_SYNC_SQL,
         "etl_datasync_test.dashboard_replenishment_self_asin_sync",
         SELF_ASIN_COLUMNS,
+    ),
+    "disabled_store_sync": SourceLoadStep(
+        "disabled_store_sync",
+        DELETE_DISABLED_STORE_SYNC_SQL,
+        SELECT_DISABLED_STORE_SYNC_SQL,
+        "etl_datasync_test.dashboard_replenishment_disabled_store_sync",
+        DISABLED_STORE_COLUMNS,
     ),
     "fba_shipment_sync": SourceLoadStep(
         "fba_shipment_sync",
