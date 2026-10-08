@@ -4,6 +4,20 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_replenishment_layer_help_uses_original_day_thresholds():
+    script = (ROOT / "app" / "static" / "js" / "replenishment.js").read_text(encoding="utf-8")
+    help_text = script[script.index("LEVEL_HELP[LEVEL_URGENT]"):script.index("LEVEL_HELP[LEVEL_ZERO_SALES]")]
+    assert r"<= 35 \u5929" in help_text
+    assert r"35 \u5929 <" in help_text
+    assert r"<= 65 \u5929" in help_text
+    assert r"65 \u5929 <" in help_text
+    assert r"<= 90 \u5929" in help_text
+    assert "> 90 " in help_text
+    assert "<= 50 " not in help_text
+    assert "<= 80 " not in help_text
+    assert "105 " not in help_text
+
+
 def test_margin_price_popover_uses_document_capture_click_delegate():
     script = (ROOT / "app" / "static" / "js" / "replenishment.js").read_text(encoding="utf-8")
 
@@ -20,7 +34,7 @@ def test_margin_price_assets_use_cache_busting_versions():
     replenishment_template = (ROOT / "app" / "templates" / "replenishment.html").read_text(encoding="utf-8")
 
     assert "styles.css') }}?v=20260818rolegrid1" in base_template
-    assert "replenishment.js') }}?v=20260909producttags1" in replenishment_template
+    assert "replenishment.js') }}?v=20261008originalrules1" in replenishment_template
     assert "replenishment_tracking_summary.js') }}?v=20260727stagefilters1" in replenishment_template
 
 

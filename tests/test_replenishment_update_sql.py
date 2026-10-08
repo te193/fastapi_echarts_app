@@ -292,36 +292,48 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertNotIn("ops_weekly_rpt_prod_perf_interim", sql)
         self.assertNotIn("ops_weekly_rpt_prod_perf_data_2026", sql)
 
-    def test_replenishment_support_layer_thresholds_are_extended_by_15_days(self):
+    def test_replenishment_support_layer_thresholds_use_original_days(self):
         sql = " ".join(replenishment_update.REPLENISHMENT_RESULT_SQL.split())
 
-        self.assertIn("arrival.arrival_inventory_support_days <= 50 then 1", sql)
-        self.assertIn("arrival.arrival_inventory_support_days <= 80 then 2", sql)
-        self.assertIn("arrival.arrival_inventory_support_days <= 105 then 3", sql)
-        self.assertIn("arrival.arrival_inventory_support_days > 105 then 4", sql)
+        self.assertIn("arrival.arrival_inventory_support_days <= 35 then 1", sql)
+        self.assertIn("arrival.arrival_inventory_support_days <= 65 then 2", sql)
+        self.assertIn("arrival.arrival_inventory_support_days <= 90 then 3", sql)
+        self.assertIn("arrival.arrival_inventory_support_days > 90 then 4", sql)
         self.assertIn(
             "group_support_inventory_qty / group_daily_avg_sales "
-            "- group_effective_purchase_lead_days <= 50 then 1",
+            "- group_effective_purchase_lead_days <= 35 then 1",
             sql,
         )
         self.assertIn(
             "group_support_inventory_qty / group_daily_avg_sales "
-            "- group_effective_purchase_lead_days <= 80 then 2",
+            "- group_effective_purchase_lead_days <= 65 then 2",
             sql,
         )
         self.assertIn(
             "group_support_inventory_qty / group_daily_avg_sales "
-            "- group_effective_purchase_lead_days <= 105 then 3",
+            "- group_effective_purchase_lead_days <= 90 then 3",
             sql,
         )
         self.assertIn(
             "group_support_inventory_qty / group_daily_avg_sales "
-            "- group_effective_purchase_lead_days > 105 then 4",
+            "- group_effective_purchase_lead_days > 90 then 4",
             sql,
         )
-        self.assertNotIn("arrival.arrival_inventory_support_days <= 35 then 1", sql)
-        self.assertNotIn("arrival.arrival_inventory_support_days <= 65 then 2", sql)
-        self.assertNotIn("arrival.arrival_inventory_support_days <= 90 then 3", sql)
+        self.assertNotIn("arrival.arrival_inventory_support_days <= 50 then 1", sql)
+        self.assertNotIn("arrival.arrival_inventory_support_days <= 80 then 2", sql)
+        self.assertNotIn("arrival.arrival_inventory_support_days <= 105 then 3", sql)
+
+    def test_replenishment_coverage_uses_four_months_for_single_and_merged_links(self):
+        sql = " ".join(replenishment_update.REPLENISHMENT_RESULT_SQL.split())
+        self.assertIn("4 as pre_replenish_comp_months", sql)
+        self.assertIn("max(coalesce(pre_replenish_comp_months, 4))", sql)
+        self.assertIn("hist_90d_instock_daily_sales * 120", sql)
+        self.assertIn("greatest(120 * coalesce(base.daily_avg_sales, 0)", sql)
+        self.assertIn("120 * group_daily_avg_sales - group_support_inventory_qty", sql)
+        self.assertIn("group_replenish_comp_months * 30 * group_daily_avg_sales", sql)
+        self.assertNotIn("150 *", sql)
+        self.assertNotIn("* 150", sql)
+        self.assertNotIn("5 as pre_replenish_comp_months", sql)
 
     def test_replenishment_result_work_statements_avoid_temporary_table_privilege(self):
         schemas = replenishment_update.SchemaConfig(
@@ -487,7 +499,7 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
             sql,
         )
         self.assertIn(
-            "greatest(150 * support.daily_avg_sales - support.arrival_inventory_qty, 0) as normal_replenish_need_qty",
+            "greatest(120 * support.daily_avg_sales - support.arrival_inventory_qty, 0) as normal_replenish_need_qty",
             sql,
         )
         self.assertIn(
@@ -524,7 +536,7 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("else 1 + sales_change_rate_adj", sql)
         self.assertIn("as sales_adj_factor", sql)
         self.assertIn("hist_90d_instock_daily_sales", sql)
-        self.assertIn("hist_90d_instock_daily_sales * 150", sql)
+        self.assertIn("hist_90d_instock_daily_sales * 120", sql)
         self.assertIn("as history_recovery_need_qty", sql)
         self.assertIn("as history_recovery_flag", sql)
         self.assertIn("l.max_cg_box_pcs", sql)
@@ -651,7 +663,7 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("as final_adjusted_daily_sales_30d", sql)
         self.assertIn("end as daily_avg_sales", sql)
         self.assertIn(
-            "greatest(150 * support.daily_avg_sales - support.arrival_inventory_qty, 0)",
+            "greatest(120 * support.daily_avg_sales - support.arrival_inventory_qty, 0)",
             sql,
         )
         self.assertIn("base.support_inventory_qty / base.daily_avg_sales", sql)
