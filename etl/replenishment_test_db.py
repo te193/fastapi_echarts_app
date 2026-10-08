@@ -54,6 +54,7 @@ COPY_TABLES = (
         "dt_date between %(history_start_date)s and %(history_end_date)s",
     ),
     CopyTable("dashboard_replenishment_self_asin_sync", "1 = 1"),
+    CopyTable("dashboard_replenishment_disabled_store_sync", "1 = 1"),
     CopyTable("dashboard_replenishment_supplier_moq_sync", "snapshot_date = %(snapshot_date)s"),
 )
 

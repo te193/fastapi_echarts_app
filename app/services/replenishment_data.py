@@ -1166,6 +1166,8 @@ class ReplenishmentDataService:
         return (
             f"case when {self._followed_block_display_condition(alias)} then %(level_followed_block)s "
             f"when coalesce({prefix}asin_merge_flag, 0) = 1 "
+            f"and {prefix}asin_merge_reason = '无可承接补货店铺' then {prefix}asin_merge_reason "
+            f"when coalesce({prefix}asin_merge_flag, 0) = 1 "
             f"and coalesce({prefix}replenish_qty, 0) = 0 "
             f"and coalesce({prefix}asin_merge_target, '') <> '' "
             f"and {current_link_expr} <> {prefix}asin_merge_target then %(asin_merge_consolidated_block)s "
@@ -1180,6 +1182,8 @@ class ReplenishmentDataService:
         current_link_expr = f"concat({prefix}seller_name_new, '/', {prefix}seller_sku_adj)"
         return (
             f"case when coalesce({prefix}asin_merge_flag, 0) = 1 "
+            f"and {prefix}asin_merge_reason = '无可承接补货店铺' then {prefix}asin_merge_reason "
+            f"when coalesce({prefix}asin_merge_flag, 0) = 1 "
             f"and coalesce({prefix}replenish_qty, 0) = 0 "
             f"and coalesce({prefix}asin_merge_target, '') <> '' "
             f"and {current_link_expr} <> {prefix}asin_merge_target then %(asin_merge_consolidated_block)s "
