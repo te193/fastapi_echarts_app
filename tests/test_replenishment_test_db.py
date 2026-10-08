@@ -1,4 +1,35 @@
+from datetime import date
+from unittest.mock import MagicMock, patch
 from etl import replenishment_test_db
+
+
+def test_missing_new_store_dependency_is_synced_to_test_schema_only():
+    conn = MagicMock()
+    cursor = conn.cursor.return_value.__enter__.return_value
+    cursor.fetchone.side_effect = [{"table_count": 0}, {"n": 9}]
+    item = replenishment_test_db.CopyTable("dashboard_replenishment_disabled_store_sync", "1 = 1")
+    params = replenishment_test_db.build_params(date(2026, 10, 9))
+    with patch.object(replenishment_test_db, "connect_source", create=True) as source, \
+         patch.object(replenishment_test_db, "execute_source_load_step", create=True) as sync:
+        assert replenishment_test_db.copy_table(conn, "prod_schema", "test_schema", item, params) == 9
+    assert sync.call_args.args[0] is conn
+    assert sync.call_args.args[1] is source.return_value.__enter__.return_value
+    assert sync.call_args.args[2].target_schema == "test_schema"
+    assert sync.call_args.args[3].name == "disabled_store_sync"
+    assert sync.call_args.args[4]["period_start"] == params["biz_date"]
+    assert sync.call_args.args[4]["period_end"] == params["biz_date"]
+    assert not any("delete from `prod_schema`" in str(call) for call in cursor.execute.call_args_list)
+
+
+def test_existing_store_dependency_keeps_production_copy_flow():
+    conn = MagicMock()
+    conn.cursor.return_value.__enter__.return_value.fetchone.return_value = {"table_count": 1}
+    conn.cursor.return_value.__enter__.return_value.rowcount = 9
+    item = replenishment_test_db.CopyTable("dashboard_replenishment_disabled_store_sync", "1 = 1")
+    with patch.object(replenishment_test_db, "connect_source", create=True) as source, \
+         patch.object(replenishment_test_db, "common_columns", return_value=["seller_name_new"]):
+        assert replenishment_test_db.copy_table(conn, "prod_schema", "test_schema", item, {}) == 9
+    source.assert_not_called()
 
 
 def test_test_database_defaults_to_dedicated_replenishment_schema():

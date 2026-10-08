@@ -7,9 +7,15 @@ from datetime import date, timedelta
 
 import pymysql
 
-from etl.dashboard_daily_update import clean_identifier, connect_with_retry
+from etl.dashboard_daily_update import (
+    clean_identifier,
+    connect_source,
+    connect_with_retry,
+    execute_source_load_step,
+)
 from etl.replenishment_update import (
     SchemaConfig,
+    STEPS,
     apply_database_ini_env,
     ensure_tables,
 )
@@ -284,6 +290,32 @@ def ensure_copy_table(conn, production_schema: str, test_schema: str, table: str
 
 
 def copy_table(conn, production_schema: str, test_schema: str, item: CopyTable, params: dict[str, date]) -> int:
+    if item.table == "dashboard_replenishment_disabled_store_sync":
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "select count(*) as table_count from information_schema.tables "
+                "where table_schema = %s and table_name = %s",
+                (production_schema, item.table),
+            )
+            source_exists = int((cursor.fetchone() or {}).get("table_count") or 0) > 0
+        if not source_exists:
+            schemas = SchemaConfig(
+                target_schema=test_schema,
+                etl_source_schema=os.getenv("DASHBOARD_ETL_SOURCE_SCHEMA", "etl_datasync"),
+                dwd_source_schema=os.getenv("DASHBOARD_DWD_SOURCE_SCHEMA", "dwd_datasync"),
+                pricing_source_schema=os.getenv("DASHBOARD_PRICING_SOURCE_SCHEMA", "temporary_dwd"),
+            )
+            # New dependencies can be bootstrapped without migrating production.
+            sync_params = {
+                **params,
+                "period_start": params["biz_date"],
+                "period_end": params["biz_date"],
+            }
+            with connect_source() as source:
+                execute_source_load_step(conn, source, schemas, STEPS["disabled_store_sync"], sync_params, 1000)
+            with conn.cursor() as cursor:
+                cursor.execute(f"select count(*) as n from `{test_schema}`.`{item.table}`")
+                return int(cursor.fetchone()["n"])
     ensure_copy_table(conn, production_schema, test_schema, item.table)
     columns = common_columns(conn, production_schema, test_schema, item.table)
     column_sql = ", ".join(f"`{column}`" for column in columns)
