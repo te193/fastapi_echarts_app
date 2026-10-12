@@ -739,61 +739,41 @@ def refresh(target_conn, schemas, rows: list[dict], label_dates: tuple[date, ...
     return len(rows)
 
 
-def run_update(periods: tuple[int, ...] = DEFAULT_PERIODS) -> dict:
-    apply_database_ini_env()
-    schemas = build_schema_config()
-    target_conn = None
-    source_conn = None
-    try:
-        target_conn = connect_target()
-        source_conn = connect_source()
-        label_dates = latest_label_dates(source_conn)
-        if not label_dates:
-            raise RuntimeError("remote label fact table has no label dates")
-        snapshot_counts = sync_label_snapshots(source_conn, target_conn, schemas, label_dates)
-        remote_facts = remote_role_facts(
-            target_conn,
-            label_dates,
-            fact_table=render_sql(LOCAL_LABEL_FACT_TABLE, schemas),
-            detail_table=render_sql(LOCAL_LABEL_DETAIL_TABLE, schemas),
-        )
-        rows = build_rows(target_conn, schemas, label_dates, periods, remote_facts)
-        affected = refresh(target_conn, schemas, rows, label_dates)
-        return {
-            "status": "refreshed",
-            "label_dates": [item.isoformat() for item in label_dates],
-            "latest_date": label_dates[0].isoformat(),
-            "fact_rows": snapshot_counts["fact_rows"],
-            "remote_fact_rows": snapshot_counts["remote_fact_rows"],
-            "reused_fact_rows": snapshot_counts["reused_fact_rows"],
-            "detail_rows": snapshot_counts["detail_rows"],
-            "evidence_rows": affected,
-            "periods": [f"{days}d" for days in periods],
-        }
-    finally:
-        if source_conn is not None:
-            source_conn.close()
-        if target_conn is not None:
-            target_conn.close()
+def run_update(periods: tuple[int, ...] = DEFAULT_PERIODS, **generation_options) -> dict:
+    """Daily job and page refresh share the complete local V47 generator.
+
+    ``periods`` remains accepted for caller compatibility. V47 always computes
+    its full set of periods so an incremental refresh cannot discard labels.
+    Legacy copy helpers above are retained only for historical tooling/tests.
+    """
+    if not periods or any(days not in DEFAULT_PERIODS for days in periods):
+        raise ValueError("V47 supports 7d, 14d, 30d and 90d periods")
+    from etl.label_local_generation import run_generation
+    return run_generation(**generation_options)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Build sales-role label change evidence for the latest two remote label dates.")
+    parser = argparse.ArgumentParser(description="Generate labels and evidence locally using V47 business sources.")
     parser.add_argument("--periods", default=",".join(f"{days}d" for days in DEFAULT_PERIODS))
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--date", type=date.fromisoformat)
+    parser.add_argument("--bootstrap-start", type=date.fromisoformat)
+    parser.add_argument("--reuse-inputs", action="store_true")
+    parser.add_argument("--no-publish", action="store_true")
     args, _ = parser.parse_known_args()
     periods = parse_periods(args.periods)
     if args.dry_run:
-        print(f"Label rule evidence plan: periods={','.join(f'{days}d' for days in periods)}, retain_dates=2")
+        print("Local V47 plan: business sources -> local generation -> verified history -> atomic publication; retain_dates=2")
         return
 
-    result = run_update(periods)
+    result = run_update(periods, biz_date=args.date, bootstrap_start=args.bootstrap_start,
+                        publish=not args.no_publish, sync=not args.reuse_inputs)
     print("Local label snapshots and rule evidence updated")
     print(f"  label_dates : {', '.join(result['label_dates'])}")
     print(f"  label_facts : {result['fact_rows']:,}")
-    print(f"  remote_rows : {result['remote_fact_rows']:,}")
-    print(f"  reused_rows : {result['reused_fact_rows']:,}")
-    print(f"  label_meta  : {result['detail_rows']:,}")
+    print(f"  source_mode : {result['source_mode']}")
+    print(f"  history     : {result['history_start']}")
+    print(f"  label_meta  : {result.get('detail_rows', 0):,}")
     print(f"  periods     : {', '.join(result['periods'])}")
     print(f"  evidence    : {result['evidence_rows']:,}")
 

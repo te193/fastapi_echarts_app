@@ -274,41 +274,7 @@ def test_replace_snapshot_dates_rolls_back_when_fact_insert_fails():
     assert not conn.committed
 
 
-def test_run_update_returns_sync_summary_and_closes_connections(monkeypatch):
-    target = Connection()
-    source = Connection()
-    target.closed = False
-    source.closed = False
-    target.close = lambda: setattr(target, "closed", True)
-    source.close = lambda: setattr(source, "closed", True)
-    dates = (date(2026, 8, 20), date(2026, 8, 19))
-
-    monkeypatch.setattr("etl.label_rule_evidence_snapshot_update.apply_database_ini_env", lambda: None)
-    monkeypatch.setattr(
-        "etl.label_rule_evidence_snapshot_update.build_schema_config",
-        lambda: SchemaConfig("etl_datasync_test", "etl_datasync", "dwd_datasync", "temporary_dwd"),
-    )
-    monkeypatch.setattr("etl.label_rule_evidence_snapshot_update.connect_target", lambda: target)
-    monkeypatch.setattr("etl.label_rule_evidence_snapshot_update.connect_source", lambda: source)
-    monkeypatch.setattr("etl.label_rule_evidence_snapshot_update.latest_label_dates", lambda conn: dates)
-    monkeypatch.setattr(
-        "etl.label_rule_evidence_snapshot_update.sync_label_snapshots",
-        lambda *args: {
-            "fact_rows": 120,
-            "remote_fact_rows": 70,
-            "reused_fact_rows": 50,
-            "detail_rows": 30,
-        },
-    )
-    monkeypatch.setattr("etl.label_rule_evidence_snapshot_update.remote_role_facts", lambda *args, **kwargs: {})
-    monkeypatch.setattr("etl.label_rule_evidence_snapshot_update.build_rows", lambda *args: [{"label_date": dates[0]}])
-    monkeypatch.setattr("etl.label_rule_evidence_snapshot_update.refresh", lambda *args: 16)
-
-    result = run_update((7, 30))
-
-    assert result["latest_date"] == "2026-08-20"
-    assert result["fact_rows"] == 120
-    assert result["evidence_rows"] == 16
-    assert result["periods"] == ["7d", "30d"]
-    assert target.closed
-    assert source.closed
+def test_run_update_keeps_all_v47_periods_even_for_legacy_subset_caller(monkeypatch):
+    expected = {"source_mode": "local_generated", "periods": ["7d", "14d", "30d", "90d"]}
+    monkeypatch.setattr("etl.label_local_generation.run_generation", lambda **kwargs: expected)
+    assert run_update((7, 30)) == expected

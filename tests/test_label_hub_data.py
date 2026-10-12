@@ -126,6 +126,25 @@ METRICS = {
 
 
 class LabelHubDataTests(unittest.TestCase):
+    def test_local_lifecycle_extensions_are_counted_and_filterable(self):
+        template=next(d for d in DETAILS if d['sub_label_id']==201)
+        details=DETAILS + [{**template,'sub_label_id':206,'sub_label_name':'归档产品'},
+                           {**template,'sub_label_id':207,'sub_label_name':'生命周期待判定'}]
+        facts=[f for f in FACTS if f['label_id']!=201]+[
+            {'data_date':'2026-07-13','country_category':'欧洲站','store':'StoreA','msku':'A1','label_id':206,'label_period':'current'},
+            {'data_date':'2026-07-13','country_category':'欧洲站','store':'StoreA','msku':'A2','label_id':207,'label_period':'current'}]
+        args=dict(details=details,facts=facts,metrics=METRICS,data_date='2026-07-13',parent_label_id=2,
+                  compare_parent_id=1,conditions={},label_period='all',country_category='all',store='all',keyword='',
+                  page=1,page_size=20,sort_field='sales_amount',sort_dir='desc')
+        service=LabelHubDataService()
+        payload=service.build_payload(**args)
+        category=next(c for c in payload['overview'] if c['id']==2)
+        self.assertEqual(category['unique_msku_count'],2)
+        self.assertEqual({c['label'] for c in category['children'] if c['msku_count']},{'归档产品','生命周期待判定'})
+        filtered=service.build_payload(**{**args,'conditions':{2:{206}}})
+        self.assertEqual(filtered['kpis']['sku_count'],1)
+        self.assertEqual([row['msku'] for row in filtered['rows']],['A1'])
+
     def test_diagnostic_parents_are_filterable_but_hidden_from_analysis_categories(self):
         service = LabelHubDataService()
         details = DETAILS + [
