@@ -1,0 +1,938 @@
+[
+  {
+    "label_id": 1,
+    "label_name": "销售角色",
+    "sub_label_id": 101,
+    "sub_label_name": "明星产品",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 1,
+    "label_name": "销售角色",
+    "sub_label_id": 102,
+    "sub_label_name": "潜力产品",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 1,
+    "label_name": "销售角色",
+    "sub_label_id": 103,
+    "sub_label_name": "瘦狗产品",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 1,
+    "label_name": "销售角色",
+    "sub_label_id": 104,
+    "sub_label_name": "问题产品",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 2,
+    "label_name": "生命周期",
+    "sub_label_id": 201,
+    "sub_label_name": "测款期",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 2,
+    "label_name": "生命周期",
+    "sub_label_id": 202,
+    "sub_label_name": "新品期",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 2,
+    "label_name": "生命周期",
+    "sub_label_id": 203,
+    "sub_label_name": "成长期",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 2,
+    "label_name": "生命周期",
+    "sub_label_id": 204,
+    "sub_label_name": "成熟期",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 2,
+    "label_name": "生命周期",
+    "sub_label_id": 205,
+    "sub_label_name": "衰退期",
+    "status": "启用",
+    "tagging_method": "manual"
+  },
+  {
+    "label_id": 3,
+    "label_name": "运营状态",
+    "sub_label_id": 301,
+    "sub_label_name": "正常在售",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 3,
+    "label_name": "运营状态",
+    "sub_label_id": 302,
+    "sub_label_name": "测款扶持",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 3,
+    "label_name": "运营状态",
+    "sub_label_id": 303,
+    "sub_label_name": "返厂品",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 3,
+    "label_name": "运营状态",
+    "sub_label_id": 304,
+    "sub_label_name": "断货中",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 3,
+    "label_name": "运营状态",
+    "sub_label_id": 305,
+    "sub_label_name": "清仓中",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 3,
+    "label_name": "运营状态",
+    "sub_label_id": 306,
+    "sub_label_name": "停售",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 3,
+    "label_name": "运营状态",
+    "sub_label_id": 307,
+    "sub_label_name": "待上架",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 4,
+    "label_name": "定价",
+    "sub_label_id": 401,
+    "sub_label_name": "清仓区",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 4,
+    "label_name": "定价",
+    "sub_label_id": 402,
+    "sub_label_name": "微利区",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 4,
+    "label_name": "定价",
+    "sub_label_id": 403,
+    "sub_label_name": "基础利润区",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 4,
+    "label_name": "定价",
+    "sub_label_id": 404,
+    "sub_label_name": "健康利润区",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 4,
+    "label_name": "定价",
+    "sub_label_id": 405,
+    "sub_label_name": "超额利润区",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 5,
+    "label_name": "返厂品阶段下钻",
+    "sub_label_id": 501,
+    "sub_label_name": "观察期",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 5,
+    "label_name": "返厂品阶段下钻",
+    "sub_label_id": 502,
+    "sub_label_name": "运营干预期",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 5,
+    "label_name": "返厂品阶段下钻",
+    "sub_label_id": 503,
+    "sub_label_name": "持续干预期",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 5,
+    "label_name": "返厂品阶段下钻",
+    "sub_label_id": 504,
+    "sub_label_name": "达标退出",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 6,
+    "label_name": "断货在途流程标签",
+    "sub_label_id": 601,
+    "sub_label_name": "PLANNING",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 6,
+    "label_name": "断货在途流程标签",
+    "sub_label_id": 602,
+    "sub_label_name": "WORKING",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 6,
+    "label_name": "断货在途流程标签",
+    "sub_label_id": 603,
+    "sub_label_name": "SHIPPED",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 6,
+    "label_name": "断货在途流程标签",
+    "sub_label_id": 604,
+    "sub_label_name": "IN_TRANSIT",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 6,
+    "label_name": "断货在途流程标签",
+    "sub_label_id": 605,
+    "sub_label_name": "DELIVERED",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 6,
+    "label_name": "断货在途流程标签",
+    "sub_label_id": 606,
+    "sub_label_name": "CHECKED_IN",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 6,
+    "label_name": "断货在途流程标签",
+    "sub_label_id": 607,
+    "sub_label_name": "RECEIVING",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 6,
+    "label_name": "断货在途流程标签",
+    "sub_label_id": 608,
+    "sub_label_name": "CLOSED",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 6,
+    "label_name": "断货在途流程标签",
+    "sub_label_id": 609,
+    "sub_label_name": "CANCELLED",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 6,
+    "label_name": "断货在途流程标签",
+    "sub_label_id": 610,
+    "sub_label_name": "DELETED",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 6,
+    "label_name": "断货在途流程标签",
+    "sub_label_id": 611,
+    "sub_label_name": "ERROR",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 6,
+    "label_name": "断货在途流程标签",
+    "sub_label_id": 612,
+    "sub_label_name": "READY_TO_SHIP",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 7,
+    "label_name": "站点状态",
+    "sub_label_id": 701,
+    "sub_label_name": "五国全覆盖",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 7,
+    "label_name": "站点状态",
+    "sub_label_id": 702,
+    "sub_label_name": "部分覆盖",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 8,
+    "label_name": "库存水平",
+    "sub_label_id": 801,
+    "sub_label_name": "低库存",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 8,
+    "label_name": "库存水平",
+    "sub_label_id": 802,
+    "sub_label_name": "中库存",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 8,
+    "label_name": "库存水平",
+    "sub_label_id": 803,
+    "sub_label_name": "高库存",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 9,
+    "label_name": "流量结构",
+    "sub_label_id": 901,
+    "sub_label_name": "高度依赖广告",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 9,
+    "label_name": "流量结构",
+    "sub_label_id": 902,
+    "sub_label_name": "中度依赖广告",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 9,
+    "label_name": "流量结构",
+    "sub_label_id": 903,
+    "sub_label_name": "健康状态",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 9,
+    "label_name": "流量结构",
+    "sub_label_id": 904,
+    "sub_label_name": "自然流量",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 10,
+    "label_name": "客户体验",
+    "sub_label_id": 1001,
+    "sub_label_name": "口碑优秀",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 10,
+    "label_name": "客户体验",
+    "sub_label_id": 1002,
+    "sub_label_name": "口碑正常",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 10,
+    "label_name": "客户体验",
+    "sub_label_id": 1003,
+    "sub_label_name": "口碑风险",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 10,
+    "label_name": "客户体验",
+    "sub_label_id": 1004,
+    "sub_label_name": "无评价",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 11,
+    "label_name": "退货情况",
+    "sub_label_id": 1101,
+    "sub_label_name": "低退货率",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 11,
+    "label_name": "退货情况",
+    "sub_label_id": 1102,
+    "sub_label_name": "正常退货率",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 11,
+    "label_name": "退货情况",
+    "sub_label_id": 1103,
+    "sub_label_name": "高退货率",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 11,
+    "label_name": "退货情况",
+    "sub_label_id": 1104,
+    "sub_label_name": "严重退货",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 12,
+    "label_name": "广告与营销",
+    "sub_label_id": 1201,
+    "sub_label_name": "推排名期",
+    "status": "未启用",
+    "tagging_method": "manual"
+  },
+  {
+    "label_id": 12,
+    "label_name": "广告与营销",
+    "sub_label_id": 1202,
+    "sub_label_name": "盈利期",
+    "status": "未启用",
+    "tagging_method": "manual"
+  },
+  {
+    "label_id": 12,
+    "label_name": "广告与营销",
+    "sub_label_id": 1203,
+    "sub_label_name": "清仓广告",
+    "status": "未启用",
+    "tagging_method": "manual"
+  },
+  {
+    "label_id": 13,
+    "label_name": "站点销售角色",
+    "sub_label_id": 1301,
+    "sub_label_name": "明星产品(站点)",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 13,
+    "label_name": "站点销售角色",
+    "sub_label_id": 1302,
+    "sub_label_name": "潜力产品(站点)",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 13,
+    "label_name": "站点销售角色",
+    "sub_label_id": 1303,
+    "sub_label_name": "瘦狗产品(站点)",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 13,
+    "label_name": "站点销售角色",
+    "sub_label_id": 1304,
+    "sub_label_name": "问题产品(站点)",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 14,
+    "label_name": "站点生命周期",
+    "sub_label_id": 1401,
+    "sub_label_name": "测款期(站点)",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 14,
+    "label_name": "站点生命周期",
+    "sub_label_id": 1402,
+    "sub_label_name": "新品期(站点)",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 14,
+    "label_name": "站点生命周期",
+    "sub_label_id": 1403,
+    "sub_label_name": "成长期(站点)",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 14,
+    "label_name": "站点生命周期",
+    "sub_label_id": 1404,
+    "sub_label_name": "成熟期(站点)",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 14,
+    "label_name": "站点生命周期",
+    "sub_label_id": 1405,
+    "sub_label_name": "衰退期(站点)",
+    "status": "启用",
+    "tagging_method": "manual"
+  },
+  {
+    "label_id": 15,
+    "label_name": "全站点销售角色-产品问题标签",
+    "sub_label_id": 1501,
+    "sub_label_name": "明星产品-已达标",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 15,
+    "label_name": "全站点销售角色-产品问题标签",
+    "sub_label_id": 1502,
+    "sub_label_name": "潜力产品-低毛利",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 15,
+    "label_name": "全站点销售角色-产品问题标签",
+    "sub_label_id": 1503,
+    "sub_label_name": "潜力产品-日销或毛利待突破",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 15,
+    "label_name": "全站点销售角色-产品问题标签",
+    "sub_label_id": 1504,
+    "sub_label_name": "瘦狗产品-低毛利",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 15,
+    "label_name": "全站点销售角色-产品问题标签",
+    "sub_label_id": 1505,
+    "sub_label_name": "瘦狗产品-低日销",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 15,
+    "label_name": "全站点销售角色-产品问题标签",
+    "sub_label_id": 1506,
+    "sub_label_name": "瘦狗产品-日销毛利双低",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 15,
+    "label_name": "全站点销售角色-产品问题标签",
+    "sub_label_id": 1507,
+    "sub_label_name": "问题产品-低毛利",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 15,
+    "label_name": "全站点销售角色-产品问题标签",
+    "sub_label_id": 1508,
+    "sub_label_name": "问题产品-零动销",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 16,
+    "label_name": "站点销售角色-产品问题标签",
+    "sub_label_id": 1601,
+    "sub_label_name": "明星产品（站点）-保持",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 16,
+    "label_name": "站点销售角色-产品问题标签",
+    "sub_label_id": 1602,
+    "sub_label_name": "潜力产品（站点）-提升毛利",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 16,
+    "label_name": "站点销售角色-产品问题标签",
+    "sub_label_id": 1603,
+    "sub_label_name": "潜力产品（站点）-提升销量",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 16,
+    "label_name": "站点销售角色-产品问题标签",
+    "sub_label_id": 1604,
+    "sub_label_name": "瘦狗产品（站点）-提升毛利",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 16,
+    "label_name": "站点销售角色-产品问题标签",
+    "sub_label_id": 1605,
+    "sub_label_name": "瘦狗产品（站点）-提升销量",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 16,
+    "label_name": "站点销售角色-产品问题标签",
+    "sub_label_id": 1606,
+    "sub_label_name": "问题产品（站点）-提升毛利",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 16,
+    "label_name": "站点销售角色-产品问题标签",
+    "sub_label_id": 1607,
+    "sub_label_name": "问题产品（站点）-提升销量",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 17,
+    "label_name": "运营状态-策略建议标签（站点）",
+    "sub_label_id": 1701,
+    "sub_label_name": "测款扶持运营策略－10%订单毛利起售",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 17,
+    "label_name": "运营状态-策略建议标签（站点）",
+    "sub_label_id": 1702,
+    "sub_label_name": "测款扶持运营策略－问题产品且日销达到1以上，提价至25%订单毛利",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 17,
+    "label_name": "运营状态-策略建议标签（站点）",
+    "sub_label_id": 1703,
+    "sub_label_name": "测款扶持运营策略－问题产品且日销低于1，提高广告投入至acos 5%",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 17,
+    "label_name": "运营状态-策略建议标签（站点）",
+    "sub_label_id": 1704,
+    "sub_label_name": "测款扶持运营策略－广告调整后仍低日销，改善Listing",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 17,
+    "label_name": "运营状态-策略建议标签（站点）",
+    "sub_label_id": 1705,
+    "sub_label_name": "返厂品运营策略－按断货前原价恢复销售并观察D3表现",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 17,
+    "label_name": "运营状态-策略建议标签（站点）",
+    "sub_label_id": 1706,
+    "sub_label_name": "返厂品运营策略－D3日销恢复达到70%，退出返厂品状态",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 17,
+    "label_name": "运营状态-策略建议标签（站点）",
+    "sub_label_id": 1707,
+    "sub_label_name": "返厂品运营策略－D3日销恢复未达70%，降至下一订单毛利档位并投入acos 5%",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 17,
+    "label_name": "运营状态-策略建议标签（站点）",
+    "sub_label_id": 1708,
+    "sub_label_name": "返厂品运营策略－降价后仍未恢复，降至10%订单毛利并转入测款扶持流程",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 17,
+    "label_name": "运营状态-策略建议标签（站点）",
+    "sub_label_id": 1709,
+    "sub_label_name": "返厂品运营策略－返厂数据异常，暂不判断恢复策略",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 17,
+    "label_name": "运营状态-策略建议标签（站点）",
+    "sub_label_id": 1710,
+    "sub_label_name": "运营状态数据异常－无法判断",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 18,
+    "label_name": "广告投放效果",
+    "sub_label_id": 1801,
+    "sub_label_name": "无法判断",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 18,
+    "label_name": "广告投放效果",
+    "sub_label_id": 1802,
+    "sub_label_name": "无广告产出",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 18,
+    "label_name": "广告投放效果",
+    "sub_label_id": 1803,
+    "sub_label_name": "TACOS偏高",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 18,
+    "label_name": "广告投放效果",
+    "sub_label_id": 1804,
+    "sub_label_name": "ACOS偏高",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 18,
+    "label_name": "广告投放效果",
+    "sub_label_id": 1805,
+    "sub_label_name": "广告依赖",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 18,
+    "label_name": "广告投放效果",
+    "sub_label_id": 1806,
+    "sub_label_name": "投入不足",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 18,
+    "label_name": "广告投放效果",
+    "sub_label_id": 1807,
+    "sub_label_name": "投放标杆",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 18,
+    "label_name": "广告投放效果",
+    "sub_label_id": 1808,
+    "sub_label_name": "投放良好",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 18,
+    "label_name": "广告投放效果",
+    "sub_label_id": 1809,
+    "sub_label_name": "待优化",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 19,
+    "label_name": "广告推广与管理",
+    "sub_label_id": 1901,
+    "sub_label_name": "广告数据不足",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 19,
+    "label_name": "广告推广与管理",
+    "sub_label_id": 1902,
+    "sub_label_name": "五站均已投入广告",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 19,
+    "label_name": "广告推广与管理",
+    "sub_label_id": 1903,
+    "sub_label_name": "该产品暂未投入广告",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 19,
+    "label_name": "广告推广与管理",
+    "sub_label_id": 1904,
+    "sub_label_name": "部分站点未投入广告",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 20,
+    "label_name": "断货前销售角色",
+    "sub_label_id": 2001,
+    "sub_label_name": "断货前-明星产品",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 20,
+    "label_name": "断货前销售角色",
+    "sub_label_id": 2002,
+    "sub_label_name": "断货前-潜力产品",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 20,
+    "label_name": "断货前销售角色",
+    "sub_label_id": 2003,
+    "sub_label_name": "断货前-瘦狗产品",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 20,
+    "label_name": "断货前销售角色",
+    "sub_label_id": 2004,
+    "sub_label_name": "断货前-问题产品",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 21,
+    "label_name": "断货前销售角色(站点)",
+    "sub_label_id": 2101,
+    "sub_label_name": "断货前-明星产品（站点）",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 21,
+    "label_name": "断货前销售角色(站点)",
+    "sub_label_id": 2102,
+    "sub_label_name": "断货前-潜力产品（站点）",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 21,
+    "label_name": "断货前销售角色(站点)",
+    "sub_label_id": 2103,
+    "sub_label_name": "断货前-瘦狗产品（站点）",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 21,
+    "label_name": "断货前销售角色(站点)",
+    "sub_label_id": 2104,
+    "sub_label_name": "断货前-问题产品（站点）",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 22,
+    "label_name": "安全库存",
+    "sub_label_id": 2201,
+    "sub_label_name": "安全",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 22,
+    "label_name": "安全库存",
+    "sub_label_id": 2202,
+    "sub_label_name": "库存预警",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 22,
+    "label_name": "安全库存",
+    "sub_label_id": 2203,
+    "sub_label_name": "数据不足",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 22,
+    "label_name": "安全库存",
+    "sub_label_id": 2204,
+    "sub_label_name": "不适用",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  },
+  {
+    "label_id": 23,
+    "label_name": "30天销售角色频次记录",
+    "sub_label_id": 2301,
+    "sub_label_name": "30天销售角色频次记录",
+    "status": "启用",
+    "tagging_method": "auto_sql"
+  }
+]
