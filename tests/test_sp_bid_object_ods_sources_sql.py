@@ -3,6 +3,7 @@ from pathlib import Path
 
 SQL_PATH = Path(__file__).resolve().parents[1] / "sqlcode" / "SP竞价对象DWS宽表_每日快照刷新.sql"
 DDL_PATH = Path(__file__).resolve().parents[1] / "sqlcode" / "SP竞价对象DWS宽表_建表.sql"
+EVENT_PATH = Path(__file__).resolve().parents[1] / "sqlcode" / "SP竞价对象DWS宽表_每日刷新事件.sql"
 
 ATTRIBUTION_FIELDS = tuple(
     f"{prefix}_{window}d"
@@ -79,3 +80,13 @@ def test_ddl_migrates_existing_table_with_compatible_attribution_columns():
     assert "add column if not exists" not in ddl_sql
     for field in ATTRIBUTION_FIELDS:
         assert f"add column {field}" in ddl_sql
+
+
+def test_daily_refresh_event_runs_at_0930_beijing_time():
+    event_sql = EVENT_PATH.read_text(encoding="utf-8").lower()
+
+    assert "set time_zone = '+08:00';" in event_sql
+    assert "create event dws_datasync.ev_refresh_sp_bid_object_snapshot_daily" in event_sql
+    assert "every 1 day" in event_sql
+    assert "starts '2026-09-15 09:30:00'" in event_sql
+    assert "call dws_datasync.sp_refresh_sp_bid_object_snapshot_daily(null);" in event_sql

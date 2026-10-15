@@ -1,0 +1,835 @@
+{
+  "CJ057b": {
+    "meta": {
+      "data_date": "2026-10-08"
+    },
+    "options": {
+      "countries": [
+        "欧洲站"
+      ],
+      "stores": [
+        "CHOOJEE"
+      ]
+    },
+    "summary": {
+      "tracking": 1,
+      "ready": 0,
+      "pending": 0,
+      "exited": 0
+    },
+    "distribution": {
+      "total": 1,
+      "counts": {
+        "observe": 1,
+        "intervene": 0,
+        "early": 0,
+        "normal": 0
+      },
+      "days": [
+        {
+          "key": "d1",
+          "label": "D1",
+          "stage": "observe",
+          "count": 0
+        },
+        {
+          "key": "d2",
+          "label": "D2",
+          "stage": "observe",
+          "count": 0
+        },
+        {
+          "key": "d3",
+          "label": "D3",
+          "stage": "observe",
+          "count": 0
+        },
+        {
+          "key": "d4",
+          "label": "D4",
+          "stage": "observe",
+          "count": 0
+        },
+        {
+          "key": "d5",
+          "label": "D5",
+          "stage": "observe",
+          "count": 1
+        },
+        {
+          "key": "d6",
+          "label": "D6",
+          "stage": "observe",
+          "count": 0
+        },
+        {
+          "key": "d7",
+          "label": "D7",
+          "stage": "observe",
+          "count": 0
+        },
+        {
+          "key": "d8_14",
+          "label": "D8—D14",
+          "stage": "intervene",
+          "count": 0
+        },
+        {
+          "key": "d15_21",
+          "label": "D15—D21",
+          "stage": "intervene",
+          "count": 0
+        },
+        {
+          "key": "d22_30",
+          "label": "D22—D30",
+          "stage": "intervene",
+          "count": 0
+        },
+        {
+          "key": "d31_60",
+          "label": "D31—D60",
+          "stage": "intervene",
+          "count": 0
+        },
+        {
+          "key": "d61_plus",
+          "label": "D61及以上",
+          "stage": "intervene",
+          "count": 0
+        }
+      ],
+      "states": {
+        "observe": {
+          "observe": 0,
+          "good": 0,
+          "improving": 0,
+          "poor": 0,
+          "sales_repair": 0,
+          "risk": 1,
+          "unknown": 0,
+          "history_missing": 0,
+          "history_zero": 0,
+          "data_missing": 0,
+          "stock_missing": 0,
+          "stock_interrupted": 0,
+          "no_sales": 0,
+          "profit_unknown": 0
+        },
+        "intervene": {
+          "observe": 0,
+          "good": 0,
+          "improving": 0,
+          "poor": 0,
+          "sales_repair": 0,
+          "risk": 0,
+          "unknown": 0,
+          "history_missing": 0,
+          "history_zero": 0,
+          "data_missing": 0,
+          "stock_missing": 0,
+          "stock_interrupted": 0,
+          "no_sales": 0,
+          "profit_unknown": 0
+        }
+      }
+    },
+    "intervention": [
+      {
+        "key": "good",
+        "label": "恢复较好，保持",
+        "description": "恢复率≥80%、订单毛利率≥5%，继续跟踪退出",
+        "count": 0
+      },
+      {
+        "key": "improving",
+        "label": "改善中，继续观察",
+        "description": "每天复核，最多继续观察至D14",
+        "count": 0
+      },
+      {
+        "key": "poor",
+        "label": "恢复不足，检查广告",
+        "description": "先确认广告有没有开启、是否正常投放",
+        "count": 0
+      },
+      {
+        "key": "sales_repair",
+        "label": "日销不足1件，先修复销量",
+        "description": "先判断广告，再审核价格；暂不以利润不足拦截，库存、预算及复评限制保留",
+        "count": 0
+      },
+      {
+        "key": "ad_unknown",
+        "label": "广告暂无法判断",
+        "description": "列出具体缺失数据或投放异常，不视为广告正常",
+        "count": 0
+      },
+      {
+        "key": "ad_adjust",
+        "label": "需要调整广告",
+        "description": "已经计算出具体恢复、竞价或预算候选，详情显示对象和金额",
+        "count": 0
+      },
+      {
+        "key": "ad_hold",
+        "label": "暂不调整广告",
+        "description": "已得出暂不调整的结果，详情显示样本及依据",
+        "count": 0
+      },
+      {
+        "key": "ad_limited",
+        "label": "广告调整受到限制",
+        "description": "库存或利润等限制已经明确，暂不调整",
+        "count": 0
+      },
+      {
+        "key": "ad_no_need",
+        "label": "本轮无需广告干预",
+        "description": "本轮恢复表现无需干预；不代表逐个广告对象效率已核实",
+        "count": 0
+      },
+      {
+        "key": "restore",
+        "label": "恢复已有广告",
+        "description": "核实因断货暂停及原设置后，恢复原来有效的投放",
+        "count": 0
+      },
+      {
+        "key": "start_ad",
+        "label": "建议开启广告",
+        "description": "该经营国家未匹配到广告记录，建议开启；其他国家已有广告独立判断",
+        "count": 0
+      },
+      {
+        "key": "bid_up",
+        "label": "提高竞价",
+        "description": "ACOS≤20%候选+10%；20%—30%仅低日销候选+3%，仍受库存和预算限制",
+        "count": 0
+      },
+      {
+        "key": "bid_down",
+        "label": "降低竞价",
+        "description": "有单按ACOS分档；成熟零单20—39次点击降10%，40次及以上降20%（试算）",
+        "count": 0
+      },
+      {
+        "key": "budget",
+        "label": "申请池内预算",
+        "description": "ACOS≤20%、库存覆盖≥14天且确有预算限制，与涨竞价二选一",
+        "count": 0
+      },
+      {
+        "key": "price_up_review",
+        "label": "审核价格升一档",
+        "description": "该站点没有适用广告动作；价格已命中条件，仍需核验价格自身限制",
+        "count": 0
+      },
+      {
+        "key": "price_down_review",
+        "label": "审核价格降一档",
+        "description": "该站点没有适用广告动作；最低P10，仍需核验价格自身限制",
+        "count": 0
+      },
+      {
+        "key": "price_wait_ad",
+        "label": "优先处理广告，暂缓调价",
+        "description": "该站点有具体广告建议；建议尚未执行，不标成已调整待复评",
+        "count": 0
+      },
+      {
+        "key": "risk",
+        "label": "利润风险",
+        "description": "主窗口日销达到1件、订单毛利率低于5%，查看利润修复与止损建议",
+        "count": 0
+      },
+      {
+        "key": "unknown",
+        "label": "旧快照数据不足",
+        "description": "旧版未拆分结果，更新快照后查看具体原因",
+        "count": 0
+      },
+      {
+        "key": "no_sales_since_return",
+        "label": "返场至今未出单",
+        "description": "从本轮返场第一天至今，完整销量记录每天均为0",
+        "count": 0
+      },
+      {
+        "key": "no_sales_window",
+        "label": "近期窗口无销量",
+        "description": "当前N／21／30天窗口无销量，但不能判为返场以来一直未出单",
+        "count": 0
+      },
+      {
+        "key": "history_missing",
+        "label": "历史数据不足",
+        "description": "未找到同长度有效历史窗口；仍展示当前销量和利润",
+        "count": 0
+      },
+      {
+        "key": "history_zero",
+        "label": "历史零销量",
+        "description": "历史日销为0，恢复率不适用",
+        "count": 0
+      },
+      {
+        "key": "data_missing",
+        "label": "返场经营数据缺失",
+        "description": "具体缺失日期和字段见详情",
+        "count": 0
+      },
+      {
+        "key": "stock_missing",
+        "label": "库存数据缺失",
+        "description": "库存记录缺失，暂不拉量",
+        "count": 0
+      },
+      {
+        "key": "stock_interrupted",
+        "label": "库存中断",
+        "description": "当前评价窗口内连续至少3个自然日可售库存为0，先处理库存",
+        "count": 0
+      },
+      {
+        "key": "profit_unknown",
+        "label": "利润无法评价",
+        "description": "销量仍可评价，利润无法确认",
+        "count": 0
+      }
+    ],
+    "ad_diagnostics": [],
+    "ad_reason_groups": [],
+    "items": [
+      {
+        "event_id": "c9d121c38d76e27d3d69d4df9990ab080823b31e",
+        "seller_name_new": "CHOOJEE",
+        "country_category": "欧洲站",
+        "msku": "CJ057b",
+        "return_date": "2026-10-04",
+        "stockout_date": "2026-08-30",
+        "age": 5,
+        "phase": "观察期",
+        "state": "risk",
+        "state_label": "利润风险",
+        "state_reason": "订单毛利率低于5%，优先检查消耗、售价与成本",
+        "exit_target": "瘦狗",
+        "exit_status": "tracking",
+        "exit_date": null,
+        "exit_reasons": [
+          "自然恢复第5天，D7完整数据形成后首次判断提前退出"
+        ],
+        "confirmation_days": 0,
+        "recovery": null,
+        "current_stock": "14",
+        "local_sku": "GQ0507b-zu",
+        "recent_days": 5,
+        "historical_daily": "0",
+        "recent_daily": "0.2",
+        "margin": "0.01290183851198795828405547791",
+        "role": "问题",
+        "comparison_start": "2026-10-04",
+        "comparison_end": "2026-10-08",
+        "recovery_issues": [
+          "history_zero"
+        ],
+        "trend7": {
+          "current": {
+            "start": "2026-10-04",
+            "end": "2026-10-08",
+            "days": 5,
+            "complete": true,
+            "stocked": true,
+            "missing": [],
+            "stock_missing": [],
+            "zero_days": [],
+            "qty": "1",
+            "revenue": "93.01",
+            "profit": "1.20",
+            "daily": "0.2",
+            "margin": "0.01290183851198795828405547791",
+            "sessions": "6",
+            "role": "问题",
+            "selling_days": 1,
+            "sales_missing": [],
+            "sales_complete": true,
+            "financial_complete": true,
+            "finance_missing": [],
+            "inventory_complete": true,
+            "max_zero_stock_days": 0
+          },
+          "previous": null,
+          "daily_change": null,
+          "margin_change": null,
+          "warning": null
+        },
+        "ready_count": 0,
+        "pending_count": 0,
+        "action_types": [
+          "hold"
+        ],
+        "suggestion_summary": "保持",
+        "priority": 0,
+        "ad_diagnostic_reasons": [],
+        "ad_limit_reasons": [],
+        "ad_result": "unknown",
+        "ad_result_label": "广告暂无法判断",
+        "price_review_actions": [],
+        "price_wait_ad": false,
+        "price_can_review": false,
+        "candidate_actions": [],
+        "ad_check": false,
+        "decision_branches": [],
+        "intervention_focus": null,
+        "intervention_label": "—",
+        "ad_reason_details": []
+      }
+    ],
+    "total": 1,
+    "page": 1,
+    "page_size": 50,
+    "pages": 1
+  },
+  "GZ012a": {
+    "meta": {
+      "data_date": "2026-10-09"
+    },
+    "options": {
+      "countries": [
+        "欧洲站"
+      ],
+      "stores": [
+        "Gangzhh"
+      ]
+    },
+    "summary": {
+      "tracking": 1,
+      "ready": 0,
+      "pending": 0,
+      "exited": 0
+    },
+    "distribution": {
+      "total": 1,
+      "counts": {
+        "observe": 0,
+        "intervene": 1,
+        "early": 0,
+        "normal": 0
+      },
+      "days": [
+        {
+          "key": "d1",
+          "label": "D1",
+          "stage": "observe",
+          "count": 0
+        },
+        {
+          "key": "d2",
+          "label": "D2",
+          "stage": "observe",
+          "count": 0
+        },
+        {
+          "key": "d3",
+          "label": "D3",
+          "stage": "observe",
+          "count": 0
+        },
+        {
+          "key": "d4",
+          "label": "D4",
+          "stage": "observe",
+          "count": 0
+        },
+        {
+          "key": "d5",
+          "label": "D5",
+          "stage": "observe",
+          "count": 0
+        },
+        {
+          "key": "d6",
+          "label": "D6",
+          "stage": "observe",
+          "count": 0
+        },
+        {
+          "key": "d7",
+          "label": "D7",
+          "stage": "observe",
+          "count": 0
+        },
+        {
+          "key": "d8_14",
+          "label": "D8—D14",
+          "stage": "intervene",
+          "count": 0
+        },
+        {
+          "key": "d15_21",
+          "label": "D15—D21",
+          "stage": "intervene",
+          "count": 0
+        },
+        {
+          "key": "d22_30",
+          "label": "D22—D30",
+          "stage": "intervene",
+          "count": 0
+        },
+        {
+          "key": "d31_60",
+          "label": "D31—D60",
+          "stage": "intervene",
+          "count": 0
+        },
+        {
+          "key": "d61_plus",
+          "label": "D61及以上",
+          "stage": "intervene",
+          "count": 1
+        }
+      ],
+      "states": {
+        "observe": {
+          "observe": 0,
+          "good": 0,
+          "improving": 0,
+          "poor": 0,
+          "sales_repair": 0,
+          "risk": 0,
+          "unknown": 0,
+          "history_missing": 0,
+          "history_zero": 0,
+          "data_missing": 0,
+          "stock_missing": 0,
+          "stock_interrupted": 0,
+          "no_sales": 0,
+          "profit_unknown": 0
+        },
+        "intervene": {
+          "observe": 0,
+          "good": 0,
+          "improving": 0,
+          "poor": 0,
+          "sales_repair": 0,
+          "risk": 0,
+          "unknown": 0,
+          "history_missing": 0,
+          "history_zero": 0,
+          "data_missing": 0,
+          "stock_missing": 1,
+          "stock_interrupted": 0,
+          "no_sales": 0,
+          "profit_unknown": 0
+        }
+      }
+    },
+    "intervention": [
+      {
+        "key": "good",
+        "label": "恢复较好，保持",
+        "description": "恢复率≥80%、订单毛利率≥5%，继续跟踪退出",
+        "count": 0
+      },
+      {
+        "key": "improving",
+        "label": "改善中，继续观察",
+        "description": "每天复核，最多继续观察至D14",
+        "count": 0
+      },
+      {
+        "key": "poor",
+        "label": "恢复不足，检查广告",
+        "description": "先确认广告有没有开启、是否正常投放",
+        "count": 0
+      },
+      {
+        "key": "sales_repair",
+        "label": "日销不足1件，先修复销量",
+        "description": "先判断广告，再审核价格；暂不以利润不足拦截，库存、预算及复评限制保留",
+        "count": 0
+      },
+      {
+        "key": "ad_unknown",
+        "label": "广告暂无法判断",
+        "description": "列出具体缺失数据或投放异常，不视为广告正常",
+        "count": 0
+      },
+      {
+        "key": "ad_adjust",
+        "label": "需要调整广告",
+        "description": "已经计算出具体恢复、竞价或预算候选，详情显示对象和金额",
+        "count": 0
+      },
+      {
+        "key": "ad_hold",
+        "label": "暂不调整广告",
+        "description": "已得出暂不调整的结果，详情显示样本及依据",
+        "count": 0
+      },
+      {
+        "key": "ad_limited",
+        "label": "广告调整受到限制",
+        "description": "库存或利润等限制已经明确，暂不调整",
+        "count": 1
+      },
+      {
+        "key": "ad_no_need",
+        "label": "本轮无需广告干预",
+        "description": "本轮恢复表现无需干预；不代表逐个广告对象效率已核实",
+        "count": 0
+      },
+      {
+        "key": "restore",
+        "label": "恢复已有广告",
+        "description": "核实因断货暂停及原设置后，恢复原来有效的投放",
+        "count": 0
+      },
+      {
+        "key": "start_ad",
+        "label": "建议开启广告",
+        "description": "该经营国家未匹配到广告记录，建议开启；其他国家已有广告独立判断",
+        "count": 0
+      },
+      {
+        "key": "bid_up",
+        "label": "提高竞价",
+        "description": "ACOS≤20%候选+10%；20%—30%仅低日销候选+3%，仍受库存和预算限制",
+        "count": 0
+      },
+      {
+        "key": "bid_down",
+        "label": "降低竞价",
+        "description": "有单按ACOS分档；成熟零单20—39次点击降10%，40次及以上降20%（试算）",
+        "count": 0
+      },
+      {
+        "key": "budget",
+        "label": "申请池内预算",
+        "description": "ACOS≤20%、库存覆盖≥14天且确有预算限制，与涨竞价二选一",
+        "count": 0
+      },
+      {
+        "key": "price_up_review",
+        "label": "审核价格升一档",
+        "description": "该站点没有适用广告动作；价格已命中条件，仍需核验价格自身限制",
+        "count": 0
+      },
+      {
+        "key": "price_down_review",
+        "label": "审核价格降一档",
+        "description": "该站点没有适用广告动作；最低P10，仍需核验价格自身限制",
+        "count": 0
+      },
+      {
+        "key": "price_wait_ad",
+        "label": "优先处理广告，暂缓调价",
+        "description": "该站点有具体广告建议；建议尚未执行，不标成已调整待复评",
+        "count": 0
+      },
+      {
+        "key": "risk",
+        "label": "利润风险",
+        "description": "主窗口日销达到1件、订单毛利率低于5%，查看利润修复与止损建议",
+        "count": 0
+      },
+      {
+        "key": "unknown",
+        "label": "旧快照数据不足",
+        "description": "旧版未拆分结果，更新快照后查看具体原因",
+        "count": 0
+      },
+      {
+        "key": "no_sales_since_return",
+        "label": "返场至今未出单",
+        "description": "从本轮返场第一天至今，完整销量记录每天均为0",
+        "count": 0
+      },
+      {
+        "key": "no_sales_window",
+        "label": "近期窗口无销量",
+        "description": "当前N／21／30天窗口无销量，但不能判为返场以来一直未出单",
+        "count": 0
+      },
+      {
+        "key": "history_missing",
+        "label": "历史数据不足",
+        "description": "未找到同长度有效历史窗口；仍展示当前销量和利润",
+        "count": 0
+      },
+      {
+        "key": "history_zero",
+        "label": "历史零销量",
+        "description": "历史日销为0，恢复率不适用",
+        "count": 0
+      },
+      {
+        "key": "data_missing",
+        "label": "返场经营数据缺失",
+        "description": "具体缺失日期和字段见详情",
+        "count": 0
+      },
+      {
+        "key": "stock_missing",
+        "label": "库存数据缺失",
+        "description": "库存记录缺失，暂不拉量",
+        "count": 1
+      },
+      {
+        "key": "stock_interrupted",
+        "label": "库存中断",
+        "description": "当前评价窗口内连续至少3个自然日可售库存为0，先处理库存",
+        "count": 0
+      },
+      {
+        "key": "profit_unknown",
+        "label": "利润无法评价",
+        "description": "销量仍可评价，利润无法确认",
+        "count": 0
+      }
+    ],
+    "ad_diagnostics": [],
+    "ad_reason_groups": [
+      {
+        "key": "ad_reason_f5e36b9fbb38baaf",
+        "category": "limited",
+        "reason": "库存快照缺少商品记录",
+        "count": 1,
+        "products": [
+          {
+            "event_id": "18a07208574d12238a2b28a16a20508f82e441e1",
+            "msku": "GZ012a",
+            "seller_name_new": "Gangzhh",
+            "country_category": "欧洲站",
+            "current_stock": "44"
+          }
+        ]
+      }
+    ],
+    "items": [
+      {
+        "event_id": "18a07208574d12238a2b28a16a20508f82e441e1",
+        "seller_name_new": "Gangzhh",
+        "country_category": "欧洲站",
+        "msku": "GZ012a",
+        "return_date": "2026-07-29",
+        "stockout_date": "2026-02-11",
+        "age": 73,
+        "phase": "持续干预期",
+        "state": "stock_missing",
+        "state_label": "库存数据缺失",
+        "state_reason": "返场评价窗口库存记录缺失，暂不进行正常拉量",
+        "exit_target": "瘦狗",
+        "exit_status": "tracking",
+        "exit_date": null,
+        "exit_reasons": [
+          "评价窗口缺少1天完整数据",
+          "订单毛利率不可计算"
+        ],
+        "confirmation_days": 0,
+        "recovery": "0.5930232558139534883720930232",
+        "current_stock": "44",
+        "local_sku": "HRJ0530a",
+        "recent_days": 30,
+        "historical_daily": "2.866666666666666666666666667",
+        "recent_daily": "1.7",
+        "margin": "0.01845618426040529616215500272",
+        "role": "问题",
+        "comparison_start": "2026-09-10",
+        "comparison_end": "2026-10-09",
+        "recovery_issues": [
+          "stock_missing"
+        ],
+        "trend7": {
+          "current": {
+            "start": "2026-10-03",
+            "end": "2026-10-09",
+            "days": 7,
+            "complete": true,
+            "stocked": true,
+            "missing": [],
+            "stock_missing": [],
+            "zero_days": [],
+            "qty": "15",
+            "revenue": "2579.56",
+            "profit": "97.63",
+            "daily": "2.142857142857142857142857143",
+            "margin": "0.03784753989052396532742018019",
+            "sessions": "140",
+            "role": "问题",
+            "selling_days": 7,
+            "sales_missing": [],
+            "sales_complete": true,
+            "financial_complete": true,
+            "finance_missing": [],
+            "inventory_complete": true,
+            "max_zero_stock_days": 0
+          },
+          "previous": {
+            "start": "2026-09-26",
+            "end": "2026-10-02",
+            "days": 7,
+            "complete": false,
+            "stocked": false,
+            "missing": [],
+            "stock_missing": [
+              "2026-10-01"
+            ],
+            "zero_days": [],
+            "qty": "11",
+            "revenue": "1907.95",
+            "profit": "82.68",
+            "daily": "1.571428571428571428571428571",
+            "margin": "0.04333446893262402054561178228",
+            "sessions": "170",
+            "role": "问题",
+            "sales_missing": [],
+            "sales_complete": true,
+            "financial_complete": true,
+            "finance_missing": [],
+            "inventory_complete": false,
+            "max_zero_stock_days": 0
+          },
+          "daily_change": null,
+          "margin_change": null,
+          "warning": "近7天趋势涉及缺数或无可售库存日期，不能直接认定经营下滑"
+        },
+        "ready_count": 0,
+        "pending_count": 0,
+        "action_types": [
+          "hold"
+        ],
+        "suggestion_summary": "保持",
+        "priority": 3,
+        "ad_diagnostic_reasons": [],
+        "ad_limit_reasons": [],
+        "ad_result": "limited",
+        "ad_result_label": "广告调整受到限制",
+        "price_review_actions": [],
+        "price_wait_ad": false,
+        "price_can_review": false,
+        "candidate_actions": [],
+        "ad_check": false,
+        "decision_branches": [
+          "stock_missing",
+          "ad_limited",
+          "ad_reason_f5e36b9fbb38baaf"
+        ],
+        "intervention_focus": "stock_missing",
+        "intervention_label": "库存数据缺失",
+        "ad_reason_details": [
+          {
+            "key": "ad_reason_f5e36b9fbb38baaf",
+            "category": "limited",
+            "reason": "库存快照缺少商品记录"
+          }
+        ]
+      }
+    ],
+    "total": 1,
+    "page": 1,
+    "page_size": 50,
+    "pages": 1
+  }
+}

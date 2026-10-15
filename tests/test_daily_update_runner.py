@@ -18,6 +18,7 @@ EXPECTED_MODULES = [
     "etl.replenishment_update",
     "etl.replenishment_tracking_summary_update",
     "etl.return_goods_update",
+    "etl.label_analysis_refresh",
 ]
 
 
@@ -206,7 +207,7 @@ def test_progress_output_contains_step_numbers_status_and_summary(tmp_path):
 
     text = "\n".join(output)
     assert result.exit_code == 0
-    assert "[1/9]" in text
+    assert f"[1/{len(runner.DEFAULT_STEPS)}]" in text
     assert "远端数据完整性预检" in text
     assert "成功" in text
     assert "总耗时" in text

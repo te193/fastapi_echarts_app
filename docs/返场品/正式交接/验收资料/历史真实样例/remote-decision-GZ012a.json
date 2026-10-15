@@ -1,0 +1,1509 @@
+{
+  "rule_version": "return-v8-20261009-ad-price-routing",
+  "data_date": "2026-10-09",
+  "settings_date": "2026-10-09",
+  "scope": {
+    "store": "Gangzhh",
+    "msku": "GZ012a"
+  },
+  "source": "remote",
+  "database_writes": 0,
+  "warnings": [
+    "可承受广告成本、真实预算余额、广告操作记录、预测利润尚未核实，不视为已达标",
+    "历史查询按业务日期重算，源表后续修订不等于当时已知数据；不承诺双时间历史还原"
+  ],
+  "products": [
+    {
+      "summary": {
+        "event_id": "18a07208574d12238a2b28a16a20508f82e441e1",
+        "seller_name_new": "Gangzhh",
+        "country_category": "欧洲站",
+        "msku": "GZ012a",
+        "return_date": "2026-07-29",
+        "stockout_date": "2026-02-11",
+        "age": 73,
+        "phase": "持续干预期",
+        "state": "stock_missing",
+        "state_label": "库存数据缺失",
+        "state_reason": "返场评价窗口库存记录缺失，暂不进行正常拉量",
+        "exit_target": "瘦狗",
+        "exit_status": "tracking",
+        "exit_date": null,
+        "exit_reasons": [
+          "评价窗口缺少1天完整数据",
+          "订单毛利率不可计算"
+        ],
+        "confirmation_days": 0,
+        "recovery": "0.5930232558139534883720930232",
+        "current_stock": "44",
+        "local_sku": "HRJ0530a",
+        "recent_days": 30,
+        "historical_daily": "2.866666666666666666666666667",
+        "recent_daily": "1.7",
+        "margin": "0.01845618426040529616215500272",
+        "role": "问题",
+        "comparison_start": "2026-09-10",
+        "comparison_end": "2026-10-09",
+        "recovery_issues": [
+          "stock_missing"
+        ],
+        "trend7": {
+          "current": {
+            "start": "2026-10-03",
+            "end": "2026-10-09",
+            "days": 7,
+            "complete": true,
+            "stocked": true,
+            "missing": [],
+            "stock_missing": [],
+            "zero_days": [],
+            "qty": "15",
+            "revenue": "2579.56",
+            "profit": "97.63",
+            "daily": "2.142857142857142857142857143",
+            "margin": "0.03784753989052396532742018019",
+            "sessions": "140",
+            "role": "问题",
+            "selling_days": 7,
+            "sales_missing": [],
+            "sales_complete": true,
+            "financial_complete": true,
+            "finance_missing": [],
+            "inventory_complete": true,
+            "max_zero_stock_days": 0
+          },
+          "previous": {
+            "start": "2026-09-26",
+            "end": "2026-10-02",
+            "days": 7,
+            "complete": false,
+            "stocked": false,
+            "missing": [],
+            "stock_missing": [
+              "2026-10-01"
+            ],
+            "zero_days": [],
+            "qty": "11",
+            "revenue": "1907.95",
+            "profit": "82.68",
+            "daily": "1.571428571428571428571428571",
+            "margin": "0.04333446893262402054561178228",
+            "sessions": "170",
+            "role": "问题",
+            "sales_missing": [],
+            "sales_complete": true,
+            "financial_complete": true,
+            "finance_missing": [],
+            "inventory_complete": false,
+            "max_zero_stock_days": 0
+          },
+          "daily_change": null,
+          "margin_change": null,
+          "warning": "近7天趋势涉及缺数或无可售库存日期，不能直接认定经营下滑"
+        },
+        "ready_count": 0,
+        "pending_count": 0,
+        "action_types": [
+          "hold"
+        ],
+        "suggestion_summary": "保持",
+        "priority": 3
+      },
+      "detail": {
+        "stockout_date": "2026-02-11",
+        "confirmed_date": "2026-02-13",
+        "return_date": "2026-07-29",
+        "round": 1,
+        "age": 73,
+        "exit_target": "瘦狗",
+        "exit_status": "tracking",
+        "exit_date": null,
+        "exit_reasons": [
+          "评价窗口缺少1天完整数据",
+          "订单毛利率不可计算"
+        ],
+        "confirmation_days": 0,
+        "exit_evidence": null,
+        "baseline": {
+          "start": "2026-01-12",
+          "end": "2026-02-10",
+          "days": 30,
+          "complete": true,
+          "stocked": true,
+          "missing": [],
+          "stock_missing": [],
+          "zero_days": [],
+          "qty": "86",
+          "revenue": "15154.27",
+          "profit": "252.38",
+          "daily": "2.866666666666666666666666667",
+          "margin": "0.01665405196027258323891550038",
+          "sessions": "1553",
+          "role": "问题",
+          "selling_days": 30,
+          "evidence": "有效30天"
+        },
+        "recent": {
+          "start": "2026-10-03",
+          "end": "2026-10-09",
+          "days": 7,
+          "complete": true,
+          "stocked": true,
+          "missing": [],
+          "stock_missing": [],
+          "zero_days": [],
+          "qty": "15",
+          "revenue": "2579.56",
+          "profit": "97.63",
+          "daily": "2.142857142857142857142857143",
+          "margin": "0.03784753989052396532742018019",
+          "sessions": "140",
+          "role": "问题",
+          "selling_days": 7
+        },
+        "pre_stockout": {
+          "start": "2026-01-12",
+          "end": "2026-02-10",
+          "days": 30,
+          "complete": true,
+          "stocked": true,
+          "missing": [],
+          "stock_missing": [],
+          "zero_days": [],
+          "qty": "86",
+          "revenue": "15154.27",
+          "profit": "252.38",
+          "daily": "2.866666666666666666666666667",
+          "margin": "0.01665405196027258323891550038",
+          "sessions": "1553",
+          "role": "问题",
+          "selling_days": 30
+        },
+        "pre_stockout_timeline": [
+          {
+            "day": "2026-01-12",
+            "stock": "43",
+            "qty": "3",
+            "margin": "0.08898767088819927870502390338",
+            "role": "瘦狗",
+            "complete": true
+          },
+          {
+            "day": "2026-01-13",
+            "stock": "83",
+            "qty": "1",
+            "margin": "-0.1692757612248408739033201445",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-01-14",
+            "stock": "83",
+            "qty": "1",
+            "margin": "-0.02455216619927888742631488582",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-01-15",
+            "stock": "82",
+            "qty": "1",
+            "margin": "-0.2499856922108395810679333829",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-01-16",
+            "stock": "82",
+            "qty": "1",
+            "margin": "-0.2868068833652007648183556405",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-01-17",
+            "stock": "81",
+            "qty": "6",
+            "margin": "0.04134990509075994162366340128",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-01-18",
+            "stock": "76",
+            "qty": "2",
+            "margin": "-0.06485069523592432186004103032",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-01-19",
+            "stock": "73",
+            "qty": "4",
+            "margin": "-0.03546822812582975809494528837",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-01-20",
+            "stock": "70",
+            "qty": "2",
+            "margin": "-0.4963116382000794416387675197",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-01-21",
+            "stock": "68",
+            "qty": "1",
+            "margin": "-0.3219951923076923076923076923",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-01-22",
+            "stock": "67",
+            "qty": "5",
+            "margin": "-0.009959716008991564843871714407",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-01-23",
+            "stock": "61",
+            "qty": "2",
+            "margin": "-0.09675432653815359980291925848",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-01-24",
+            "stock": "58",
+            "qty": "2",
+            "margin": "-0.09108338579522692153608424426",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-01-25",
+            "stock": "56",
+            "qty": "3",
+            "margin": "-0.03658147264840096899588740118",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-01-26",
+            "stock": "54",
+            "qty": "4",
+            "margin": "-0.01228087140311373274945088342",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-01-27",
+            "stock": "50",
+            "qty": "1",
+            "margin": "0.2778475826276973504506965310",
+            "role": "明星",
+            "complete": true
+          },
+          {
+            "day": "2026-01-28",
+            "stock": "48",
+            "qty": "2",
+            "margin": "-0.05894809134092600011446231328",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-01-29",
+            "stock": "46",
+            "qty": "4",
+            "margin": "0.03933211240199164425113031534",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-01-30",
+            "stock": "43",
+            "qty": "1",
+            "margin": "-0.6971968503937007874015748031",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-01-31",
+            "stock": "42",
+            "qty": "5",
+            "margin": "0.1604136195108677165889996258",
+            "role": "潜力",
+            "complete": true
+          },
+          {
+            "day": "2026-02-01",
+            "stock": "38",
+            "qty": "4",
+            "margin": "0.1292725553677334326562186632",
+            "role": "潜力",
+            "complete": true
+          },
+          {
+            "day": "2026-02-02",
+            "stock": "31",
+            "qty": "3",
+            "margin": "0.1233132495331960191726500991",
+            "role": "潜力",
+            "complete": true
+          },
+          {
+            "day": "2026-02-03",
+            "stock": "29",
+            "qty": "2",
+            "margin": "0.07915998166399266559706623883",
+            "role": "瘦狗",
+            "complete": true
+          },
+          {
+            "day": "2026-02-04",
+            "stock": "26",
+            "qty": "4",
+            "margin": "-0.05519499085086916742909423605",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-02-05",
+            "stock": "21",
+            "qty": "2",
+            "margin": "0.1217101579124202038302161496",
+            "role": "潜力",
+            "complete": true
+          },
+          {
+            "day": "2026-02-06",
+            "stock": "21",
+            "qty": "2",
+            "margin": "-0.2154583679262969013631859450",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-02-07",
+            "stock": "21",
+            "qty": "4",
+            "margin": "0.1697862272682728787221234478",
+            "role": "潜力",
+            "complete": true
+          },
+          {
+            "day": "2026-02-08",
+            "stock": "12",
+            "qty": "4",
+            "margin": "0.1163200046938715639393317100",
+            "role": "潜力",
+            "complete": true
+          },
+          {
+            "day": "2026-02-09",
+            "stock": "7",
+            "qty": "6",
+            "margin": "0.1553369495265238576813459594",
+            "role": "明星",
+            "complete": true
+          },
+          {
+            "day": "2026-02-10",
+            "stock": "5",
+            "qty": "4",
+            "margin": "0.1448781974010146904929064392",
+            "role": "潜力",
+            "complete": true
+          }
+        ],
+        "current_evaluation": {
+          "start": "2026-09-10",
+          "end": "2026-10-09",
+          "days": 30,
+          "complete": false,
+          "stocked": false,
+          "missing": [],
+          "stock_missing": [
+            "2026-10-01"
+          ],
+          "zero_days": [],
+          "qty": null,
+          "revenue": null,
+          "profit": null,
+          "daily": null,
+          "margin": null,
+          "sessions": null,
+          "role": "不可判"
+        },
+        "exit_confirmation": [],
+        "recovery": "0.5930232558139534883720930232",
+        "comparison": {
+          "days": 30,
+          "current": {
+            "start": "2026-09-10",
+            "end": "2026-10-09",
+            "days": 30,
+            "complete": false,
+            "stocked": false,
+            "missing": [],
+            "stock_missing": [
+              "2026-10-01"
+            ],
+            "zero_days": [],
+            "qty": "51",
+            "revenue": "8758.04",
+            "profit": "161.64",
+            "daily": "1.7",
+            "margin": "0.01845618426040529616215500272",
+            "sessions": "647",
+            "role": "问题",
+            "sales_missing": [],
+            "sales_complete": true,
+            "financial_complete": true,
+            "finance_missing": [],
+            "inventory_complete": false,
+            "max_zero_stock_days": 0
+          },
+          "history": {
+            "start": "2026-01-12",
+            "end": "2026-02-10",
+            "days": 30,
+            "complete": true,
+            "stocked": true,
+            "missing": [],
+            "stock_missing": [],
+            "zero_days": [],
+            "qty": "86",
+            "revenue": "15154.27",
+            "profit": "252.38",
+            "daily": "2.866666666666666666666666667",
+            "margin": "0.01665405196027258323891550038",
+            "sessions": "1553",
+            "role": "问题",
+            "selling_days": 30,
+            "sales_missing": [],
+            "sales_complete": true,
+            "financial_complete": true,
+            "finance_missing": [],
+            "inventory_complete": true,
+            "max_zero_stock_days": 0,
+            "evidence": "断货前紧邻30天销量窗口"
+          },
+          "ratio": "0.5930232558139534883720930232",
+          "issues": [
+            "stock_missing"
+          ]
+        },
+        "trend7": {
+          "current": {
+            "start": "2026-10-03",
+            "end": "2026-10-09",
+            "days": 7,
+            "complete": true,
+            "stocked": true,
+            "missing": [],
+            "stock_missing": [],
+            "zero_days": [],
+            "qty": "15",
+            "revenue": "2579.56",
+            "profit": "97.63",
+            "daily": "2.142857142857142857142857143",
+            "margin": "0.03784753989052396532742018019",
+            "sessions": "140",
+            "role": "问题",
+            "selling_days": 7,
+            "sales_missing": [],
+            "sales_complete": true,
+            "financial_complete": true,
+            "finance_missing": [],
+            "inventory_complete": true,
+            "max_zero_stock_days": 0
+          },
+          "previous": {
+            "start": "2026-09-26",
+            "end": "2026-10-02",
+            "days": 7,
+            "complete": false,
+            "stocked": false,
+            "missing": [],
+            "stock_missing": [
+              "2026-10-01"
+            ],
+            "zero_days": [],
+            "qty": "11",
+            "revenue": "1907.95",
+            "profit": "82.68",
+            "daily": "1.571428571428571428571428571",
+            "margin": "0.04333446893262402054561178228",
+            "sessions": "170",
+            "role": "问题",
+            "sales_missing": [],
+            "sales_complete": true,
+            "financial_complete": true,
+            "finance_missing": [],
+            "inventory_complete": false,
+            "max_zero_stock_days": 0
+          },
+          "daily_change": null,
+          "margin_change": null,
+          "warning": "近7天趋势涉及缺数或无可售库存日期，不能直接认定经营下滑"
+        },
+        "state": "stock_missing",
+        "state_label": "库存数据缺失",
+        "state_reason": "返场评价窗口库存记录缺失，暂不进行正常拉量",
+        "phase": "持续干预期",
+        "timeline": [
+          {
+            "day": "2026-07-29",
+            "stock": "8",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-07-30",
+            "stock": "37",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-07-31",
+            "stock": "61",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-01",
+            "stock": "65",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-02",
+            "stock": "66",
+            "qty": "1",
+            "margin": "-0.06020872357506020872357506021",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-08-03",
+            "stock": "69",
+            "qty": "1",
+            "margin": "0.03892549983245839383446889311",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-08-04",
+            "stock": "70",
+            "qty": "2",
+            "margin": "0.05093264827432145649502959902",
+            "role": "瘦狗",
+            "complete": true
+          },
+          {
+            "day": "2026-08-05",
+            "stock": "117",
+            "qty": "2",
+            "margin": "0.07541713014460511679644048943",
+            "role": "瘦狗",
+            "complete": true
+          },
+          {
+            "day": "2026-08-06",
+            "stock": "117",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-07",
+            "stock": "119",
+            "qty": "2",
+            "margin": "0.1885884988797610156833457804",
+            "role": "潜力",
+            "complete": true
+          },
+          {
+            "day": "2026-08-08",
+            "stock": "121",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-09",
+            "stock": "121",
+            "qty": "1",
+            "margin": "0.03910490749972305306303312285",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-08-10",
+            "stock": "120",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-11",
+            "stock": "120",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-12",
+            "stock": "121",
+            "qty": "1",
+            "margin": "0.07422093153133028035295431699",
+            "role": "瘦狗",
+            "complete": true
+          },
+          {
+            "day": "2026-08-13",
+            "stock": "119",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-14",
+            "stock": "121",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-15",
+            "stock": "121",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-16",
+            "stock": "121",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-17",
+            "stock": "121",
+            "qty": "1",
+            "margin": "0.04155031832905171450910309393",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-08-18",
+            "stock": "121",
+            "qty": "1",
+            "margin": "0.01418518932201496705015078745",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-08-19",
+            "stock": "119",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-20",
+            "stock": "119",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-21",
+            "stock": "119",
+            "qty": "1",
+            "margin": "0.07031162738746788785881827320",
+            "role": "瘦狗",
+            "complete": true
+          },
+          {
+            "day": "2026-08-22",
+            "stock": "118",
+            "qty": "2",
+            "margin": "0.02482408131352619233776387803",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-08-23",
+            "stock": "116",
+            "qty": "4",
+            "margin": "0.09286824293952198091519720535",
+            "role": "瘦狗",
+            "complete": true
+          },
+          {
+            "day": "2026-08-24",
+            "stock": "113",
+            "qty": "1",
+            "margin": "0.07070255780185412710823187758",
+            "role": "瘦狗",
+            "complete": true
+          },
+          {
+            "day": "2026-08-25",
+            "stock": "111",
+            "qty": "1",
+            "margin": "-0.03373171004132692952083100637",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-08-26",
+            "stock": "111",
+            "qty": "2",
+            "margin": "0.02213645135656714723578158701",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-08-27",
+            "stock": "108",
+            "qty": "1",
+            "margin": "0.04656664743219849971148297750",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-08-28",
+            "stock": "108",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-29",
+            "stock": "107",
+            "qty": "2",
+            "margin": "-0.02270464690580943511352323453",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-08-30",
+            "stock": "105",
+            "qty": "1",
+            "margin": "-0.006001154068090017311021350260",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-08-31",
+            "stock": "104",
+            "qty": "1",
+            "margin": "0.01823427582227351413733410271",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-09-01",
+            "stock": "103",
+            "qty": "4",
+            "margin": "0.03454409026484728899758219159",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-09-02",
+            "stock": "100",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-09-03",
+            "stock": "99",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-09-04",
+            "stock": "99",
+            "qty": "3",
+            "margin": "0.06457967208049284486587744540",
+            "role": "瘦狗",
+            "complete": true
+          },
+          {
+            "day": "2026-09-05",
+            "stock": "96",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-09-06",
+            "stock": "95",
+            "qty": "1",
+            "margin": "0.04009269988412514484356894554",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-09-07",
+            "stock": "94",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-09-08",
+            "stock": "94",
+            "qty": "1",
+            "margin": "-0.02988673320623528092407760458",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-09-09",
+            "stock": "92",
+            "qty": "3",
+            "margin": "0.06696992164799711440193976314",
+            "role": "瘦狗",
+            "complete": true
+          },
+          {
+            "day": "2026-09-10",
+            "stock": "90",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-09-11",
+            "stock": "91",
+            "qty": "3",
+            "margin": "0.01913005671824667496689788739",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-09-12",
+            "stock": "88",
+            "qty": "2",
+            "margin": "0.04371378910776361529548088065",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-09-13",
+            "stock": "86",
+            "qty": "1",
+            "margin": "-0.03140517185787063906622815503",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-09-14",
+            "stock": "86",
+            "qty": "2",
+            "margin": "0.03900951729640394369407875990",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-09-15",
+            "stock": "84",
+            "qty": "1",
+            "margin": "-0.6889339513325608342989571263",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-09-16",
+            "stock": "81",
+            "qty": "2",
+            "margin": "0.04796539658924980025897457090",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-09-17",
+            "stock": "79",
+            "qty": "2",
+            "margin": "0.05133256083429895712630359212",
+            "role": "瘦狗",
+            "complete": true
+          },
+          {
+            "day": "2026-09-18",
+            "stock": "77",
+            "qty": "2",
+            "margin": "0.07702962193471212264299430226",
+            "role": "瘦狗",
+            "complete": true
+          },
+          {
+            "day": "2026-09-19",
+            "stock": "75",
+            "qty": "1",
+            "margin": "-1.181466434513445540723544206",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-09-20",
+            "stock": "72",
+            "qty": "1",
+            "margin": "-0.02467197487944375911180890434",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-09-21",
+            "stock": "71",
+            "qty": "2",
+            "margin": "-0.02918328784379592693680453496",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-09-22",
+            "stock": "69",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-09-23",
+            "stock": "69",
+            "qty": "2",
+            "margin": "0.06544940579208491981077650860",
+            "role": "瘦狗",
+            "complete": true
+          },
+          {
+            "day": "2026-09-24",
+            "stock": "67",
+            "qty": "3",
+            "margin": "0.3668854133920150895944671487",
+            "role": "明星",
+            "complete": true
+          },
+          {
+            "day": "2026-09-25",
+            "stock": "66",
+            "qty": "1",
+            "margin": "0.03201496803700431370510888207",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-09-26",
+            "stock": "65",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-09-27",
+            "stock": "65",
+            "qty": "1",
+            "margin": "0.07382122120844764882281630830",
+            "role": "瘦狗",
+            "complete": true
+          },
+          {
+            "day": "2026-09-28",
+            "stock": "65",
+            "qty": "3",
+            "margin": "0.05146951308670858312618803919",
+            "role": "瘦狗",
+            "complete": true
+          },
+          {
+            "day": "2026-09-29",
+            "stock": "62",
+            "qty": "2",
+            "margin": "0.04617579908675799086757990868",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-09-30",
+            "stock": "59",
+            "qty": "2",
+            "margin": "0.05035086247868265816768710336",
+            "role": "瘦狗",
+            "complete": true
+          },
+          {
+            "day": "2026-10-01",
+            "stock": null,
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": false
+          },
+          {
+            "day": "2026-10-02",
+            "stock": "59",
+            "qty": "3",
+            "margin": "0.04437410536077901655208564343",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-10-03",
+            "stock": "57",
+            "qty": "2",
+            "margin": "0.07389968139397186116671835791",
+            "role": "瘦狗",
+            "complete": true
+          },
+          {
+            "day": "2026-10-04",
+            "stock": "55",
+            "qty": "2",
+            "margin": "0.01624209266541289109249444349",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-10-05",
+            "stock": "53",
+            "qty": "2",
+            "margin": "0.04375793238721587631244952117",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-10-06",
+            "stock": "48",
+            "qty": "4",
+            "margin": "0.04941085404661563601960952954",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-10-07",
+            "stock": "45",
+            "qty": "2",
+            "margin": "0.03974507531865585168018539977",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-10-08",
+            "stock": "43",
+            "qty": "2",
+            "margin": "0.02505569627979369487594225898",
+            "role": "问题",
+            "complete": true
+          },
+          {
+            "day": "2026-10-09",
+            "stock": "44",
+            "qty": "1",
+            "margin": "-0.03731343283582089552238805970",
+            "role": "问题",
+            "complete": true
+          }
+        ],
+        "current_stock": "44",
+        "seller_name_new": "Gangzhh",
+        "country_category": "欧洲站",
+        "msku": "GZ012a",
+        "as_of": "2026-10-09",
+        "event_id": "18a07208574d12238a2b28a16a20508f82e441e1",
+        "dos": "20.53333333333333333333333333",
+        "dos_note": "FBA可售除以同店铺国家类别MSKU近7天日销；其他共享库存成员关系仍待核",
+        "countries": [
+          {
+            "country": "德国",
+            "recent": {
+              "start": "2026-10-03",
+              "end": "2026-10-09",
+              "days": 7,
+              "complete": true,
+              "stocked": true,
+              "missing": [],
+              "stock_missing": [],
+              "zero_days": [],
+              "qty": "12",
+              "revenue": "2067.81",
+              "profit": "96.17",
+              "daily": "1.714285714285714285714285714",
+              "margin": "0.04650814146367412866752748076",
+              "sessions": "95",
+              "role": "问题",
+              "selling_days": 7,
+              "sales_missing": [],
+              "sales_complete": true,
+              "financial_complete": true,
+              "finance_missing": [],
+              "inventory_complete": true,
+              "max_zero_stock_days": 0
+            },
+            "historical": {
+              "start": "2026-01-12",
+              "end": "2026-02-10",
+              "days": 30,
+              "complete": true,
+              "stocked": true,
+              "missing": [],
+              "stock_missing": [],
+              "zero_days": [],
+              "qty": "51",
+              "revenue": "8838.47",
+              "profit": "-110.03",
+              "daily": "1.7",
+              "margin": "-0.01244898721158752589531898620",
+              "sessions": "966",
+              "role": "问题",
+              "selling_days": 25
+            },
+            "listing": {
+              "currency": ""
+            },
+            "ladder": {
+              "p10": null,
+              "p15": null,
+              "p20": null,
+              "p25": null,
+              "p30": null,
+              "p35": null
+            },
+            "ladder_date": null,
+            "budget": {},
+            "suggestions": [
+              {
+                "kind": "general",
+                "action": "hold",
+                "label": "保持",
+                "status": "hold",
+                "reason": "返场评价窗口库存记录缺失，暂不进行正常拉量",
+                "target": null,
+                "checks": [],
+                "country": "德国"
+              }
+            ]
+          },
+          {
+            "country": "意大利",
+            "recent": {
+              "start": "2026-10-03",
+              "end": "2026-10-09",
+              "days": 7,
+              "complete": true,
+              "stocked": true,
+              "missing": [],
+              "stock_missing": [],
+              "zero_days": [],
+              "qty": "2",
+              "revenue": "356.68",
+              "profit": "9.58",
+              "daily": "0.2857142857142857142857142857",
+              "margin": "0.02685880901648536503308287541",
+              "sessions": "33",
+              "role": "问题",
+              "selling_days": 2,
+              "sales_missing": [],
+              "sales_complete": true,
+              "financial_complete": true,
+              "finance_missing": [],
+              "inventory_complete": true,
+              "max_zero_stock_days": 0
+            },
+            "historical": {
+              "start": "2026-01-12",
+              "end": "2026-02-10",
+              "days": 30,
+              "complete": true,
+              "stocked": true,
+              "missing": [],
+              "stock_missing": [],
+              "zero_days": [],
+              "qty": "14",
+              "revenue": "2505.95",
+              "profit": "132.19",
+              "daily": "0.4666666666666666666666666667",
+              "margin": "0.05275045391967118258544663700",
+              "sessions": "338",
+              "role": "瘦狗",
+              "selling_days": 9
+            },
+            "listing": {
+              "currency": ""
+            },
+            "ladder": {
+              "p10": null,
+              "p15": null,
+              "p20": null,
+              "p25": null,
+              "p30": null,
+              "p35": null
+            },
+            "ladder_date": null,
+            "budget": {},
+            "suggestions": [
+              {
+                "kind": "general",
+                "action": "hold",
+                "label": "保持",
+                "status": "hold",
+                "reason": "返场评价窗口库存记录缺失，暂不进行正常拉量",
+                "target": null,
+                "checks": [],
+                "country": "意大利"
+              }
+            ]
+          },
+          {
+            "country": "法国",
+            "recent": {
+              "start": "2026-10-03",
+              "end": "2026-10-09",
+              "days": 7,
+              "complete": true,
+              "stocked": true,
+              "missing": [],
+              "stock_missing": [],
+              "zero_days": [],
+              "qty": "0",
+              "revenue": "0.00",
+              "profit": "-3.73",
+              "daily": "0",
+              "margin": null,
+              "sessions": "4",
+              "role": "不可判",
+              "selling_days": 0,
+              "sales_missing": [],
+              "sales_complete": true,
+              "financial_complete": true,
+              "finance_missing": [],
+              "inventory_complete": true,
+              "max_zero_stock_days": 0
+            },
+            "historical": {
+              "start": "2026-01-12",
+              "end": "2026-02-10",
+              "days": 30,
+              "complete": true,
+              "stocked": true,
+              "missing": [],
+              "stock_missing": [],
+              "zero_days": [],
+              "qty": "19",
+              "revenue": "3481.12",
+              "profit": "223.12",
+              "daily": "0.6333333333333333333333333333",
+              "margin": "0.06409431447350278071425288413",
+              "sessions": "214",
+              "role": "瘦狗",
+              "selling_days": 14
+            },
+            "listing": {
+              "currency": ""
+            },
+            "ladder": {
+              "p10": null,
+              "p15": null,
+              "p20": null,
+              "p25": null,
+              "p30": null,
+              "p35": null
+            },
+            "ladder_date": null,
+            "budget": {},
+            "suggestions": [
+              {
+                "kind": "general",
+                "action": "hold",
+                "label": "保持",
+                "status": "hold",
+                "reason": "返场评价窗口库存记录缺失，暂不进行正常拉量",
+                "target": null,
+                "checks": [],
+                "country": "法国"
+              }
+            ]
+          },
+          {
+            "country": "荷兰",
+            "recent": {
+              "start": "2026-10-03",
+              "end": "2026-10-09",
+              "days": 7,
+              "complete": true,
+              "stocked": true,
+              "missing": [],
+              "stock_missing": [],
+              "zero_days": [],
+              "qty": "1",
+              "revenue": "155.07",
+              "profit": "-3.23",
+              "daily": "0.1428571428571428571428571429",
+              "margin": "-0.02082930289546656348745727736",
+              "sessions": "3",
+              "role": "问题",
+              "selling_days": 1,
+              "sales_missing": [],
+              "sales_complete": true,
+              "financial_complete": true,
+              "finance_missing": [],
+              "inventory_complete": true,
+              "max_zero_stock_days": 0
+            },
+            "historical": {
+              "start": "2026-01-12",
+              "end": "2026-02-10",
+              "days": 30,
+              "complete": true,
+              "stocked": true,
+              "missing": [],
+              "stock_missing": [],
+              "zero_days": [],
+              "qty": "2",
+              "revenue": "328.73",
+              "profit": "7.83",
+              "daily": "0.06666666666666666666666666667",
+              "margin": "0.02381893955525811456210263742",
+              "sessions": "16",
+              "role": "问题",
+              "selling_days": 2
+            },
+            "listing": {
+              "currency": ""
+            },
+            "ladder": {
+              "p10": null,
+              "p15": null,
+              "p20": null,
+              "p25": null,
+              "p30": null,
+              "p35": null
+            },
+            "ladder_date": null,
+            "budget": {},
+            "suggestions": [
+              {
+                "kind": "general",
+                "action": "hold",
+                "label": "保持",
+                "status": "hold",
+                "reason": "返场评价窗口库存记录缺失，暂不进行正常拉量",
+                "target": null,
+                "checks": [],
+                "country": "荷兰"
+              }
+            ]
+          },
+          {
+            "country": "西班牙",
+            "recent": {
+              "start": "2026-10-03",
+              "end": "2026-10-09",
+              "days": 7,
+              "complete": true,
+              "stocked": true,
+              "missing": [],
+              "stock_missing": [],
+              "zero_days": [],
+              "qty": "0",
+              "revenue": "0.00",
+              "profit": "-1.16",
+              "daily": "0",
+              "margin": null,
+              "sessions": "5",
+              "role": "不可判",
+              "selling_days": 0,
+              "sales_missing": [],
+              "sales_complete": true,
+              "financial_complete": true,
+              "finance_missing": [],
+              "inventory_complete": true,
+              "max_zero_stock_days": 0
+            },
+            "historical": {
+              "start": "2026-01-12",
+              "end": "2026-02-10",
+              "days": 30,
+              "complete": true,
+              "stocked": true,
+              "missing": [],
+              "stock_missing": [],
+              "zero_days": [],
+              "qty": "0",
+              "revenue": "0.00",
+              "profit": "-0.73",
+              "daily": "0",
+              "margin": null,
+              "sessions": "19",
+              "role": "不可判",
+              "selling_days": 0
+            },
+            "listing": {
+              "currency": ""
+            },
+            "ladder": {
+              "p10": null,
+              "p15": null,
+              "p20": null,
+              "p25": null,
+              "p30": null,
+              "p35": null
+            },
+            "ladder_date": null,
+            "budget": {},
+            "suggestions": [
+              {
+                "kind": "general",
+                "action": "hold",
+                "label": "保持",
+                "status": "hold",
+                "reason": "返场评价窗口库存记录缺失，暂不进行正常拉量",
+                "target": null,
+                "checks": [],
+                "country": "西班牙"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

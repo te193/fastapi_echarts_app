@@ -35,7 +35,7 @@ REASON_LABELS = {
     "business_unit_added": "新增记录",
     "business_unit_removed": "记录消失",
     "evidence_missing": "规则证据缺失",
-    "evidence_mismatch": "本地重算与远端标签不一致",
+    "evidence_mismatch": "标签与规则证据不一致",
 }
 RULE_METRIC_DEFINITIONS = {
     "daily_sales": ("日销", "number"),
@@ -600,14 +600,14 @@ class LabelHubChangeDataService:
             return code, REASON_LABELS[code]
         if previous.get("evidence_status") == "missing" or current.get("evidence_status") == "missing":
             return "evidence_missing", REASON_LABELS["evidence_missing"]
-        if previous.get("evidence_status") != "matched" or current.get("evidence_status") != "matched":
+        if previous.get("evidence_status") not in {"matched", "generated"} or current.get("evidence_status") not in {"matched", "generated"}:
             return "evidence_mismatch", REASON_LABELS["evidence_mismatch"]
         old_daily = float(previous.get("daily_sales") or 0)
         new_daily = float(current.get("daily_sales") or 0)
         old_margin = float(previous.get("tag_gross_margin") or 0)
         new_margin = float(current.get("tag_gross_margin") or 0)
-        old_role = int(previous.get("remote_sub_label_id") or classify_sales_role(old_daily, old_margin))
-        new_role = int(current.get("remote_sub_label_id") or classify_sales_role(new_daily, new_margin))
+        old_role = int(previous.get("computed_sub_label_id") if previous.get("evidence_status") == "generated" else previous.get("remote_sub_label_id") or classify_sales_role(old_daily, old_margin))
+        new_role = int(current.get("computed_sub_label_id") if current.get("evidence_status") == "generated" else current.get("remote_sub_label_id") or classify_sales_role(new_daily, new_margin))
         def daily_zone(value: float) -> str:
             if value <= 0:
                 return "zero"
@@ -646,7 +646,7 @@ class LabelHubChangeDataService:
 
     @staticmethod
     def _remote_reason_evidence(value: dict[str, Any]) -> dict[str, Any]:
-        """Adapt remote evidence_json to the local sales-role reason schema."""
+        """Adapt snapshot evidence_json to the sales-role reason schema."""
         if not value:
             return {}
         payload = value.get("evidence")
@@ -991,7 +991,7 @@ class LabelHubChangeDataService:
             if reason_parent != 1:
                 return "confirmed"
             statuses = {str(previous_value.get("evidence_status") or "missing"), str(current_value.get("evidence_status") or "missing")}
-            if statuses == {"matched"}:
+            if statuses <= {"matched", "generated"}:
                 return "confirmed"
             if "mismatch" in statuses:
                 return "mismatch"

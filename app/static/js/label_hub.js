@@ -3527,7 +3527,7 @@
     destroyLinkedSelects();
     elements.labelHubBreakdowns.innerHTML = [
       renderBreakdownGroup("经营表现", "本地周期快照", panels.filter(function (panel) { return panel.source === "local"; })),
-      renderBreakdownGroup("远端标签结构", "标签事实 · 可切换维度", panels.filter(function (panel) { return panel.source === "remote_label"; }))
+      renderBreakdownGroup("标签结构", "标签事实 · 可切换维度", panels.filter(function (panel) { return panel.source === "remote_label"; }))
     ].join("");
     initLinkedSelects();
 
@@ -3545,7 +3545,7 @@
         : panel.source === "local" && missingBucket
         ? formatNumber(matchedCount) + " 个有经营快照"
         : "分析范围 " + formatNumber(panel.denominator) + " 条记录";
-      var header = '<div><span class="label-hub-source ' + panel.source + '">' + (panel.source === "local" ? "本地经营" : "远端标签") + '</span><h3>' + app.escapeHtml(panel.label) + '</h3><small>' + scopeCopy + "</small></div>";
+      var header = '<div><span class="label-hub-source ' + panel.source + '">' + (panel.source === "local" ? "本地经营" : "标签结果") + '</span><h3>' + app.escapeHtml(panel.label) + '</h3><small>' + scopeCopy + "</small></div>";
       if (panel.source === "remote_label") {
         var slot = Number.isFinite(Number(panel.analysis_slot)) ? Number(panel.analysis_slot) : Math.max(0, selectedRemote.indexOf(Number(panel.parent_id)));
         var used = selectedRemote.filter(function (_, index) { return index !== slot; });
@@ -4763,12 +4763,12 @@
   }
 
   function renderEvidenceRows(rows) {
-    if (!rows.length) return '<div class="label-hub-evidence-state is-missing"><strong>规则证据待同步</strong><span>当前只展示远端标签事实流转，不推断销售角色变化原因。</span></div>';
+    if (!rows.length) return '<div class="label-hub-evidence-state is-missing"><strong>规则证据待生成</strong><span>当前只展示标签事实流转，不推断销售角色变化原因。</span></div>';
     return '<div class="label-hub-evidence-list">' + rows.map(function (row) {
       var status = String(row.evidence_status || "missing");
-      var statusLabel = { matched: "证据一致", mismatch: "重算不一致", missing: "证据缺失" }[status] || status;
+      var statusLabel = { generated: "本地生成", matched: "证据一致", mismatch: "重算不一致", missing: "证据缺失" }[status] || status;
       var margin = row.tag_gross_margin === null || row.tag_gross_margin === undefined ? "暂无" : formatPercent(row.tag_gross_margin);
-      return '<article class="is-' + app.escapeHtml(status) + '"><header><span>' + app.escapeHtml(String(row.label_date || "")) + ' · ' + app.escapeHtml(row.label_period || "") + '</span><strong>' + app.escapeHtml(statusLabel) + '</strong></header><p>' + app.escapeHtml(row.country_category || "") + ' · ' + app.escapeHtml(row.store || "") + '</p><div><span>日销 <b>' + (row.daily_sales === null || row.daily_sales === undefined ? "暂无" : formatNumber(row.daily_sales)) + '</b></span><span>打标毛利率 <b>' + margin + '</b></span><span>本地重算 <b>' + app.escapeHtml(String(row.computed_sub_label_id || "暂无")) + '</b></span><span>远端事实 <b>' + app.escapeHtml(String(row.remote_sub_label_id || "暂无")) + '</b></span></div></article>';
+      return '<article class="is-' + app.escapeHtml(status) + '"><header><span>' + app.escapeHtml(String(row.label_date || "")) + ' · ' + app.escapeHtml(row.label_period || "") + '</span><strong>' + app.escapeHtml(statusLabel) + '</strong></header><p>' + app.escapeHtml(row.country_category || "") + ' · ' + app.escapeHtml(row.store || "") + '</p><div><span>日销 <b>' + (row.daily_sales === null || row.daily_sales === undefined ? "暂无" : formatNumber(row.daily_sales)) + '</b></span><span>打标毛利率 <b>' + margin + '</b></span><span>计算标签 <b>' + app.escapeHtml(String(row.computed_sub_label_id || "暂无")) + '</b></span>' + (status === "generated" ? '' : '<span>原标签 <b>' + app.escapeHtml(String(row.remote_sub_label_id || "暂无")) + '</b></span>') + '</div></article>';
     }).join("") + '</div>';
   }
 
@@ -4969,7 +4969,7 @@
   function problemLabel(value) { return { conflict: "标签互斥冲突", missing_metrics: "暂无经营数据", zero_sales: "日销为 0", negative_profit: "订单毛利为负", problem_role: "问题产品" }[value] || value; }
   function showError(error) {
     elements.labelHubHint.textContent = "标签数据暂不可用：" + ((error && error.message) || "请稍后重试");
-    if (elements.labelHubBreakdowns) elements.labelHubBreakdowns.innerHTML = '<div class="empty-state">加载失败，请检查远端标签连接后重试。</div>';
+    if (elements.labelHubBreakdowns) elements.labelHubBreakdowns.innerHTML = '<div class="empty-state">加载失败，请检查本地标签数据后重试。</div>';
   }
 }());
 

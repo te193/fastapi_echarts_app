@@ -4,6 +4,19 @@ from pathlib import Path
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "run_daily_update_task.ps1"
 
 
+def test_label_analysis_prepares_after_inputs_before_daily_success():
+    script=SCRIPT.read_text(encoding='utf-8')
+    assert script.index('-m etl.return_goods_strategy_update')<script.index('-m etl.label_analysis_refresh')<script.index('Send-DashboardDingTalkNotification -Status "success" -Stage "all"')
+    assert 'exit $LabelAnalysisExitCode' in script
+
+
+def test_return_strategy_runs_after_daily_inputs_and_before_success_notification():
+    script = SCRIPT.read_text(encoding="utf-8")
+    assert script.index('-m etl.return_goods_update') < script.index('-m etl.return_goods_strategy_update')
+    assert script.index('-m etl.return_goods_strategy_update') < script.index('Send-DashboardDingTalkNotification -Status "success" -Stage "all"')
+    assert 'exit $ReturnStrategyExitCode' in script
+
+
 def test_daily_update_task_runs_tracking_summary_between_replenishment_and_return_goods():
     script = SCRIPT.read_text(encoding="utf-8")
 

@@ -1,8 +1,15 @@
 .venv/
 __pycache__/
 .pytest_cache/
+node_modules/
 *.pyc
 .tmp_*.log
+.tmp-*
+.tmp_*
+tmp_*.err
+tmp_*.out
+tmp_*.log
+*.pid
 
 .idea/
 backups/
@@ -13,6 +20,9 @@ uvicorn.out.log
 uvicorn.err.log
 .worktrees/
 .playwright-cli/
+test-results/
+.codex_tmp/
+outputs/
 output/
 .codex-*
 .superpowers/

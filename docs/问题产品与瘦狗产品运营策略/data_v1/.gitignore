@@ -1,0 +1,4 @@
+# 本地业务输入、运行日志及Python缓存不纳入代码提交。
+outputs/
+*.log
+__pycache__/

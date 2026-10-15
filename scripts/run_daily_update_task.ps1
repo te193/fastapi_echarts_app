@@ -292,5 +292,33 @@ if ($ReturnGoodsExitCode -ne 0) {
 }
 
 Write-Host "Return goods ETL finished at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+$ReturnStrategyStdoutLog = Join-Path $LogDir "etl_return_strategy_run_$RunStamp.log"
+$ReturnStrategyStderrLog = Join-Path $LogDir "etl_return_strategy_run_$RunStamp.err.log"
+Write-Host "Return goods strategy snapshot started. Suggestions only; no price or advertising execution."
+$PreviousErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+& $PythonExe -m etl.return_goods_strategy_update @args > $ReturnStrategyStdoutLog 2> $ReturnStrategyStderrLog
+$ReturnStrategyExitCode = $LASTEXITCODE
+$ErrorActionPreference = $PreviousErrorActionPreference
+if ($ReturnStrategyExitCode -ne 0) {
+    Write-Error "Return strategy snapshot failed; previous successful snapshot retained. See $ReturnStrategyStdoutLog and $ReturnStrategyStderrLog."
+    exit $ReturnStrategyExitCode
+}
+Write-Host "Return goods strategy snapshot finished at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+$LabelAnalysisStdoutLog = Join-Path $LogDir "etl_label_analysis_run_$RunStamp.log"
+$LabelAnalysisStderrLog = Join-Path $LogDir "etl_label_analysis_run_$RunStamp.err.log"
+Write-Host "Label analysis preparation started; serving results from the intranet database."
+$PreviousErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+$LabelAnalysisArgs = @()
+if ($IsDryRun) { $LabelAnalysisArgs += "--dry-run" }
+& $PythonExe -m etl.label_analysis_refresh @LabelAnalysisArgs > $LabelAnalysisStdoutLog 2> $LabelAnalysisStderrLog
+$LabelAnalysisExitCode = $LASTEXITCODE
+$ErrorActionPreference = $PreviousErrorActionPreference
+if ($LabelAnalysisExitCode -ne 0) {
+    Write-Error "Label analysis preparation failed; previous published batch retained. See $LabelAnalysisStdoutLog and $LabelAnalysisStderrLog."
+    exit $LabelAnalysisExitCode
+}
+Write-Host "Label analysis preparation finished at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 Write-Host "Data update strategy includes rolling product refresh, current snapshots, preset period summaries, sales role snapshots, label change evidence, stockout historical operating snapshots, matrix summaries, replenishment results, replenishment tracking summary, and return goods."
 Send-DashboardDingTalkNotification -Status "success" -Stage "all" -ExitCode 0

@@ -1,0 +1,42 @@
+{
+  "data_kind": "数学说明性样例，非真实广告回测",
+  "probabilities": [
+    {
+      "clicks": 20,
+      "reference_cvr": 0.05,
+      "zero_order_probability": 0.3584859224085419
+    },
+    {
+      "clicks": 40,
+      "reference_cvr": 0.05,
+      "zero_order_probability": 0.12851215656510312
+    },
+    {
+      "clicks": 60,
+      "reference_cvr": 0.05,
+      "zero_order_probability": 0.046069798986951946
+    }
+  ],
+  "estimated_order_value_eur": 20,
+  "reference_cvr": 0.05,
+  "target_cpc_eur": 0.2,
+  "max_cpc_eur": 0.5,
+  "budget_cases": [
+    {
+      "object_clicks": 25,
+      "object_orders": 0,
+      "object_spend_eur": 10,
+      "period_budget_eur": 20,
+      "spend_budget_ratio": 0.5,
+      "old_policy": "bid_down_10%"
+    },
+    {
+      "object_clicks": 25,
+      "object_orders": 0,
+      "object_spend_eur": 10,
+      "period_budget_eur": 100,
+      "spend_budget_ratio": 0.1,
+      "old_policy": "hold"
+    }
+  ]
+}

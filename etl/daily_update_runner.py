@@ -138,6 +138,13 @@ DEFAULT_STEPS = (
         "etl_return_goods_run",
         "return_goods",
     ),
+    EtlStep(
+        "label_analysis",
+        "标签综合分析预计算",
+        "etl.label_analysis_refresh",
+        "etl_label_analysis_run",
+        "label_analysis",
+    ),
 )
 
 

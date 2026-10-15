@@ -6,28 +6,17 @@ from datetime import date, datetime, timedelta
 from etl.dashboard_daily_update import connect_source, connect_target, parse_day
 from etl.replenishment_update import apply_database_ini_env
 from etl.replenishment_tracking_update import copy_source_rows, sync_tracking_sources
+from etl.replenishment_roles import role_aggregate_sql, role_case
 
 
-def product_category_case(sales_col: str, salable_col: str, margin_col: str) -> str:
-    daily_sales_expr = f"case when coalesce({salable_col}, 0) > 0 then coalesce({sales_col}, 0) / {salable_col} else 0 end"
-    return f"""
-        case
-            when ({daily_sales_expr}) >= 5 and coalesce({margin_col}, 0) >= 0.15 then '明星产品'
-            when ({daily_sales_expr}) >= 1 and ({daily_sales_expr}) < 5 and coalesce({margin_col}, 0) >= 0.25 then '明星产品'
-            when ({daily_sales_expr}) >= 5 and coalesce({margin_col}, 0) >= 0.05 and coalesce({margin_col}, 0) < 0.15 then '潜力产品'
-            when ({daily_sales_expr}) >= 1 and ({daily_sales_expr}) < 5 and coalesce({margin_col}, 0) >= 0.10 and coalesce({margin_col}, 0) < 0.25 then '潜力产品'
-            when ({daily_sales_expr}) >= 1 and ({daily_sales_expr}) < 5 and coalesce({margin_col}, 0) >= 0.05 and coalesce({margin_col}, 0) < 0.10 then '瘦狗产品'
-            when ({daily_sales_expr}) < 1 and coalesce({margin_col}, 0) >= 0.05 then '瘦狗产品'
-            when ({daily_sales_expr}) = 0 or (({daily_sales_expr}) > 1 and coalesce({margin_col}, 0) < 0.05) then '问题产品'
-            else '问题产品'
-        end
-    """.strip()
+def product_category_case(daily_col: str, margin_col: str) -> str:
+    return role_case(daily_col, margin_col)
 
 
-PRODUCT_CATEGORY_7D_SQL = product_category_case("l.final_sales_7d", "l.r_7d_salable_days", "l.pprofit_ratio_7d")
-PRODUCT_CATEGORY_14D_SQL = product_category_case("l.final_sales_14d", "l.r_14d_salable_days", "l.pprofit_ratio_14d")
-PRODUCT_CATEGORY_30D_SQL = product_category_case("l.final_sales_30d", "l.r_30d_salable_days", "l.pprofit_ratio_30d")
-PRODUCT_CATEGORY_90D_SQL = product_category_case("l.sales_90d", "l.r_90d_salable_days", "l.pprofit_ratio_90d")
+PRODUCT_CATEGORY_7D_SQL = product_category_case("l.role_daily_sales_7d", "l.role_margin_rate_7d")
+PRODUCT_CATEGORY_14D_SQL = product_category_case("l.role_daily_sales_14d", "l.role_margin_rate_14d")
+PRODUCT_CATEGORY_30D_SQL = product_category_case("l.role_daily_sales_30d", "l.role_margin_rate_30d")
+PRODUCT_CATEGORY_90D_SQL = product_category_case("l.role_daily_sales_90d", "l.role_margin_rate_90d")
 
 
 CREATE_SUMMARY_SQL = """
@@ -478,13 +467,37 @@ agg as (
     group by country_category, seller_name_new, seller_sku_adj
 ),
 latest_row as (
-    select b.*
+    select b.*,
+        role7.role_daily_sales_7d, role7.role_margin_rate_7d,
+        role14.role_daily_sales_14d, role14.role_margin_rate_14d,
+        role30.role_daily_sales_30d, role30.role_margin_rate_30d,
+        role90.role_daily_sales_90d, role90.role_margin_rate_90d
     from base b
     join agg a
       on a.country_category = b.country_category
      and a.seller_name_new = b.seller_name_new
      and a.seller_sku_adj = b.seller_sku_adj
      and a.latest_replenishment_date = b.cur_date
+    left join ({ROLE_AGGREGATE_7D_SQL}) role7
+      on role7.snapshot_date = b.cur_date
+     and role7.country_category = b.country_category
+     and role7.seller_name_new = b.seller_name_new
+     and role7.seller_sku_adj = b.seller_sku_adj
+    left join ({ROLE_AGGREGATE_14D_SQL}) role14
+      on role14.snapshot_date = b.cur_date
+     and role14.country_category = b.country_category
+     and role14.seller_name_new = b.seller_name_new
+     and role14.seller_sku_adj = b.seller_sku_adj
+    left join ({ROLE_AGGREGATE_30D_SQL}) role30
+      on role30.snapshot_date = b.cur_date
+     and role30.country_category = b.country_category
+     and role30.seller_name_new = b.seller_name_new
+     and role30.seller_sku_adj = b.seller_sku_adj
+    left join ({ROLE_AGGREGATE_90D_SQL}) role90
+      on role90.snapshot_date = b.cur_date
+     and role90.country_category = b.country_category
+     and role90.seller_name_new = b.seller_name_new
+     and role90.seller_sku_adj = b.seller_sku_adj
 ),
 purchase_plan_doc as (
     select
@@ -1013,7 +1026,7 @@ select
     a.historical_replenishment_levels,
     coalesce(l.replenish_qty, 0),
     coalesce(l.replenish_cost, 0),
-    coalesce(l.abcd_category, '未分类'),
+    {PRODUCT_CATEGORY_30D_SQL},
     {PRODUCT_CATEGORY_7D_SQL},
     {PRODUCT_CATEGORY_14D_SQL},
     {PRODUCT_CATEGORY_30D_SQL},
@@ -1150,6 +1163,10 @@ left join historical_fba_plan_doc hfpd
  and hfpd.seller_name_new = a.seller_name_new
  and hfpd.seller_sku_adj = a.seller_sku_adj;
 """.format(
+    ROLE_AGGREGATE_7D_SQL=role_aggregate_sql(7, snapshot_dates_sql="select latest_replenishment_date from agg"),
+    ROLE_AGGREGATE_14D_SQL=role_aggregate_sql(14, snapshot_dates_sql="select latest_replenishment_date from agg"),
+    ROLE_AGGREGATE_30D_SQL=role_aggregate_sql(30, snapshot_dates_sql="select latest_replenishment_date from agg"),
+    ROLE_AGGREGATE_90D_SQL=role_aggregate_sql(90, snapshot_dates_sql="select latest_replenishment_date from agg"),
     PRODUCT_CATEGORY_7D_SQL=PRODUCT_CATEGORY_7D_SQL,
     PRODUCT_CATEGORY_14D_SQL=PRODUCT_CATEGORY_14D_SQL,
     PRODUCT_CATEGORY_30D_SQL=PRODUCT_CATEGORY_30D_SQL,

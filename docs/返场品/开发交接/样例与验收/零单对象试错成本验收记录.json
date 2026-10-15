@@ -1,0 +1,8 @@
+{
+  "rule_version": "return-v12-20261012-object-trial-cost",
+  "production_tests": "361 passed in 1.78s",
+  "portable_tests": "171 passed in 0.55s",
+  "business_database_writes": 0,
+  "advertising_platform_writes": 0,
+  "remote_recomputation": false
+}

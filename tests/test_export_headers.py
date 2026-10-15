@@ -81,6 +81,7 @@ class ExportHeaderTests(unittest.TestCase):
             "采购计划数量": "采购计划 = 配对SKU相关采购计划单待采购量统计数据：采购计划（待审批）+采购计划（待采购）",
             "本地质检数量": "本地质检 = 配对SKU的待检待上架量（汇总SKU无绑定FNSKU数量与SKU+FNSKU数量）",
             "本地库存": "本地库存 = 本地可用+采购在途+采购计划+本地质检",
+            "导出标注": "逐项列出本行实际触发的提醒；颜色、边框及触发条件详见最后的“颜色与标注说明”Sheet。标注不修改补货数量。",
         }
 
         with patch("app.main.replenishment_service", FakeReplenishmentExportService()):
@@ -98,8 +99,9 @@ class ExportHeaderTests(unittest.TestCase):
         for cell in worksheet[1]:
             self.assertIsNotNone(cell.comment, cell.value)
             self.assertEqual(cell.comment.text, expected_comments[cell.value])
-        self.assertEqual([cell.value for cell in worksheet[2]], list(range(1, 12)))
-        self.assertTrue(all(cell.data_type == "n" for cell in worksheet[2]))
+        self.assertEqual([cell.value for cell in worksheet[2]][:-1], list(range(1, 12)))
+        self.assertTrue(all(cell.data_type == "n" for cell in list(worksheet[2])[:-1]))
+        self.assertIsNone(worksheet[2][-1].value)
 
     def test_replenishment_sales_concentration_rule(self):
         cases = [
@@ -167,7 +169,7 @@ class ExportHeaderTests(unittest.TestCase):
         workbook = load_workbook(BytesIO(main.build_replenishment_xlsx(payload)), read_only=False)
         worksheet = workbook.active
 
-        self.assertEqual(["MSKU", "补货数量"], [cell.value for cell in worksheet[1]])
+        self.assertEqual(["MSKU", "补货数量", "导出标注"], [cell.value for cell in worksheet[1]])
         self.assertEqual(2295, worksheet["B2"].value)
         self.assertTrue(all(cell.fill.fgColor.rgb.endswith("FFF2CC") for cell in worksheet[2]))
 
@@ -389,7 +391,7 @@ class ExportHeaderTests(unittest.TestCase):
                 all(cell.border.bottom.color.rgb.endswith("4472C4") for cell in worksheet[row_index])
             )
         self.assertTrue(worksheet["A2"].border.left.color.rgb.endswith("4472C4"))
-        self.assertTrue(worksheet["D2"].border.right.color.rgb.endswith("4472C4"))
+        self.assertTrue(worksheet["E2"].border.right.color.rgb.endswith("4472C4"))
         self.assertTrue(all(cell.fill.fill_type is None for cell in worksheet[3]))
         self.assertTrue(all(cell.border.top.style is None for cell in worksheet[3]))
 

@@ -107,7 +107,7 @@
     purchasePlan: "\u8ba1\u5212\u91c7\u8d2d\u6570",
     sales30d: "30\u5929\u9500\u91cf",
     categoryPeriod: "\u5206\u7c7b\u5468\u671f",
-    periodSalableDailySales: "\u5929\u53ef\u552e\u65e5\u9500",
+    periodSalableDailySales: "天分类日均销量",
     periodProfitRate: "\u5929\u8ba2\u5355\u6bdb\u5229\u7387",
     needQty: "\u9700\u6c42\u91cf",
     boxQty: "\u7bb1\u6570",
@@ -120,6 +120,7 @@
     asinMergeTarget: "ASIN\u5408\u5e76\u76ee\u6807",
     asinMergeReason: "ASIN\u5408\u5e76\u539f\u56e0",
     listingTags: "\u5546\u54c1\u6807\u7b7e",
+    productTags: "产品标签",
     countryPerformance: "\u56fd\u5bb6\u8868\u73b0",
     countryDetail: "\u56fd\u5bb6\u660e\u7ec6",
     countryCount: "\u56fd\u5bb6\u6570",
@@ -167,7 +168,7 @@
     store: query.get("store") || "all",
     keyword: query.get("keyword") || "",
     moq_status: query.get("moq_status") || "all",
-    category_period_days: Number(query.get("category_period_days") || 30),
+    category_period_days: [7, 14, 30, 90].indexOf(Number(query.get("category_period_days"))) >= 0 ? Number(query.get("category_period_days")) : 30,
     sort_field: query.get("sort_field") || "",
     sort_dir: query.get("sort_dir") || "",
     page: Number(query.get("page") || 1),
@@ -940,8 +941,10 @@
         { headerName: "MSKU / SKU", field: "msku", pinned: "left", width: 178, sort: colSort("msku"), cellRenderer: renderReplenishmentCodeCell },
         { headerName: text.store, field: "store", width: 130, sort: colSort("store") },
         { headerName: text.site, field: "country", width: 110, sort: colSort("country") },
+        { headerName: "库容预警", field: "capacity_status_label", width: 240, sortable: false, tooltipField: "capacity_tooltip", tooltipComponent: CapacityTooltip, headerTooltip: "自动匹配商品仓储类型，比较本行和店铺同类型的全量补货体积与剩余库容。悬停查看体积、剩余及超出量；只预警，不改补货数量。", cellRenderer: renderDashCell },
         { headerName: text.countryPerformance, field: "country_summary", width: 188, cellRenderer: renderCountrySummaryCell },
         { headerName: text.listingTags, field: "listing_tags", width: 190, minWidth: 150, maxWidth: 260, sort: colSort("listing_tags"), tooltipField: "listing_tags", cellClass: "ag-truncate-column listing-tags-column", cellRenderer: renderDashCell },
+        { headerName: text.productTags, field: "product_tags", width: 190, minWidth: 150, maxWidth: 260, sortable: false, tooltipField: "product_tags", headerTooltip: "本地产品当前标签，历史补货结果也展示当前标签", cellClass: "ag-truncate-column listing-tags-column", cellRenderer: renderDashCell },
         numberColumn(text.dailySales, "daily_sales", 112, 2),
         numberColumn(categoryPeriod + text.periodSalableDailySales, "category_daily_sales_30d", 132, 2),
         { headerName: categoryPeriod + text.periodProfitRate, field: "profit_rate_30d", width: 120, type: "numericColumn", sort: colSort("profit_rate_30d"), cellRenderer: function (params) { return window.kanbanGrid.percent(params.value, 2); } },
@@ -967,6 +970,8 @@
         numberColumn(text.moqShortfall, "moq_shortfall_qty", 112, 0),
         { headerName: text.moqStatus, field: "moq_status", width: 128, cellRenderer: function (params) { return '<span class="status-pill moq-' + app.escapeHtml(params.value || "") + '">' + app.escapeHtml(moqStatusLabel(params.value)) + '</span>'; } },
         numberColumn(text.replenishQty, "replenish_qty", 122, 0),
+        { headerName: "来源剩余库容(m³)", field: "capacity_remaining_m3", width: 156, sortable: false, type: "numericColumn", tooltipField: "capacity_tooltip", tooltipComponent: CapacityTooltip, cellRenderer: function (params) { return params.value == null ? "—" : formatNumber(params.value, 6); } },
+        { headerName: "本行补货体积估算(m³)", field: "capacity_demand_volume_m3", width: 178, sortable: false, type: "numericColumn", tooltipField: "capacity_tooltip", tooltipComponent: CapacityTooltip, cellRenderer: function (params) { return params.value == null ? "—" : formatNumber(params.value, 6); } },
         numberColumn(text.boxQty, "box_qty", 96, 0),
         { headerName: text.replenishValue, field: "cost", width: 132, type: "numericColumn", sort: colSort("cost"), cellRenderer: function (params) { return formatCurrency(params.value); } },
         { headerName: text.followStatus, field: "follow_status", width: 112, sort: colSort("follow_status"), cellRenderer: function (params) { return '<span class="status-pill">' + app.escapeHtml(params.value || "") + '</span>'; } },
@@ -997,6 +1002,22 @@
   function renderDashCell(params) {
     return '<span class="ag-truncate-cell">' + app.escapeHtml(params.value || "-") + '</span>';
   }
+
+  function CapacityTooltip() {}
+  CapacityTooltip.prototype.init = function (params) {
+    this.element = document.createElement("div");
+    this.element.className = "ag-tooltip replenishment-capacity-tooltip";
+    this.element.setAttribute("role", "tooltip");
+    this.element.textContent = params.value || "";
+    Object.assign(this.element.style, {
+      width: "380px", maxWidth: "calc(100vw - 32px)", boxSizing: "border-box",
+      whiteSpace: "pre-line", overflowWrap: "anywhere", padding: "12px 14px",
+      background: "#ffffff", color: "#24364b", border: "1px solid #dce4ed",
+      borderRadius: "8px", fontSize: "13px", lineHeight: "1.7",
+      boxShadow: "0 6px 20px rgba(22, 42, 68, 0.14)"
+    });
+  };
+  CapacityTooltip.prototype.getGui = function () { return this.element; };
 
   function renderCountrySummaryCell(params) {
     var data = params.data || {};

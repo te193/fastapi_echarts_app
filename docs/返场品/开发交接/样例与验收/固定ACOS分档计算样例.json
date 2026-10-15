@@ -1,0 +1,292 @@
+{
+  "rule_version": "return-v14-20261012-dynamic-price-visits",
+  "data_kind": "人工边界样例，非远端实跑数据",
+  "cases": [
+    {
+      "acos": ".15",
+      "low_sales": false,
+      "dos": 28,
+      "input": {
+        "mapping_count": 1,
+        "enabled": true,
+        "mature": true,
+        "days": 7,
+        "clicks": 20,
+        "orders": 3,
+        "cost": "15.00",
+        "sales": 100,
+        "current_bid": 1
+      },
+      "output": {
+        "kind": "ad",
+        "action": "bid_up",
+        "label": "提高竞价",
+        "status": "pending",
+        "reason": "ACOS≤20%：积极拉量；库存覆盖限制后候选提高10.00%",
+        "target": "1.10",
+        "checks": [],
+        "acos_band": "target",
+        "acos_band_label": "ACOS≤20%：积极拉量",
+        "acos": "0.15",
+        "acos_target": "0.20",
+        "acos_max": "0.50",
+        "current": "1",
+        "change_rate": "0.10"
+      }
+    },
+    {
+      "acos": ".2",
+      "low_sales": true,
+      "dos": 28,
+      "input": {
+        "mapping_count": 1,
+        "enabled": true,
+        "mature": true,
+        "days": 7,
+        "clicks": 20,
+        "orders": 3,
+        "cost": "20.0",
+        "sales": 100,
+        "current_bid": 1
+      },
+      "output": {
+        "kind": "ad",
+        "action": "bid_up",
+        "label": "提高竞价",
+        "status": "pending",
+        "reason": "ACOS≤20%：积极拉量；库存覆盖限制后候选提高10.00%",
+        "target": "1.10",
+        "checks": [],
+        "acos_band": "target",
+        "acos_band_label": "ACOS≤20%：积极拉量",
+        "acos": "0.2",
+        "acos_target": "0.20",
+        "acos_max": "0.50",
+        "current": "1",
+        "change_rate": "0.10"
+      }
+    },
+    {
+      "acos": ".15",
+      "low_sales": true,
+      "dos": 10,
+      "input": {
+        "mapping_count": 1,
+        "enabled": true,
+        "mature": true,
+        "days": 7,
+        "clicks": 20,
+        "orders": 3,
+        "cost": "15.00",
+        "sales": 100,
+        "current_bid": 1
+      },
+      "output": {
+        "kind": "ad",
+        "action": "bid_up",
+        "label": "提高竞价",
+        "status": "pending",
+        "reason": "ACOS≤20%：积极拉量；库存覆盖限制后候选提高3.00%",
+        "target": "1.03",
+        "checks": [],
+        "acos_band": "target",
+        "acos_band_label": "ACOS≤20%：积极拉量",
+        "acos": "0.15",
+        "acos_target": "0.20",
+        "acos_max": "0.50",
+        "current": "1",
+        "change_rate": "0.03"
+      }
+    },
+    {
+      "acos": ".25",
+      "low_sales": true,
+      "dos": 28,
+      "input": {
+        "mapping_count": 1,
+        "enabled": true,
+        "mature": true,
+        "days": 7,
+        "clicks": 20,
+        "orders": 3,
+        "cost": "25.00",
+        "sales": 100,
+        "current_bid": 1
+      },
+      "output": {
+        "kind": "ad",
+        "action": "bid_up",
+        "label": "提高竞价",
+        "status": "pending",
+        "reason": "20%<ACOS≤30%：谨慎拉量；销量修复小步测试，候选提高3%",
+        "target": "1.03",
+        "checks": [],
+        "acos_band": "cautious",
+        "acos_band_label": "20%<ACOS≤30%：谨慎拉量",
+        "acos": "0.25",
+        "acos_target": "0.20",
+        "acos_max": "0.50",
+        "current": "1",
+        "change_rate": "0.03"
+      }
+    },
+    {
+      "acos": ".25",
+      "low_sales": false,
+      "dos": 28,
+      "input": {
+        "mapping_count": 1,
+        "enabled": true,
+        "mature": true,
+        "days": 7,
+        "clicks": 20,
+        "orders": 3,
+        "cost": "25.00",
+        "sales": 100,
+        "current_bid": 1
+      },
+      "output": {
+        "kind": "ad",
+        "action": "hold",
+        "label": "暂不调整竞价",
+        "status": "hold",
+        "reason": "20%<ACOS≤30%：谨慎拉量；不增加竞价或预算",
+        "target": null,
+        "checks": [],
+        "acos_band": "cautious",
+        "acos_band_label": "20%<ACOS≤30%：谨慎拉量",
+        "acos": "0.25",
+        "acos_target": "0.20",
+        "acos_max": "0.50",
+        "current": "1"
+      }
+    },
+    {
+      "acos": ".35",
+      "low_sales": true,
+      "dos": 28,
+      "input": {
+        "mapping_count": 1,
+        "enabled": true,
+        "mature": true,
+        "days": 7,
+        "clicks": 20,
+        "orders": 3,
+        "cost": "35.00",
+        "sales": 100,
+        "current_bid": 1
+      },
+      "output": {
+        "kind": "ad",
+        "action": "hold",
+        "label": "暂不调整竞价",
+        "status": "hold",
+        "reason": "30%<ACOS≤40%：保持观察；不增加竞价或预算",
+        "target": null,
+        "checks": [],
+        "acos_band": "observe",
+        "acos_band_label": "30%<ACOS≤40%：保持观察",
+        "acos": "0.35",
+        "acos_target": "0.20",
+        "acos_max": "0.50",
+        "current": "1"
+      }
+    },
+    {
+      "acos": ".45",
+      "low_sales": true,
+      "dos": 28,
+      "input": {
+        "mapping_count": 1,
+        "enabled": true,
+        "mature": true,
+        "days": 7,
+        "clicks": 20,
+        "orders": 3,
+        "cost": "45.00",
+        "sales": 100,
+        "current_bid": 1
+      },
+      "output": {
+        "kind": "ad",
+        "action": "bid_down",
+        "label": "降低竞价",
+        "status": "pending",
+        "reason": "40%<ACOS≤50%：收紧花费；候选降低10.00%",
+        "target": "0.90",
+        "checks": [],
+        "acos_band": "reduce",
+        "acos_band_label": "40%<ACOS≤50%：收紧花费",
+        "acos": "0.45",
+        "acos_target": "0.20",
+        "acos_max": "0.50",
+        "current": "1",
+        "change_rate": "-0.10"
+      }
+    },
+    {
+      "acos": ".50",
+      "low_sales": true,
+      "dos": 28,
+      "input": {
+        "mapping_count": 1,
+        "enabled": true,
+        "mature": true,
+        "days": 7,
+        "clicks": 20,
+        "orders": 3,
+        "cost": "50.00",
+        "sales": 100,
+        "current_bid": 1
+      },
+      "output": {
+        "kind": "ad",
+        "action": "bid_down",
+        "label": "降低竞价",
+        "status": "pending",
+        "reason": "40%<ACOS≤50%：收紧花费；候选降低10.00%",
+        "target": "0.90",
+        "checks": [],
+        "acos_band": "reduce",
+        "acos_band_label": "40%<ACOS≤50%：收紧花费",
+        "acos": "0.50",
+        "acos_target": "0.20",
+        "acos_max": "0.50",
+        "current": "1",
+        "change_rate": "-0.10"
+      }
+    },
+    {
+      "acos": ".51",
+      "low_sales": true,
+      "dos": 28,
+      "input": {
+        "mapping_count": 1,
+        "enabled": true,
+        "mature": true,
+        "days": 7,
+        "clicks": 20,
+        "orders": 3,
+        "cost": "51.00",
+        "sales": 100,
+        "current_bid": 1
+      },
+      "output": {
+        "kind": "ad",
+        "action": "bid_down",
+        "label": "降低竞价",
+        "status": "pending",
+        "reason": "ACOS>50%：超限止损；候选降低20.00%",
+        "target": "0.80",
+        "checks": [],
+        "acos_band": "over_limit",
+        "acos_band_label": "ACOS>50%：超限止损",
+        "acos": "0.51",
+        "acos_target": "0.20",
+        "acos_max": "0.50",
+        "current": "1",
+        "change_rate": "-0.20"
+      }
+    }
+  ]
+}

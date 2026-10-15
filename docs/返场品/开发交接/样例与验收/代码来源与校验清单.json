@@ -1,0 +1,181 @@
+[
+  {
+    "source": "app/services/return_goods_strategy_rules.py",
+    "target": "rules.py",
+    "sha256": "d7117060d1e2af18e989d9a6e8cd6dfbbd075be284ea243cd580a9c5a3bd7231"
+  },
+  {
+    "source": "etl/sp_advertising_recommendations.py",
+    "symbol": "COUNTRY_ALIASES",
+    "line": 37,
+    "sha256": "415e934520360554f494c2a92b1826ca06ffc857d0295d7e83fc31be59ed7bd4"
+  },
+  {
+    "source": "etl/sp_advertising_recommendations.py",
+    "symbol": "business_key",
+    "line": 155,
+    "sha256": "cd7a089be877617b5d1f44d189c22db4cb8c716f6cf8f0e998aec031a99e581e"
+  },
+  {
+    "source": "etl/return_goods_strategy_update.py",
+    "symbol": "optional_read",
+    "line": 37,
+    "sha256": "328f9a453fd1f82c41747f0cec0697b752ab0831b6b1c3a4860dd479e4620a43"
+  },
+  {
+    "source": "etl/return_goods_strategy_update.py",
+    "symbol": "index_snapshot",
+    "line": 45,
+    "sha256": "3a761172acf831fae4a844c86720098b126ee46d6bc2633fa922522b4a6954a4"
+  },
+  {
+    "source": "etl/return_goods_strategy_update.py",
+    "symbol": "index_budget_snapshot",
+    "line": 72,
+    "sha256": "f9bcd19253b7e1066f8001d07df0a8611492855009115ef883dc92a6aee1e6d3"
+  },
+  {
+    "source": "etl/return_goods_strategy_update.py",
+    "symbol": "attach_price_changes",
+    "line": 84,
+    "sha256": "6d3ee9ac405e962a95c2f900e70737c06ae1eabe77292e7e716a2d616ae533a6"
+  },
+  {
+    "source": "etl/return_goods_strategy_update.py",
+    "symbol": "attach_inventory_days",
+    "line": 150,
+    "sha256": "7b0deb2c34af275ab16ef6a6ea8c2bbc95a26b143b57c9230f59d46a53db4e1c"
+  },
+  {
+    "source": "etl/return_goods_strategy_update.py",
+    "symbol": "merge_days",
+    "line": 158,
+    "sha256": "5a7bb356804d5bd7357d70599d5987019d7e7cc690adb11da4f5cc0273064428"
+  },
+  {
+    "source": "etl/return_goods_strategy_update.py",
+    "symbol": "aggregate_ad_days",
+    "line": 175,
+    "sha256": "a3e1bc78986e2e218869e7d826c69f33acc3529bce4602e025d413c8d46cf4eb"
+  },
+  {
+    "source": "etl/return_goods_strategy_update.py",
+    "symbol": "CURRENCIES",
+    "line": 199,
+    "sha256": "1676ea268c0269ff70c5ddad674d135cd63529d43c9d60a2e01a618fe438e907"
+  },
+  {
+    "source": "etl/return_goods_strategy_update.py",
+    "symbol": "currency",
+    "line": 204,
+    "sha256": "4991cd3dc66e63fd220f36497f946923da9f20631d0723191667914be302b67e"
+  },
+  {
+    "source": "etl/return_goods_strategy_update.py",
+    "symbol": "retain_exit",
+    "line": 212,
+    "sha256": "dfb5826f0d4991bd1d257e7ef86d6b7042e4dc26ed98fad84c8e399c86414427"
+  },
+  {
+    "source": "etl/return_goods_strategy_update.py",
+    "symbol": "expand_auto_targets",
+    "line": 231,
+    "sha256": "7b05e8c33c0b5eff370a39a9bd0d95dfaf5909f5b503c66f9e6d5cfee2807e28"
+  },
+  {
+    "source": "etl/return_goods_strategy_update.py",
+    "symbol": "country_budget_usage",
+    "line": 323,
+    "sha256": "a03edcc3d83eb3d964c3271a97c485217f4fdece6e598f1dc63ae413b35c8147"
+  },
+  {
+    "source": "etl/return_goods_strategy_update.py",
+    "symbol": "ad_for_country",
+    "line": 383,
+    "sha256": "c1ac98fb6dd2cfb4c41c32aa11d6db0631fdb7799cf33a355543033df28e481c"
+  },
+  {
+    "source": "etl/return_goods_strategy_update.py",
+    "symbol": "enrich",
+    "line": 457,
+    "sha256": "1b8164b1d993fd90bf20b83cd3958835ea37295d377b1937f8fe02623d3e9a6d"
+  },
+  {
+    "source": "app/services/return_goods_strategy_data.py",
+    "symbol": "json_default",
+    "line": 16,
+    "sha256": "d04204ea06f98abd4bcbc6b157553faf2ddfb42f396123226c0020b517e6538b"
+  },
+  {
+    "source": "app/services/return_goods_strategy_data.py",
+    "symbol": "display_window_text",
+    "line": 24,
+    "sha256": "5d7e5bedf34cb55d9cfd5673ccc6726474173f33bd6ea2cec4ba77d5905a7156"
+  },
+  {
+    "source": "app/services/return_goods_strategy_data.py",
+    "symbol": "display_ordered_suggestions",
+    "line": 45,
+    "sha256": "7801dc2a02c96f25ba56e004bdd3ae578d7ea8775a5efc53fdd8e4ca00fd9624"
+  },
+  {
+    "source": "app/services/return_goods_strategy_data.py",
+    "symbol": "AGE_BANDS",
+    "line": 86,
+    "sha256": "42d2e5b155eb844887a7f7a192fe7f24a8c3e489177a84b3f95840ae5e5c537e"
+  },
+  {
+    "source": "app/services/return_goods_strategy_data.py",
+    "symbol": "INTERVENTION_CARDS",
+    "line": 91,
+    "sha256": "30d3dba400296d4fca6c3dde27d0cd0cf069de2789c8907b40ef77770cd23da0"
+  },
+  {
+    "source": "app/services/return_goods_strategy_data.py",
+    "symbol": "decision_branches",
+    "line": 120,
+    "sha256": "51484177671f4d122f14ac6363440485f69794cb5444436331ae76acda5ca234"
+  },
+  {
+    "source": "app/services/return_goods_strategy_data.py",
+    "symbol": "intervention_focus",
+    "line": 144,
+    "sha256": "8d0ae5a0cfc9d7e0d98ebe5fca6c238b483b05036951b981cfc160e7c1b71338"
+  },
+  {
+    "source": "app/services/return_goods_strategy_data.py",
+    "symbol": "stage_of",
+    "line": 150,
+    "sha256": "7f952f4e42f4c69cda2a0bad0bf163c20356685350c4dc0307a845c05668d968"
+  },
+  {
+    "source": "app/services/return_goods_strategy_data.py",
+    "symbol": "in_age_band",
+    "line": 156,
+    "sha256": "54a5c5ffe9995cb1deb72d707a0013820c442d916b72375b95de1f67e96fdd03"
+  },
+  {
+    "source": "app/services/return_goods_strategy_data.py",
+    "symbol": "stage_distribution",
+    "line": 164,
+    "sha256": "1a388893d98f908d43e251f20d4ffb931e6ab8a01f75addec282e03a1233bdcb"
+  },
+  {
+    "source": "app/services/return_goods_strategy_data.py",
+    "symbol": "ad_reason_details",
+    "line": 174,
+    "sha256": "4c6803441ae5534496a29e696c308c68e305eae5256dbcea2bf5ed7de14a4360"
+  },
+  {
+    "source": "app/services/return_goods_strategy_data.py",
+    "symbol": "filter_payload",
+    "line": 192,
+    "sha256": "4cefbcf3bed80ec729e88b48ec9337ec9cfce27def319251bb482b6171dde34f"
+  },
+  {
+    "source": "scripts/return_goods_remote_decision.py",
+    "target": "remote_sources.py",
+    "sha256": "3194bf63d7952aff644ede587fb770a97fbf3783dd1917d7d399e6861e3d52f3",
+    "changes": "imports, standalone connection, append page_data; decision branches unchanged"
+  }
+]

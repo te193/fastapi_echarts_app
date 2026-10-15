@@ -121,6 +121,7 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
 
     def test_export_payload_queries_hidden_spike_metadata(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)
+        service._clearance_export_items = MagicMock(return_value=[])
         service.connect = MagicMock(return_value=FakeConnection([]))
         service._build_where = MagicMock(return_value=("cur_date = %(snapshot_date)s", {}))
         service._export_columns = MagicMock(
@@ -347,7 +348,8 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
         )
 
         sql = conn.queries[0]
-        self.assertIn("sales_90d / greatest(r_90d_salable_days, 45)", sql)
+        self.assertIn("sum(sales_qty) / 90.0", sql)
+        self.assertIn("role_daily_sales_90d", sql)
         self.assertIn("as `abcd_category`", sql)
         self.assertIn("as `gp_margin_range`", sql)
         self.assertIn("order by", sql)
@@ -385,40 +387,30 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
         self.assertEqual(90, service._normalize_country_period_days("90"))
         self.assertEqual(30, service._normalize_country_period_days(21))
 
-    def test_product_category_period_days_supports_90_and_180(self):
+    def test_product_category_period_days_supports_90_and_rejects_180(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)
 
         self.assertEqual(30, service._normalize_product_category_period_days(None))
         self.assertEqual(90, service._normalize_product_category_period_days("90"))
-        self.assertEqual(180, service._normalize_product_category_period_days(180))
+        self.assertEqual(30, service._normalize_product_category_period_days(180))
         self.assertEqual(30, service._normalize_product_category_period_days(365))
 
         metrics_90 = service._product_category_metric_sql(90)
         metrics_180 = service._product_category_metric_sql(180)
-        self.assertIn("sales_90d / greatest(r_90d_salable_days, 45)", metrics_90["daily_sales_expr"])
-        self.assertEqual("pprofit_ratio_90d", metrics_90["margin_col"])
-        self.assertIn("sales_180d / greatest(r_180d_salable_days, 90)", metrics_180["daily_sales_expr"])
-        self.assertEqual("pprofit_ratio_180d", metrics_180["margin_col"])
+        self.assertEqual("role_daily_sales_90d", metrics_90["daily_sales_expr"])
+        self.assertEqual("role_margin_rate_90d", metrics_90["margin_col"])
+        self.assertEqual("role_daily_sales_30d", metrics_180["daily_sales_expr"])
+        self.assertEqual("role_margin_rate_30d", metrics_180["margin_col"])
 
-    def test_product_category_daily_sales_uses_half_period_salable_day_floor(self):
+    def test_product_category_daily_sales_uses_fixed_period_country_totals(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)
-
-        expected_floors = {
-            7: ("final_sales_7d", "r_7d_salable_days", 4),
-            14: ("final_sales_14d", "r_14d_salable_days", 7),
-            30: ("final_sales_30d", "r_30d_salable_days", 15),
-            90: ("sales_90d", "r_90d_salable_days", 45),
-            180: ("sales_180d", "r_180d_salable_days", 90),
-        }
-
-        for period, (sales_col, salable_col, floor_days) in expected_floors.items():
+        for period in (7, 14, 30, 90):
             with self.subTest(period=period):
                 metrics = service._product_category_metric_sql(period)
-                expr = metrics["daily_sales_expr"]
-
-                self.assertIn(f"case when {salable_col} > 0", expr)
-                self.assertIn(f"{sales_col} / greatest({salable_col}, {floor_days})", expr)
-                self.assertIn("else 0 end", expr)
+                self.assertEqual(f"role_daily_sales_{period}d", metrics["daily_sales_expr"])
+                source = service._role_source({"snapshot_date": "2026-10-13"}, period)
+                self.assertIn(f"sum(sales_qty) / {period}.0", source)
+                self.assertNotIn("salable_days", source)
 
     def test_history_recovery_display_layer_only_covers_passive_rows(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)
@@ -1047,17 +1039,13 @@ class ReplenishmentDataServiceTests(unittest.TestCase):
         self.assertIn("replenish_qty", condition)
         self.assertIn("not (", condition)
 
-    def test_asin_merge_display_daily_sales_uses_group_daily_sales(self):
+    def test_asin_merge_display_role_daily_sales_uses_own_object(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)
         period_metrics = service._product_category_metric_sql(30)
 
         expr = service._display_product_daily_sales_expr(period_metrics, "r")
 
-        self.assertIn("select max(", expr)
-        self.assertIn("grp.cur_date = r.cur_date", expr)
-        self.assertIn("grp.country_category <=> r.country_category", expr)
-        self.assertIn("grp.max_asin <=> r.max_asin", expr)
-        self.assertIn("coalesce(r.asin_merge_flag, 0) = 1", expr)
+        self.assertEqual("r.role_daily_sales_30d", expr)
 
     def test_display_block_reason_uses_final_asin_merge_copy(self):
         service = ReplenishmentDataService.__new__(ReplenishmentDataService)

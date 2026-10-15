@@ -124,8 +124,8 @@ class LabelHubRefreshBusyError(RuntimeError):
 
 REMOTE_PARENT_CHILD_PRIORITY = {
     1: [101, 102, 103, 104],
-    2: [204, 203, 202, 201, 205],
-    3: [301, 302, 303, 304, 305, 306],
+    2: [204, 203, 202, 201, 205, 206, 207],
+    3: [307, 308, 304, 306, 305, 303, 302, 301],
     5: [501, 502, 503],
     6: [608, 607, 606, 605, 604, 603, 612, 602, 601, 611, 609, 610],
     8: [802, 801, 803],
@@ -734,8 +734,12 @@ class LabelHubDataService:
             raise LabelHubRefreshBusyError("label snapshot refresh is already running")
         try:
             from etl.label_rule_evidence_snapshot_update import run_update
+            from etl.label_local_generation import LabelGenerationBusyError
 
-            result = run_update()
+            try:
+                result = run_update()
+            except LabelGenerationBusyError as exc:
+                raise LabelHubRefreshBusyError("本地标签生成正在运行，请稍后刷新") from exc
             quick_fingerprint = self._fetch_quick_source_fingerprint()
             self._invalidate_remote_caches()
             with self._source_state_lock:
@@ -2806,7 +2810,9 @@ class LabelHubDataService:
         """
         fact_name = LABEL_FACT_TABLE.split(".", 1)[1]
         detail_name = LABEL_DETAIL_TABLE.split(".", 1)[1]
+        publication_name = "dashboard_label_local_publication"
         source_schema = LABEL_FACT_TABLE.split(".", 1)[0]
+        publication_marker = ()
         with self._source_connection() as conn, conn.cursor() as cursor:
             cursor.execute(
                 f"select max(data_date) as latest_date from {LABEL_FACT_TABLE}"
@@ -2817,12 +2823,16 @@ class LabelHubDataService:
                 select table_name, table_rows, update_time, data_length, index_length
                 from information_schema.tables
                 where table_schema = %s
-                  and table_name in (%s, %s)
+                  and table_name in (%s, %s, %s)
                 order by table_name
                 """,
-                (source_schema, fact_name, detail_name),
+                (source_schema, fact_name, detail_name, publication_name),
             )
             tables = cursor.fetchall()
+            if any(str(row.get("TABLE_NAME") or row.get("table_name") or "") == publication_name for row in tables):
+                cursor.execute(f"select run_id,source_mode,rule_version from {source_schema}.{publication_name} where singleton=1")
+                publication = cursor.fetchone() or {}
+                publication_marker = (str(publication.get("run_id") or ""), str(publication.get("source_mode") or ""), str(publication.get("rule_version") or ""))
         table_markers = tuple(
             (
                 str(row.get("TABLE_NAME") or row.get("table_name") or ""),
@@ -2833,7 +2843,7 @@ class LabelHubDataService:
             )
             for row in tables
         )
-        return (_date_text(facts.get("latest_date")), *table_markers)
+        return (_date_text(facts.get("latest_date")), *table_markers, *publication_marker)
 
     def _fetch_content_source_fingerprint(self) -> tuple[Any, ...]:
         """Hash relevant content server-side so in-place edits are detected."""

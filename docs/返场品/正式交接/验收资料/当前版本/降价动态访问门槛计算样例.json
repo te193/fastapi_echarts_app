@@ -1,0 +1,334 @@
+{
+  "rule_version": "return-v14-20261012-dynamic-price-visits",
+  "data_kind": "人工边界样例，非远端实跑数据",
+  "cases": [
+    {
+      "input": {
+        "price_comparison": {
+          "current": {
+            "days": 14,
+            "stocked": true,
+            "sales_complete": true,
+            "sessions": 14,
+            "qty": 1
+          },
+          "history": {
+            "days": 30,
+            "stocked": true,
+            "sales_complete": true,
+            "sessions": 100,
+            "qty": 20
+          }
+        }
+      },
+      "output": {
+        "status": "hold",
+        "is_trial_rule": true,
+        "expected_unit_target": 3,
+        "required_sessions": 15,
+        "expected_qty": "2.8",
+        "conversion_ratio": "0.3571428571428571428571428571",
+        "enough_visits": false,
+        "weak_conversion": false,
+        "current_days": 14,
+        "current_start": null,
+        "current_end": null,
+        "history_days": 30,
+        "history_start": null,
+        "history_end": null,
+        "current_sessions": "14",
+        "current_qty": "1",
+        "history_sessions": "100",
+        "history_qty": "20",
+        "reason": "当前14天访问14次，未达到断货前卖3件所需的15次访问，继续观察"
+      }
+    },
+    {
+      "input": {
+        "price_comparison": {
+          "current": {
+            "days": 14,
+            "stocked": true,
+            "sales_complete": true,
+            "sessions": 15,
+            "qty": 1
+          },
+          "history": {
+            "days": 30,
+            "stocked": true,
+            "sales_complete": true,
+            "sessions": 100,
+            "qty": 20
+          }
+        }
+      },
+      "output": {
+        "status": "eligible",
+        "is_trial_rule": true,
+        "expected_unit_target": 3,
+        "required_sessions": 15,
+        "expected_qty": "3",
+        "conversion_ratio": "0.3333333333333333333333333333",
+        "enough_visits": true,
+        "weak_conversion": true,
+        "current_days": 14,
+        "current_start": null,
+        "current_end": null,
+        "history_days": 30,
+        "history_start": null,
+        "history_end": null,
+        "current_sessions": "15",
+        "current_qty": "1",
+        "history_sessions": "100",
+        "history_qty": "20",
+        "reason": "当前14天访问15次，按断货前表现预期销量3件；实际1件，低于预期70%"
+      }
+    },
+    {
+      "input": {
+        "price_comparison": {
+          "current": {
+            "days": 14,
+            "stocked": true,
+            "sales_complete": true,
+            "sessions": 29,
+            "qty": 1
+          },
+          "history": {
+            "days": 30,
+            "stocked": true,
+            "sales_complete": true,
+            "sessions": 100,
+            "qty": 10
+          }
+        }
+      },
+      "output": {
+        "status": "hold",
+        "is_trial_rule": true,
+        "expected_unit_target": 3,
+        "required_sessions": 30,
+        "expected_qty": "2.9",
+        "conversion_ratio": "0.3448275862068965517241379310",
+        "enough_visits": false,
+        "weak_conversion": false,
+        "current_days": 14,
+        "current_start": null,
+        "current_end": null,
+        "history_days": 30,
+        "history_start": null,
+        "history_end": null,
+        "current_sessions": "29",
+        "current_qty": "1",
+        "history_sessions": "100",
+        "history_qty": "10",
+        "reason": "当前14天访问29次，未达到断货前卖3件所需的30次访问，继续观察"
+      }
+    },
+    {
+      "input": {
+        "price_comparison": {
+          "current": {
+            "days": 14,
+            "stocked": true,
+            "sales_complete": true,
+            "sessions": 30,
+            "qty": 1
+          },
+          "history": {
+            "days": 30,
+            "stocked": true,
+            "sales_complete": true,
+            "sessions": 100,
+            "qty": 10
+          }
+        }
+      },
+      "output": {
+        "status": "eligible",
+        "is_trial_rule": true,
+        "expected_unit_target": 3,
+        "required_sessions": 30,
+        "expected_qty": "3",
+        "conversion_ratio": "0.3333333333333333333333333333",
+        "enough_visits": true,
+        "weak_conversion": true,
+        "current_days": 14,
+        "current_start": null,
+        "current_end": null,
+        "history_days": 30,
+        "history_start": null,
+        "history_end": null,
+        "current_sessions": "30",
+        "current_qty": "1",
+        "history_sessions": "100",
+        "history_qty": "10",
+        "reason": "当前14天访问30次，按断货前表现预期销量3件；实际1件，低于预期70%"
+      }
+    },
+    {
+      "input": {
+        "price_comparison": {
+          "current": {
+            "days": 14,
+            "stocked": true,
+            "sales_complete": true,
+            "sessions": 60,
+            "qty": 1
+          },
+          "history": {
+            "days": 30,
+            "stocked": true,
+            "sales_complete": true,
+            "sessions": 100,
+            "qty": 5
+          }
+        }
+      },
+      "output": {
+        "status": "eligible",
+        "is_trial_rule": true,
+        "expected_unit_target": 3,
+        "required_sessions": 60,
+        "expected_qty": "3",
+        "conversion_ratio": "0.3333333333333333333333333333",
+        "enough_visits": true,
+        "weak_conversion": true,
+        "current_days": 14,
+        "current_start": null,
+        "current_end": null,
+        "history_days": 30,
+        "history_start": null,
+        "history_end": null,
+        "current_sessions": "60",
+        "current_qty": "1",
+        "history_sessions": "100",
+        "history_qty": "5",
+        "reason": "当前14天访问60次，按断货前表现预期销量3件；实际1件，低于预期70%"
+      }
+    },
+    {
+      "input": {
+        "price_comparison": {
+          "current": {
+            "days": 14,
+            "stocked": true,
+            "sales_complete": true,
+            "sessions": 150,
+            "qty": 1
+          },
+          "history": {
+            "days": 30,
+            "stocked": true,
+            "sales_complete": true,
+            "sessions": 500,
+            "qty": 10
+          }
+        }
+      },
+      "output": {
+        "status": "eligible",
+        "is_trial_rule": true,
+        "expected_unit_target": 3,
+        "required_sessions": 150,
+        "expected_qty": "3",
+        "conversion_ratio": "0.3333333333333333333333333333",
+        "enough_visits": true,
+        "weak_conversion": true,
+        "current_days": 14,
+        "current_start": null,
+        "current_end": null,
+        "history_days": 30,
+        "history_start": null,
+        "history_end": null,
+        "current_sessions": "150",
+        "current_qty": "1",
+        "history_sessions": "500",
+        "history_qty": "10",
+        "reason": "当前14天访问150次，按断货前表现预期销量3件；实际1件，低于预期70%"
+      }
+    },
+    {
+      "input": {
+        "price_comparison": {
+          "current": {
+            "days": 14,
+            "stocked": true,
+            "sales_complete": true,
+            "sessions": 33,
+            "qty": 1
+          },
+          "history": {
+            "days": 30,
+            "stocked": true,
+            "sales_complete": true,
+            "sessions": 99,
+            "qty": 9
+          }
+        }
+      },
+      "output": {
+        "status": "eligible",
+        "is_trial_rule": true,
+        "expected_unit_target": 3,
+        "required_sessions": 33,
+        "expected_qty": "3",
+        "conversion_ratio": "0.3333333333333333333333333333",
+        "enough_visits": true,
+        "weak_conversion": true,
+        "current_days": 14,
+        "current_start": null,
+        "current_end": null,
+        "history_days": 30,
+        "history_start": null,
+        "history_end": null,
+        "current_sessions": "33",
+        "current_qty": "1",
+        "history_sessions": "99",
+        "history_qty": "9",
+        "reason": "当前14天访问33次，按断货前表现预期销量3件；实际1件，低于预期70%"
+      }
+    },
+    {
+      "input": {
+        "price_comparison": {
+          "current": {
+            "days": 14,
+            "stocked": true,
+            "sales_complete": true,
+            "sessions": 30,
+            "qty": "2.1"
+          },
+          "history": {
+            "days": 30,
+            "stocked": true,
+            "sales_complete": true,
+            "sessions": 100,
+            "qty": 10
+          }
+        }
+      },
+      "output": {
+        "status": "hold",
+        "is_trial_rule": true,
+        "expected_unit_target": 3,
+        "required_sessions": 30,
+        "expected_qty": "3",
+        "conversion_ratio": "0.7",
+        "enough_visits": true,
+        "weak_conversion": false,
+        "current_days": 14,
+        "current_start": null,
+        "current_end": null,
+        "history_days": 30,
+        "history_start": null,
+        "history_end": null,
+        "current_sessions": "30",
+        "current_qty": "2.1",
+        "history_sessions": "100",
+        "history_qty": "10",
+        "reason": "当前对应窗口访问已达到动态门槛，实际销量未低于历史预期70%，保持价格"
+      }
+    }
+  ]
+}

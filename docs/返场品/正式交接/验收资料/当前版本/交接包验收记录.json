@@ -1,0 +1,10 @@
+{
+  "source_symbols": 30,
+  "document_links": 63,
+  "python_files": 17,
+  "portable_import": "passed",
+  "sample_replay": "passed",
+  "tests": "228 passed",
+  "business_database_writes": 0,
+  "sample_rule_scope": "previous-version remote samples; not a current-rule remote recomputation"
+}

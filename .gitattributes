@@ -1,0 +1,2 @@
+# Markdown的行尾两个空格用于显式换行，不视为格式错误。
+*.md whitespace=-blank-at-eol
