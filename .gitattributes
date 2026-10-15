@@ -1,2 +1,5 @@
-# Markdown的行尾两个空格用于显式换行，不视为格式错误。
+# Preserve archived SQL bytes used by the V47 integrity check.
+"sqlcode/标签表数据插入_修改版_20260915_v47_产品表现前一日最大日期严格校验版.sql" -text
+
+# Markdown hard line breaks are intentional.
 *.md whitespace=-blank-at-eol

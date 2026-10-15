@@ -7,10 +7,26 @@ import hashlib
 import json
 import zlib
 
-from etl.label_local_sql import BASELINE_SHA256, RULE_VERSION, WORK_TABLE, checked_schema, quote
+from etl.label_local_sql import (
+    BASELINE_SHA256,
+    RULE_VERSION,
+    WORK_TABLE,
+    checked_schema,
+    quote,
+)
 
 
-FACT_COLUMNS = ("data_date", "country_category", "country", "store", "msku", "label_id", "label_period", "created_time", "evidence_json")
+FACT_COLUMNS = (
+    "data_date",
+    "country_category",
+    "country",
+    "store",
+    "msku",
+    "label_id",
+    "label_period",
+    "created_time",
+    "evidence_json",
+)
 
 
 def table(schema: str, name: str) -> str:
@@ -21,7 +37,9 @@ def table(schema: str, name: str) -> str:
 
 
 def encode_history_chunk(rows: list) -> tuple[bytes, str]:
-    raw = json.dumps(rows, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8")
+    raw = json.dumps(
+        rows, ensure_ascii=False, separators=(",", ":"), default=str
+    ).encode("utf-8")
     return zlib.compress(raw), hashlib.sha256(raw).hexdigest()
 
 
@@ -108,7 +126,10 @@ def restore_work(conn, schema: str, dates: list[date]) -> None:
         for day in dates:
             chunk = -1
             while True:
-                cursor.execute(f"select chunk_no,row_count,payload,checksum from {history} where data_date=%s and chunk_no>%s order by chunk_no limit 1", (day, chunk))
+                cursor.execute(
+                    f"select chunk_no,row_count,payload,checksum from {history} where data_date=%s and chunk_no>%s order by chunk_no limit 1",
+                    (day, chunk),
+                )
                 item = cursor.fetchone()
                 if not item:
                     break
@@ -120,39 +141,84 @@ def restore_work(conn, schema: str, dates: list[date]) -> None:
     conn.commit()
 
 
-def validate_day(conn, schema: str, day: date, *, input_schema: str | None = None, complete_lifecycle: bool = False) -> dict:
+def validate_day(
+    conn,
+    schema: str,
+    day: date,
+    *,
+    input_schema: str | None = None,
+    complete_lifecycle: bool = False,
+) -> dict:
     work = table(schema, WORK_TABLE)
     dictionary = table(input_schema or schema, "dashboard_label_source_dictionary")
     with conn.cursor() as cursor:
-        cursor.execute(f"select count(*) as fact_rows, sum(evidence_json is not null) as evidence_rows, count(distinct msku) as unique_msku_count from {work} where data_date=%s", (day,))
+        cursor.execute(
+            f"select count(*) as fact_rows, sum(evidence_json is not null) as evidence_rows, count(distinct msku) as unique_msku_count from {work} where data_date=%s",
+            (day,),
+        )
         summary = cursor.fetchone()
         if not summary["fact_rows"]:
             raise RuntimeError("local V47 produced no facts")
         if summary["evidence_rows"] != summary["fact_rows"]:
             raise RuntimeError("local V47 facts and evidence are incomplete")
-        cursor.execute(f"select count(*) as n from {work} where data_date=%s and (json_type(evidence_json)<>'OBJECT' or label_period not in ('current','7d','14d','30d','90d','6m','long_term'))", (day,))
+        cursor.execute(
+            f"select count(*) as n from {work} where data_date=%s and (json_type(evidence_json)<>'OBJECT' or label_period not in ('current','7d','14d','30d','90d','6m','long_term'))",
+            (day,),
+        )
         if cursor.fetchone()["n"]:
             raise RuntimeError("invalid local evidence object or label period")
-        extensions = " and w.label_id not in (206,207,308)" if complete_lifecycle else " and w.label_id<>308"
-        cursor.execute(f"select count(*) as n from {work} w left join {dictionary} d on d.sub_label_id=w.label_id where w.data_date=%s and d.sub_label_id is null{extensions}", (day,))
+        extensions = (
+            " and w.label_id not in (206,207,308)"
+            if complete_lifecycle
+            else " and w.label_id<>308"
+        )
+        cursor.execute(
+            f"select count(*) as n from {work} w left join {dictionary} d on d.sub_label_id=w.label_id where w.data_date=%s and d.sub_label_id is null{extensions}",
+            (day,),
+        )
         if cursor.fetchone()["n"]:
             raise RuntimeError("generated label has no dictionary entry")
-        cursor.execute(f"select 1 as duplicate_key from {work} where data_date=%s group by country_category,country,store,msku,label_id,label_period having count(*)>1 limit 1", (day,))
+        cursor.execute(
+            f"select 1 as duplicate_key from {work} where data_date=%s group by country_category,country,store,msku,label_id,label_period having count(*)>1 limit 1",
+            (day,),
+        )
         if cursor.fetchone():
             raise RuntimeError("duplicate local label fact business key")
-        cursor.execute(f"select label_id,count(*) as rows_count,sum(evidence_json is not null) as evidence_count from {work} where data_date=%s group by label_id order by label_id", (day,))
+        cursor.execute(
+            f"select label_id,count(*) as rows_count,sum(evidence_json is not null) as evidence_count from {work} where data_date=%s group by label_id order by label_id",
+            (day,),
+        )
         summary["labels"] = cursor.fetchall()
-        cursor.execute(f"select count(*) as n from (select country_category,store,msku from {work} where data_date=%s and label_id between 301 and 308 group by country_category,store,msku having count(distinct label_id)>1) c", (day,))
+        cursor.execute(
+            f"select count(*) as n from (select country_category,store,msku from {work} where data_date=%s and label_id between 301 and 308 group by country_category,store,msku having count(distinct label_id)>1) c",
+            (day,),
+        )
         if cursor.fetchone()["n"]:
             raise RuntimeError("multiple mutually exclusive operating statuses")
     if complete_lifecycle:
-        from etl.label_lifecycle_completion import validate_extension_ids,validate_coverage
-        validate_extension_ids(conn,input_schema or schema)
-        summary.update(validate_coverage(conn,schema,day,input_schema=input_schema or schema))
+        from etl.label_lifecycle_completion import (
+            validate_extension_ids,
+            validate_coverage,
+        )
+
+        validate_extension_ids(conn, input_schema or schema)
+        summary.update(
+            validate_coverage(conn, schema, day, input_schema=input_schema or schema)
+        )
     return summary
 
 
-def archive_day(conn, schema: str, day: date, run_id: str, inputs: dict, history_start: date, summary: dict, *, rule_version: str = RULE_VERSION) -> None:
+def archive_day(
+    conn,
+    schema: str,
+    day: date,
+    run_id: str,
+    inputs: dict,
+    history_start: date,
+    summary: dict,
+    *,
+    rule_version: str = RULE_VERSION,
+) -> None:
     work = table(schema, WORK_TABLE)
     stage = table(schema, "dashboard_label_local_history_stage")
     history = table(schema, "dashboard_label_local_history")
@@ -161,14 +227,24 @@ def archive_day(conn, schema: str, day: date, run_id: str, inputs: dict, history
     chunk_no = 0
     copied = 0
     with conn.cursor() as cursor:
-        cursor.execute(f"delete from {stage} where run_id=%s and data_date=%s", (run_id, day))
+        cursor.execute(
+            f"delete from {stage} where run_id=%s and data_date=%s", (run_id, day)
+        )
         while True:
-            cursor.execute(f"select id,{','.join(FACT_COLUMNS)} from {work} where data_date=%s and id>%s order by id limit 1000", (day, last_id))
+            cursor.execute(
+                f"select id,{','.join(FACT_COLUMNS)} from {work} where data_date=%s and id>%s order by id limit 1000",
+                (day, last_id),
+            )
             records = cursor.fetchall()
             if not records:
                 break
-            payload, checksum = encode_history_chunk([[row[col] for col in FACT_COLUMNS] for row in records])
-            cursor.execute(f"insert into {stage} (run_id,data_date,chunk_no,row_count,payload,checksum) values (%s,%s,%s,%s,%s,%s)", (run_id, day, chunk_no, len(records), payload, checksum))
+            payload, checksum = encode_history_chunk(
+                [[row[col] for col in FACT_COLUMNS] for row in records]
+            )
+            cursor.execute(
+                f"insert into {stage} (run_id,data_date,chunk_no,row_count,payload,checksum) values (%s,%s,%s,%s,%s,%s)",
+                (run_id, day, chunk_no, len(records), payload, checksum),
+            )
             conn.commit()
             copied += len(records)
             last_id = records[-1]["id"]
@@ -177,44 +253,103 @@ def archive_day(conn, schema: str, day: date, run_id: str, inputs: dict, history
             raise RuntimeError("history archive count differs from validated work")
         try:
             cursor.execute(f"delete from {history} where data_date=%s", (day,))
-            cursor.execute(f"insert into {history} (data_date,chunk_no,row_count,payload,checksum) select data_date,chunk_no,row_count,payload,checksum from {stage} where run_id=%s and data_date=%s", (run_id, day))
+            cursor.execute(
+                f"insert into {history} (data_date,chunk_no,row_count,payload,checksum) select data_date,chunk_no,row_count,payload,checksum from {stage} where run_id=%s and data_date=%s",
+                (run_id, day),
+            )
             cursor.execute(f"delete from {days} where data_date=%s", (day,))
-            cursor.execute(f"insert into {days} (data_date,run_id,input_batch,input_hash,rule_version,baseline_sha256,history_start,fact_rows,evidence_rows,summary_json) values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)", (day, run_id, inputs["batch_id"], inputs["input_hash"], rule_version, BASELINE_SHA256, history_start, summary["fact_rows"], summary["evidence_rows"], json.dumps(summary, ensure_ascii=False, default=str)))
-            cursor.execute(f"delete from {stage} where run_id=%s and data_date=%s", (run_id, day))
+            cursor.execute(
+                f"insert into {days} (data_date,run_id,input_batch,input_hash,rule_version,baseline_sha256,history_start,fact_rows,evidence_rows,summary_json) values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                (
+                    day,
+                    run_id,
+                    inputs["batch_id"],
+                    inputs["input_hash"],
+                    rule_version,
+                    BASELINE_SHA256,
+                    history_start,
+                    summary["fact_rows"],
+                    summary["evidence_rows"],
+                    json.dumps(summary, ensure_ascii=False, default=str),
+                ),
+            )
+            cursor.execute(
+                f"delete from {stage} where run_id=%s and data_date=%s", (run_id, day)
+            )
             conn.commit()
         except Exception:
             conn.rollback()
             raise
 
 
-def validate_retained_archive(conn, work_schema: str, history_schema: str, day: date, rule_version: str) -> None:
+def validate_retained_archive(
+    conn, work_schema: str, history_schema: str, day: date, rule_version: str
+) -> None:
     """Prove retained work is byte-for-byte the already validated archive."""
     with conn.cursor() as q:
-        q.execute(f"select rule_version,baseline_sha256,fact_rows from {table(history_schema,'dashboard_label_local_days')} where data_date=%s", (day,))
-        metadata=q.fetchone()
-        if not metadata or metadata['rule_version']!=rule_version or metadata['baseline_sha256']!=BASELINE_SHA256:
-            raise RuntimeError('retained date lacks an accepted archive')
-        last_id=0;chunk=-1;total=0
+        q.execute(
+            f"select rule_version,baseline_sha256,fact_rows from {table(history_schema,'dashboard_label_local_days')} where data_date=%s",
+            (day,),
+        )
+        metadata = q.fetchone()
+        if (
+            not metadata
+            or metadata["rule_version"] != rule_version
+            or metadata["baseline_sha256"] != BASELINE_SHA256
+        ):
+            raise RuntimeError("retained date lacks an accepted archive")
+        last_id = 0
+        chunk = -1
+        total = 0
         while True:
-            q.execute(f"select chunk_no,row_count,payload,checksum from {table(history_schema,'dashboard_label_local_history')} where data_date=%s and chunk_no>%s order by chunk_no limit 1", (day,chunk))
-            archived=q.fetchone()
-            if not archived:break
-            records=decode_history_chunk(archived['payload'],archived['checksum'])
-            if len(records)!=archived['row_count']:raise RuntimeError('retained archive row count mismatch')
-            q.execute(f"select id,{','.join(FACT_COLUMNS)} from {table(work_schema,WORK_TABLE)} where data_date=%s and id>%s order by id limit %s", (day,last_id,len(records)))
-            rows=q.fetchall()
-            actual=[[row[name] for name in FACT_COLUMNS] for row in rows]
-            if encode_history_chunk(actual)[1]!=archived['checksum']:
-                raise RuntimeError('retained work differs from validated archive')
-            last_id=rows[-1]['id'];chunk=archived['chunk_no'];total+=len(rows)
-        q.execute(f"select count(*) as n from {table(work_schema,WORK_TABLE)} where data_date=%s", (day,))
-        if total!=metadata['fact_rows'] or total!=q.fetchone()['n']:
-            raise RuntimeError('retained work count differs from validated archive')
+            q.execute(
+                f"select chunk_no,row_count,payload,checksum from {table(history_schema,'dashboard_label_local_history')} where data_date=%s and chunk_no>%s order by chunk_no limit 1",
+                (day, chunk),
+            )
+            archived = q.fetchone()
+            if not archived:
+                break
+            records = decode_history_chunk(archived["payload"], archived["checksum"])
+            if len(records) != archived["row_count"]:
+                raise RuntimeError("retained archive row count mismatch")
+            q.execute(
+                f"select id,{','.join(FACT_COLUMNS)} from {table(work_schema,WORK_TABLE)} where data_date=%s and id>%s order by id limit %s",
+                (day, last_id, len(records)),
+            )
+            rows = q.fetchall()
+            actual = [[row[name] for name in FACT_COLUMNS] for row in rows]
+            if encode_history_chunk(actual)[1] != archived["checksum"]:
+                raise RuntimeError("retained work differs from validated archive")
+            last_id = rows[-1]["id"]
+            chunk = archived["chunk_no"]
+            total += len(rows)
+        q.execute(
+            f"select count(*) as n from {table(work_schema,WORK_TABLE)} where data_date=%s",
+            (day,),
+        )
+        if total != metadata["fact_rows"] or total != q.fetchone()["n"]:
+            raise RuntimeError("retained work count differs from validated archive")
 
 
-def publish_days(conn, schema: str, dates: list[date], run_id: str, inputs: dict, history_start: date, *, input_schema: str | None = None, complete_lifecycle: bool = False,
-                 work_schema: str | None = None, history_schema: str | None = None, retained_dates: tuple[date, ...] = ()) -> dict:
-    from etl.label_rule_evidence_snapshot_update import fact_table_sql, detail_table_sql, CREATE_TABLE_SQL
+def publish_days(
+    conn,
+    schema: str,
+    dates: list[date],
+    run_id: str,
+    inputs: dict,
+    history_start: date,
+    *,
+    input_schema: str | None = None,
+    complete_lifecycle: bool = False,
+    work_schema: str | None = None,
+    history_schema: str | None = None,
+    retained_dates: tuple[date, ...] = (),
+) -> dict:
+    from etl.label_rule_evidence_snapshot_update import (
+        fact_table_sql,
+        detail_table_sql,
+        CREATE_TABLE_SQL,
+    )
     from etl.dashboard_daily_update import SchemaConfig, render_sql
 
     fact = table(schema, "dashboard_label_fact_snapshot")
@@ -224,19 +359,32 @@ def publish_days(conn, schema: str, dates: list[date], run_id: str, inputs: dict
     dictionary = table(input_schema or schema, "dashboard_label_source_dictionary")
     extension_rows = []
     from etl.label_receiving_status import extension_details as receiving_details
-    receiving_rows=receiving_details(conn,input_schema or schema)
+
+    receiving_rows = receiving_details(conn, input_schema or schema)
     rule_version = RULE_VERSION
     if complete_lifecycle:
-        from etl.label_lifecycle_completion import VERSION,extension_details,validate_coverage
-        extension_rows = extension_details(conn,input_schema or schema)
+        from etl.label_lifecycle_completion import (
+            VERSION,
+            extension_details,
+            validate_coverage,
+        )
+
+        extension_rows = extension_details(conn, input_schema or schema)
         rule_version = VERSION
         if not set(retained_dates).issubset(dates):
-            raise ValueError('retained dates must belong to the publication')
+            raise ValueError("retained dates must belong to the publication")
         for day in dates:
             if day in retained_dates:
-                validate_retained_archive(conn,work_schema or schema,history_schema or schema,day,VERSION)
-            validate_coverage(conn,work_schema or schema,day,input_schema=input_schema or schema,
-                              check_source_evidence=day not in retained_dates)
+                validate_retained_archive(
+                    conn, work_schema or schema, history_schema or schema, day, VERSION
+                )
+            validate_coverage(
+                conn,
+                work_schema or schema,
+                day,
+                input_schema=input_schema or schema,
+                check_source_evidence=day not in retained_dates,
+            )
     placeholders = ",".join(["%s"] * len(dates))
     extension_rows += receiving_rows
     if len(dates) != 2 or len(set(dates)) != 2:
@@ -245,25 +393,47 @@ def publish_days(conn, schema: str, dates: list[date], run_id: str, inputs: dict
     with conn.cursor() as cursor:
         cursor.execute(fact_table_sql(fact, include_indexes=True))
         cursor.execute(detail_table_sql(detail, include_indexes=True))
-        cursor.execute(render_sql(CREATE_TABLE_SQL, SchemaConfig(schema, "etl_datasync", "dwd_datasync", "temporary_dwd")))
+        cursor.execute(
+            render_sql(
+                CREATE_TABLE_SQL,
+                SchemaConfig(schema, "etl_datasync", "dwd_datasync", "temporary_dwd"),
+            )
+        )
     conn.commit()
     try:
         with conn.cursor() as cursor:
             cursor.execute(f"delete from {fact}")
-            cursor.execute(f"insert into {fact} (data_date,country_category,country,store,msku,label_id,label_period,created_time,evidence_blob) select data_date,country_category,country,store,msku,label_id,label_period,created_time,compress(cast(evidence_json as char)) from {work} where data_date in ({placeholders})", dates)
+            cursor.execute(
+                f"insert into {fact} (data_date,country_category,country,store,msku,label_id,label_period,created_time,evidence_blob) select data_date,country_category,country,store,msku,label_id,label_period,created_time,compress(cast(evidence_json as char)) from {work} where data_date in ({placeholders})",
+                dates,
+            )
             fact_count = cursor.rowcount
             if not fact_count:
                 raise RuntimeError("refusing to publish empty local facts")
             cursor.execute(f"delete from {detail}")
-            cursor.execute(f"insert into {detail} ({detail_cols}) select {detail_cols} from {dictionary}")
+            cursor.execute(
+                f"insert into {detail} ({detail_cols}) select {detail_cols} from {dictionary}"
+            )
             detail_count = cursor.rowcount
-            cursor.execute(f"update {detail} set tag_rule=%s where sub_label_id=304", ('FBA可售库存=0，且存在最新状态为接收中的货件，或供应链数量达到单位箱规；接收中货件不要求供应链数量达到箱规；符合首次上新接收条件的商品归入入库接收中',))
+            cursor.execute(
+                f"update {detail} set tag_rule=%s where sub_label_id=304",
+                (
+                    "FBA可售库存=0，且存在最新状态为接收中的货件，或供应链数量达到单位箱规；接收中货件不要求供应链数量达到箱规；符合首次上新接收条件的商品归入入库接收中",
+                ),
+            )
             if extension_rows:
-                cursor.executemany(f"insert into {detail} ({detail_cols}) values ({','.join(['%s']*len(detail_cols.split(',')))})",[tuple(row[name] for name in detail_cols.split(',')) for row in extension_rows])
+                cursor.executemany(
+                    f"insert into {detail} ({detail_cols}) values ({','.join(['%s']*len(detail_cols.split(',')))})",
+                    [
+                        tuple(row[name] for name in detail_cols.split(","))
+                        for row in extension_rows
+                    ],
+                )
                 detail_count += cursor.rowcount
             # Audit comes from the SAME generated V47 evidence; no old Python rule or remote comparison.
             cursor.execute(f"delete from {audit}")
-            cursor.execute(f"""insert into {audit} (
+            cursor.execute(
+                f"""insert into {audit} (
                 label_date,country_category,store,msku,parent_label_id,label_period,period_start,period_end,
                 sales_qty,daily_sales,tag_sales_amount,tag_gross_profit,tag_gross_margin,
                 computed_sub_label_id,remote_sub_label_id,rule_version,evidence_status)
@@ -276,19 +446,38 @@ def publish_days(conn, schema: str, dates: list[date], run_id: str, inputs: dict
                     json_extract(evidence_json,'$.metrics.tag_margin_rate') / 100,
                     label_id,null,%s,'generated'
                 from {work} where data_date in ({placeholders}) and label_id in (101,102,103,104)
-            """, (rule_version, *dates))
+            """,
+                (rule_version, *dates),
+            )
             audit_count = cursor.rowcount
             if history_schema is not None:
                 # Promote only validated staged archives in the same transaction
                 # as the live facts, dictionary and publication marker.
-                for name in ('dashboard_label_local_history', 'dashboard_label_local_days'):
+                for name in (
+                    "dashboard_label_local_history",
+                    "dashboard_label_local_days",
+                ):
                     target_history = table(schema, name)
                     staged_history = table(history_schema, name)
-                    cursor.execute(f"delete from {target_history} where data_date in ({placeholders})", dates)
-                    cursor.execute(f"insert into {target_history} select * from {staged_history} where data_date in ({placeholders})", dates)
-            cursor.execute(f"insert into {table(schema,'dashboard_label_local_publication')} (singleton,run_id,business_date,source_mode,rule_version,history_start,input_batch) values (1,%s,%s,'local_generated',%s,%s,%s) on duplicate key update run_id=values(run_id),business_date=values(business_date),source_mode=values(source_mode),rule_version=values(rule_version),history_start=values(history_start),input_batch=values(input_batch),published_at=current_timestamp(6)", (run_id, max(dates), rule_version, history_start, inputs["batch_id"]))
+                    cursor.execute(
+                        f"delete from {target_history} where data_date in ({placeholders})",
+                        dates,
+                    )
+                    cursor.execute(
+                        f"insert into {target_history} select * from {staged_history} where data_date in ({placeholders})",
+                        dates,
+                    )
+            cursor.execute(
+                f"insert into {table(schema,'dashboard_label_local_publication')} (singleton,run_id,business_date,source_mode,rule_version,history_start,input_batch) values (1,%s,%s,'local_generated',%s,%s,%s) on duplicate key update run_id=values(run_id),business_date=values(business_date),source_mode=values(source_mode),rule_version=values(rule_version),history_start=values(history_start),input_batch=values(input_batch),published_at=current_timestamp(6)",
+                (run_id, max(dates), rule_version, history_start, inputs["batch_id"]),
+            )
         conn.commit()
     except Exception:
         conn.rollback()
         raise
-    return {"fact_rows": fact_count, "evidence_rows": fact_count, "detail_rows": detail_count, "audit_rows": audit_count}
+    return {
+        "fact_rows": fact_count,
+        "evidence_rows": fact_count,
+        "detail_rows": detail_count,
+        "audit_rows": audit_count,
+    }

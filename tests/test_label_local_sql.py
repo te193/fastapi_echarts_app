@@ -11,7 +11,9 @@ def test_compiles_v47_without_any_remote_table_reference():
     assert refs
     assert all(schema == "label_local_test" for schema, _ in refs)
     assert "create procedure `label_local_test`.`dashboard_label_local_v47`" in sql
-    assert "delimiter" not in {value.lower() for kind, value in sql_tokens(sql) if kind == "word"}
+    assert "delimiter" not in {
+        value.lower() for kind, value in sql_tokens(sql) if kind == "word"
+    }
     assert "'dws_label_v47_singleton'" not in sql
     assert "resignal" in sql
     assert "'RECEIVING'" in sql
@@ -23,7 +25,9 @@ def test_compiler_fails_closed_on_new_unknown_source_dependency(tmp_path):
     from etl.label_local_sql import BASELINE_PATH
 
     sql = BASELINE_PATH.read_text(encoding="utf-8-sig")
-    sql = sql.replace("dwd_datasync.lx_statistics_product_performance", "other_data.unknown_source")
+    sql = sql.replace(
+        "dwd_datasync.lx_statistics_product_performance", "other_data.unknown_source"
+    )
     path = tmp_path / "changed.sql"
     path.write_text(sql, encoding="utf-8")
     with pytest.raises(ValueError, match="unmapped"):
@@ -48,7 +52,9 @@ def test_archive_hash_is_checked_before_compiling(tmp_path):
 
 
 def test_optional_ddl_words_do_not_hide_unknown_schema_dependencies():
-    assert qualified_references("drop table if exists other_data.secret; create temporary table if not exists safe.work(id int)") == {("other_data", "secret"), ("safe", "work")}
+    assert qualified_references(
+        "drop table if exists other_data.secret; create temporary table if not exists safe.work(id int)"
+    ) == {("other_data", "secret"), ("safe", "work")}
 
 
 def test_isolated_preview_uses_real_input_indexes_and_separate_work_tables():

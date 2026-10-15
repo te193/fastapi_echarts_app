@@ -8,7 +8,11 @@ import sqlite3
 import pytest
 
 
-SQL_PATH = Path(__file__).resolve().parents[1] / "sqlcode" / "标签表数据插入_修改版_20261008_v47_接收中归入断货中修复版.sql"
+SQL_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "sqlcode"
+    / "标签表数据插入_修改版_20261008_v47_接收中归入断货中修复版.sql"
+)
 
 
 def operation_predicate(alias):
@@ -70,8 +74,12 @@ def test_evidence_describes_the_actual_receiving_or_supply_branch(
     status, receiving, expected_receiving, expected_supply
 ):
     sql = SQL_PATH.read_text(encoding="utf-8-sig")
-    block = sql.split("WHEN h.child_label_name IN ('断货中','停售') THEN JSON_OBJECT(", 1)[1]
-    expression = block.split("'matched_rule',", 1)[1].split("'missing_box_quantity_rule','use 50'", 1)[0]
+    block = sql.split(
+        "WHEN h.child_label_name IN ('断货中','停售') THEN JSON_OBJECT(", 1
+    )[1]
+    expression = block.split("'matched_rule',", 1)[1].split(
+        "'missing_box_quantity_rule','use 50'", 1
+    )[0]
     expression += "'missing_box_quantity_rule','use 50')"
     with sqlite3.connect(":memory:") as conn:
         raw = conn.execute(
