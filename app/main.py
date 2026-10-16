@@ -388,7 +388,7 @@ def add_replenishment_export_legend(workbook: Workbook) -> None:
     sheet.merge_cells("A1:E1")
     sheet["A1"].font = Font(name="微软雅黑", size=16, bold=True, color="1F4E78")
     sheet.row_dimensions[1].height = 32
-    sheet.append(["所有颜色和标注仅供复核，不调整补货数量、箱数或货值；无提醒不代表审核通过。"])
+    sheet.append(["清货名单强制拦截，补货数量、箱数及货值置零；其他颜色和标注仅供复核，不调整补货数量，无提醒不代表审核通过。"])
     sheet.merge_cells("A2:E2")
     sheet.row_dimensions[2].height = 30
     sheet.append(["样式示例", "标注名称", "出现位置", "含义与触发条件", "阅读与处理建议"])
@@ -404,7 +404,7 @@ def add_replenishment_export_legend(workbook: Workbook) -> None:
         ("空白", "未触发该项提醒", "导出标注/低毛利核查", "仅表示本行未触发对应提醒；明星、潜力及其他未满足低毛利前提的行，低毛利两列留空。", "无底色或标注不等于审核通过，也不等于数据完整。", None, None),
         ("深蓝表头", "栏目标题", "各Sheet的表头", "仅用于区分列标题，不具有业务预警含义。", "可筛选补货计划表头；首行与前两列已冻结。", PatternFill(fill_type="solid", fgColor="1F4E78"), "FFFFFF"),
         ("文字提示", "库容已超占用/无剩余", "库容预警状态及说明", "直接读取店铺sid对应的当月仓储类型额度：来源剩余＜0为已超占用，剩余＝0为无剩余。四种销售角色均参与，不受低毛利核查前提限制。", "只提示，不清零、不压减、不拦截；商品类型仅为历史参考时单独说明，不隐藏已读取的店铺额度。", None, None),
-        ("独立明细", "清货名单，禁止补货", "清货拦截明细（仅有正数需求时出现）", "仅列当前快照、国家类别、店铺及MSKU关键词范围内有正数参考需求的清货对象，不受角色、分层及MOQ筛选影响；不计入主表。参考需求量沿用清货限制前的ASIN承接、跟卖及MOQ口径；其他链接可能承接需求，不代表整组补货净减少量。", "旧快照只读列出当前名单命中量，并注明待重新生成；主表旧数据尚未剔除。无正数记录不生成此Sheet，不加新颜色。", None, None),
+        ("独立明细", "清货名单，禁止补货", "清货拦截明细（仅有正数需求时出现）", "仅列当前快照、国家类别、店铺及MSKU关键词范围内有正数参考需求的清货对象，不受角色、分层及MOQ筛选影响。参考需求量为拦截前数量，不可执行；其他链接可能承接需求，不代表整组补货净减少量。", "清货商品在补货计划中的数量、箱数及货值直接置零，旧快照导出同样拦截。明细保留拦截前需求量供核对。无正数记录不生成此Sheet。", None, None),
         ("文字提示", "本行补货超库容", "本行库容核查/本行预计超出", "本行体积＝补货件数×单件m³；本行体积＞所选类型有效剩余库容时预警，超出量＝max(0，本行体积－剩余)。相等不判超额。", "实际类型优先取FBA库存明细.仓储类型；缺失时按月仓储费分类估算并注明来源。尺寸优先最新Listing，其次月费表，最后SKU包装尺寸。只预警，不修改数量。", None, None),
         ("文字提示", "本行未超，店铺合计超库容", "店铺同类型合计核查/店铺合计预计超出", "本行未超，但同账号、国家类别、仓储类型的完整补货需求合计体积＞剩余库容。合计覆盖所选日期所有有效补货对象，不受当前分页、角色周期或筛选影响。", "不同国家额度不相加；没有有效代表站点且各站点额度有差异时，按当前类别最小有效剩余值估算，完整站点值保留。", None, None),
         ("文字提示", "本次补货未超库容", "库容预警状态/体积核查说明", "本行和店铺同类型补货需求合计均≤有效剩余库容，且对应需求的类型、尺寸和额度数据完整。默认补货当月开始发货流程。", "这是本次需求全部新增发货的体积预警估算，不是发货许可；平台剩余已扣在库与开放货件，本次不再重复扣除。", None, None),
@@ -496,6 +496,8 @@ def build_replenishment_xlsx(payload: dict, disabled_stores: set[str] | None = N
         )
         follow_replenishment_row = is_follow_replenishment_with_qty(row)
         annotations = []
+        if row.get("replenish_block_reason") == "清货名单，禁止补货":
+            annotations.append("清货名单，补货数量已置零")
         if highlight_row:
             annotations.append("销量异常，请复核")
         if disabled_store_row:
@@ -581,7 +583,7 @@ def add_replenishment_clearance_sheet(workbook: Workbook, rows: list[dict]) -> N
     header_font = Font(name="微软雅黑", size=11, bold=True, color="FFFFFF")
     for cell in sheet[1]:
         cell.fill, cell.font = header_fill, header_font
-    sheet["D1"].comment = Comment("参考需求量沿用清货限制前的ASIN承接、跟卖及MOQ口径；其他链接可能承接需求，不代表整组补货净减少量。旧快照的待重新生成记录使用该快照页面补货量。", "补货规则")
+    sheet["D1"].comment = Comment("参考需求量为清货拦截前数量，仅供核对，不可执行。补货计划中的清货商品数量、箱数及货值已置零。参考量沿用原ASIN承接、跟卖及MOQ口径，不代表整组补货净减少量。", "补货规则")
     for row in positive:
         sheet.append([xlsx_cell_value(row.get(field), field) for field in fields])
     for column, width in zip("ABCDE", (14, 20, 24, 22, 55)):

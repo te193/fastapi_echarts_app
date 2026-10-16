@@ -48,6 +48,14 @@ FLOW_ALL = "all"
 FLOW_ENTRY_LABEL = "\u65e0\u8bb0\u5f55"
 REPLENISHMENT_ACTIVE_LEVELS = {LEVEL_URGENT, LEVEL_SUGGESTED, LEVEL_PLANNED}
 REPLENISHMENT_PASSIVE_LEVELS = {LEVEL_SUFFICIENT, LEVEL_ZERO_SALES}
+CLEARANCE_BLOCK_REASON = "清货名单，禁止补货"
+CLEARANCE_ZERO_COLUMNS = (
+    "replenish_qty", "replenish_box_qty", "replenish_cost",
+    "calculated_replenish_qty", "calculated_replenish_box_qty", "calculated_replenish_cost",
+    "executable_replenish_qty", "executable_replenish_box_qty", "executable_replenish_cost",
+    "replenish_need_qty", "base_replenish_need_qty", "lead_adjusted_replenish_need_qty",
+    "history_recovery_need_qty", "moq_shortfall_qty",
+)
 FLOW_LEVEL_ORDER = {
     LEVEL_URGENT: 1,
     LEVEL_SUGGESTED: 2,
@@ -544,17 +552,40 @@ class ReplenishmentDataService:
             self._attach_low_margin_reviews(conn, rows, safe_category_period_days)
             columns.extend(dict(column) for column in REVIEW_COLUMNS)
             self._attach_product_tags(rows, "max_sku")
+            clearance_rows = self._clearance_export_items(conn, selected_date, site, store, keyword)
+            all_clearance = clearance_rows
+            if rows and (site not in ("", "all") or store not in ("", "all") or keyword.strip()):
+                all_clearance = self._clearance_export_items(conn, selected_date, "all", "all", "")
+            self._zero_clearance_quantities(rows, all_clearance)
+            capacity_demand = self._capacity_demand_items(conn, selected_date) if rows else []
+            self._zero_clearance_quantities(capacity_demand, all_clearance)
             ReplenishmentCapacityService(self.connect_source).enrich(rows, selected_date,
-                demand_rows=self._capacity_demand_items(conn, selected_date) if rows else [])
+                demand_rows=capacity_demand)
             tag_index = next(
                 (index + 1 for index, column in enumerate(columns) if column["name"] == "global_tags"),
                 len(columns),
             )
             columns.insert(tag_index, {"name": "product_tags", "label": "产品标签"})
             columns.extend(dict(column) for column in CAPACITY_COLUMNS)
-            clearance_rows = self._clearance_export_items(conn, selected_date, site, store, keyword)
             return {"columns": columns, "rows": rows, "snapshot_date": format_day(selected_date),
                     "clearance_rows": clearance_rows}
+
+    @staticmethod
+    def _zero_clearance_quantities(rows: list[dict[str, Any]], clearance_rows: list[dict[str, Any]]) -> None:
+        def identity(row):
+            return tuple(str(row.get(field) or "").strip().casefold()
+                         for field in ("country_category", "seller_name_new", "seller_sku_adj"))
+
+        blocked = {identity(row) for row in clearance_rows}
+        for row in rows:
+            if identity(row) not in blocked:
+                continue
+            for field in CLEARANCE_ZERO_COLUMNS:
+                if field in row:
+                    row[field] = 0
+            row.update(replenish_block_reason=CLEARANCE_BLOCK_REASON, history_recovery_flag=0)
+            if "moq_status" in row:
+                row["moq_status"] = format_moq_status("not_applicable")
 
     def _clearance_export_items(self, conn, selected_date: date, site: str, store: str,
                                 keyword: str) -> list[dict[str, Any]]:
@@ -571,6 +602,7 @@ class ReplenishmentDataService:
             identity_filters.append("seller_sku_adj like %(keyword)s")
             params["keyword"] = f"%{keyword.strip()}%"
         identity_where = "".join(f" and {part}" for part in identity_filters)
+        saved = []
         with conn.cursor() as cursor:
             try:
                 cursor.execute(f"""select country_category, seller_name_new, seller_sku_adj,
@@ -579,19 +611,17 @@ class ReplenishmentDataService:
                     where snapshot_date = %(snapshot_date)s and reference_qty > 0 {identity_where}
                     order by country_category, seller_name_new, seller_sku_adj""", params)
                 saved = cursor.fetchall()
-                if saved:
-                    return saved
             except pymysql.err.ProgrammingError as exc:
                 if exc.args[0] != 1146:
                     raise
 
-        # Existing snapshots have no saved exclusion evidence. Show current list
-        # matches explicitly as pending regeneration, using the real UI quantity.
+        # Old snapshots need an export-time block; retain their original demand
+        # here for the audit appendix, before clearing the executable rows.
         with self.connect_source() as source, source.cursor() as cursor:
             cursor.execute(SELECT_CLEARANCE_SYNC_SQL)
             entries = cursor.fetchall()
         if not entries:
-            return []
+            return saved
         matches = []
         global_mskus = []
         for index, entry in enumerate(entries):
@@ -606,7 +636,7 @@ class ReplenishmentDataService:
                                f"lower(trim(r.seller_name_new)) = %({store_param})s)")
         if global_mskus:
             matches.append(f"trim(r.seller_sku_adj) in ({', '.join(global_mskus)})")
-        quantity = self._display_replenish_qty_expr("r")
+        quantity = self._detail_replenish_qty_expr("r")
         with conn.cursor() as cursor:
             cursor.execute(f"""select * from (
                 select r.country_category, r.seller_name_new, r.seller_sku_adj,
@@ -618,8 +648,11 @@ class ReplenishmentDataService:
                 self._with_display_level_params(params))
             rows = cursor.fetchall()
         for row in rows:
-            row["block_reason"] = "命中清货名单，待重新生成（旧快照未修改）"
-        return rows
+            row["block_reason"] = CLEARANCE_BLOCK_REASON
+        saved_keys = {(row.get("country_category"), row.get("seller_name_new"), row.get("seller_sku_adj"))
+                      for row in saved}
+        return [*saved, *(row for row in rows if
+                (row.get("country_category"), row.get("seller_name_new"), row.get("seller_sku_adj")) not in saved_keys)]
 
     def _attach_product_tags(self, rows: list[dict[str, Any]], sku_field: str) -> None:
         """Enrich existing results with current product tags, without multiplying rows."""

@@ -42,6 +42,7 @@ def test_export_adds_product_tags_after_fetching_physical_columns():
     service._build_where = MagicMock(return_value=("1=1", {}))
     service._export_columns = MagicMock(return_value=[{"name": "max_sku", "label": "SKU"}])
     service._export_items = MagicMock(return_value=[{"max_sku": "SKU-A"}])
+    service._clearance_export_items = MagicMock(return_value=[])
     service._attach_product_tags = MagicMock(side_effect=lambda rows, key: rows[0].update(product_tags="退税产品"))
     payload = service.get_export_payload()
     assert {"name": "product_tags", "label": "产品标签"} in payload["columns"]
