@@ -638,6 +638,8 @@ def _stage_label(stage: str) -> str:
         "replenishment": "补货 ETL",
         "replenishment_tracking": "补货追踪 ETL",
         "return_goods": "返厂品 ETL",
+        "return_strategy": "返场品运营策略预计算",
+        "label_analysis": "标签综合分析预计算",
         "all": "全部流程",
     }
     return labels.get(stage, stage)
@@ -797,6 +799,10 @@ def build_markdown(
     stockout_stderr: Path | None = None,
     pricing_stdout: Path | None = None,
     pricing_stderr: Path | None = None,
+    return_strategy_stdout: Path | None = None,
+    return_strategy_stderr: Path | None = None,
+    label_analysis_stdout: Path | None = None,
+    label_analysis_stderr: Path | None = None,
     error_message: str = "",
 ) -> str:
     preflight_stdout = preflight_stdout or project_root / "logs" / "source-preflight-not-created.log"
@@ -886,6 +892,8 @@ def build_markdown(
             "replenishment": replenishment_stderr,
             "replenishment_tracking": tracking_stderr,
             "return_goods": return_goods_stderr,
+            "return_strategy": return_strategy_stderr,
+            "label_analysis": label_analysis_stderr,
         }.get(stage, dashboard_stderr)
         reason_lines = _extract_failure_reason_lines(_read_lines(failed_stderr), error_message)
         if not reason_lines:
@@ -1024,6 +1032,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--stockout-stderr", type=Path)
     parser.add_argument("--pricing-stdout", type=Path)
     parser.add_argument("--pricing-stderr", type=Path)
+    parser.add_argument("--return-strategy-stdout", type=Path)
+    parser.add_argument("--return-strategy-stderr", type=Path)
+    parser.add_argument("--label-analysis-stdout", type=Path)
+    parser.add_argument("--label-analysis-stderr", type=Path)
     parser.add_argument("--error-message", default="")
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
@@ -1055,6 +1067,10 @@ def main() -> int:
         stockout_stderr=args.stockout_stderr,
         pricing_stdout=args.pricing_stdout,
         pricing_stderr=args.pricing_stderr,
+        return_strategy_stdout=args.return_strategy_stdout,
+        return_strategy_stderr=args.return_strategy_stderr,
+        label_analysis_stdout=args.label_analysis_stdout,
+        label_analysis_stderr=args.label_analysis_stderr,
         error_message=args.error_message,
     )
 

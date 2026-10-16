@@ -1,0 +1,4753 @@
+[
+  {
+    "table": "dwd_datasync.lx_statistics_product_performance",
+    "exists": true,
+    "columns": [
+      {
+        "COLUMN_NAME": "id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "主键"
+      },
+      {
+        "COLUMN_NAME": "relate_id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "关联id"
+      },
+      {
+        "COLUMN_NAME": "parent_asin",
+        "DATA_TYPE": "text",
+        "COLUMN_COMMENT": "父ASIN"
+      },
+      {
+        "COLUMN_NAME": "asin",
+        "DATA_TYPE": "text",
+        "COLUMN_COMMENT": "ASIN"
+      },
+      {
+        "COLUMN_NAME": "local_sku",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "SKU"
+      },
+      {
+        "COLUMN_NAME": "local_name",
+        "DATA_TYPE": "text",
+        "COLUMN_COMMENT": "品名"
+      },
+      {
+        "COLUMN_NAME": "price",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "历史快照价格"
+      },
+      {
+        "COLUMN_NAME": "seller_sku",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "msku"
+      },
+      {
+        "COLUMN_NAME": "source_rate",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "商品原币种汇率"
+      },
+      {
+        "COLUMN_NAME": "status",
+        "DATA_TYPE": "text",
+        "COLUMN_COMMENT": "商品状态"
+      },
+      {
+        "COLUMN_NAME": "rank",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "小类排名"
+      },
+      {
+        "COLUMN_NAME": "category",
+        "DATA_TYPE": "text",
+        "COLUMN_COMMENT": "类别"
+      },
+      {
+        "COLUMN_NAME": "prev_rank",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "上一次小类排名"
+      },
+      {
+        "COLUMN_NAME": "country",
+        "DATA_TYPE": "text",
+        "COLUMN_COMMENT": "店铺_国家"
+      },
+      {
+        "COLUMN_NAME": "seller_name",
+        "DATA_TYPE": "text",
+        "COLUMN_COMMENT": "店铺名"
+      },
+      {
+        "COLUMN_NAME": "spu",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "spu"
+      },
+      {
+        "COLUMN_NAME": "spu_name",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "spu名称/款名"
+      },
+      {
+        "COLUMN_NAME": "prev_cate_rank",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "上一次大类排名"
+      },
+      {
+        "COLUMN_NAME": "item_name",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "标题"
+      },
+      {
+        "COLUMN_NAME": "cate_rank",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "大类排名"
+      },
+      {
+        "COLUMN_NAME": "currency_icon",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "币种符号"
+      },
+      {
+        "COLUMN_NAME": "categories",
+        "DATA_TYPE": "text",
+        "COLUMN_COMMENT": "分类"
+      },
+      {
+        "COLUMN_NAME": "brands",
+        "DATA_TYPE": "text",
+        "COLUMN_COMMENT": "品牌"
+      },
+      {
+        "COLUMN_NAME": "principal_names",
+        "DATA_TYPE": "text",
+        "COLUMN_COMMENT": "负责人"
+      },
+      {
+        "COLUMN_NAME": "developer_names",
+        "DATA_TYPE": "text",
+        "COLUMN_COMMENT": "开发人"
+      },
+      {
+        "COLUMN_NAME": "month_stock_sales_ratio",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "月库销比"
+      },
+      {
+        "COLUMN_NAME": "volume",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "销量"
+      },
+      {
+        "COLUMN_NAME": "order_items",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "订单量"
+      },
+      {
+        "COLUMN_NAME": "order_items_chain",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "环比订单量"
+      },
+      {
+        "COLUMN_NAME": "amount",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "销售额"
+      },
+      {
+        "COLUMN_NAME": "volume_chain_ratio",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "销量环比"
+      },
+      {
+        "COLUMN_NAME": "volume_chain",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "环比销量"
+      },
+      {
+        "COLUMN_NAME": "amount_chain_ratio",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "销量额环比"
+      },
+      {
+        "COLUMN_NAME": "amount_chain",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "环比销量额"
+      },
+      {
+        "COLUMN_NAME": "order_chain_ratio",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "订单量环比"
+      },
+      {
+        "COLUMN_NAME": "b2b_volume",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "B2B销量"
+      },
+      {
+        "COLUMN_NAME": "b2b_amount",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "B2B销售额"
+      },
+      {
+        "COLUMN_NAME": "b2b_order_items",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "B2B订单量"
+      },
+      {
+        "COLUMN_NAME": "gross_profit",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "结算毛利润"
+      },
+      {
+        "COLUMN_NAME": "predict_gross_profit",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "订单毛利润"
+      },
+      {
+        "COLUMN_NAME": "gross_margin",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "结算毛利率"
+      },
+      {
+        "COLUMN_NAME": "predict_gross_margin",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "订单毛利率"
+      },
+      {
+        "COLUMN_NAME": "roi",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "ROI"
+      },
+      {
+        "COLUMN_NAME": "promotion_volume",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "促销销量"
+      },
+      {
+        "COLUMN_NAME": "promotion_amount",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "促销销售额"
+      },
+      {
+        "COLUMN_NAME": "promotion_order_items",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "促销订单量"
+      },
+      {
+        "COLUMN_NAME": "promotion_discount",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "促销折扣"
+      },
+      {
+        "COLUMN_NAME": "reviews_count",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "评论数"
+      },
+      {
+        "COLUMN_NAME": "return_count",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "退款量"
+      },
+      {
+        "COLUMN_NAME": "return_rate",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "退款率"
+      },
+      {
+        "COLUMN_NAME": "afn_fulfillable_quantity",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "FBA可售"
+      },
+      {
+        "COLUMN_NAME": "afn_inbound_receiving_quantity",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "FBA入库中"
+      },
+      {
+        "COLUMN_NAME": "afn_inbound_shipped_quantity",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "FBA在途"
+      },
+      {
+        "COLUMN_NAME": "afn_inbound_working_quantity",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "FBA计划入库"
+      },
+      {
+        "COLUMN_NAME": "afn_unsellable_quantity",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "FBA不可售"
+      },
+      {
+        "COLUMN_NAME": "reserved_fc_processing",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "调仓中"
+      },
+      {
+        "COLUMN_NAME": "reserved_fc_transfers",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "待调仓"
+      },
+      {
+        "COLUMN_NAME": "fbm_quantity",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "FBM可售"
+      },
+      {
+        "COLUMN_NAME": "reserved_customerorders",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "待发货"
+      },
+      {
+        "COLUMN_NAME": "stock_up_num",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "实际在途"
+      },
+      {
+        "COLUMN_NAME": "clicks",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "点击量"
+      },
+      {
+        "COLUMN_NAME": "available_days",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "可售预估天数"
+      },
+      {
+        "COLUMN_NAME": "fbm_available_days",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "FBM可售天数"
+      },
+      {
+        "COLUMN_NAME": "avg_star",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "评分"
+      },
+      {
+        "COLUMN_NAME": "prev_star",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "前一个评分"
+      },
+      {
+        "COLUMN_NAME": "comment_rate",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "留评率"
+      },
+      {
+        "COLUMN_NAME": "sessions",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "Sessions_Browser"
+      },
+      {
+        "COLUMN_NAME": "sessions_mobile",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "Sessions_Mobile"
+      },
+      {
+        "COLUMN_NAME": "sessions_total",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "Sessions_Total"
+      },
+      {
+        "COLUMN_NAME": "buy_box_percentage",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "Buybox"
+      },
+      {
+        "COLUMN_NAME": "page_views",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "PV_Browser"
+      },
+      {
+        "COLUMN_NAME": "page_views_mobile",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "PV_Mobile"
+      },
+      {
+        "COLUMN_NAME": "page_views_total",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "PV_Total"
+      },
+      {
+        "COLUMN_NAME": "adv_rate",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "广告订单量占比"
+      },
+      {
+        "COLUMN_NAME": "ad_cvr",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "广告CVR"
+      },
+      {
+        "COLUMN_NAME": "volume_cvr",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "销量CVR"
+      },
+      {
+        "COLUMN_NAME": "cvr",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "CVR"
+      },
+      {
+        "COLUMN_NAME": "ctr",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "CTR"
+      },
+      {
+        "COLUMN_NAME": "acoas",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "ACOAS"
+      },
+      {
+        "COLUMN_NAME": "acos",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "ACOS"
+      },
+      {
+        "COLUMN_NAME": "has_oprator_log",
+        "DATA_TYPE": "text",
+        "COLUMN_COMMENT": "是否有操作日志"
+      },
+      {
+        "COLUMN_NAME": "return_goods_count",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "退货量"
+      },
+      {
+        "COLUMN_NAME": "return_goods_rate",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "退货率"
+      },
+      {
+        "COLUMN_NAME": "cpc",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "CPC"
+      },
+      {
+        "COLUMN_NAME": "spend",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "广告花费"
+      },
+      {
+        "COLUMN_NAME": "shared_cost_of_advertising",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "差异分摊"
+      },
+      {
+        "COLUMN_NAME": "shared_ads_sb_cost",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "SB广告费"
+      },
+      {
+        "COLUMN_NAME": "shared_ads_sbv_cost",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "SBV广告费"
+      },
+      {
+        "COLUMN_NAME": "ads_sd_cost",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "SD广告费"
+      },
+      {
+        "COLUMN_NAME": "ads_sp_cost",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "SP广告费"
+      },
+      {
+        "COLUMN_NAME": "roas",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "ROAS"
+      },
+      {
+        "COLUMN_NAME": "asoas",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "ASoAS"
+      },
+      {
+        "COLUMN_NAME": "cpo",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "CPO"
+      },
+      {
+        "COLUMN_NAME": "cpm",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "CPM"
+      },
+      {
+        "COLUMN_NAME": "ad_sales_amount",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "广告销售额"
+      },
+      {
+        "COLUMN_NAME": "ads_sp_sales",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "SP广告销售额"
+      },
+      {
+        "COLUMN_NAME": "ads_sd_sales",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "SD广告销售额"
+      },
+      {
+        "COLUMN_NAME": "shared_ads_sb_sales",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "SB广告销售额"
+      },
+      {
+        "COLUMN_NAME": "shared_ads_sbv_sales",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "SBV广告销售额"
+      },
+      {
+        "COLUMN_NAME": "ad_order_quantity",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "广告订单量"
+      },
+      {
+        "COLUMN_NAME": "impressions",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "展示"
+      },
+      {
+        "COLUMN_NAME": "net_amount",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "净销售额"
+      },
+      {
+        "COLUMN_NAME": "small_image_url",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "缩略图"
+      },
+      {
+        "COLUMN_NAME": "avg_volume",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "平均销量"
+      },
+      {
+        "COLUMN_NAME": "avg_custom_price",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "销售均价"
+      },
+      {
+        "COLUMN_NAME": "icon_num",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "运营日志数量"
+      },
+      {
+        "COLUMN_NAME": "sku",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "sku_sku维度"
+      },
+      {
+        "COLUMN_NAME": "sku_local_name",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "品名_sku维度"
+      },
+      {
+        "COLUMN_NAME": "attributes",
+        "DATA_TYPE": "text",
+        "COLUMN_COMMENT": "属性"
+      },
+      {
+        "COLUMN_NAME": "cg_price",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "采购成本_sku维度"
+      },
+      {
+        "COLUMN_NAME": "whs_value",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "可用货值_sku维度"
+      },
+      {
+        "COLUMN_NAME": "cg_price_currency_icon",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "采购成本"
+      },
+      {
+        "COLUMN_NAME": "local_quantity",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "本地可用_sku维度"
+      },
+      {
+        "COLUMN_NAME": "oversea_quantity",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "海外仓可用_sku维度"
+      },
+      {
+        "COLUMN_NAME": "inventory_sales_ratio",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "存销比_sku维度"
+      },
+      {
+        "COLUMN_NAME": "avg_landed_price",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "平均售价_sku维度"
+      },
+      {
+        "COLUMN_NAME": "suppliers",
+        "DATA_TYPE": "text",
+        "COLUMN_COMMENT": "供应商_sku维度"
+      },
+      {
+        "COLUMN_NAME": "model",
+        "DATA_TYPE": "text",
+        "COLUMN_COMMENT": "型号_sku维度"
+      },
+      {
+        "COLUMN_NAME": "return_amount",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": "退款金额"
+      },
+      {
+        "COLUMN_NAME": "product_create_time",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "product创建时间_sku维度"
+      },
+      {
+        "COLUMN_NAME": "ad_direct_sales_amount",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "直接成交销售额"
+      },
+      {
+        "COLUMN_NAME": "ad_direct_order_quantity",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交订单量"
+      },
+      {
+        "COLUMN_NAME": "rank_category",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "大类排名分类"
+      },
+      {
+        "COLUMN_NAME": "tag_name",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "标签名称"
+      },
+      {
+        "COLUMN_NAME": "start_date",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "来源数据_搜索开始时间"
+      },
+      {
+        "COLUMN_NAME": "end_date",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "来源数据_搜索结束时间"
+      },
+      {
+        "COLUMN_NAME": "create_time",
+        "DATA_TYPE": "datetime",
+        "COLUMN_COMMENT": "同步时间"
+      }
+    ]
+  },
+  {
+    "table": "dwd_datasync.lx_sales_mws_listing",
+    "exists": true,
+    "columns": [
+      {
+        "COLUMN_NAME": "id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "主键"
+      },
+      {
+        "COLUMN_NAME": "relate_id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "关联ID"
+      },
+      {
+        "COLUMN_NAME": "listing_id",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "商品ID"
+      },
+      {
+        "COLUMN_NAME": "create_time",
+        "DATA_TYPE": "datetime",
+        "COLUMN_COMMENT": "同步时间"
+      },
+      {
+        "COLUMN_NAME": "seller_sku",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "卖家SKU"
+      },
+      {
+        "COLUMN_NAME": "fnsku",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "FNSKU"
+      },
+      {
+        "COLUMN_NAME": "status",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "状态"
+      },
+      {
+        "COLUMN_NAME": "asin",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "ASIN"
+      },
+      {
+        "COLUMN_NAME": "parent_asin",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "父ASIN"
+      },
+      {
+        "COLUMN_NAME": "small_image_url",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "商品缩略图地址"
+      },
+      {
+        "COLUMN_NAME": "item_name",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "标题"
+      },
+      {
+        "COLUMN_NAME": "sid",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "店铺ID"
+      },
+      {
+        "COLUMN_NAME": "seller_name",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "店铺名称"
+      },
+      {
+        "COLUMN_NAME": "marketplace",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "国家"
+      },
+      {
+        "COLUMN_NAME": "fulfillment_channel_type",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "配送方式"
+      },
+      {
+        "COLUMN_NAME": "seller_brand",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "亚马逊品牌"
+      },
+      {
+        "COLUMN_NAME": "local_name",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "品名"
+      },
+      {
+        "COLUMN_NAME": "local_sku",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "SKU"
+      },
+      {
+        "COLUMN_NAME": "global_tags",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "商品标签"
+      },
+      {
+        "COLUMN_NAME": "currency_code",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "币种"
+      },
+      {
+        "COLUMN_NAME": "landed_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "售价(总价)"
+      },
+      {
+        "COLUMN_NAME": "shipping",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "运费"
+      },
+      {
+        "COLUMN_NAME": "points",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "积分"
+      },
+      {
+        "COLUMN_NAME": "price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "价格"
+      },
+      {
+        "COLUMN_NAME": "listing_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "优惠价"
+      },
+      {
+        "COLUMN_NAME": "afn_fulfillable_quantity",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "FBA可售"
+      },
+      {
+        "COLUMN_NAME": "reserved_fc_transfers",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "FBA待调仓"
+      },
+      {
+        "COLUMN_NAME": "reserved_fc_processing",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "FBA调仓中"
+      },
+      {
+        "COLUMN_NAME": "reserved_customerorders",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "FBA待发货"
+      },
+      {
+        "COLUMN_NAME": "afn_inbound_shipped_quantity",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "FBA在途"
+      },
+      {
+        "COLUMN_NAME": "afn_inbound_receiving_quantity",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "FBA入库中"
+      },
+      {
+        "COLUMN_NAME": "afn_unsellable_quantity",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "FBA不可售"
+      },
+      {
+        "COLUMN_NAME": "afn_inbound_working_quantity",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "FBA计划入库"
+      },
+      {
+        "COLUMN_NAME": "quantity",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "FBM库存"
+      },
+      {
+        "COLUMN_NAME": "seller_rank",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "大类排名"
+      },
+      {
+        "COLUMN_NAME": "seller_category_new",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "大类名称"
+      },
+      {
+        "COLUMN_NAME": "small_1",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "小类1"
+      },
+      {
+        "COLUMN_NAME": "small_2",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "小类2"
+      },
+      {
+        "COLUMN_NAME": "small_3",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "小类3"
+      },
+      {
+        "COLUMN_NAME": "small_4",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "小类4"
+      },
+      {
+        "COLUMN_NAME": "small_5",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "小类5"
+      },
+      {
+        "COLUMN_NAME": "review_num",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "Rating总数"
+      },
+      {
+        "COLUMN_NAME": "last_star",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "评分"
+      },
+      {
+        "COLUMN_NAME": "open_date_display",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "创建时间"
+      },
+      {
+        "COLUMN_NAME": "on_sale_time",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "开售时间"
+      },
+      {
+        "COLUMN_NAME": "first_order_time",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "首单时间"
+      },
+      {
+        "COLUMN_NAME": "principal_1",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "负责人1"
+      },
+      {
+        "COLUMN_NAME": "principal_2",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "负责人2"
+      },
+      {
+        "COLUMN_NAME": "principal_3",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "负责人3"
+      },
+      {
+        "COLUMN_NAME": "principal_4",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "负责人4"
+      },
+      {
+        "COLUMN_NAME": "principal_5",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "负责人5"
+      },
+      {
+        "COLUMN_NAME": "principal_6",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "负责人6"
+      },
+      {
+        "COLUMN_NAME": "principal_7",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "负责人7"
+      },
+      {
+        "COLUMN_NAME": "principal_8",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "负责人8"
+      },
+      {
+        "COLUMN_NAME": "principal_9",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "负责人9"
+      }
+    ]
+  },
+  {
+    "table": "back_up_ods.listing",
+    "exists": true,
+    "columns": [
+      {
+        "COLUMN_NAME": "MSKU",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "FNSKU",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "状态",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "ASIN",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "父ASIN",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "标题",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "店铺",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "国家",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "配送方式",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "商品编码",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "商品编码类型",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "品名",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "SKU",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "分类",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "品牌",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "商品标签",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "币种",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "总价",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "运费",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "积分",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "价格",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "优惠价",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "FBA可售",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "FBA待调仓",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "FBA调仓中",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "FBA待发货",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "FBA在途",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "FBA入库中",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "FBA不可售",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "FBA计划入库",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "预估FBA费",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "平台费",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "FBM库存",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "昨日销量",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "7日销量",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "14日销量",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "30日销量",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "7日均销量",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "14日均销量",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "30日均销量",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "昨日销售额",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "7日销售额",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "14日销售额",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "30日销售额",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "昨日广告费",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "7日广告费",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "14日广告费",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "30日广告费",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "大类排名",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "大类列表",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "小类1",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "小类2",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "小类3",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "小类4",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "小类5",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "评论数",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "评分",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "创建时间",
+        "DATA_TYPE": "datetime",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "开售时间",
+        "DATA_TYPE": "date",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "首单时间",
+        "DATA_TYPE": "date",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "负责人1",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "负责人2",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "负责人3",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "负责人4",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "负责人5",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "负责人6",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "负责人7",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "负责人8",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "负责人9",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "负责人10",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "备注",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "备份时间",
+        "DATA_TYPE": "date",
+        "COLUMN_COMMENT": ""
+      }
+    ]
+  },
+  {
+    "table": "temporary_dwd.在库节点_输出定价表",
+    "exists": true,
+    "columns": [
+      {
+        "COLUMN_NAME": "数据日期",
+        "DATA_TYPE": "date",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "msku",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "卖家SKU"
+      },
+      {
+        "COLUMN_NAME": "店铺名",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "店铺名称"
+      },
+      {
+        "COLUMN_NAME": "新店铺",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "国家类别",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "状态",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "asin",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "sku",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "spu",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "品名",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "负责人",
+        "DATA_TYPE": "mediumtext",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "运营团队",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "国家",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "国家代码",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "币种",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "税率",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "官方汇率",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "上月毛利率",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "上月毛利率_市场",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "产品等级",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "可售天数",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "近30天销量",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "近30天销售额",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "近30天结算毛利润",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "近30天结算毛利率",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "近30天订单毛利润",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "近30天订单毛利率",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "近30天净销售额",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "近30天广告花费",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "近30天ACOAS",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "近30天销量_市场",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "近30天销售额_市场",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "近30天结算毛利润_市场",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "近30天结算毛利率_市场",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "近30天净销售额_市场",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "近30天广告花费_市场",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "近30天ACOAS_市场",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "总库存",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "总库存_成本",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "可用库存",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "可用库存_成本",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "实际在途",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "实际在途_成本",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "采购单价",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "单位采购成本"
+      },
+      {
+        "COLUMN_NAME": "单位头程",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "单位头程费用"
+      },
+      {
+        "COLUMN_NAME": "站点可售库存",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "fba费用_费用预览_原币种",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "fba费测算_原币种",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "fba费用_cny",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "采购单价_cny",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "单位头程_cny",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "小类排名",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "listing价格",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "35毛利润价格",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "30毛利润价格",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "25毛利润价格",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "20毛利润价格",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "15毛利润价格",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "10毛利润价格",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "5毛利润价格",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "0毛利润价格",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "清货底价",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "35毛利润含广告定价",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "30毛利润含广告定价",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "25毛利润含广告定价",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "20毛利润含广告定价",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "15毛利润含广告定价",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "10毛利润含广告定价",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "5毛利润含广告定价",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "0毛利润含广告定价",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "清货含广告底价",
+        "DATA_TYPE": "double",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "价格备注",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "数据异常备注",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "含广告定价异常备注",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      }
+    ]
+  },
+  {
+    "table": "temporary_APP.lx_sale_adjust_price_queue",
+    "exists": true,
+    "columns": [
+      {
+        "COLUMN_NAME": "id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "主键id"
+      },
+      {
+        "COLUMN_NAME": "relate_id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "关联id(ODS主键)"
+      },
+      {
+        "COLUMN_NAME": "delete_flag",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "删除标志(默认0)"
+      },
+      {
+        "COLUMN_NAME": "msku",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "亚马逊卖家sku"
+      },
+      {
+        "COLUMN_NAME": "local_sku",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "本地产品sku"
+      },
+      {
+        "COLUMN_NAME": "fnsku",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "FNSKU"
+      },
+      {
+        "COLUMN_NAME": "asin",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "ASIN"
+      },
+      {
+        "COLUMN_NAME": "local_name",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "品名"
+      },
+      {
+        "COLUMN_NAME": "store_name",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "店铺名称"
+      },
+      {
+        "COLUMN_NAME": "marketplace",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "国家"
+      },
+      {
+        "COLUMN_NAME": "processing_status_text",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "调价状态-文字说明"
+      },
+      {
+        "COLUMN_NAME": "adjust_type",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "调价类型"
+      },
+      {
+        "COLUMN_NAME": "queue_create_time",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "调价创建时间"
+      },
+      {
+        "COLUMN_NAME": "finish_time",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "调价完成时间"
+      },
+      {
+        "COLUMN_NAME": "currency_icon",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "币种符号"
+      },
+      {
+        "COLUMN_NAME": "adjust_before_obj_standard_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "调价前价格"
+      },
+      {
+        "COLUMN_NAME": "adjust_after_obj_standard_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "调价后价格"
+      },
+      {
+        "COLUMN_NAME": "adjust_range_standard_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "价格幅度"
+      },
+      {
+        "COLUMN_NAME": "profit_estimate_standard_price_profit",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "价格毛利润"
+      },
+      {
+        "COLUMN_NAME": "backup_time",
+        "DATA_TYPE": "datetime",
+        "COLUMN_COMMENT": "备份时间(ODS原始create_time)"
+      },
+      {
+        "COLUMN_NAME": "ods_update_time",
+        "DATA_TYPE": "datetime",
+        "COLUMN_COMMENT": "更新时间(ODS原始update_time)"
+      },
+      {
+        "COLUMN_NAME": "profit_estimate_standard_price_profit_rate",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "价格毛利率"
+      },
+      {
+        "COLUMN_NAME": "failure_reason",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "调价失败原因"
+      },
+      {
+        "COLUMN_NAME": "create_time",
+        "DATA_TYPE": "datetime",
+        "COLUMN_COMMENT": "数据创建时间"
+      },
+      {
+        "COLUMN_NAME": "update_time",
+        "DATA_TYPE": "datetime",
+        "COLUMN_COMMENT": "数据最近更新时间"
+      }
+    ]
+  },
+  {
+    "table": "dws_datasync.dws_sp_bid_object_snapshot_daily",
+    "exists": true,
+    "columns": [
+      {
+        "COLUMN_NAME": "id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "自增主键"
+      },
+      {
+        "COLUMN_NAME": "snapshot_date",
+        "DATA_TYPE": "date",
+        "COLUMN_COMMENT": "业务快照日期，即广告表现共同截止日"
+      },
+      {
+        "COLUMN_NAME": "row_key",
+        "DATA_TYPE": "char",
+        "COLUMN_COMMENT": "竞价对象业务键SHA256，不含快照日期"
+      },
+      {
+        "COLUMN_NAME": "rule_version",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "竞价建议规则版本"
+      },
+      {
+        "COLUMN_NAME": "mature_start",
+        "DATA_TYPE": "date",
+        "COLUMN_COMMENT": "成熟30天窗口开始日期"
+      },
+      {
+        "COLUMN_NAME": "mature_end",
+        "DATA_TYPE": "date",
+        "COLUMN_COMMENT": "成熟30天窗口结束日期"
+      },
+      {
+        "COLUMN_NAME": "source_keyword_days",
+        "DATA_TYPE": "tinyint",
+        "COLUMN_COMMENT": "关键词报表成熟窗口覆盖天数"
+      },
+      {
+        "COLUMN_NAME": "source_ad_group_days",
+        "DATA_TYPE": "tinyint",
+        "COLUMN_COMMENT": "广告组报表成熟窗口覆盖天数"
+      },
+      {
+        "COLUMN_NAME": "source_product_ad_days",
+        "DATA_TYPE": "tinyint",
+        "COLUMN_COMMENT": "商品广告报表成熟窗口覆盖天数"
+      },
+      {
+        "COLUMN_NAME": "budget_snapshot_date",
+        "DATA_TYPE": "date",
+        "COLUMN_COMMENT": "远端产品预算快照日期"
+      },
+      {
+        "COLUMN_NAME": "budget_performance_date",
+        "DATA_TYPE": "date",
+        "COLUMN_COMMENT": "产品花费统计截止日期"
+      },
+      {
+        "COLUMN_NAME": "profile_id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "广告账号Profile ID"
+      },
+      {
+        "COLUMN_NAME": "sid",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "领星店铺SID"
+      },
+      {
+        "COLUMN_NAME": "base_store_name",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "去除站点后缀的店铺主体"
+      },
+      {
+        "COLUMN_NAME": "seller_name",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "广告店铺名称"
+      },
+      {
+        "COLUMN_NAME": "country_code",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "站点代码"
+      },
+      {
+        "COLUMN_NAME": "currency_code",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "竞价与广告表现的站点币种"
+      },
+      {
+        "COLUMN_NAME": "product_currency_code",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "产品预算源币种"
+      },
+      {
+        "COLUMN_NAME": "exchange_rate_cny",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "产品预算源币种兑人民币汇率"
+      },
+      {
+        "COLUMN_NAME": "budget_currency_code",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "产品预算与产品花费币种"
+      },
+      {
+        "COLUMN_NAME": "campaign_id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "广告活动ID"
+      },
+      {
+        "COLUMN_NAME": "campaign_name_current",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "当前广告活动名称"
+      },
+      {
+        "COLUMN_NAME": "campaign_state_current",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "当前广告活动状态"
+      },
+      {
+        "COLUMN_NAME": "campaign_serving_status",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "当前广告活动投放状态"
+      },
+      {
+        "COLUMN_NAME": "campaign_type",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "广告活动类型"
+      },
+      {
+        "COLUMN_NAME": "targeting_type",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "auto/manual/unknown"
+      },
+      {
+        "COLUMN_NAME": "portfolio_id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "广告组合ID"
+      },
+      {
+        "COLUMN_NAME": "daily_budget_current",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "当前活动日预算（站点币种）"
+      },
+      {
+        "COLUMN_NAME": "bidding_strategy_current",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "当前竞价策略"
+      },
+      {
+        "COLUMN_NAME": "placement_top_percentage",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "搜索结果顶部竞价调整百分比"
+      },
+      {
+        "COLUMN_NAME": "placement_product_page_percentage",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "商品页面竞价调整百分比"
+      },
+      {
+        "COLUMN_NAME": "placement_rest_of_search_percentage",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "搜索结果其余位置竞价调整百分比"
+      },
+      {
+        "COLUMN_NAME": "ad_group_id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "广告组ID"
+      },
+      {
+        "COLUMN_NAME": "ad_group_name_current",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "当前广告组名称"
+      },
+      {
+        "COLUMN_NAME": "ad_group_state_current",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "当前广告组状态"
+      },
+      {
+        "COLUMN_NAME": "ad_group_serving_status",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "当前广告组投放状态"
+      },
+      {
+        "COLUMN_NAME": "default_bid_current",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "当前广告组默认竞价（站点币种）"
+      },
+      {
+        "COLUMN_NAME": "object_type",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "keyword/ad_group"
+      },
+      {
+        "COLUMN_NAME": "object_id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "关键词ID或自动广告组ID"
+      },
+      {
+        "COLUMN_NAME": "object_text",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "关键词文本或广告组名称"
+      },
+      {
+        "COLUMN_NAME": "object_state_current",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "当前竞价对象状态"
+      },
+      {
+        "COLUMN_NAME": "object_serving_status",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "当前竞价对象投放状态"
+      },
+      {
+        "COLUMN_NAME": "match_type",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "关键词匹配方式；自动广告为空"
+      },
+      {
+        "COLUMN_NAME": "msku",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "安全归属后的MSKU"
+      },
+      {
+        "COLUMN_NAME": "asin",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "安全归属后的ASIN"
+      },
+      {
+        "COLUMN_NAME": "associated_msku_count",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "周期与当前MSKU数量最大值"
+      },
+      {
+        "COLUMN_NAME": "period_msku_count",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "成熟窗口内不同MSKU数"
+      },
+      {
+        "COLUMN_NAME": "current_enabled_msku_count",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "当前启用MSKU数"
+      },
+      {
+        "COLUMN_NAME": "msku_mapping_status",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "mapped/period_multiple_msku/current_multiple_msku/msku_changed等"
+      },
+      {
+        "COLUMN_NAME": "product_metric_owner_flag",
+        "DATA_TYPE": "tinyint",
+        "COLUMN_COMMENT": "同产品预算与花费的唯一可汇总行"
+      },
+      {
+        "COLUMN_NAME": "impressions",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "成熟30天曝光量"
+      },
+      {
+        "COLUMN_NAME": "clicks",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "成熟30天点击量"
+      },
+      {
+        "COLUMN_NAME": "cost",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "成熟30天对象花费（站点币种）"
+      },
+      {
+        "COLUMN_NAME": "orders",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "成熟30天7d归因订单"
+      },
+      {
+        "COLUMN_NAME": "sales",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "成熟30天7d归因销售额（站点币种）"
+      },
+      {
+        "COLUMN_NAME": "aov",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "广告客单价：sales/orders"
+      },
+      {
+        "COLUMN_NAME": "ctr",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "点击率：clicks/impressions"
+      },
+      {
+        "COLUMN_NAME": "cpc",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "平均点击成本：cost/clicks"
+      },
+      {
+        "COLUMN_NAME": "cvr",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "7d归因转化率：orders/clicks"
+      },
+      {
+        "COLUMN_NAME": "acos",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "广告投入产出比：cost/sales"
+      },
+      {
+        "COLUMN_NAME": "roas",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "广告回报率：sales/cost"
+      },
+      {
+        "COLUMN_NAME": "current_bid",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "当前关键词竞价或自动广告组默认竞价"
+      },
+      {
+        "COLUMN_NAME": "listing_price",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "当前Listing价格（站点币种）"
+      },
+      {
+        "COLUMN_NAME": "margin_rate",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "Listing价格命中的毛利率阶梯"
+      },
+      {
+        "COLUMN_NAME": "site_cvr_avg",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "同对象类型同站点加权CVR"
+      },
+      {
+        "COLUMN_NAME": "site_cvr_p75",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "同对象类型同站点对象CVR的P75"
+      },
+      {
+        "COLUMN_NAME": "theoretical_cpc",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "理论最高CPC：AOV×CVR×毛利率"
+      },
+      {
+        "COLUMN_NAME": "reference_cpc_20",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "20%毛利参考CPC"
+      },
+      {
+        "COLUMN_NAME": "reference_cpc_333",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "33.3%毛利参考CPC"
+      },
+      {
+        "COLUMN_NAME": "suggested_bid",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "建议竞价（站点币种）"
+      },
+      {
+        "COLUMN_NAME": "max_allowed_bid",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "库存与预算保护后的最高允许建议竞价"
+      },
+      {
+        "COLUMN_NAME": "change_direction",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "increase/decrease/keep"
+      },
+      {
+        "COLUMN_NAME": "change_amount",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "建议竞价减当前竞价"
+      },
+      {
+        "COLUMN_NAME": "change_rate",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "竞价调整比例"
+      },
+      {
+        "COLUMN_NAME": "bid_lower_limit",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "预留竞价下限，首版为空且不参与计算"
+      },
+      {
+        "COLUMN_NAME": "bid_upper_limit",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "预留竞价上限，首版为空且不参与计算"
+      },
+      {
+        "COLUMN_NAME": "raw_recommendation_status",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "规则原始状态"
+      },
+      {
+        "COLUMN_NAME": "recommendation_status",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "页面最终状态"
+      },
+      {
+        "COLUMN_NAME": "priority_rank",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "动作优先级，1为明确调价，9为其他"
+      },
+      {
+        "COLUMN_NAME": "reason_codes",
+        "DATA_TYPE": "json",
+        "COLUMN_COMMENT": "建议原因代码数组"
+      },
+      {
+        "COLUMN_NAME": "data_warning",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "数据缺失或映射异常提示"
+      },
+      {
+        "COLUMN_NAME": "monthly_ad_budget_original",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "产品月预算（预算源原币）"
+      },
+      {
+        "COLUMN_NAME": "monthly_ad_budget_cny",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "产品月预算（人民币）"
+      },
+      {
+        "COLUMN_NAME": "weekly_ad_budget_original",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "产品周预算（预算源原币）"
+      },
+      {
+        "COLUMN_NAME": "weekly_ad_budget_cny",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "产品周预算（人民币）"
+      },
+      {
+        "COLUMN_NAME": "month_product_spend_cny",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "产品本月至快照日广告花费（人民币口径）"
+      },
+      {
+        "COLUMN_NAME": "spend_7d_cny",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "产品截至快照日近7天广告花费（人民币口径）"
+      },
+      {
+        "COLUMN_NAME": "monthly_remaining_budget_cny",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "月预算余额，可为负数"
+      },
+      {
+        "COLUMN_NAME": "weekly_remaining_budget_cny",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "周预算余额，可为负数"
+      },
+      {
+        "COLUMN_NAME": "monthly_budget_usage_rate",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "本月花费/月预算"
+      },
+      {
+        "COLUMN_NAME": "weekly_budget_usage_rate",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "近7天花费/周预算"
+      },
+      {
+        "COLUMN_NAME": "month_progress_rate",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "快照日在自然月中的时间进度"
+      },
+      {
+        "COLUMN_NAME": "monthly_budget_status",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "missing/spend_missing/normal/overspent/too_fast/too_slow/not_started"
+      },
+      {
+        "COLUMN_NAME": "weekly_budget_status",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "missing/spend_missing/normal/overspent"
+      },
+      {
+        "COLUMN_NAME": "budget_config_status",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "complete/incomplete/invalid"
+      },
+      {
+        "COLUMN_NAME": "budget_support_status",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "提价预算与库存保护状态"
+      },
+      {
+        "COLUMN_NAME": "budget_anomalies",
+        "DATA_TYPE": "json",
+        "COLUMN_COMMENT": "预算异常代码数组"
+      },
+      {
+        "COLUMN_NAME": "site_total_budget_cny",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "站点总预算（人民币）"
+      },
+      {
+        "COLUMN_NAME": "inventory_sufficient_flag",
+        "DATA_TYPE": "tinyint",
+        "COLUMN_COMMENT": "30天库存是否充足"
+      },
+      {
+        "COLUMN_NAME": "weekly_inventory_sufficient_flag",
+        "DATA_TYPE": "tinyint",
+        "COLUMN_COMMENT": "7天库存是否充足"
+      },
+      {
+        "COLUMN_NAME": "source_latest_create_time",
+        "DATA_TYPE": "datetime",
+        "COLUMN_COMMENT": "参与计算的源数据最新同步时间"
+      },
+      {
+        "COLUMN_NAME": "created_at",
+        "DATA_TYPE": "datetime",
+        "COLUMN_COMMENT": "创建时间"
+      },
+      {
+        "COLUMN_NAME": "updated_at",
+        "DATA_TYPE": "datetime",
+        "COLUMN_COMMENT": "更新时间"
+      },
+      {
+        "COLUMN_NAME": "attributed_orders_1d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "成熟30天1d总归因订单"
+      },
+      {
+        "COLUMN_NAME": "attributed_orders_7d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "成熟30天7d总归因订单；与orders同口径"
+      },
+      {
+        "COLUMN_NAME": "attributed_orders_14d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "成熟30天14d总归因订单"
+      },
+      {
+        "COLUMN_NAME": "attributed_orders_30d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "成熟30天30d总归因订单"
+      },
+      {
+        "COLUMN_NAME": "attributed_sales_1d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "成熟30天1d总归因销售额（站点币种）"
+      },
+      {
+        "COLUMN_NAME": "attributed_sales_7d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "成熟30天7d总归因销售额；与sales同口径（站点币种）"
+      },
+      {
+        "COLUMN_NAME": "attributed_sales_14d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "成熟30天14d总归因销售额（站点币种）"
+      },
+      {
+        "COLUMN_NAME": "attributed_sales_30d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "成熟30天30d总归因销售额（站点币种）"
+      },
+      {
+        "COLUMN_NAME": "attributed_units_1d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "成熟30天1d总归因销量"
+      },
+      {
+        "COLUMN_NAME": "attributed_units_7d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "成熟30天7d总归因销量"
+      },
+      {
+        "COLUMN_NAME": "attributed_units_14d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "成熟30天14d总归因销量"
+      },
+      {
+        "COLUMN_NAME": "attributed_units_30d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "成熟30天30d总归因销量"
+      },
+      {
+        "COLUMN_NAME": "same_sku_attributed_orders_1d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "成熟30天1d同款归因订单"
+      },
+      {
+        "COLUMN_NAME": "same_sku_attributed_orders_7d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "成熟30天7d同款归因订单"
+      },
+      {
+        "COLUMN_NAME": "same_sku_attributed_orders_14d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "成熟30天14d同款归因订单"
+      },
+      {
+        "COLUMN_NAME": "same_sku_attributed_orders_30d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "成熟30天30d同款归因订单"
+      },
+      {
+        "COLUMN_NAME": "same_sku_attributed_sales_1d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "成熟30天1d同款归因销售额（站点币种）"
+      },
+      {
+        "COLUMN_NAME": "same_sku_attributed_sales_7d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "成熟30天7d同款归因销售额（站点币种）"
+      },
+      {
+        "COLUMN_NAME": "same_sku_attributed_sales_14d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "成熟30天14d同款归因销售额（站点币种）"
+      },
+      {
+        "COLUMN_NAME": "same_sku_attributed_sales_30d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "成熟30天30d同款归因销售额（站点币种）"
+      },
+      {
+        "COLUMN_NAME": "same_sku_attributed_units_1d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "成熟30天1d同款归因销量"
+      },
+      {
+        "COLUMN_NAME": "same_sku_attributed_units_7d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "成熟30天7d同款归因销量"
+      },
+      {
+        "COLUMN_NAME": "same_sku_attributed_units_14d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "成熟30天14d同款归因销量"
+      },
+      {
+        "COLUMN_NAME": "same_sku_attributed_units_30d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "成熟30天30d同款归因销量"
+      }
+    ]
+  },
+  {
+    "table": "ods_datasync.lx_advertising_sp_targets",
+    "exists": true,
+    "columns": [
+      {
+        "COLUMN_NAME": "id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "主键"
+      },
+      {
+        "COLUMN_NAME": "target_id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "商品定位id"
+      },
+      {
+        "COLUMN_NAME": "campaign_id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "广告活动id"
+      },
+      {
+        "COLUMN_NAME": "ad_group_id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "广告组id"
+      },
+      {
+        "COLUMN_NAME": "profile_id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "亚马逊店铺数字id"
+      },
+      {
+        "COLUMN_NAME": "expression_type",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "表达式类别"
+      },
+      {
+        "COLUMN_NAME": "expression",
+        "DATA_TYPE": "text",
+        "COLUMN_COMMENT": "表达式JSON"
+      },
+      {
+        "COLUMN_NAME": "bid",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "竞价"
+      },
+      {
+        "COLUMN_NAME": "state",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "状态"
+      },
+      {
+        "COLUMN_NAME": "creation_date",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "创建日期（时间戳）"
+      },
+      {
+        "COLUMN_NAME": "last_updated_date",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "最近更新时间（时间戳）"
+      },
+      {
+        "COLUMN_NAME": "serving_status",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "服务状态"
+      },
+      {
+        "COLUMN_NAME": "resolved_expression",
+        "DATA_TYPE": "text",
+        "COLUMN_COMMENT": "已解析的表达式"
+      },
+      {
+        "COLUMN_NAME": "create_time",
+        "DATA_TYPE": "datetime",
+        "COLUMN_COMMENT": "创建时间"
+      },
+      {
+        "COLUMN_NAME": "update_time",
+        "DATA_TYPE": "datetime",
+        "COLUMN_COMMENT": "更新时间"
+      },
+      {
+        "COLUMN_NAME": "delete_flag",
+        "DATA_TYPE": "bit",
+        "COLUMN_COMMENT": "删除标识"
+      },
+      {
+        "COLUMN_NAME": "seller_name",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "店铺名称"
+      },
+      {
+        "COLUMN_NAME": "sid",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "店铺ID(领星ERP对企业已授权店铺的唯一标识)"
+      }
+    ]
+  },
+  {
+    "table": "ods_datasync.lx_advertising_sp_keyword_reports",
+    "exists": true,
+    "columns": [
+      {
+        "COLUMN_NAME": "id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "主键"
+      },
+      {
+        "COLUMN_NAME": "keyword_id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "关键词id"
+      },
+      {
+        "COLUMN_NAME": "match_type",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "匹配类型"
+      },
+      {
+        "COLUMN_NAME": "keyword_text",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "关键词"
+      },
+      {
+        "COLUMN_NAME": "ad_group_id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "广告组id"
+      },
+      {
+        "COLUMN_NAME": "impressions",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "展示量"
+      },
+      {
+        "COLUMN_NAME": "clicks",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "点击量"
+      },
+      {
+        "COLUMN_NAME": "cost",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "花费"
+      },
+      {
+        "COLUMN_NAME": "report_date",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "报表日期"
+      },
+      {
+        "COLUMN_NAME": "profile_id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "亚马逊店铺数字id"
+      },
+      {
+        "COLUMN_NAME": "campaign_id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "广告活动id"
+      },
+      {
+        "COLUMN_NAME": "same_orders",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交订单数"
+      },
+      {
+        "COLUMN_NAME": "same_orders_1d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交订单数(1d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_orders_7d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交订单数(7d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_orders_14d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交订单数(14d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_orders_30d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交订单数(30d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "orders",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "订单数"
+      },
+      {
+        "COLUMN_NAME": "orders_1d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "订单数(1d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "orders_7d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "订单数(7d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "orders_14d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "订单数(14d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "orders_30d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "订单数(30d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_sales",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "直接成交销售额"
+      },
+      {
+        "COLUMN_NAME": "same_sales_1d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "直接成交销售额(1d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_sales_7d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "直接成交销售额(7d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_sales_14d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "直接成交销售额(14d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_sales_30d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "直接成交销售额(30d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "sales",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "销售额"
+      },
+      {
+        "COLUMN_NAME": "sales_1d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "销售额(1d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "sales_7d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "销售额(7d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "sales_14d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "销售额(14d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "sales_30d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "销售额(30d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "units",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "销量"
+      },
+      {
+        "COLUMN_NAME": "units_7d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "销量(7d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "units_1d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "销量(1d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "units_14d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "销量(14d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "units_30d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "销量(30d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_units",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交销量"
+      },
+      {
+        "COLUMN_NAME": "same_units_1d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交量(1d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_units_7d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交量(7d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_units_14d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交量(14d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_units_30d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交订单数(30d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "create_time",
+        "DATA_TYPE": "datetime",
+        "COLUMN_COMMENT": "创建时间"
+      },
+      {
+        "COLUMN_NAME": "update_time",
+        "DATA_TYPE": "datetime",
+        "COLUMN_COMMENT": "更新时间"
+      },
+      {
+        "COLUMN_NAME": "delete_flag",
+        "DATA_TYPE": "bit",
+        "COLUMN_COMMENT": "删除标识"
+      },
+      {
+        "COLUMN_NAME": "seller_name",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "店铺名称"
+      },
+      {
+        "COLUMN_NAME": "sid",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "店铺ID(领星ERP对企业已授权店铺的唯一标识)"
+      }
+    ]
+  },
+  {
+    "table": "ods_datasync.lx_advertising_sp_query_word_reports",
+    "exists": true,
+    "columns": [
+      {
+        "COLUMN_NAME": "id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "主键"
+      },
+      {
+        "COLUMN_NAME": "query",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "搜索词"
+      },
+      {
+        "COLUMN_NAME": "target_id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "投放id（关键词/商品投放 根据target_type）"
+      },
+      {
+        "COLUMN_NAME": "match_type",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "匹配类型"
+      },
+      {
+        "COLUMN_NAME": "target_text",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "投放的内容"
+      },
+      {
+        "COLUMN_NAME": "ad_group_id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "广告组id"
+      },
+      {
+        "COLUMN_NAME": "impressions",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "展示量"
+      },
+      {
+        "COLUMN_NAME": "clicks",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "点击量"
+      },
+      {
+        "COLUMN_NAME": "cost",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "花费"
+      },
+      {
+        "COLUMN_NAME": "profile_id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "亚马逊店铺数字id"
+      },
+      {
+        "COLUMN_NAME": "campaign_id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "广告活动id"
+      },
+      {
+        "COLUMN_NAME": "same_orders",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交订单数"
+      },
+      {
+        "COLUMN_NAME": "orders",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "订单数"
+      },
+      {
+        "COLUMN_NAME": "same_sales",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "直接成交销售额"
+      },
+      {
+        "COLUMN_NAME": "sales",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "销售额"
+      },
+      {
+        "COLUMN_NAME": "units",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "销量"
+      },
+      {
+        "COLUMN_NAME": "same_units",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交销量"
+      },
+      {
+        "COLUMN_NAME": "report_date",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "报表日期"
+      },
+      {
+        "COLUMN_NAME": "same_orders_1d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交订单数(1d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "orders_1d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "订单数(1d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_sales_1d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "直接成交销售额(1d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "sales_1d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "销售额(1d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_orders_7d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交订单数(7d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "orders_7d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "订单数(7d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_sales_7d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "直接成交销售额(7d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "sales_7d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "销售额(7d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_orders_30d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交订单数(30d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "orders_30d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "订单数(30d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_sales_30d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "直接成交销售额(30d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "sales_30d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "销售额(30d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_orders_14d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交订单数(14d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "orders_14d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "订单数(14d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_sales_14d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "直接成交销售额(14d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "sales_14d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "销售额(14d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "units_1d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "销量(1d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "units_7d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "销量(7d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "units_14d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "销量(14d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "units_30d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "销量(30d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_units_1d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交销量(1d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_units_7d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交销量(7d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_units_14d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交销量(14d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_units_30d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交销量(30d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "create_time",
+        "DATA_TYPE": "datetime",
+        "COLUMN_COMMENT": "创建时间"
+      },
+      {
+        "COLUMN_NAME": "update_time",
+        "DATA_TYPE": "datetime",
+        "COLUMN_COMMENT": "更新时间"
+      },
+      {
+        "COLUMN_NAME": "delete_flag",
+        "DATA_TYPE": "bit",
+        "COLUMN_COMMENT": "删除标识"
+      },
+      {
+        "COLUMN_NAME": "seller_name",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "店铺名称"
+      },
+      {
+        "COLUMN_NAME": "sid",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "店铺ID(领星ERP对企业已授权店铺的唯一标识)"
+      }
+    ]
+  },
+  {
+    "table": "ods_datasync.lx_advertising_sp_product_ad_reports",
+    "exists": true,
+    "columns": [
+      {
+        "COLUMN_NAME": "id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "主键"
+      },
+      {
+        "COLUMN_NAME": "ad_id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "商品广告id"
+      },
+      {
+        "COLUMN_NAME": "asin",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "asin"
+      },
+      {
+        "COLUMN_NAME": "sku",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "sku"
+      },
+      {
+        "COLUMN_NAME": "ad_group_id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "广告组id"
+      },
+      {
+        "COLUMN_NAME": "profile_id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "亚马逊店铺数字id"
+      },
+      {
+        "COLUMN_NAME": "campaign_id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "广告活动id"
+      },
+      {
+        "COLUMN_NAME": "impressions",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "展示量"
+      },
+      {
+        "COLUMN_NAME": "clicks",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "点击量"
+      },
+      {
+        "COLUMN_NAME": "cost",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "花费"
+      },
+      {
+        "COLUMN_NAME": "report_date",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "报表日期"
+      },
+      {
+        "COLUMN_NAME": "orders",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "订单数"
+      },
+      {
+        "COLUMN_NAME": "orders_1d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "订单数(1d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "orders_7d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "订单数(7d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "orders_14d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "订单数(14d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "orders_30d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "订单数(30d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_orders",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交订单数"
+      },
+      {
+        "COLUMN_NAME": "same_orders_1d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交订单数(1d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_orders_7d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交订单数(7d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_orders_14d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交订单数(14d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_orders_30d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交订单数(30d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "sales",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "销售额"
+      },
+      {
+        "COLUMN_NAME": "sales_1d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "销售额(1d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "sales_7d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "销售额(7d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "sales_14d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "销售额(14d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "sales_30d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "销售额(30d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_sales",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "直接成交销售额"
+      },
+      {
+        "COLUMN_NAME": "same_sales_1d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "直接成交销售额(1d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_sales_7d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "直接成交销售额(7d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_sales_14d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "直接成交销售额(14d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_sales_30d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "直接成交销售额(30d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "units",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "销量"
+      },
+      {
+        "COLUMN_NAME": "units_1d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "销量(1d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "units_7d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "销量(7d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "units_14d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "销量(14d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "units_30d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "销量(30d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_units",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交销量"
+      },
+      {
+        "COLUMN_NAME": "same_units_1d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交量(1d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_units_7d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交量(7d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_units_14d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交量(14d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_units_30d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交量(30d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "create_time",
+        "DATA_TYPE": "datetime",
+        "COLUMN_COMMENT": "创建时间"
+      },
+      {
+        "COLUMN_NAME": "update_time",
+        "DATA_TYPE": "datetime",
+        "COLUMN_COMMENT": "更新时间"
+      },
+      {
+        "COLUMN_NAME": "delete_flag",
+        "DATA_TYPE": "bit",
+        "COLUMN_COMMENT": "删除标识"
+      },
+      {
+        "COLUMN_NAME": "seller_name",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "店铺名称"
+      },
+      {
+        "COLUMN_NAME": "sid",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "店铺ID(领星ERP对企业已授权店铺的唯一标识)"
+      }
+    ]
+  },
+  {
+    "table": "ods_datasync.lx_advertising_sp_ad_group_reports",
+    "exists": true,
+    "columns": [
+      {
+        "COLUMN_NAME": "id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "主键"
+      },
+      {
+        "COLUMN_NAME": "ad_group_id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "广告组id"
+      },
+      {
+        "COLUMN_NAME": "impressions",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "展示量"
+      },
+      {
+        "COLUMN_NAME": "clicks",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "点击量"
+      },
+      {
+        "COLUMN_NAME": "cost",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "花费"
+      },
+      {
+        "COLUMN_NAME": "report_date",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "报表日期"
+      },
+      {
+        "COLUMN_NAME": "profile_id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "亚马逊店铺数字id"
+      },
+      {
+        "COLUMN_NAME": "campaign_id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "广告活动id"
+      },
+      {
+        "COLUMN_NAME": "same_orders",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交订单数"
+      },
+      {
+        "COLUMN_NAME": "same_orders_1d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交订单数(1d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_orders_7d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交订单数(7d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_orders_14d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交订单数(14d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_orders_30d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交订单数(30d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "orders",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "订单数"
+      },
+      {
+        "COLUMN_NAME": "orders_1d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "订单数(1d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "orders_7d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "订单数(7d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "orders_14d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "订单数(14d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "orders_30d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "订单数(30d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_sales",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "直接成交销售额"
+      },
+      {
+        "COLUMN_NAME": "same_sales_1d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "直接成交销售额(1d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_sales_7d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "直接成交销售额(7d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_sales_14d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "直接成交销售额(14d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_sales_30d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "直接成交销售额(30d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "sales",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "销售额"
+      },
+      {
+        "COLUMN_NAME": "sales_1d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "销售额(1d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "sales_7d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "销售额(7d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "sales_14d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "销售额(14d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "sales_30d",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "销售额(30d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "units",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "销量"
+      },
+      {
+        "COLUMN_NAME": "units_1d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "销量(1d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "units_7d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "销量(7d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "units_14d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "销量(14d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "units_30d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "销量(30d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_units",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交销量"
+      },
+      {
+        "COLUMN_NAME": "same_units_1d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交量(1d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_units_7d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交量(7d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_units_14d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交量(14d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "same_units_30d",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "直接成交量(30d)【show_detail=1时返回字段】"
+      },
+      {
+        "COLUMN_NAME": "create_time",
+        "DATA_TYPE": "datetime",
+        "COLUMN_COMMENT": "创建时间"
+      },
+      {
+        "COLUMN_NAME": "update_time",
+        "DATA_TYPE": "datetime",
+        "COLUMN_COMMENT": "更新时间"
+      },
+      {
+        "COLUMN_NAME": "delete_flag",
+        "DATA_TYPE": "bit",
+        "COLUMN_COMMENT": "删除标识"
+      },
+      {
+        "COLUMN_NAME": "seller_name",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "店铺名称"
+      },
+      {
+        "COLUMN_NAME": "sid",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "店铺ID(领星ERP对企业已授权店铺的唯一标识)"
+      }
+    ]
+  },
+  {
+    "table": "dws_datasync.dws_monthly_ad_budget_detail",
+    "exists": true,
+    "columns": [
+      {
+        "COLUMN_NAME": "biz_date",
+        "DATA_TYPE": "date",
+        "COLUMN_COMMENT": "执行日期"
+      },
+      {
+        "COLUMN_NAME": "country_category",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "国家类别"
+      },
+      {
+        "COLUMN_NAME": "country",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "国家站点"
+      },
+      {
+        "COLUMN_NAME": "seller_name_new",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "店铺名称"
+      },
+      {
+        "COLUMN_NAME": "seller_sku_adj",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "msku"
+      },
+      {
+        "COLUMN_NAME": "max_brand_name",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "品牌名称"
+      },
+      {
+        "COLUMN_NAME": "receiving_cnt",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "接收次数"
+      },
+      {
+        "COLUMN_NAME": "product_type",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "新品或老品"
+      },
+      {
+        "COLUMN_NAME": "sales_3",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "近3天销量"
+      },
+      {
+        "COLUMN_NAME": "r_3d_salable_days",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "近3天可售天数"
+      },
+      {
+        "COLUMN_NAME": "sales_7",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "近7天销量"
+      },
+      {
+        "COLUMN_NAME": "r_7d_salable_days",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "近7天可售天数"
+      },
+      {
+        "COLUMN_NAME": "sales_14",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "近14天销量"
+      },
+      {
+        "COLUMN_NAME": "r_14d_salable_days",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "近14天可售天数"
+      },
+      {
+        "COLUMN_NAME": "sales_30",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "近30天销量"
+      },
+      {
+        "COLUMN_NAME": "r_30d_salable_days",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "近30天可售天数"
+      },
+      {
+        "COLUMN_NAME": "daily_avg_sales",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "加权日销"
+      },
+      {
+        "COLUMN_NAME": "listing_price",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "原币售价"
+      },
+      {
+        "COLUMN_NAME": "currency_code",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "币种"
+      },
+      {
+        "COLUMN_NAME": "exchange_rate_cny",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "人民币汇率"
+      },
+      {
+        "COLUMN_NAME": "listing_price_cny",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "人民币售价"
+      },
+      {
+        "COLUMN_NAME": "available_total",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "可用库存"
+      },
+      {
+        "COLUMN_NAME": "stock_up_num",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "备货库存"
+      },
+      {
+        "COLUMN_NAME": "local_quantity",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "本地库存"
+      },
+      {
+        "COLUMN_NAME": "total_budget_inventory",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "当前总库存"
+      },
+      {
+        "COLUMN_NAME": "month_max_inventory_qty",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "月内最高库存"
+      },
+      {
+        "COLUMN_NAME": "total_weighted_daily_sales",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "库存组总加权日销"
+      },
+      {
+        "COLUMN_NAME": "sales_share",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "站点销量占比"
+      },
+      {
+        "COLUMN_NAME": "total_inventory_allocated_qty",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "累计分配库存"
+      },
+      {
+        "COLUMN_NAME": "site_total_budget_cny",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "站点总预算"
+      },
+      {
+        "COLUMN_NAME": "monthly_forecast_qty",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "30天预测销量"
+      },
+      {
+        "COLUMN_NAME": "monthly_allocated_qty",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "月度分配销量"
+      },
+      {
+        "COLUMN_NAME": "monthly_ad_budget_original",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "月度原币预算"
+      },
+      {
+        "COLUMN_NAME": "monthly_ad_budget_cny",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "月度人民币预算"
+      },
+      {
+        "COLUMN_NAME": "weekly_forecast_qty",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "7天预测销量"
+      },
+      {
+        "COLUMN_NAME": "weekly_allocated_qty",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "周度分配销量"
+      },
+      {
+        "COLUMN_NAME": "weekly_ad_budget_original",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "周度原币预算"
+      },
+      {
+        "COLUMN_NAME": "weekly_ad_budget_cny",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "周度人民币预算"
+      },
+      {
+        "COLUMN_NAME": "total_budget_pool_cny",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "库存组总预算"
+      },
+      {
+        "COLUMN_NAME": "inventory_sufficient_flag",
+        "DATA_TYPE": "tinyint",
+        "COLUMN_COMMENT": "30天库存充足标记"
+      },
+      {
+        "COLUMN_NAME": "weekly_inventory_sufficient_flag",
+        "DATA_TYPE": "tinyint",
+        "COLUMN_COMMENT": "7天库存充足标记"
+      }
+    ]
+  },
+  {
+    "table": "dws_datasync.dws_ad_budget_pool_daily_history",
+    "exists": true,
+    "columns": [
+      {
+        "COLUMN_NAME": "biz_date",
+        "DATA_TYPE": "date",
+        "COLUMN_COMMENT": "执行日期"
+      },
+      {
+        "COLUMN_NAME": "country_category",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "国家类别"
+      },
+      {
+        "COLUMN_NAME": "seller_name_new",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "店铺"
+      },
+      {
+        "COLUMN_NAME": "seller_sku_adj",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "msku"
+      },
+      {
+        "COLUMN_NAME": "available_total",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "fba可用库存"
+      },
+      {
+        "COLUMN_NAME": "stock_up_num",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "备货库存"
+      },
+      {
+        "COLUMN_NAME": "local_quantity",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "本地库存"
+      },
+      {
+        "COLUMN_NAME": "total_budget_inventory",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "当日预算库存"
+      },
+      {
+        "COLUMN_NAME": "previous_month_max_inventory_qty",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "变动前月最大库存"
+      },
+      {
+        "COLUMN_NAME": "month_max_inventory_qty",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "变动后月最大库存"
+      },
+      {
+        "COLUMN_NAME": "inventory_growth_qty",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "新增库存"
+      },
+      {
+        "COLUMN_NAME": "total_weighted_daily_sales",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "国家类别加权日销"
+      },
+      {
+        "COLUMN_NAME": "previous_total_budget_pool_cny",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "变动前总预算"
+      },
+      {
+        "COLUMN_NAME": "budget_change_cny",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "总预算变动额"
+      },
+      {
+        "COLUMN_NAME": "budget_increment_cny",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "新增总预算"
+      },
+      {
+        "COLUMN_NAME": "budget_per_inventory_cny",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "单位新增库存预算"
+      },
+      {
+        "COLUMN_NAME": "total_budget_pool_cny",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "变动后总预算"
+      },
+      {
+        "COLUMN_NAME": "monthly_budget_cny",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "月预算合计"
+      },
+      {
+        "COLUMN_NAME": "weekly_budget_cny",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "周预算合计"
+      },
+      {
+        "COLUMN_NAME": "change_type",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "变动类型"
+      },
+      {
+        "COLUMN_NAME": "created_at",
+        "DATA_TYPE": "datetime",
+        "COLUMN_COMMENT": "创建时间"
+      },
+      {
+        "COLUMN_NAME": "updated_at",
+        "DATA_TYPE": "datetime",
+        "COLUMN_COMMENT": "更新时间"
+      }
+    ]
+  },
+  {
+    "table": "etl_datasync.etl_dispose_lx_storage_fba_warehouse_detail",
+    "exists": true,
+    "columns": [
+      {
+        "COLUMN_NAME": "create_time",
+        "DATA_TYPE": "datetime",
+        "COLUMN_COMMENT": "创建时间"
+      },
+      {
+        "COLUMN_NAME": "name",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "仓库名"
+      },
+      {
+        "COLUMN_NAME": "asin",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "ASIN"
+      },
+      {
+        "COLUMN_NAME": "seller_sku",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "MSKU"
+      },
+      {
+        "COLUMN_NAME": "sku",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "SKU"
+      },
+      {
+        "COLUMN_NAME": "product_name",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "品名"
+      },
+      {
+        "COLUMN_NAME": "total",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "总数"
+      },
+      {
+        "COLUMN_NAME": "total_price",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "总价"
+      },
+      {
+        "COLUMN_NAME": "available_total",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "可用总数"
+      },
+      {
+        "COLUMN_NAME": "available_total_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "可用总数成本价"
+      },
+      {
+        "COLUMN_NAME": "afn_fulfillable_quantity",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "FBA可售"
+      },
+      {
+        "COLUMN_NAME": "afn_fulfillable_quantity_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "FBA可售成本价"
+      },
+      {
+        "COLUMN_NAME": "reserved_fc_transfers",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "待调仓"
+      },
+      {
+        "COLUMN_NAME": "reserved_fc_transfers_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "待调仓成本价"
+      },
+      {
+        "COLUMN_NAME": "reserved_fc_processing",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "调仓中"
+      },
+      {
+        "COLUMN_NAME": "reserved_fc_processing_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "调仓中成本价"
+      },
+      {
+        "COLUMN_NAME": "reserved_customerorders",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "待发货"
+      },
+      {
+        "COLUMN_NAME": "reserved_customerorders_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "待发货成本价"
+      },
+      {
+        "COLUMN_NAME": "quantity",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "FBM可售"
+      },
+      {
+        "COLUMN_NAME": "quantity_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "FBM可售成本价"
+      },
+      {
+        "COLUMN_NAME": "afn_unsellable_quantity",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "不可售"
+      },
+      {
+        "COLUMN_NAME": "afn_unsellable_quantity_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "不可售成本价"
+      },
+      {
+        "COLUMN_NAME": "afn_inbound_working_quantity",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "计划入库"
+      },
+      {
+        "COLUMN_NAME": "afn_inbound_working_quantity_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "计划入库成本价"
+      },
+      {
+        "COLUMN_NAME": "afn_inbound_shipped_quantity",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "在途"
+      },
+      {
+        "COLUMN_NAME": "afn_inbound_shipped_quantity_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "在途成本价"
+      },
+      {
+        "COLUMN_NAME": "afn_inbound_receiving_quantity",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "入库中"
+      },
+      {
+        "COLUMN_NAME": "afn_inbound_receiving_quantity_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "入库中成本价"
+      },
+      {
+        "COLUMN_NAME": "stock_up_num",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "实际在途"
+      },
+      {
+        "COLUMN_NAME": "stock_up_num_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "实际在途成本价"
+      },
+      {
+        "COLUMN_NAME": "afn_researching_quantity",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "调查中数量"
+      },
+      {
+        "COLUMN_NAME": "afn_researching_quantity_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "调查中数量成本价"
+      },
+      {
+        "COLUMN_NAME": "total_fulfillable_quantity",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "总可用库存"
+      },
+      {
+        "COLUMN_NAME": "inv_age_0_to_30_days",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "0-1个月库龄"
+      },
+      {
+        "COLUMN_NAME": "inv_age_0_to_30_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "0-1个月库龄成本价"
+      },
+      {
+        "COLUMN_NAME": "inv_age_31_to_60_days",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "1-2个月库龄"
+      },
+      {
+        "COLUMN_NAME": "inv_age_31_to_60_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "1-2个月库龄成本价"
+      },
+      {
+        "COLUMN_NAME": "inv_age_61_to_90_days",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "2-3个月库龄"
+      },
+      {
+        "COLUMN_NAME": "inv_age_61_to_90_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "2-3个月库龄成本价"
+      },
+      {
+        "COLUMN_NAME": "inv_age_0_to_90_days",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "0-3个月库龄"
+      },
+      {
+        "COLUMN_NAME": "inv_age_0_to_90_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "0-3个月库龄成本价"
+      },
+      {
+        "COLUMN_NAME": "inv_age_91_to_180_days",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "3-6个月库龄"
+      },
+      {
+        "COLUMN_NAME": "inv_age_91_to_180_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "3-6个月库龄成本价"
+      },
+      {
+        "COLUMN_NAME": "inv_age_181_to_270_days",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "6-9个月库龄"
+      },
+      {
+        "COLUMN_NAME": "inv_age_181_to_270_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "6-9个月库龄成本价"
+      },
+      {
+        "COLUMN_NAME": "inv_age_271_to_330_days",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "9-11个月库龄"
+      },
+      {
+        "COLUMN_NAME": "inv_age_271_to_330_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "9-11个月库龄成本价"
+      },
+      {
+        "COLUMN_NAME": "inv_age_271_to_365_days",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "9-12个月库龄"
+      },
+      {
+        "COLUMN_NAME": "inv_age_271_to_365_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "9-12个月库龄成本价"
+      },
+      {
+        "COLUMN_NAME": "inv_age_331_to_365_days",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "11-12个月库龄"
+      },
+      {
+        "COLUMN_NAME": "inv_age_331_to_365_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "11-12个月库龄成本价"
+      },
+      {
+        "COLUMN_NAME": "inv_age_365_plus_days",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "12个月以上库龄"
+      },
+      {
+        "COLUMN_NAME": "inv_age_365_plus_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "12个月以上库龄成本价"
+      },
+      {
+        "COLUMN_NAME": "cg_price",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "单位采购成本"
+      },
+      {
+        "COLUMN_NAME": "cg_transport_costs",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "单位头程费用"
+      },
+      {
+        "COLUMN_NAME": "inventory_strings",
+        "DATA_TYPE": "text",
+        "COLUMN_COMMENT": "多国库存"
+      },
+      {
+        "COLUMN_NAME": "inventory_cost_strings",
+        "DATA_TYPE": "text",
+        "COLUMN_COMMENT": "多国库存(成本)"
+      },
+      {
+        "COLUMN_NAME": "name_UK",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-仓库名-英国"
+      },
+      {
+        "COLUMN_NAME": "quantity_UK",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-库存量-英国"
+      },
+      {
+        "COLUMN_NAME": "name_DE",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-仓库名-德国"
+      },
+      {
+        "COLUMN_NAME": "quantity_DE",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-库存量-德国"
+      },
+      {
+        "COLUMN_NAME": "name_FR",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-仓库名-法国"
+      },
+      {
+        "COLUMN_NAME": "quantity_FR",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-库存量-法国"
+      },
+      {
+        "COLUMN_NAME": "name_IT",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-仓库名-意大利"
+      },
+      {
+        "COLUMN_NAME": "quantity_IT",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-库存量-意大利"
+      },
+      {
+        "COLUMN_NAME": "name_ES",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-仓库名-西班牙"
+      },
+      {
+        "COLUMN_NAME": "quantity_ES",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-库存量-西班牙"
+      },
+      {
+        "COLUMN_NAME": "name_NL",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-仓库名-荷兰"
+      },
+      {
+        "COLUMN_NAME": "quantity_NL",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-库存量-荷兰"
+      },
+      {
+        "COLUMN_NAME": "name_PL",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-仓库名-波兰"
+      },
+      {
+        "COLUMN_NAME": "quantity_PL",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-库存量-波兰"
+      },
+      {
+        "COLUMN_NAME": "name_BE",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-仓库名-比利时"
+      },
+      {
+        "COLUMN_NAME": "quantity_BE",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-库存量-比利时"
+      },
+      {
+        "COLUMN_NAME": "name_SE",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-仓库名-瑞典"
+      },
+      {
+        "COLUMN_NAME": "quantity_SE",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-库存量-瑞典"
+      },
+      {
+        "COLUMN_NAME": "name_TR",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-仓库名-土耳其"
+      },
+      {
+        "COLUMN_NAME": "quantity_TR",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-库存量-土耳其"
+      },
+      {
+        "COLUMN_NAME": "seller_sku_adj",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "seller_name",
+        "DATA_TYPE": "longtext",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "seller_name_new",
+        "DATA_TYPE": "longtext",
+        "COLUMN_COMMENT": ""
+      },
+      {
+        "COLUMN_NAME": "country_category",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": ""
+      }
+    ]
+  },
+  {
+    "table": "dwd_datasync.lx_storage_fba_warehouse_detail",
+    "exists": true,
+    "columns": [
+      {
+        "COLUMN_NAME": "id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "主键"
+      },
+      {
+        "COLUMN_NAME": "relate_id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "关联id"
+      },
+      {
+        "COLUMN_NAME": "create_time",
+        "DATA_TYPE": "datetime",
+        "COLUMN_COMMENT": "创建时间"
+      },
+      {
+        "COLUMN_NAME": "name",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "仓库名"
+      },
+      {
+        "COLUMN_NAME": "sid",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "店铺id"
+      },
+      {
+        "COLUMN_NAME": "asin",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "ASIN"
+      },
+      {
+        "COLUMN_NAME": "product_name",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "品名"
+      },
+      {
+        "COLUMN_NAME": "small_image_url",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "预览图链接"
+      },
+      {
+        "COLUMN_NAME": "seller_sku",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "MSKU"
+      },
+      {
+        "COLUMN_NAME": "fnsku",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "FNSKU"
+      },
+      {
+        "COLUMN_NAME": "sku",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "SKU"
+      },
+      {
+        "COLUMN_NAME": "category_text",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "分类文本"
+      },
+      {
+        "COLUMN_NAME": "category_id",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "分类ID"
+      },
+      {
+        "COLUMN_NAME": "product_brand_text",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "品牌文本"
+      },
+      {
+        "COLUMN_NAME": "bid",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "品牌Id"
+      },
+      {
+        "COLUMN_NAME": "share_type",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "共享类型"
+      },
+      {
+        "COLUMN_NAME": "total",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "总数"
+      },
+      {
+        "COLUMN_NAME": "total_price",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "总价"
+      },
+      {
+        "COLUMN_NAME": "available_total",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "可用总数"
+      },
+      {
+        "COLUMN_NAME": "available_total_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "可用总数成本价"
+      },
+      {
+        "COLUMN_NAME": "afn_fulfillable_quantity",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "FBA可售"
+      },
+      {
+        "COLUMN_NAME": "afn_fulfillable_quantity_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "FBA可售成本价"
+      },
+      {
+        "COLUMN_NAME": "reserved_fc_transfers",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "待调仓"
+      },
+      {
+        "COLUMN_NAME": "reserved_fc_transfers_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "待调仓成本价"
+      },
+      {
+        "COLUMN_NAME": "reserved_fc_processing",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "调仓中"
+      },
+      {
+        "COLUMN_NAME": "reserved_fc_processing_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "调仓中成本价"
+      },
+      {
+        "COLUMN_NAME": "reserved_customerorders",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "待发货"
+      },
+      {
+        "COLUMN_NAME": "reserved_customerorders_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "待发货成本价"
+      },
+      {
+        "COLUMN_NAME": "quantity",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "FBM可售"
+      },
+      {
+        "COLUMN_NAME": "quantity_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "FBM可售成本价"
+      },
+      {
+        "COLUMN_NAME": "afn_unsellable_quantity",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "不可售"
+      },
+      {
+        "COLUMN_NAME": "afn_unsellable_quantity_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "不可售成本价"
+      },
+      {
+        "COLUMN_NAME": "afn_inbound_working_quantity",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "计划入库"
+      },
+      {
+        "COLUMN_NAME": "afn_inbound_working_quantity_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "计划入库成本价"
+      },
+      {
+        "COLUMN_NAME": "afn_inbound_shipped_quantity",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "在途"
+      },
+      {
+        "COLUMN_NAME": "afn_inbound_shipped_quantity_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "在途成本价"
+      },
+      {
+        "COLUMN_NAME": "afn_inbound_receiving_quantity",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "入库中"
+      },
+      {
+        "COLUMN_NAME": "afn_inbound_receiving_quantity_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "入库中成本价"
+      },
+      {
+        "COLUMN_NAME": "stock_up_num",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "实际在途"
+      },
+      {
+        "COLUMN_NAME": "stock_up_num_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "实际在途成本价"
+      },
+      {
+        "COLUMN_NAME": "afn_researching_quantity",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "调查中数量"
+      },
+      {
+        "COLUMN_NAME": "afn_researching_quantity_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "调查中数量成本价"
+      },
+      {
+        "COLUMN_NAME": "total_fulfillable_quantity",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "总可用库存"
+      },
+      {
+        "COLUMN_NAME": "inv_age_0_to_30_days",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "0-1个月库龄"
+      },
+      {
+        "COLUMN_NAME": "inv_age_0_to_30_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "0-1个月库龄成本价"
+      },
+      {
+        "COLUMN_NAME": "inv_age_31_to_60_days",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "1-2个月库龄"
+      },
+      {
+        "COLUMN_NAME": "inv_age_31_to_60_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "1-2个月库龄成本价"
+      },
+      {
+        "COLUMN_NAME": "inv_age_61_to_90_days",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "2-3个月库龄"
+      },
+      {
+        "COLUMN_NAME": "inv_age_61_to_90_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "2-3个月库龄成本价"
+      },
+      {
+        "COLUMN_NAME": "inv_age_0_to_90_days",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "0-3个月库龄"
+      },
+      {
+        "COLUMN_NAME": "inv_age_0_to_90_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "0-3个月库龄成本价"
+      },
+      {
+        "COLUMN_NAME": "inv_age_91_to_180_days",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "3-6个月库龄"
+      },
+      {
+        "COLUMN_NAME": "inv_age_91_to_180_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "3-6个月库龄成本价"
+      },
+      {
+        "COLUMN_NAME": "inv_age_181_to_270_days",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "6-9个月库龄"
+      },
+      {
+        "COLUMN_NAME": "inv_age_181_to_270_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "6-9个月库龄成本价"
+      },
+      {
+        "COLUMN_NAME": "inv_age_271_to_330_days",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "9-11个月库龄"
+      },
+      {
+        "COLUMN_NAME": "inv_age_271_to_330_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "9-11个月库龄成本价"
+      },
+      {
+        "COLUMN_NAME": "inv_age_271_to_365_days",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "9-12个月库龄"
+      },
+      {
+        "COLUMN_NAME": "inv_age_271_to_365_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "9-12个月库龄成本价"
+      },
+      {
+        "COLUMN_NAME": "inv_age_331_to_365_days",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "11-12个月库龄"
+      },
+      {
+        "COLUMN_NAME": "inv_age_331_to_365_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "11-12个月库龄成本价"
+      },
+      {
+        "COLUMN_NAME": "inv_age_365_plus_days",
+        "DATA_TYPE": "int",
+        "COLUMN_COMMENT": "12个月以上库龄"
+      },
+      {
+        "COLUMN_NAME": "inv_age_365_plus_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "12个月以上库龄成本价"
+      },
+      {
+        "COLUMN_NAME": "recommended_action",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "推荐操作"
+      },
+      {
+        "COLUMN_NAME": "sell_through",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "售出率"
+      },
+      {
+        "COLUMN_NAME": "estimated_excess_quantity",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "预计冗余数量"
+      },
+      {
+        "COLUMN_NAME": "estimated_storage_cost_next_month",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "预计30天仓储费用"
+      },
+      {
+        "COLUMN_NAME": "fba_minimum_inventory_level",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "最低库存水平"
+      },
+      {
+        "COLUMN_NAME": "fba_inventory_level_health_status",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "库存水平健康度"
+      },
+      {
+        "COLUMN_NAME": "historical_days_of_supply",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "历史供货天数"
+      },
+      {
+        "COLUMN_NAME": "historical_days_of_supply_price",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "历史供货天数成本价"
+      },
+      {
+        "COLUMN_NAME": "low_inventory_level_fee_applied",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "低库存水平费收取情况"
+      },
+      {
+        "COLUMN_NAME": "fulfillment_channel",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "配送方式"
+      },
+      {
+        "COLUMN_NAME": "cg_price",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "配送方式"
+      },
+      {
+        "COLUMN_NAME": "cg_transport_costs",
+        "DATA_TYPE": "decimal",
+        "COLUMN_COMMENT": "配送方式"
+      },
+      {
+        "COLUMN_NAME": "name_share",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "共享仓名字"
+      },
+      {
+        "COLUMN_NAME": "name_dianpu",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "店铺名"
+      },
+      {
+        "COLUMN_NAME": "inventory_strings",
+        "DATA_TYPE": "text",
+        "COLUMN_COMMENT": "多国库存"
+      },
+      {
+        "COLUMN_NAME": "inventory_cost_strings",
+        "DATA_TYPE": "text",
+        "COLUMN_COMMENT": "多国库存(成本)"
+      },
+      {
+        "COLUMN_NAME": "name_UK",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-仓库名-英国"
+      },
+      {
+        "COLUMN_NAME": "quantity_UK",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-库存量-英国"
+      },
+      {
+        "COLUMN_NAME": "name_DE",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-仓库名-德国"
+      },
+      {
+        "COLUMN_NAME": "quantity_DE",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-库存量-德国"
+      },
+      {
+        "COLUMN_NAME": "name_FR",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-仓库名-法国"
+      },
+      {
+        "COLUMN_NAME": "quantity_FR",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-库存量-法国"
+      },
+      {
+        "COLUMN_NAME": "name_IT",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-仓库名-意大利"
+      },
+      {
+        "COLUMN_NAME": "quantity_IT",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-库存量-意大利"
+      },
+      {
+        "COLUMN_NAME": "name_ES",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-仓库名-西班牙"
+      },
+      {
+        "COLUMN_NAME": "quantity_ES",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-库存量-西班牙"
+      },
+      {
+        "COLUMN_NAME": "name_NL",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-仓库名-荷兰"
+      },
+      {
+        "COLUMN_NAME": "quantity_NL",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-库存量-荷兰"
+      },
+      {
+        "COLUMN_NAME": "name_PL",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-仓库名-波兰"
+      },
+      {
+        "COLUMN_NAME": "quantity_PL",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-库存量-波兰"
+      },
+      {
+        "COLUMN_NAME": "name_BE",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-仓库名-比利时"
+      },
+      {
+        "COLUMN_NAME": "quantity_BE",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-库存量-比利时"
+      },
+      {
+        "COLUMN_NAME": "name_SE",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-仓库名-瑞典"
+      },
+      {
+        "COLUMN_NAME": "quantity_SE",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-库存量-瑞典"
+      },
+      {
+        "COLUMN_NAME": "name_TR",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-仓库名-土耳其"
+      },
+      {
+        "COLUMN_NAME": "quantity_TR",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "多国库存-库存量-土耳其"
+      }
+    ]
+  },
+  {
+    "table": "dwd_datasync.lx_basic_currency",
+    "exists": true,
+    "columns": [
+      {
+        "COLUMN_NAME": "id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "主键"
+      },
+      {
+        "COLUMN_NAME": "relate_id",
+        "DATA_TYPE": "bigint",
+        "COLUMN_COMMENT": "关联ID"
+      },
+      {
+        "COLUMN_NAME": "name",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "原币种"
+      },
+      {
+        "COLUMN_NAME": "target_currency",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "目标币"
+      },
+      {
+        "COLUMN_NAME": "rate_org",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "官方汇率值"
+      },
+      {
+        "COLUMN_NAME": "my_rate",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "我的汇率"
+      },
+      {
+        "COLUMN_NAME": "date",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "生效月份"
+      },
+      {
+        "COLUMN_NAME": "create_time",
+        "DATA_TYPE": "varchar",
+        "COLUMN_COMMENT": "同步时间"
+      }
+    ]
+  }
+]

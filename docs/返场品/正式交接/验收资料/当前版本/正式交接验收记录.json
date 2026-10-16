@@ -1,0 +1,301 @@
+{
+  "rule_version": "return-v14-20261012-dynamic-price-visits",
+  "main_documents": [
+    "00-交接入口.md",
+    "01-返场品完整运营决策.md",
+    "02-远端取数与指标口径.md",
+    "03-计算代码与开发接入.md",
+    "04-结果数据表与落库要求.md",
+    "05-待开发事项与验收清单.md"
+  ],
+  "original_markdown_documents": 36,
+  "portable_tests": "228 passed",
+  "document_links": 147,
+  "xmind_sheets": 4,
+  "xmind_topics": 326,
+  "exact_code_copy": true,
+  "production_rules_unchanged": true,
+  "credentials_included": false,
+  "current_version_synthetic_structure_sample": "passed; not real warehouse output",
+  "original_project_reference_links_as_text": [
+    {
+      "document": "历史与参考\\原始文档\\开发文档\\2026-10-10-返场品运营策略页面远端数据开发文档.md",
+      "label": "适配测试",
+      "original_target": "../../../tests/test_return_goods_remote_decision.py"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-28-返场品观察期转干预期运营判断方案.md",
+      "label": "问题产品价格档位定义",
+      "original_target": "../../问题产品与瘦狗产品运营策略/问题产品运营决策框架.md"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-28-返场品观察期转干预期运营判断方案.md",
+      "label": "潜力产品定价表来源",
+      "original_target": "../../潜力产品运营策略/2026-09-28-潜力产品运营策略数据开发说明.md"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-28-返场品销售角色达标退出方案.md",
+      "label": "恢复与退出真实快照核验",
+      "original_target": "../../../outputs/return-goods-strategy/recovery-audit-result.json"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-28-返场品销售角色达标退出方案.md",
+      "label": "退出、价格和动作限制核验",
+      "original_target": "../../../outputs/return-goods-strategy/audit-result.json"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-28-返场品销售角色达标退出方案.md",
+      "label": "页面验收",
+      "original_target": "../../../outputs/return-goods-strategy/browser-suite-result.json"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-28-返场品销售角色达标退出方案.md",
+      "label": "调整前完整方案留档",
+      "original_target": "../../../outputs/return-goods-strategy/2026-10-08-对应窗口退出调整前方案留档.md"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-28-返场品销售角色达标退出方案.md",
+      "label": "统一潜力目标的V3退出方案留档",
+      "original_target": "../../../outputs/return-goods-strategy/2026-10-08-按历史角色分级退出调整前方案留档.md"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-30-新版页面实施与验收记录.md",
+      "label": "阶段分布验收",
+      "original_target": "../../../outputs/return-goods-strategy/stage-browser-result.json"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-30-新版页面实施与验收记录.md",
+      "label": "页面截图",
+      "original_target": "../../../outputs/return-goods-strategy/stage-overview.png"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-30-新版页面实施与验收记录.md",
+      "label": "AG Grid与快捷卡验收",
+      "original_target": "../../../outputs/return-goods-strategy/grid-browser-result.json"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-30-新版页面实施与验收记录.md",
+      "label": "桌面截图",
+      "original_target": "../../../outputs/return-goods-strategy/grid-overview.png"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-30-新版页面实施与验收记录.md",
+      "label": "窄屏截图",
+      "original_target": "../../../outputs/return-goods-strategy/grid-tablet.png"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-30-新版页面实施与验收记录.md",
+      "label": "历史数据核查",
+      "original_target": "../../../outputs/return-goods-strategy/history-probe.json"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-30-新版页面实施与验收记录.md",
+      "label": "历史对比验收",
+      "original_target": "../../../outputs/return-goods-strategy/history-browser-result.json"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-30-新版页面实施与验收记录.md",
+      "label": "后台测试结果",
+      "original_target": "../../../outputs/return-goods-strategy/tests.log"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-30-新版页面实施与验收记录.md",
+      "label": "真实数据逐条校验",
+      "original_target": "../../../outputs/return-goods-strategy/audit-result.json"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-30-新版页面实施与验收记录.md",
+      "label": "浏览器验收记录",
+      "original_target": "../../../outputs/return-goods-strategy/browser-result.json"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-30-新版页面实施与验收记录.md",
+      "label": "页面截图",
+      "original_target": "../../../outputs/return-goods-strategy/page.png"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-30-新版页面实施与验收记录.md",
+      "label": "详情截图",
+      "original_target": "../../../outputs/return-goods-strategy/detail.png"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-30-新版页面实施与验收记录.md",
+      "label": "浏览器验收汇总",
+      "original_target": "../../../outputs/return-goods-strategy/browser-suite-result.json"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-30-新版页面实施与验收记录.md",
+      "label": "恢复窗口核验结果",
+      "original_target": "../../../outputs/return-goods-strategy/recovery-audit-result.json"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-30-新版页面实施与验收记录.md",
+      "label": "恢复与退出核验",
+      "original_target": "../../../outputs/return-goods-strategy/recovery-audit-result.json"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-30-新版页面实施与验收记录.md",
+      "label": "浏览器汇总",
+      "original_target": "../../../outputs/return-goods-strategy/browser-suite-result.json"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-30-返场品连续断货天数历史验证.md",
+      "label": "事件查询",
+      "original_target": "../../../outputs/返场品连续断货门槛验证/2026-09-30/events.sql"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-30-返场品连续断货天数历史验证.md",
+      "label": "实际分批查询",
+      "original_target": "../../../outputs/返场品连续断货门槛验证/2026-09-30/daily_by_product.sql"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-30-返场品连续断货天数历史验证.md",
+      "label": "取数记录及原始快照校验值",
+      "original_target": "../../../outputs/返场品连续断货门槛验证/2026-09-30/manifest.json"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-30-返场品连续断货天数历史验证.md",
+      "label": "1,281轮事件核验明细",
+      "original_target": "../../../outputs/返场品连续断货门槛验证/2026-09-30/事件验证明细.csv"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-30-返场品连续断货天数历史验证.md",
+      "label": "各组汇总",
+      "original_target": "../../../outputs/返场品连续断货门槛验证/2026-09-30/summary.json"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-30-返场品连续断货天数历史验证.md",
+      "label": "独立复算结果",
+      "original_target": "../../../outputs/返场品连续断货门槛验证/2026-09-30/validation.json"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-30-返场品连续断货天数历史验证.md",
+      "label": "离线分析代码",
+      "original_target": "../../../outputs/返场品连续断货门槛验证/2026-09-30/analyze.py"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-30-返场品连续断货天数历史验证.md",
+      "label": "复算代码",
+      "original_target": "../../../outputs/返场品连续断货门槛验证/2026-09-30/validate.py"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-30-返场品连续断货天数历史验证.md",
+      "label": "已执行的结果复核笔记",
+      "original_target": "../../../outputs/返场品连续断货门槛验证/2026-09-30/连续断货门槛复核.ipynb"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-30-返场恢复库存5件与6件门槛对照.md",
+      "label": "原取数记录及快照校验值",
+      "original_target": "../../../outputs/返场品连续断货门槛验证/2026-09-30/manifest.json"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-30-返场恢复库存5件与6件门槛对照.md",
+      "label": "逐事件对照明细",
+      "original_target": "../../../outputs/返场品连续断货门槛验证/2026-09-30/恢复库存门槛对照明细.csv"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-30-返场恢复库存5件与6件门槛对照.md",
+      "label": "对照汇总",
+      "original_target": "../../../outputs/返场品连续断货门槛验证/2026-09-30/恢复库存门槛对照汇总.json"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-09-30-返场恢复库存5件与6件门槛对照.md",
+      "label": "离线计算脚本",
+      "original_target": "../../../outputs/返场品连续断货门槛验证/2026-09-30/compare_return_stock.py"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-10-08-低日销优先修复销量实施与验收.md",
+      "label": "后台测试结果",
+      "original_target": "../../../outputs/return-goods-strategy/tests-result.json"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-10-08-低日销优先修复销量实施与验收.md",
+      "label": "真实快照及页面验收",
+      "original_target": "../../../outputs/return-goods-strategy/sales-repair-audit-result.json"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-10-08-广告优先判断与竞价建议核查说明.md",
+      "label": "广告快照只读核查",
+      "original_target": "../../../outputs/return-goods-strategy/ad_audit.py"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-10-08-广告优先判断与竞价建议核查说明.md",
+      "label": "批次10原因统计",
+      "original_target": "../../../outputs/return-goods-strategy/ad-audit-result.json"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-10-08-返场恢复比较窗口与不可判拆分.md",
+      "label": "库存中断阈值回算",
+      "original_target": "../../../outputs/return-goods-strategy/stock-interruption-audit-result.json"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-10-08-返场恢复比较窗口与不可判拆分.md",
+      "label": "恢复窗口核验结果",
+      "original_target": "../../../outputs/return-goods-strategy/recovery-audit-result.json"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-10-08-返场恢复比较窗口与不可判拆分.md",
+      "label": "AG Grid与分支验收",
+      "original_target": "../../../outputs/return-goods-strategy/grid-browser-result.json"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-10-09-10月1日至6日库存补数验收记录.md",
+      "label": "页面修复真实数据与接口核验结果",
+      "original_target": "../../../outputs/return-goods-strategy/inventory-source-fix-verification.json"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-10-09-10月1日至6日库存补数验收记录.md",
+      "label": "补数结果与提交后核验",
+      "original_target": "../../../outputs/return-goods-strategy/inventory-backfill-20261001-06-result.json"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-10-09-10月1日至6日库存补数验收记录.md",
+      "label": "10月1日重建口径校验",
+      "original_target": "../../../outputs/return-goods-strategy/inventory-oct01-reconstruction-check.json"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-10-09-广告与价格分流规则更新与验收.md",
+      "label": "验收结果",
+      "original_target": "../../../outputs/return-goods-strategy/ad-price-routing-verification.json"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-10-09-广告与价格分流规则更新与验收.md",
+      "label": "页面截图",
+      "original_target": "../../../outputs/return-goods-strategy/ad-price-routing-8766.png"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\2026-10-09-广告与价格分流规则更新与验收.md",
+      "label": "详情截图",
+      "original_target": "../../../outputs/return-goods-strategy/ad-price-routing-detail-8766.png"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\返场品策略阅读导航.md",
+      "label": "历史验证数据与计算文件目录",
+      "original_target": "../../../outputs/返场品连续断货门槛验证/2026-09-30"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\返场品策略阅读导航.md",
+      "label": "快照取数记录",
+      "original_target": "../../../outputs/返场品连续断货门槛验证/2026-09-30/manifest.json"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\返场品策略阅读导航.md",
+      "label": "连续断货验证汇总",
+      "original_target": "../../../outputs/返场品连续断货门槛验证/2026-09-30/summary.json"
+    },
+    {
+      "document": "历史与参考\\原始文档\\运营策略\\返场品策略阅读导航.md",
+      "label": "恢复库存对照汇总",
+      "original_target": "../../../outputs/返场品连续断货门槛验证/2026-09-30/恢复库存门槛对照汇总.json"
+    }
+  ],
+  "source_data_requeried": false,
+  "production_recomputation": false,
+  "result_table_writes": 0,
+  "platform_writes": 0,
+  "limitations": [
+    "No current-rule full remote replay or result-table persistence was performed.",
+    "Historical sample counts and database gaps retain their original dates.",
+    "Desktop XMind opening was not tested."
+  ]
+}

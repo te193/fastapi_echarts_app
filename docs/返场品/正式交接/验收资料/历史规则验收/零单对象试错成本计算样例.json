@@ -1,0 +1,396 @@
+{
+  "rule_version": "return-v12-20261012-object-trial-cost",
+  "data_kind": "人工边界样例，非远端实跑数据",
+  "cases": [
+    {
+      "input": {
+        "mature": true,
+        "days": 7,
+        "mature_start": "2026-10-05",
+        "mature_end": "2026-10-11",
+        "report_days": [
+          "2026-10-05",
+          "2026-10-06",
+          "2026-10-07",
+          "2026-10-08",
+          "2026-10-09",
+          "2026-10-10",
+          "2026-10-11"
+        ],
+        "clicks": 20,
+        "orders": 0,
+        "cost": "11.999",
+        "sales": 0,
+        "mapping_count": 1,
+        "current_bid": 1,
+        "currency": "EUR",
+        "trial_reference": {
+          "verified": true,
+          "amount": 20,
+          "currency": "EUR"
+        },
+        "order_economics": {
+          "verified": true,
+          "revenue": 20,
+          "non_ad_cost": 14,
+          "currency": "EUR"
+        }
+      },
+      "sales_first": true,
+      "output": {
+        "kind": "ad",
+        "action": "hold",
+        "label": "暂不调整竞价",
+        "status": "hold",
+        "reason": "该对象成熟花费11.999未达试错止损门槛12.00，继续观察",
+        "target": null,
+        "checks": [],
+        "acos_band": "unknown",
+        "acos_band_label": "ACOS无法计算",
+        "acos": null,
+        "acos_target": "0.20",
+        "acos_max": "0.50",
+        "current": "1",
+        "zero_order_trial": {
+          "policy": "sales_repair",
+          "verified": true,
+          "is_trial_rule": true,
+          "allowance": "6.00",
+          "stoploss_threshold": "12.00",
+          "hard_threshold": "20.00",
+          "issues": [],
+          "currency": "EUR",
+          "source_date": null,
+          "reference_source": null,
+          "reference_amount": "20"
+        }
+      }
+    },
+    {
+      "input": {
+        "mature": true,
+        "days": 7,
+        "mature_start": "2026-10-05",
+        "mature_end": "2026-10-11",
+        "report_days": [
+          "2026-10-05",
+          "2026-10-06",
+          "2026-10-07",
+          "2026-10-08",
+          "2026-10-09",
+          "2026-10-10",
+          "2026-10-11"
+        ],
+        "clicks": 20,
+        "orders": 0,
+        "cost": "12",
+        "sales": 0,
+        "mapping_count": 1,
+        "current_bid": 1,
+        "currency": "EUR",
+        "trial_reference": {
+          "verified": true,
+          "amount": 20,
+          "currency": "EUR"
+        },
+        "order_economics": {
+          "verified": true,
+          "revenue": 20,
+          "non_ad_cost": 14,
+          "currency": "EUR"
+        }
+      },
+      "sales_first": true,
+      "output": {
+        "kind": "ad",
+        "action": "bid_down",
+        "label": "降低竞价",
+        "status": "pending",
+        "reason": "成熟点击至少20次且该对象零单；对象花费12达到2倍单次试错成本门槛12.00，候选降低10.00%（试算规则）",
+        "target": "0.90",
+        "checks": [],
+        "acos_band": "unknown",
+        "acos_band_label": "ACOS无法计算",
+        "acos": null,
+        "acos_target": "0.20",
+        "acos_max": "0.50",
+        "current": "1",
+        "zero_order_trial": {
+          "policy": "sales_repair",
+          "verified": true,
+          "is_trial_rule": true,
+          "allowance": "6.00",
+          "stoploss_threshold": "12.00",
+          "hard_threshold": "20.00",
+          "issues": [],
+          "currency": "EUR",
+          "source_date": null,
+          "reference_source": null,
+          "reference_amount": "20"
+        },
+        "change_rate": "-0.10"
+      }
+    },
+    {
+      "input": {
+        "mature": true,
+        "days": 7,
+        "mature_start": "2026-10-05",
+        "mature_end": "2026-10-11",
+        "report_days": [
+          "2026-10-05",
+          "2026-10-06",
+          "2026-10-07",
+          "2026-10-08",
+          "2026-10-09",
+          "2026-10-10",
+          "2026-10-11"
+        ],
+        "clicks": 20,
+        "orders": 0,
+        "cost": "19.999",
+        "sales": 0,
+        "mapping_count": 1,
+        "current_bid": 1,
+        "currency": "EUR",
+        "trial_reference": {
+          "verified": true,
+          "amount": 20,
+          "currency": "EUR"
+        },
+        "order_economics": {
+          "verified": true,
+          "revenue": 20,
+          "non_ad_cost": 14,
+          "currency": "EUR"
+        }
+      },
+      "sales_first": true,
+      "output": {
+        "kind": "ad",
+        "action": "bid_down",
+        "label": "降低竞价",
+        "status": "pending",
+        "reason": "成熟点击至少20次且该对象零单；对象花费19.999达到2倍单次试错成本门槛12.00，候选降低10.00%（试算规则）",
+        "target": "0.90",
+        "checks": [],
+        "acos_band": "unknown",
+        "acos_band_label": "ACOS无法计算",
+        "acos": null,
+        "acos_target": "0.20",
+        "acos_max": "0.50",
+        "current": "1",
+        "zero_order_trial": {
+          "policy": "sales_repair",
+          "verified": true,
+          "is_trial_rule": true,
+          "allowance": "6.00",
+          "stoploss_threshold": "12.00",
+          "hard_threshold": "20.00",
+          "issues": [],
+          "currency": "EUR",
+          "source_date": null,
+          "reference_source": null,
+          "reference_amount": "20"
+        },
+        "change_rate": "-0.10"
+      }
+    },
+    {
+      "input": {
+        "mature": true,
+        "days": 7,
+        "mature_start": "2026-10-05",
+        "mature_end": "2026-10-11",
+        "report_days": [
+          "2026-10-05",
+          "2026-10-06",
+          "2026-10-07",
+          "2026-10-08",
+          "2026-10-09",
+          "2026-10-10",
+          "2026-10-11"
+        ],
+        "clicks": 20,
+        "orders": 0,
+        "cost": "20",
+        "sales": 0,
+        "mapping_count": 1,
+        "current_bid": 1,
+        "currency": "EUR",
+        "trial_reference": {
+          "verified": true,
+          "amount": 20,
+          "currency": "EUR"
+        },
+        "order_economics": {
+          "verified": true,
+          "revenue": 20,
+          "non_ad_cost": 14,
+          "currency": "EUR"
+        }
+      },
+      "sales_first": true,
+      "output": {
+        "kind": "ad",
+        "action": "bid_down",
+        "label": "降低竞价",
+        "status": "pending",
+        "reason": "成熟点击至少20次且该对象零单；对象花费20达到销量修复加重止损门槛20.00，候选降低20.00%（试算规则）",
+        "target": "0.80",
+        "checks": [],
+        "acos_band": "unknown",
+        "acos_band_label": "ACOS无法计算",
+        "acos": null,
+        "acos_target": "0.20",
+        "acos_max": "0.50",
+        "current": "1",
+        "zero_order_trial": {
+          "policy": "sales_repair",
+          "verified": true,
+          "is_trial_rule": true,
+          "allowance": "6.00",
+          "stoploss_threshold": "12.00",
+          "hard_threshold": "20.00",
+          "issues": [],
+          "currency": "EUR",
+          "source_date": null,
+          "reference_source": null,
+          "reference_amount": "20"
+        },
+        "change_rate": "-0.20"
+      }
+    },
+    {
+      "input": {
+        "mature": true,
+        "days": 7,
+        "mature_start": "2026-10-05",
+        "mature_end": "2026-10-11",
+        "report_days": [
+          "2026-10-05",
+          "2026-10-06",
+          "2026-10-07",
+          "2026-10-08",
+          "2026-10-09",
+          "2026-10-10",
+          "2026-10-11"
+        ],
+        "clicks": 20,
+        "orders": 0,
+        "cost": "9.999",
+        "sales": 0,
+        "mapping_count": 1,
+        "current_bid": 1,
+        "currency": "EUR",
+        "trial_reference": {
+          "verified": true,
+          "amount": 20,
+          "currency": "EUR"
+        },
+        "order_economics": {
+          "verified": true,
+          "revenue": 20,
+          "non_ad_cost": 14,
+          "currency": "EUR"
+        }
+      },
+      "sales_first": false,
+      "output": {
+        "kind": "ad",
+        "action": "hold",
+        "label": "暂不调整竞价",
+        "status": "hold",
+        "reason": "该对象成熟花费9.999未达试错止损门槛10.00，继续观察",
+        "target": null,
+        "checks": [],
+        "acos_band": "unknown",
+        "acos_band_label": "ACOS无法计算",
+        "acos": null,
+        "acos_target": "0.20",
+        "acos_max": "0.50",
+        "current": "1",
+        "zero_order_trial": {
+          "policy": "profit_safe",
+          "verified": true,
+          "is_trial_rule": true,
+          "allowance": "5.00",
+          "stoploss_threshold": "10.00",
+          "hard_threshold": null,
+          "issues": [],
+          "currency": "EUR",
+          "source_date": null,
+          "reference_source": null,
+          "reference_amount": "20",
+          "non_ad_cost": "14"
+        }
+      }
+    },
+    {
+      "input": {
+        "mature": true,
+        "days": 7,
+        "mature_start": "2026-10-05",
+        "mature_end": "2026-10-11",
+        "report_days": [
+          "2026-10-05",
+          "2026-10-06",
+          "2026-10-07",
+          "2026-10-08",
+          "2026-10-09",
+          "2026-10-10",
+          "2026-10-11"
+        ],
+        "clicks": 20,
+        "orders": 0,
+        "cost": "10",
+        "sales": 0,
+        "mapping_count": 1,
+        "current_bid": 1,
+        "currency": "EUR",
+        "trial_reference": {
+          "verified": true,
+          "amount": 20,
+          "currency": "EUR"
+        },
+        "order_economics": {
+          "verified": true,
+          "revenue": 20,
+          "non_ad_cost": 14,
+          "currency": "EUR"
+        }
+      },
+      "sales_first": false,
+      "output": {
+        "kind": "ad",
+        "action": "bid_down",
+        "label": "降低竞价",
+        "status": "pending",
+        "reason": "成熟点击至少20次且该对象零单；对象花费10达到2倍单次试错成本门槛10.00，候选降低10.00%（试算规则）",
+        "target": "0.90",
+        "checks": [],
+        "acos_band": "unknown",
+        "acos_band_label": "ACOS无法计算",
+        "acos": null,
+        "acos_target": "0.20",
+        "acos_max": "0.50",
+        "current": "1",
+        "zero_order_trial": {
+          "policy": "profit_safe",
+          "verified": true,
+          "is_trial_rule": true,
+          "allowance": "5.00",
+          "stoploss_threshold": "10.00",
+          "hard_threshold": null,
+          "issues": [],
+          "currency": "EUR",
+          "source_date": null,
+          "reference_source": null,
+          "reference_amount": "20",
+          "non_ad_cost": "14"
+        },
+        "change_rate": "-0.10"
+      }
+    }
+  ]
+}

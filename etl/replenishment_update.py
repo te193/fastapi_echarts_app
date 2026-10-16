@@ -9,6 +9,7 @@ import traceback
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from etl.replenishment_roles import role_case
 
 from etl.dashboard_daily_update import (
     CREATE_LOG_TABLE_SQL,
@@ -37,6 +38,7 @@ DEFAULT_STEP_ORDER = [
     "listing_basic_sync",
     "self_asin_sync",
     "disabled_store_sync",
+    "clearance_list_sync",
     "fba_shipment_sync",
     "order_profit_source_sync",
     "supplier_moq_sync",
@@ -212,6 +214,26 @@ create table if not exists etl_datasync_test.dashboard_replenishment_disabled_st
     seller_name_new varchar(128) not null,
     synced_at datetime not null default current_timestamp,
     primary key (seller_name_new)
+) engine=InnoDB default charset=utf8mb4;
+"""
+
+CREATE_CLEARANCE_SYNC_SQL = """
+create table if not exists etl_datasync_test.dashboard_replenishment_clearance_sync (
+    msku varchar(500) not null,
+    store varchar(100) not null,
+    synced_at datetime not null default current_timestamp,
+    primary key (msku, store)
+) engine=InnoDB default charset=utf8mb4;
+"""
+
+CREATE_CLEARANCE_AUDIT_SQL = """
+create table if not exists etl_datasync_test.dashboard_replenishment_clearance_audit (
+    snapshot_date date not null,
+    country_category varchar(64) not null,
+    seller_name_new varchar(128) not null,
+    seller_sku_adj varchar(128) not null,
+    reference_qty decimal(18,4) not null,
+    primary key (snapshot_date, country_category, seller_name_new, seller_sku_adj)
 ) engine=InnoDB default charset=utf8mb4;
 """
 
@@ -501,6 +523,8 @@ DDL_STATEMENTS = (
     CREATE_HISTORY_DAILY_SYNC_SQL,
     CREATE_SELF_ASIN_SYNC_SQL,
     CREATE_DISABLED_STORE_SYNC_SQL,
+    CREATE_CLEARANCE_SYNC_SQL,
+    CREATE_CLEARANCE_AUDIT_SQL,
     CREATE_LISTING_BASIC_SYNC_SQL,
     CREATE_FBA_SHIPMENT_SYNC_SQL,
     CREATE_ORDER_PROFIT_SOURCE_SYNC_SQL,
@@ -743,6 +767,15 @@ select distinct lower(trim(`店铺名`)) as seller_name_new
 from opt_db.store_brand_relation
 where trim(coalesce(`是否补货`, '')) = '否'
   and trim(coalesce(`店铺名`, '')) <> ''
+"""
+
+CLEARANCE_COLUMNS = ("msku", "store")
+DELETE_CLEARANCE_SYNC_SQL = "delete from etl_datasync_test.dashboard_replenishment_clearance_sync;"
+SELECT_CLEARANCE_SYNC_SQL = """
+select distinct trim(msku) as msku, lower(trim(store)) as store
+from dws_datasync.dws_product_clearance_list
+where trim(coalesce(msku, '')) <> ''
+  and trim(coalesce(store, '')) <> ''
 """
 
 FBA_SHIPMENT_COLUMNS = (
@@ -1700,6 +1733,7 @@ from (
         fol.followed_by_links,
         coalesce(m.sales_180, 0) as sales_180,
         coalesce(m.sales_90, 0) as sales_90,
+        m.sales_30 as role_sales_30,
         coalesce(m.sales_30, 0) as sales_30,
         coalesce(m.sales_14, 0) as sales_14,
         coalesce(m.sales_7, 0) as sales_7,
@@ -2390,6 +2424,12 @@ from (
           and calc.seller_name_new = perf.seller_name_new
           and calc.seller_sku_adj = perf.seller_sku_adj
     where coalesce(calc.fllow_flag, 1) = 0
+      and not exists (
+          select 1
+          from etl_datasync_test.dashboard_replenishment_clearance_sync clearance
+          where clearance.msku = trim(calc.seller_sku_adj)
+            and (clearance.store = '全部' or clearance.store = lower(trim(calc.seller_name_new)))
+      )
       and grp.eligible_target_link_count > 0
       -- 单跟卖店铺沿用原逻辑，多店铺才排除明确不补货的店铺。
       and (
@@ -2574,16 +2614,7 @@ select
     final_lead_time_lost_sales_qty as lead_time_lost_sales_qty,
     final_support_replenish_level as support_replenish_level,
     final_support_replenish_level_sort as support_replenish_level_sort,
-    case
-        when adjusted_daily_sales_30d >= 5 and pprofit_ratio_30 >= 0.15 then '明星产品'
-        when adjusted_daily_sales_30d >= 1 and adjusted_daily_sales_30d < 5 and pprofit_ratio_30 >= 0.25 then '明星产品'
-        when adjusted_daily_sales_30d >= 5 and pprofit_ratio_30 >= 0.05 and pprofit_ratio_30 < 0.15 then '潜力产品'
-        when adjusted_daily_sales_30d >= 1 and adjusted_daily_sales_30d < 5 and pprofit_ratio_30 >= 0.10 and pprofit_ratio_30 < 0.25 then '潜力产品'
-        when adjusted_daily_sales_30d >= 1 and adjusted_daily_sales_30d < 5 and pprofit_ratio_30 >= 0.05 and pprofit_ratio_30 < 0.10 then '瘦狗产品'
-        when adjusted_daily_sales_30d < 1 and pprofit_ratio_30 >= 0.05 then '瘦狗产品'
-        when adjusted_daily_sales_30d = 0 or (adjusted_daily_sales_30d > 1 and pprofit_ratio_30 < 0.05) then '问题产品'
-        else '问题产品'
-    end as abcd_category,
+    __REPLENISHMENT_ROLE_30D__ as abcd_category,
     case
         when pprofit_ratio_30 >= 0.15 then '>=15%%'
         when pprofit_ratio_30 >= 0.10 then '10%%-15%%'
@@ -2874,8 +2905,18 @@ from (
     left join tmp_asin_merge_purchase_fields purchase
            on calc.country_category = purchase.country_category
           and calc.max_asin = purchase.max_asin
-) merged;
+) merged
+where not exists (
+    select 1
+    from etl_datasync_test.dashboard_replenishment_clearance_sync clearance
+    where clearance.msku = trim(merged.seller_sku_adj)
+      and (clearance.store = '全部' or clearance.store = lower(trim(merged.seller_name_new)))
+);
 """
+
+REPLENISHMENT_RESULT_SQL = REPLENISHMENT_RESULT_SQL.replace(
+    "__REPLENISHMENT_ROLE_30D__", role_case("role_sales_30 / 30.0", "pprofit_ratio_30")
+)
 
 REPLENISHMENT_TEMPORARY_SQL = (
     CHECK_DAILY_SNAPSHOTS_SQL,
@@ -3119,6 +3160,13 @@ STEPS = {
         "etl_datasync_test.dashboard_replenishment_disabled_store_sync",
         DISABLED_STORE_COLUMNS,
     ),
+    "clearance_list_sync": SourceLoadStep(
+        "clearance_list_sync",
+        DELETE_CLEARANCE_SYNC_SQL,
+        SELECT_CLEARANCE_SYNC_SQL,
+        "etl_datasync_test.dashboard_replenishment_clearance_sync",
+        CLEARANCE_COLUMNS,
+    ),
     "fba_shipment_sync": SourceLoadStep(
         "fba_shipment_sync",
         DELETE_FBA_SHIPMENT_SYNC_SQL,
@@ -3307,6 +3355,10 @@ def parse_steps(raw_steps: str) -> list[str]:
     unknown = [name for name in step_names if name not in STEPS]
     if unknown:
         raise SystemExit(f"Unknown step(s): {', '.join(unknown)}")
+    if "replenishment_result" in step_names:
+        # A partial rerun must not generate against a stale or absent clearance list.
+        step_names = [name for name in step_names if name != "clearance_list_sync"]
+        step_names.insert(step_names.index("replenishment_result"), "clearance_list_sync")
     return step_names
 
 
@@ -3428,9 +3480,15 @@ def validate_replenishment_result(
         cursor.execute(
             render_replenishment_sql(
                 """
-                select count(*) as row_count
-                from etl_datasync_test.dashboard_pur_plan_replenish_data
-                where cur_date = %(snapshot_date)s
+                select count(*) as row_count,
+                    coalesce(sum(case when exists (
+                        select 1
+                        from etl_datasync_test.dashboard_replenishment_clearance_sync clearance
+                        where clearance.msku = trim(r.seller_sku_adj)
+                          and (clearance.store = '全部' or clearance.store = lower(trim(r.seller_name_new)))
+                    ) then 1 else 0 end), 0) as clearance_count
+                from etl_datasync_test.dashboard_pur_plan_replenish_data r
+                where r.cur_date = %(snapshot_date)s
                 """,
                 schemas,
             ),
@@ -3438,7 +3496,25 @@ def validate_replenishment_result(
         )
         row = cursor.fetchone() or {}
     row_count = int(row.get("row_count") or 0)
+    if int(row.get("clearance_count") or 0):
+        raise RuntimeError("补货结果仍含清货名单对象，生成校验失败。")
     if row_count <= 0:
+        candidates = render_replenishment_work_table("tmp_pur_plan_candidate_keys", schemas)
+        with conn.cursor() as cursor:
+            cursor.execute(render_replenishment_sql(f"""
+                select count(*) as candidate_count,
+                    coalesce(sum(case when not exists (
+                        select 1
+                        from etl_datasync_test.dashboard_replenishment_clearance_sync clearance
+                        where clearance.msku = trim(candidate.seller_sku_adj)
+                          and (clearance.store = '全部' or clearance.store = lower(trim(candidate.seller_name_new)))
+                    ) then 1 else 0 end), 0) as allowed_count
+                from {candidates} candidate
+            """, schemas))
+            eligibility = cursor.fetchone() or {}
+        if int(eligibility.get("candidate_count") or 0) > 0 and int(eligibility.get("allowed_count") or 0) == 0:
+            print(f"[success] replenishment_business_result: snapshot_date={params['snapshot_date']} rows=0; all candidates excluded by clearance list")
+            return 0
         raise RuntimeError(
             "Business result validation failed: "
             f"replenishment snapshot_date={params['snapshot_date']} has 0 rows "
@@ -3483,6 +3559,7 @@ def execute_sql_step(conn, schemas: SchemaConfig, step: ReplenishmentStep, param
             except SpikeConfigurationError as exc:
                 print(f"[warning] sales_spike_refresh skipped: {exc}", file=sys.stderr)
             validate_replenishment_result(conn, schemas, params)
+            refresh_clearance_audit(conn, schemas, params)
         log_task(conn, schemas, step.name, params, "success", affected_rows, started_at)
         print(f"[success] {step.name}: affected_rows={affected_rows}")
     except Exception:
@@ -3491,6 +3568,66 @@ def execute_sql_step(conn, schemas: SchemaConfig, step: ReplenishmentStep, param
         log_task(conn, schemas, step.name, params, "failed", affected_rows, started_at, error)
         print(f"[failed] {step.name}", file=sys.stderr)
         raise
+
+
+def refresh_clearance_audit(conn, schemas: SchemaConfig, params: dict[str, object]) -> None:
+    """Save only positive demand evidence after result validation; replace one date atomically."""
+    with conn.cursor() as cursor:
+        cursor.execute(render_replenishment_sql("""delete from
+            etl_datasync_test.dashboard_replenishment_clearance_audit
+            where snapshot_date = %(snapshot_date)s""", schemas), params)
+        cursor.execute(render_replenishment_work_sql(build_clearance_audit_sql(), schemas), params)
+    conn.commit()
+
+
+def clearance_reference_targets_sql() -> str:
+    """Restore only the clearance predicate for reference ranking; keep disabled-store rules."""
+    prefix = "create temporary table tmp_asin_merge_targets as"
+    target = next(s[len(prefix):].strip() for s in split_sql_statements(REPLENISHMENT_RESULT_SQL)
+                  if s.startswith(prefix))
+    target, count = re.subn(
+        r"and not exists\s*\(\s*select 1\s+from etl_datasync_test\.dashboard_replenishment_clearance_sync clearance.*?\n\s*\)\s*(?=and grp\.)",
+        "", target, count=1, flags=re.DOTALL)
+    if count != 1:
+        raise RuntimeError("Cannot build clearance reference target selection")
+    return target
+
+
+def build_clearance_audit_sql() -> str:
+    """Reuse existing group metrics and production formulas, without a second full ETL."""
+    statements = split_sql_statements(REPLENISHMENT_RESULT_SQL)
+    prefix = "create temporary table tmp_asin_merge_assignments as"
+    assignments = next(s[len(prefix):].strip() for s in statements if s.startswith(prefix))
+    assignments = assignments.replace("tmp_asin_merge_targets", "clearance_reference_targets")
+    final = next(s for s in statements if s.startswith(
+        "insert into etl_datasync_test.dashboard_pur_plan_replenish_data"))
+    # Reuse the full final projection, restoring the original assignment only for
+    # this appendix. The actual result continues to exclude clearance objects.
+    original = final.split("\nselect\n", 1)[1].rsplit("\nwhere not exists (", 1)[0]
+    original = "select\n" + original.replace("tmp_asin_merge_assignments", "clearance_reference_assignments")
+    quantity = re.search(r"case\s+when coalesce\(r\.history_recovery_flag.*?end as calculated_replenish_qty",
+                         MOQ_GATING_SQL, re.DOTALL).group().rsplit(" as ", 1)[0]
+    return f"""insert into etl_datasync_test.dashboard_replenishment_clearance_audit
+        (snapshot_date, country_category, seller_name_new, seller_sku_adj, reference_qty)
+        with clearance_reference_targets as ({clearance_reference_targets_sql()}),
+        clearance_reference_assignments as ({assignments}),
+        clearance_reference_original as ({original}),
+        clearance_reference_quantities as (
+            select r.country_category, r.seller_name_new, r.seller_sku_adj,
+                m.supplier_moq, {quantity} as reference_qty
+            from clearance_reference_original r
+            left join etl_datasync_test.dashboard_replenishment_supplier_moq_sync m
+                   on m.snapshot_date = r.cur_date and binary m.sku = binary r.max_sku
+            where exists (
+                select 1 from etl_datasync_test.dashboard_replenishment_clearance_sync clearance
+                where clearance.msku = trim(r.seller_sku_adj)
+                  and (clearance.store = '全部' or clearance.store = lower(trim(r.seller_name_new)))
+            )
+        )
+        select %(snapshot_date)s, country_category, seller_name_new, seller_sku_adj, reference_qty
+        from clearance_reference_quantities
+        where reference_qty > 0
+          and (coalesce(supplier_moq, 0) <= 0 or reference_qty >= supplier_moq)"""
 
 
 def execute_history_daily_sync_step(

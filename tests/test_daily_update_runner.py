@@ -19,6 +19,8 @@ EXPECTED_MODULES = [
     "etl.daily_pricing_update",
     "etl.label_rule_evidence_snapshot_update",
     "etl.stockout_historical_operating_update",
+    "etl.return_goods_strategy_update",
+    "etl.label_analysis_refresh",
 ]
 
 
@@ -93,7 +95,11 @@ def test_success_runs_every_step_with_current_python_and_sends_success(tmp_path)
     assert result.exit_code == 0
     assert [command[2] for command in commands] == EXPECTED_MODULES
     assert all(command[:2] == (sys.executable, "-m") for command in commands)
-    assert all(command[3:5] == ("--biz-date", "2026-08-03") for command in commands)
+    assert all(command[3:5] == ("--biz-date", "2026-08-03")
+               for command in commands if command[2] not in (
+                   "etl.return_goods_strategy_update", "etl.label_analysis_refresh"))
+    assert next(command for command in commands if command[2] == "etl.return_goods_strategy_update")[3:] == (
+        "--snapshot-date", "2026-08-03")
     assert commands[1][5:7] == ("--steps", runner.EARLY_DASHBOARD_STEPS)
     assert [(item.status, item.stage) for item in notifications] == [
         ("success", "replenishment"), ("success", "all")
@@ -126,6 +132,51 @@ def test_required_step_failure_stops_chain_and_returns_original_exit_code(tmp_pa
     assert notifications[0].exit_code == 7
 
 
+def test_return_strategy_receives_only_supported_arguments(tmp_path):
+    commands = []
+    runner.run_daily_update(
+        project_root=tmp_path,
+        etl_args=("--snapshot-date", "2026-10-16", "--biz-date", "2026-10-15",
+                  "--batch-size", "200", "--dry-run"),
+        dry_run=True,
+        step_executor=_fake_executor(commands=commands),
+        emit=lambda message: None,
+    )
+    command = next(c for c in commands if c[2] == "etl.return_goods_strategy_update")
+    assert command[3:] == ("--snapshot-date", "2026-10-15", "--dry-run")
+
+
+def test_new_consumers_do_not_treat_source_snapshot_day_as_business_day(tmp_path):
+    commands = []
+    runner.run_daily_update(
+        project_root=tmp_path,
+        etl_args=("--snapshot-date=2026-10-16", "--batch-size", "200",
+                  "--periods", "7,14,30", "--dry-run"),
+        dry_run=True,
+        step_executor=_fake_executor(commands=commands),
+        emit=lambda message: None,
+    )
+    for module in ("etl.return_goods_strategy_update", "etl.label_analysis_refresh"):
+        command = next(c for c in commands if c[2] == module)
+        assert command[3:] == ("--dry-run",)
+
+
+def test_return_strategy_failure_stops_analysis_and_final_success(tmp_path):
+    commands = []
+    notifications = []
+    result = runner.run_daily_update(
+        project_root=tmp_path,
+        step_executor=_fake_executor({"etl.return_goods_strategy_update": 9}, commands),
+        notifier=notifications.append,
+        emit=lambda message: None,
+    )
+    assert result.exit_code == 9
+    assert commands[-1][2] == "etl.return_goods_strategy_update"
+    assert [(n.status, n.stage) for n in notifications] == [
+        ("success", "replenishment"), ("failed", "return_strategy")
+    ]
+
+
 def test_label_failure_preserves_replenishment_notice_but_stops_dependent_step_and_all_success(tmp_path):
     commands = []
     notifications = []
@@ -143,7 +194,9 @@ def test_label_failure_preserves_replenishment_notice_but_stops_dependent_step_a
     )
 
     assert result.exit_code == 3
-    assert [command[2] for command in commands] == EXPECTED_MODULES[:-1]
+    assert [command[2] for command in commands] == EXPECTED_MODULES[
+        : EXPECTED_MODULES.index("etl.label_rule_evidence_snapshot_update") + 1
+    ]
     assert [(item.status, item.stage) for item in notifications] == [
         ("success", "replenishment"),
         ("failed", "label_evidence"),
@@ -181,7 +234,7 @@ def test_replenishment_notice_is_sent_before_tracking_and_slow_analyses(tmp_path
     )
     assert observed == [
         ("replenishment", "etl.replenishment_update"),
-        ("all", "etl.stockout_historical_operating_update"),
+        ("all", "etl.label_analysis_refresh"),
     ]
 
 
@@ -218,7 +271,7 @@ def test_progress_output_contains_step_numbers_status_and_summary(tmp_path):
 
     text = "\n".join(output)
     assert result.exit_code == 0
-    assert "[1/10]" in text
+    assert f"[1/{len(runner.DEFAULT_STEPS)}]" in text
     assert "远端数据完整性预检" in text
     assert "成功" in text
     assert "总耗时" in text
@@ -259,6 +312,10 @@ def test_notification_command_contains_all_daily_log_paths(tmp_path):
         "--tracking-stderr",
         "--return-goods-stdout",
         "--return-goods-stderr",
+        "--return-strategy-stdout",
+        "--return-strategy-stderr",
+        "--label-analysis-stdout",
+        "--label-analysis-stderr",
     ):
         assert option in command
     assert "etl_replenishment_tracking_summary_run_20260804_090000.err.log" in command_text

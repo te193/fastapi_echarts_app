@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', path='css/return_goods_strategy.css') }}?v=20261009-observation-copy">
+{% endblock %}
+{% block content %}
+<div class="rgs-page">
+  <header class="rgs-header">
+    <div><p class="rgs-eyebrow">恢复跟踪 / 运营建议</p><h1>返场品运营策略 <span class="rgs-tag">试算规则</span></h1>
+      <p>先看是否恢复，再决定怎么调整。所有建议仅供核查，不执行调价或广告操作。</p></div>
+    <a class="rgs-old" href="/return-goods">查看原返场品页面 ↗</a>
+  </header>
+  <div class="rgs-flow" aria-label="返场规则">连续断货 <b>3天</b><span>→</span>库存恢复 <b>≥5件</b><span>→</span>自然恢复 <b>7天</b><span>→</span>必要时先广告、再价格<span>→</span><b>达到本轮角色目标，稳定后退出</b></div>
+  <form id="strategyFilters" class="rgs-filters">
+    <label>历史日期（留空看最新）<input name="snapshot_date" type="date" aria-label="数据日期"></label>
+    <label>国家类别<select name="country_category"><option value="all">全部国家类别</option></select></label>
+    <label>店铺<select name="seller_name_new"><option value="all">全部店铺</option></select></label>
+    <label>商品<input name="keyword" placeholder="搜索MSKU / SKU" autocomplete="off"></label>
+    <label>退出状态<select name="exit_status"><option value="tracking">未退出</option><option value="all">全部</option><option value="exited">已退出</option><option value="early">D7提前退出</option><option value="normal">常规达标退出</option></select></label>
+    <label>时间阶段<select name="stage"><option value="all">全部阶段</option><option value="observe">观察期 · D1—D7</option><option value="intervene">干预期 · D8起</option><option value="early">D7表现稳定提前退出</option><option value="normal">常规达标退出</option></select></label>
+    <label>未退出商品返场天数<select name="age_band"><option value="all">全部天数</option>{% for day in range(1,8) %}<option value="d{{ day }}">D{{ day }}</option>{% endfor %}<option value="d8_14">D8—D14</option><option value="d15_21">D15—D21</option><option value="d22_30">D22—D30</option><option value="d31_60">D31—D60</option><option value="d61_plus">D61及以上</option></select></label>
+    <label>经营判断<select name="state"><option value="all">全部判断</option><option value="observe">自然观察</option><option value="good">恢复较好</option><option value="improving">改善中</option><option value="poor">恢复不足</option><option value="sales_repair">销量修复（日销不足1件）</option><option value="risk">利润风险</option><option value="history_missing">历史数据不足</option><option value="history_zero">历史零销量</option><option value="no_sales">当前评价窗口无销量</option><option value="data_missing">返场经营数据缺失</option><option value="stock_missing">库存数据缺失</option><option value="stock_interrupted">库存中断</option><option value="profit_unknown">利润无法评价</option><option value="unknown">旧快照数据不足</option></select></label>
+    <label>建议类型<select name="action"><option value="all">全部建议</option><option value="start_ad">建议开启广告</option><option value="restore">恢复已有广告</option><option value="bid_up">提高竞价</option><option value="bid_down">降低竞价</option><option value="budget">申请预算</option><option value="price_up">提高一档价格</option><option value="price_down">降低一档价格</option><option value="check">人工核查</option><option value="hold">保持</option></select></label>
+    <div class="rgs-form-actions"><button type="submit" class="rgs-primary">查询</button><button type="button" id="strategyReset">重置</button></div>
+  </form>
+  <div id="strategyMeta" class="rgs-meta" aria-live="polite">正在读取完整成功快照…</div>
+  <details id="strategyWarnings" class="rgs-warnings" hidden><summary>数据说明</summary><ul></ul></details>
+  <section class="rgs-distribution" aria-label="返场阶段与退出分布">
+    <div class="rgs-section-title"><h2>返场概况</h2><button type="button" id="strategyClearStage">清除阶段筛选</button></div>
+    <p class="rgs-caption">每个商品只统计最新一轮返场。点击数量，查看对应商品。</p>
+    <div class="rgs-stage-groups" id="strategyStages" aria-live="polite"></div>
+    <details class="rgs-distribution-details" id="strategyDistributionDetails">
+      <summary>查看返场天数与经营表现分布</summary>
+      <div class="rgs-distribution-grid" id="strategyDistributions"></div>
+      <p class="rgs-caption">分布随国家、店铺、商品、经营判断和建议类型筛选更新；阶段、退出状态和天数只筛选明细。</p>
+    </details>
+  </section>
+  <section class="rgs-intervention" id="strategyIntervention">
+    <div class="rgs-section-title"><h2>干预期：按这三步判断</h2><button type="button" id="strategyClearFocus">查看全部干预期商品</button></div>
+    <p class="rgs-caption">只看D8起仍未退出的商品。点击分支筛选清单；广告和价格显示候选数量，不代表前一步已完成。同一商品可能有多个站点或对象建议，各步骤数量不相加。</p>
+    <div id="strategyInterventionCards" class="rgs-intervention-cards" aria-live="polite"></div>
+    <div id="strategyDecisionNotes" class="rgs-decision-notes"></div>
+  </section>
+  <section class="rgs-workbench">
+    <div class="rgs-section-title"><h2>商品处理清单</h2><span id="strategyCount">—</span></div>
+    <div class="rgs-advice-filters" id="strategySummary">
+      <span>建议筛选</span><button type="button" id="strategyClearAdvice">全部建议</button>
+      <button type="button" data-summary="ready">条件已满足 <strong>—</strong></button>
+      <button type="button" data-summary="pending">待核建议 <strong>—</strong></button>
+      <small>按商品计数；待核不等于可以执行</small>
+    </div>
+    <p id="strategySelection" class="rgs-caption">可排序、筛选列及调整列宽；列筛选作用于当前查询的全部商品。</p>
+    <div id="strategyTable" aria-busy="true"><div id="strategyGrid" class="rgs-grid ag-theme-quartz" aria-label="返场商品处理清单" tabindex="0"></div></div>
+  </section>
+</div>
+{% endblock %}
+{% block overlay %}
+<div id="strategyMask" class="rgs-mask" hidden></div>
+<aside id="strategyDrawer" class="rgs-drawer" role="dialog" aria-modal="true" aria-labelledby="strategyDetailTitle" hidden>
+  <header><div><p class="rgs-eyebrow">本轮返场详情</p><h2 id="strategyDetailTitle">商品详情</h2></div><button id="strategyClose" aria-label="关闭详情">×</button></header>
+  <div id="strategyDetail" class="rgs-detail-body"></div>
+</aside>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', path='js/return_goods_strategy.js') }}?v=20261012-dynamic-price-visits" defer></script>
+{% endblock %}

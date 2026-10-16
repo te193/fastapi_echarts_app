@@ -60,10 +60,10 @@
             </div>
           </section>
 
-          <section class="nav-v2-group {% if page in ['alerts', 'opportunities', 'label_hub', 'price_review', 'ad_budget'] %}open{% endif %}" data-nav-group="operation">
-            <button class="nav-v2-group-toggle" type="button" aria-expanded="{% if page in ['alerts', 'opportunities', 'label_hub', 'price_review', 'ad_budget'] %}true{% else %}false{% endif %}">
+          <section class="nav-v2-group {% if page in ['alerts', 'opportunities', 'label_hub', 'label_analysis', 'price_review', 'ad_budget', 'ad_performance'] %}open{% endif %}" data-nav-group="operation">
+            <button class="nav-v2-group-toggle" type="button" aria-expanded="{% if page in ['alerts', 'opportunities', 'label_hub', 'label_analysis', 'price_review', 'ad_budget', 'ad_performance'] %}true{% else %}false{% endif %}">
               <span><i>⌄</i> 经营诊断</span>
-              <b>5</b>
+              <b>7</b>
             </button>
             <div class="nav-v2-group-links">
               <a class="nav-v2-link {% if page == 'alerts' %}active{% endif %}" href="/alerts">
@@ -73,6 +73,10 @@
               <a class="nav-v2-link {% if page == 'opportunities' %}active{% endif %}" href="/opportunities">
                 <span class="nav-v2-icon">机</span>
                 <span><strong>机会池</strong><small>机会识别 / 优先级</small></span>
+              </a>
+              <a class="nav-v2-link {% if page == 'label_analysis' %}active{% endif %}" href="/label-analysis">
+                <span class="nav-v2-icon">析</span>
+                <span><strong>标签综合分析</strong><small>全指标 / 群体联动</small></span>
               </a>
               <a class="nav-v2-link {% if page == 'label_hub' %}active{% endif %}" href="/label-hub">
                 <span class="nav-v2-icon">标</span>
@@ -93,10 +97,10 @@
             </div>
           </section>
 
-          <section class="nav-v2-group {% if page in ['inventory_weekly', 'replenishment', 'return_goods'] %}open{% endif %}" data-nav-group="fulfillment">
-            <button class="nav-v2-group-toggle" type="button" aria-expanded="{% if page in ['inventory_weekly', 'replenishment', 'return_goods'] %}true{% else %}false{% endif %}">
+          <section class="nav-v2-group {% if page in ['inventory_weekly', 'replenishment', 'return_goods', 'return_goods_strategy'] %}open{% endif %}" data-nav-group="fulfillment">
+            <button class="nav-v2-group-toggle" type="button" aria-expanded="{% if page in ['inventory_weekly', 'replenishment', 'return_goods', 'return_goods_strategy'] %}true{% else %}false{% endif %}">
               <span><i>⌄</i> 库存补货相关</span>
-              <b>3</b>
+              <b>4</b>
             </button>
             <div class="nav-v2-group-links">
               <a class="nav-v2-link {% if page == 'inventory_weekly' %}active{% endif %}" href="/inventory-weekly">
@@ -110,6 +114,10 @@
               <a class="nav-v2-link {% if page == 'return_goods' %}active{% endif %}" href="/return-goods">
                 <span class="nav-v2-icon">返</span>
                 <span><strong>返场品</strong><small>返场分析 / 表现</small></span>
+              </a>
+              <a class="nav-v2-link {% if page == 'return_goods_strategy' %}active{% endif %}" href="/return-goods-strategy">
+                <span class="nav-v2-icon">策</span>
+                <span><strong>返场品运营策略</strong><small>恢复 / 退出 / 调整建议</small></span>
               </a>
             </div>
           </section>

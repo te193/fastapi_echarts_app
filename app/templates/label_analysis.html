@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}?v=20260828stockoutstabilitycue1">
+<link rel="stylesheet" href="{{ url_for('static', path='css/label_analysis.css') }}?v=20261015historyroles">
+{% endblock %}
+{% block content %}
+<div id="analysisApp" class="sales-role-page label-hub-page la-app">
+  <div id="laLoadNotice" class="la-load-notice" role="status" aria-live="polite">正在读取分析数据…</div>
+  <header class="sales-role-topbar label-hub-topbar">
+    <div><p class="section-kicker">标签分析</p><h1>标签综合分析</h1><p id="laHeaderDate" class="sales-role-period">数据日期 —</p></div>
+    <div class="label-hub-top-actions"><a class="sales-role-action" href="/label-hub">标签看板</a><button id="laRefresh" class="sales-role-action" type="button">刷新数据</button><button id="laReset" class="sales-role-action" type="button">重置筛选</button></div>
+  </header>
+  <form id="laScope" class="sales-role-filter-panel la-scope">
+    <div class="sales-role-filter-main la-filter-main">
+      <label class="sales-role-field"><span>分析视角</span><select id="laView"><option value="business_unit">国家类别 · 店铺 · MSKU</option><option value="country">国家 · 店铺 · MSKU</option></select></label>
+      <label class="sales-role-field"><span>数据日期</span><select id="laDate"></select></label>
+      <label class="sales-role-field"><span>经营周期</span><select id="laPeriod"><option value="7">近7天</option><option value="14">近14天</option><option value="30" selected>近30天</option><option value="60">近60天</option><option value="90">近90天</option><option value="180">近180天</option></select></label>
+      <label class="sales-role-field"><span>国家类别</span><select id="laCategory"><option value="">全部类别</option></select></label>
+      <label class="sales-role-field"><span>国家</span><select id="laCountry"><option value="">全部国家</option></select></label>
+      <label class="sales-role-field"><span>店铺</span><select id="laStore"><option value="">全部店铺</option></select></label>
+      <label class="sales-role-field"><span>商品</span><input id="laKeyword" type="search" placeholder="搜索 MSKU / 店铺" maxlength="200"></label>
+      <div class="la-filter-submit"><button class="primary-button" type="submit">应用筛选</button></div>
+    </div>
+    <div class="la-filter-secondary"><span class="toolbar-label">快捷条件</span><button id="laQuick180" type="button" class="ghost-button" title="FBA可售库存 ÷ 完整补货需求日销 > 180；分档不代表库龄">可售天数 &gt;180天</button><button id="laBack" type="button" class="text-button">返回上层</button></div>
+    <details id="laMoreFilters" class="la-more-filters"><summary>更多筛选</summary><div class="la-advanced-filters">
+      <div class="la-filter-tools"><label class="sales-role-field"><span>标签大类</span><select id="laLabelParent"></select></label><label class="sales-role-field"><span>子标签</span><select id="laLabelChild"></select></label><button id="laAddLabel" class="ghost-button" type="button">添加标签</button><button id="laMetricFilterToggle" class="text-button" type="button">指标条件</button></div>
+      <div id="laMetricFilter" class="la-filter-tools" hidden><label class="sales-role-field"><span>指标</span><select id="laFilterMetric"></select></label><label class="sales-role-field"><span>比较</span><select id="laFilterOp"><option value="gt">大于</option><option value="gte">大于等于</option><option value="lt">小于</option><option value="lte">小于等于</option><option value="between">区间（含两端）</option><option value="missing">缺失</option><option value="present">有效</option></select></label><label class="sales-role-field"><span>值（比率按0—1）</span><input id="laFilterValue" type="number" step="any"></label><label class="sales-role-field"><span>区间上限</span><input id="laFilterUpper" type="number" step="any"></label><button id="laAddMetric" class="ghost-button" type="button">添加条件</button></div>
+    </div></details>
+    <div class="label-hub-condition-row la-condition-row"><span class="toolbar-label">已选条件</span><div id="laChips" class="la-chips"></div></div>
+    <div class="la-scope-summary"><span id="laDenominators"></span><span id="laStatus" role="status" aria-live="polite">正在读取指标目录…</span></div>
+  </form>
+  <nav class="label-hub-section-nav la-nav" aria-label="页面内容导航"><a href="#laOverview">标签汇总</a><a href="#laPerformance">当前群体</a><a href="#laCapital">库存分析</a><a href="#laTopics">专题分析</a><a href="#laDetails">商品明细</a></nav>
+  <section id="laOverview" class="sales-role-panel la-panel"><div class="sales-role-section-head"><h2>标签汇总</h2><div class="la-actions"><button id="laExportSummary" class="ghost-button" type="button">导出汇总</button><button id="laCatalogOpen" class="ghost-button" type="button" title="选择表格要展示的指标，并查看计算口径">自选指标与口径</button></div></div>
+    <div id="laTagCategories" class="label-hub-categories la-categories"></div>
+    <div class="la-toolbar"><div id="laMetricGroups" class="label-hub-measure-tabs la-segments" aria-label="指标列组"></div><input id="laTagSearch" type="search" placeholder="搜索标签" aria-label="搜索标签"></div>
+    <div id="laCustomControls" class="la-custom-controls" hidden><span id="laCustomHint"></span><button id="laCustomEdit" class="ghost-button" type="button" aria-haspopup="dialog" aria-controls="laCatalog">＋添加指标</button></div>
+    <div id="laTagTable" class="la-table-wrap"></div>
+  </section>
+  <section id="laPerformance" class="sales-role-panel la-panel"><div class="sales-role-section-head"><div><h2>当前群体</h2><span id="laCohortTitle" class="summary-hint">全部商品</span></div><span id="laWindow" class="summary-hint"></span></div><div id="laCards" class="la-cards"></div>
+    <details id="laComparison" class="la-inner-fold"><summary>指标对比</summary><div id="laMetricTable" class="la-table-wrap"></div></details>
+  </section>
+  <details id="laCapital" class="sales-role-panel la-panel la-fold"><summary><h2>库存分析</h2><span id="laCapitalSummary" class="summary-hint"></span></summary><div class="la-fold-body">
+    <div class="la-section-tools"><span id="laCapitalScope" class="summary-hint"></span><button id="laCapitalExport" class="ghost-button" type="button">导出库存明细</button></div>
+    <div id="laCapitalBands" class="la-capital-bands"></div>
+    <div class="la-capital-gap-head" id="laCapitalGapTitle"></div>
+    <div id="laCapitalGaps" class="la-capital-gaps"></div>
+    <div id="laCapitalZero" class="la-capital-zero"></div>
+    <div class="label-hub-measure-tabs la-subtabs" data-tab-set="inventory"><button type="button" data-inventory-tab="coverage">可售天数</button><button type="button" data-inventory-tab="roles">销售角色</button><button type="button" data-inventory-tab="status">运营状态</button><button type="button" data-inventory-tab="ranks">排名分档</button></div>
+    <div data-inventory-panel="coverage"><div id="laCoverage"></div></div><div id="laCapitalStructure"></div><div data-inventory-panel="ranks" hidden><div id="laCapitalRanks" class="la-table-wrap"></div></div>
+  </div></details>
+  <details id="laTopics" class="sales-role-panel la-panel la-fold"><summary><h2>专题分析</h2></summary><div class="la-fold-body">
+    <div class="label-hub-measure-tabs la-subtabs" data-tab-set="topics"><button type="button" data-topic-tab="trend">趋势</button><button type="button" data-topic-tab="stockout">缺货</button><button type="button" data-topic-tab="matrix">标签交叉</button><button type="button" data-topic-tab="stores">店铺贡献</button></div>
+    <div data-topic-panel="trend">
+      <div class="la-trend-toolbar"><label class="la-trend-select"><span>指标</span><select id="laTrendMetric" aria-label="趋势指标"></select></label><span id="laTrendScope" class="summary-hint"></span><button id="laLoadTrends" class="ghost-button" type="button">加载趋势</button></div>
+      <div id="laTrendPeriods" class="la-trend-periods" hidden></div>
+      <div id="laTrend" class="la-trend" role="img" aria-label="当前商品群体每日趋势"><p class="la-empty">展开后加载每日趋势</p></div>
+    </div>
+    <div data-topic-panel="stockout" hidden><div id="laStockout"></div></div>
+    <div data-topic-panel="matrix" hidden><div class="la-filter-tools"><select id="laMatrixA" aria-label="交叉行标签"></select><span>×</span><select id="laMatrixB" aria-label="交叉列标签"></select><button id="laMatrixApply" class="ghost-button" type="button">查询</button></div><div id="laMatrix" class="la-table-wrap"></div></div>
+    <div data-topic-panel="stores" hidden><div id="laStores"></div></div>
+  </div></details>
+  <section id="laDetails" class="sales-role-panel la-panel"><div class="sales-role-section-head"><h2>商品明细</h2><div class="la-actions"><span id="laDetailCount" class="summary-hint"></span><button id="laExport" class="ghost-button" type="button">导出明细</button></div></div>
+    <div class="la-toolbar"><label class="sales-role-field"><span>字段</span><select id="laDetailGroup" aria-label="明细字段列组"></select></label><label class="sales-role-field"><span>排序</span><select id="laSort"></select></label><button id="laDirection" class="ghost-button" type="button">降序 ↓</button><label class="sales-role-field"><span>每页</span><select id="laPageSize"><option>20</option><option>50</option><option>100</option></select></label></div>
+    <div id="laDetailTable" class="la-detail-grid ag-theme-quartz" aria-label="商品明细"></div><div class="la-pagination"><button id="laPrev" class="ghost-button" type="button">上一页</button><span id="laPageLabel"></span><button id="laNext" class="ghost-button" type="button">下一页</button></div>
+  </section>
+  <details id="laSourcesPanel" class="sales-role-panel la-panel la-fold"><summary><h2>数据说明</h2></summary><div class="la-fold-body"><p class="summary-hint">同类标签满足任一，跨类标签同时满足。FBA可售天数使用完整补货需求日销；日销为零或缺失时不计算。分档按90／180天划分，不代表库龄。库存成本包含不同库存状态，各国家和标签群体可能共享库存池，分组金额不可直接相加。排名只取截止日单国家有效值。</p><div id="laSources"></div></div></details>
+</div>
+{% endblock %}
+{% block overlay %}
+<dialog id="laCatalog" class="la-dialog la-catalog" aria-labelledby="laCatalogTitle">
+  <header class="la-catalog-head"><div class="sales-role-section-head"><h2 id="laCatalogTitle">自选指标与口径</h2><button id="laCatalogClose" class="text-button" type="button" aria-label="关闭指标选择">关闭</button></div>
+    <p class="la-catalog-hint">勾选需要展示的指标，保存后应用到「自选指标」。</p>
+    <div class="la-catalog-tools"><input id="laMetricSearch" type="search" placeholder="搜索指标、公式或来源" aria-label="搜索指标"><label class="la-catalog-selected"><input id="laCatalogSelectedOnly" type="checkbox">只看已选</label></div>
+    <nav id="laCatalogGroups" class="la-catalog-groups" aria-label="指标业务分类"></nav>
+    <div class="la-catalog-bulk"><label><input id="laCatalogSelectAll" type="checkbox"><span id="laCatalogSelectAllLabel">全选当前结果</span></label></div>
+  </header>
+  <div id="laCatalogList" class="la-catalog-list" role="region" aria-label="指标字段列表" tabindex="0"></div>
+  <footer class="la-catalog-footer"><div><span id="laCatalogCount" role="status" aria-live="polite"></span><button id="laClearColumns" class="text-button" type="button">清空已选</button></div><div class="la-catalog-actions"><button id="laCatalogCancel" class="ghost-button" type="button">取消</button><button id="laSaveColumns" class="primary-button" type="button">保存并应用</button></div></footer>
+</dialog>
+<dialog id="laDrawer" class="la-dialog la-drawer" aria-labelledby="laDrawerTitle"><header class="la-drawer-head"><div><h2 id="laDrawerTitle">商品详情</h2><p id="laDrawerMeta"></p></div><button id="laDrawerClose" class="text-button" type="button" aria-label="关闭商品详情">关闭</button></header><div id="laDrawerBody" class="la-drawer-body"></div></dialog>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', path='js/label_analysis.js') }}?v=20261015historyroles"></script>{% endblock %}

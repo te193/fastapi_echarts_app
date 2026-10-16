@@ -147,6 +147,20 @@ DEFAULT_STEPS = (
         "etl_stockout_historical_operating_run",
         "stockout_historical_operating",
     ),
+    EtlStep(
+        "return_strategy",
+        "返场品运营策略预计算",
+        "etl.return_goods_strategy_update",
+        "etl_return_strategy_run",
+        "return_strategy",
+    ),
+    EtlStep(
+        "label_analysis",
+        "标签综合分析预计算",
+        "etl.label_analysis_refresh",
+        "etl_label_analysis_run",
+        "label_analysis",
+    ),
 )
 
 
@@ -290,6 +304,8 @@ def build_notification_command(
     return_goods = logs.get("return_goods")
     stockout = logs.get("stockout_historical_operating")
     pricing = logs.get("pricing")
+    return_strategy = logs.get("return_strategy")
+    label_analysis = logs.get("label_analysis")
     command = [
         python_executable,
         str(project_root / "scripts" / "notify_daily_task_dingtalk.py"),
@@ -339,6 +355,14 @@ def build_notification_command(
         str(pricing.stdout),
         "--pricing-stderr",
         str(pricing.stderr),
+        "--return-strategy-stdout",
+        str(return_strategy.stdout),
+        "--return-strategy-stderr",
+        str(return_strategy.stderr),
+        "--label-analysis-stdout",
+        str(label_analysis.stdout),
+        "--label-analysis-stderr",
+        str(label_analysis.stderr),
     ]
     if request.error_message:
         command.extend(("--error-message", request.error_message))
@@ -447,6 +471,21 @@ def run_daily_update(
     for index, step in enumerate(selected_steps, start=1):
         step_logs = logs.get(step.key)
         command = [python_executable, "-m", step.module, *etl_args]
+        if step.key == "return_strategy":
+            parser = argparse.ArgumentParser(add_help=False)
+            parser.add_argument("--biz-date")
+            parser.add_argument("--dry-run", action="store_true")
+            strategy_options, _ = parser.parse_known_args(etl_args)
+            command = [python_executable, "-m", step.module]
+            # This consumer evaluates sales days, not today's source snapshot.
+            if strategy_options.biz_date:
+                command.extend(("--snapshot-date", strategy_options.biz_date))
+            if strategy_options.dry_run:
+                command.append("--dry-run")
+        if step.key == "label_analysis":
+            command = [python_executable, "-m", step.module]
+            if "--dry-run" in etl_args:
+                command.append("--dry-run")
         if step.key == "dashboard":
             command.extend(("--steps", EARLY_DASHBOARD_STEPS))
         step_started = monotonic()

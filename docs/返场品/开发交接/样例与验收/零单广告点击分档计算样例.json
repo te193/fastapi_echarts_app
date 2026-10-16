@@ -1,0 +1,304 @@
+{
+  "rule_version": "return-v14-20261012-dynamic-price-visits",
+  "data_kind": "人工边界样例，非远端实跑数据",
+  "cases": [
+    {
+      "input": {
+        "mature": true,
+        "days": 7,
+        "mature_start": "2026-10-05",
+        "mature_end": "2026-10-11",
+        "report_days": [
+          "2026-10-05",
+          "2026-10-06",
+          "2026-10-07",
+          "2026-10-08",
+          "2026-10-09",
+          "2026-10-10",
+          "2026-10-11"
+        ],
+        "clicks": 0,
+        "orders": 0,
+        "cost": 1,
+        "sales": 0,
+        "zero_order_coverage_verified": true,
+        "mapping_count": 1,
+        "current_bid": 1,
+        "currency": "EUR"
+      },
+      "output": {
+        "kind": "ad",
+        "action": "hold",
+        "label": "暂不调整竞价",
+        "status": "hold",
+        "reason": "该对象成熟点击0次、0单，不足20次点击，继续观察",
+        "target": null,
+        "checks": [],
+        "acos_band": "unknown",
+        "acos_band_label": "ACOS无法计算",
+        "acos": null,
+        "acos_target": "0.20",
+        "acos_max": "0.50",
+        "current": "1",
+        "zero_order_clicks": {
+          "clicks": "0",
+          "orders": "0",
+          "click_band": "below_20",
+          "first_threshold": 20,
+          "second_threshold": 40,
+          "is_trial_rule": true,
+          "coverage_verified": true
+        }
+      }
+    },
+    {
+      "input": {
+        "mature": true,
+        "days": 7,
+        "mature_start": "2026-10-05",
+        "mature_end": "2026-10-11",
+        "report_days": [
+          "2026-10-05",
+          "2026-10-06",
+          "2026-10-07",
+          "2026-10-08",
+          "2026-10-09",
+          "2026-10-10",
+          "2026-10-11"
+        ],
+        "clicks": 19,
+        "orders": 0,
+        "cost": 1,
+        "sales": 0,
+        "zero_order_coverage_verified": true,
+        "mapping_count": 1,
+        "current_bid": 1,
+        "currency": "EUR"
+      },
+      "output": {
+        "kind": "ad",
+        "action": "hold",
+        "label": "暂不调整竞价",
+        "status": "hold",
+        "reason": "该对象成熟点击19次、0单，不足20次点击，继续观察",
+        "target": null,
+        "checks": [],
+        "acos_band": "unknown",
+        "acos_band_label": "ACOS无法计算",
+        "acos": null,
+        "acos_target": "0.20",
+        "acos_max": "0.50",
+        "current": "1",
+        "zero_order_clicks": {
+          "clicks": "19",
+          "orders": "0",
+          "click_band": "below_20",
+          "first_threshold": 20,
+          "second_threshold": 40,
+          "is_trial_rule": true,
+          "coverage_verified": true
+        }
+      }
+    },
+    {
+      "input": {
+        "mature": true,
+        "days": 7,
+        "mature_start": "2026-10-05",
+        "mature_end": "2026-10-11",
+        "report_days": [
+          "2026-10-05",
+          "2026-10-06",
+          "2026-10-07",
+          "2026-10-08",
+          "2026-10-09",
+          "2026-10-10",
+          "2026-10-11"
+        ],
+        "clicks": 20,
+        "orders": 0,
+        "cost": 1,
+        "sales": 0,
+        "zero_order_coverage_verified": true,
+        "mapping_count": 1,
+        "current_bid": 1,
+        "currency": "EUR"
+      },
+      "output": {
+        "kind": "ad",
+        "action": "bid_down",
+        "label": "降低竞价",
+        "status": "pending",
+        "reason": "该对象成熟点击20次、0单；20—39次点击，候选降低竞价10.00%（试算规则）",
+        "target": "0.90",
+        "checks": [],
+        "acos_band": "unknown",
+        "acos_band_label": "ACOS无法计算",
+        "acos": null,
+        "acos_target": "0.20",
+        "acos_max": "0.50",
+        "current": "1",
+        "zero_order_clicks": {
+          "clicks": "20",
+          "orders": "0",
+          "click_band": "20_39",
+          "first_threshold": 20,
+          "second_threshold": 40,
+          "is_trial_rule": true,
+          "coverage_verified": true
+        },
+        "change_rate": "-0.10"
+      }
+    },
+    {
+      "input": {
+        "mature": true,
+        "days": 7,
+        "mature_start": "2026-10-05",
+        "mature_end": "2026-10-11",
+        "report_days": [
+          "2026-10-05",
+          "2026-10-06",
+          "2026-10-07",
+          "2026-10-08",
+          "2026-10-09",
+          "2026-10-10",
+          "2026-10-11"
+        ],
+        "clicks": 39,
+        "orders": 0,
+        "cost": 1,
+        "sales": 0,
+        "zero_order_coverage_verified": true,
+        "mapping_count": 1,
+        "current_bid": 1,
+        "currency": "EUR"
+      },
+      "output": {
+        "kind": "ad",
+        "action": "bid_down",
+        "label": "降低竞价",
+        "status": "pending",
+        "reason": "该对象成熟点击39次、0单；20—39次点击，候选降低竞价10.00%（试算规则）",
+        "target": "0.90",
+        "checks": [],
+        "acos_band": "unknown",
+        "acos_band_label": "ACOS无法计算",
+        "acos": null,
+        "acos_target": "0.20",
+        "acos_max": "0.50",
+        "current": "1",
+        "zero_order_clicks": {
+          "clicks": "39",
+          "orders": "0",
+          "click_band": "20_39",
+          "first_threshold": 20,
+          "second_threshold": 40,
+          "is_trial_rule": true,
+          "coverage_verified": true
+        },
+        "change_rate": "-0.10"
+      }
+    },
+    {
+      "input": {
+        "mature": true,
+        "days": 7,
+        "mature_start": "2026-10-05",
+        "mature_end": "2026-10-11",
+        "report_days": [
+          "2026-10-05",
+          "2026-10-06",
+          "2026-10-07",
+          "2026-10-08",
+          "2026-10-09",
+          "2026-10-10",
+          "2026-10-11"
+        ],
+        "clicks": 40,
+        "orders": 0,
+        "cost": 1,
+        "sales": 0,
+        "zero_order_coverage_verified": true,
+        "mapping_count": 1,
+        "current_bid": 1,
+        "currency": "EUR"
+      },
+      "output": {
+        "kind": "ad",
+        "action": "bid_down",
+        "label": "降低竞价",
+        "status": "pending",
+        "reason": "该对象成熟点击40次、0单；达到40次点击，候选降低竞价20.00%（试算规则）",
+        "target": "0.80",
+        "checks": [],
+        "acos_band": "unknown",
+        "acos_band_label": "ACOS无法计算",
+        "acos": null,
+        "acos_target": "0.20",
+        "acos_max": "0.50",
+        "current": "1",
+        "zero_order_clicks": {
+          "clicks": "40",
+          "orders": "0",
+          "click_band": "40_plus",
+          "first_threshold": 20,
+          "second_threshold": 40,
+          "is_trial_rule": true,
+          "coverage_verified": true
+        },
+        "change_rate": "-0.20"
+      }
+    },
+    {
+      "input": {
+        "mature": true,
+        "days": 7,
+        "mature_start": "2026-10-05",
+        "mature_end": "2026-10-11",
+        "report_days": [
+          "2026-10-05",
+          "2026-10-06",
+          "2026-10-07",
+          "2026-10-08",
+          "2026-10-09",
+          "2026-10-10",
+          "2026-10-11"
+        ],
+        "clicks": 100,
+        "orders": 0,
+        "cost": 1,
+        "sales": 0,
+        "zero_order_coverage_verified": true,
+        "mapping_count": 1,
+        "current_bid": 1,
+        "currency": "EUR"
+      },
+      "output": {
+        "kind": "ad",
+        "action": "bid_down",
+        "label": "降低竞价",
+        "status": "pending",
+        "reason": "该对象成熟点击100次、0单；达到40次点击，候选降低竞价20.00%（试算规则）",
+        "target": "0.80",
+        "checks": [],
+        "acos_band": "unknown",
+        "acos_band_label": "ACOS无法计算",
+        "acos": null,
+        "acos_target": "0.20",
+        "acos_max": "0.50",
+        "current": "1",
+        "zero_order_clicks": {
+          "clicks": "100",
+          "orders": "0",
+          "click_band": "40_plus",
+          "first_threshold": 20,
+          "second_threshold": 40,
+          "is_trial_rule": true,
+          "coverage_verified": true
+        },
+        "change_rate": "-0.20"
+      }
+    }
+  ]
+}

@@ -9,6 +9,7 @@ from typing import Any
 import pymysql
 
 from etl.replenishment_update import apply_database_ini_env
+from etl.replenishment_roles import replenishment_source_sql, role_case
 
 
 LEVEL_ALL = "全部"
@@ -431,7 +432,7 @@ class ReplenishmentTrackingService:
                     sum(coalesce(shipped_qty, 0)) as shipped_qty,
                     sum(coalesce(received_qty, 0)) as received_qty
                 from dashboard_replenishment_tracking_snapshot s
-                left join dashboard_pur_plan_replenish_data p
+                left join {replenishment_source_sql(category_period_days, ('snapshot_date',))} p
                        on p.cur_date = s.snapshot_date
                       and p.country_category = s.country_category
                       and p.seller_name_new = s.seller_name_new
@@ -555,7 +556,7 @@ class ReplenishmentTrackingService:
                     s.nearest_fba_eta_date,
                     s.latest_status
                 from dashboard_replenishment_tracking_snapshot s
-                left join dashboard_pur_plan_replenish_data p
+                left join {replenishment_source_sql(category_period_days, ('snapshot_date',))} p
                        on p.cur_date = s.snapshot_date
                       and p.country_category = s.country_category
                       and p.seller_name_new = s.seller_name_new
@@ -746,23 +747,7 @@ class ReplenishmentTrackingService:
 
     def _product_category_expr(self, period_days: int | str | None) -> str:
         safe_period = self._normalize_category_period_days(period_days)
-        sales_col = f"p.{PRODUCT_CATEGORY_SALES_COLUMNS[safe_period]}"
-        salable_col = f"p.r_{safe_period}d_salable_days"
-        margin_col = f"p.pprofit_ratio_{safe_period}d"
-        daily_sales_expr = f"case when {salable_col} > 0 then {sales_col} / {salable_col} else 0 end"
-        return f"""
-            case
-                when p.seller_sku_adj is null then s.product_category
-                when ({daily_sales_expr}) >= 5 and {margin_col} >= 0.15 then '明星产品'
-                when ({daily_sales_expr}) >= 1 and ({daily_sales_expr}) < 5 and {margin_col} >= 0.25 then '明星产品'
-                when ({daily_sales_expr}) >= 5 and {margin_col} >= 0.05 and {margin_col} < 0.15 then '潜力产品'
-                when ({daily_sales_expr}) >= 1 and ({daily_sales_expr}) < 5 and {margin_col} >= 0.10 and {margin_col} < 0.25 then '潜力产品'
-                when ({daily_sales_expr}) >= 1 and ({daily_sales_expr}) < 5 and {margin_col} >= 0.05 and {margin_col} < 0.10 then '瘦狗产品'
-                when ({daily_sales_expr}) < 1 and {margin_col} >= 0.05 then '瘦狗产品'
-                when ({daily_sales_expr}) = 0 or (({daily_sales_expr}) > 1 and {margin_col} < 0.05) then '问题产品'
-                else '问题产品'
-            end
-        """.strip()
+        return role_case(f"p.role_daily_sales_{safe_period}d", f"p.role_margin_rate_{safe_period}d")
 
     def _empty_payload(self, tracking_window_days: int, category_period_days: int, page: int, page_size: int) -> dict[str, Any]:
         return {

@@ -1,0 +1,928 @@
+{
+  "rule_version": "return-v8-20261009-ad-price-routing",
+  "data_date": "2026-10-08",
+  "settings_date": "2026-10-08",
+  "scope": {
+    "store": "CHOOJEE",
+    "msku": "CJ057b"
+  },
+  "source": "remote",
+  "database_writes": 0,
+  "warnings": [
+    "可承受广告成本、真实预算余额、广告操作记录、预测利润尚未核实，不视为已达标",
+    "历史查询按业务日期重算，源表后续修订不等于当时已知数据；不承诺双时间历史还原"
+  ],
+  "products": [
+    {
+      "summary": {
+        "event_id": "c9d121c38d76e27d3d69d4df9990ab080823b31e",
+        "seller_name_new": "CHOOJEE",
+        "country_category": "欧洲站",
+        "msku": "CJ057b",
+        "return_date": "2026-10-04",
+        "stockout_date": "2026-08-30",
+        "age": 5,
+        "phase": "观察期",
+        "state": "risk",
+        "state_label": "利润风险",
+        "state_reason": "订单毛利率低于5%，优先检查消耗、售价与成本",
+        "exit_target": "瘦狗",
+        "exit_status": "tracking",
+        "exit_date": null,
+        "exit_reasons": [
+          "自然恢复第5天，D7完整数据形成后首次判断提前退出"
+        ],
+        "confirmation_days": 0,
+        "recovery": null,
+        "current_stock": "14",
+        "local_sku": "GQ0507b-zu",
+        "recent_days": 5,
+        "historical_daily": "0",
+        "recent_daily": "0.2",
+        "margin": "0.01290183851198795828405547791",
+        "role": "问题",
+        "comparison_start": "2026-10-04",
+        "comparison_end": "2026-10-08",
+        "recovery_issues": [
+          "history_zero"
+        ],
+        "trend7": {
+          "current": {
+            "start": "2026-10-04",
+            "end": "2026-10-08",
+            "days": 5,
+            "complete": true,
+            "stocked": true,
+            "missing": [],
+            "stock_missing": [],
+            "zero_days": [],
+            "qty": "1",
+            "revenue": "93.01",
+            "profit": "1.20",
+            "daily": "0.2",
+            "margin": "0.01290183851198795828405547791",
+            "sessions": "6",
+            "role": "问题",
+            "selling_days": 1,
+            "sales_missing": [],
+            "sales_complete": true,
+            "financial_complete": true,
+            "finance_missing": [],
+            "inventory_complete": true,
+            "max_zero_stock_days": 0
+          },
+          "previous": null,
+          "daily_change": null,
+          "margin_change": null,
+          "warning": null
+        },
+        "ready_count": 0,
+        "pending_count": 0,
+        "action_types": [
+          "hold"
+        ],
+        "suggestion_summary": "保持",
+        "priority": 0
+      },
+      "detail": {
+        "stockout_date": "2026-08-30",
+        "confirmed_date": "2026-09-01",
+        "return_date": "2026-10-04",
+        "round": 2,
+        "age": 5,
+        "exit_target": "瘦狗",
+        "exit_status": "tracking",
+        "exit_date": null,
+        "exit_reasons": [
+          "自然恢复第5天，D7完整数据形成后首次判断提前退出"
+        ],
+        "confirmation_days": 0,
+        "exit_evidence": null,
+        "baseline": {
+          "start": "2026-07-31",
+          "end": "2026-08-29",
+          "days": 30,
+          "complete": true,
+          "stocked": true,
+          "missing": [],
+          "stock_missing": [],
+          "zero_days": [],
+          "qty": "1",
+          "revenue": "140.12",
+          "profit": "-194.69",
+          "daily": "0.03333333333333333333333333333",
+          "margin": "-1.389451898372823294319155010",
+          "sessions": "38",
+          "role": "问题",
+          "selling_days": 1,
+          "evidence": "有效30天"
+        },
+        "recent": {
+          "start": "2026-10-04",
+          "end": "2026-10-08",
+          "days": 5,
+          "complete": true,
+          "stocked": true,
+          "missing": [],
+          "stock_missing": [],
+          "zero_days": [],
+          "qty": "1",
+          "revenue": "93.01",
+          "profit": "1.20",
+          "daily": "0.2",
+          "margin": "0.01290183851198795828405547791",
+          "sessions": "6",
+          "role": "问题",
+          "selling_days": 1
+        },
+        "pre_stockout": {
+          "start": "2026-07-31",
+          "end": "2026-08-29",
+          "days": 30,
+          "complete": true,
+          "stocked": true,
+          "missing": [],
+          "stock_missing": [],
+          "zero_days": [],
+          "qty": "1",
+          "revenue": "140.12",
+          "profit": "-194.69",
+          "daily": "0.03333333333333333333333333333",
+          "margin": "-1.389451898372823294319155010",
+          "sessions": "38",
+          "role": "问题",
+          "selling_days": 1
+        },
+        "pre_stockout_timeline": [
+          {
+            "day": "2026-07-31",
+            "stock": "32",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-01",
+            "stock": "32",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-02",
+            "stock": "32",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-03",
+            "stock": "32",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-04",
+            "stock": "32",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-05",
+            "stock": "32",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-06",
+            "stock": "32",
+            "qty": "1",
+            "margin": "0.1609334855837853268626891236",
+            "role": "潜力",
+            "complete": true
+          },
+          {
+            "day": "2026-08-07",
+            "stock": "31",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-08",
+            "stock": "31",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-09",
+            "stock": "31",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-10",
+            "stock": "31",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-11",
+            "stock": "31",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-12",
+            "stock": "31",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-13",
+            "stock": "31",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-14",
+            "stock": "31",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-15",
+            "stock": "31",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-16",
+            "stock": "31",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-17",
+            "stock": "31",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-18",
+            "stock": "31",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-19",
+            "stock": "31",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-20",
+            "stock": "31",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-21",
+            "stock": "31",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-22",
+            "stock": "31",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-23",
+            "stock": "31",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-24",
+            "stock": "31",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-25",
+            "stock": "31",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-26",
+            "stock": "31",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-27",
+            "stock": "31",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-28",
+            "stock": "31",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-08-29",
+            "stock": "31",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          }
+        ],
+        "current_evaluation": {
+          "start": "2026-10-04",
+          "end": "2026-10-08",
+          "days": 5,
+          "complete": true,
+          "stocked": true,
+          "missing": [],
+          "stock_missing": [],
+          "zero_days": [],
+          "qty": "1",
+          "revenue": "93.01",
+          "profit": "1.20",
+          "daily": "0.2",
+          "margin": "0.01290183851198795828405547791",
+          "sessions": "6",
+          "role": "问题",
+          "selling_days": 1
+        },
+        "exit_confirmation": [],
+        "recovery": null,
+        "comparison": {
+          "days": 5,
+          "current": {
+            "start": "2026-10-04",
+            "end": "2026-10-08",
+            "days": 5,
+            "complete": true,
+            "stocked": true,
+            "missing": [],
+            "stock_missing": [],
+            "zero_days": [],
+            "qty": "1",
+            "revenue": "93.01",
+            "profit": "1.20",
+            "daily": "0.2",
+            "margin": "0.01290183851198795828405547791",
+            "sessions": "6",
+            "role": "问题",
+            "selling_days": 1,
+            "sales_missing": [],
+            "sales_complete": true,
+            "financial_complete": true,
+            "finance_missing": [],
+            "inventory_complete": true,
+            "max_zero_stock_days": 0
+          },
+          "history": {
+            "start": "2026-08-25",
+            "end": "2026-08-29",
+            "days": 5,
+            "complete": true,
+            "stocked": true,
+            "missing": [],
+            "stock_missing": [],
+            "zero_days": [],
+            "qty": "0",
+            "revenue": "0.00",
+            "profit": "-2.35",
+            "daily": "0",
+            "margin": null,
+            "sessions": "0",
+            "role": "不可判",
+            "selling_days": 0,
+            "sales_missing": [],
+            "sales_complete": true,
+            "financial_complete": true,
+            "finance_missing": [],
+            "inventory_complete": true,
+            "max_zero_stock_days": 0,
+            "evidence": "断货前紧邻5天销量窗口"
+          },
+          "ratio": null,
+          "issues": [
+            "history_zero"
+          ]
+        },
+        "trend7": {
+          "current": {
+            "start": "2026-10-04",
+            "end": "2026-10-08",
+            "days": 5,
+            "complete": true,
+            "stocked": true,
+            "missing": [],
+            "stock_missing": [],
+            "zero_days": [],
+            "qty": "1",
+            "revenue": "93.01",
+            "profit": "1.20",
+            "daily": "0.2",
+            "margin": "0.01290183851198795828405547791",
+            "sessions": "6",
+            "role": "问题",
+            "selling_days": 1,
+            "sales_missing": [],
+            "sales_complete": true,
+            "financial_complete": true,
+            "finance_missing": [],
+            "inventory_complete": true,
+            "max_zero_stock_days": 0
+          },
+          "previous": null,
+          "daily_change": null,
+          "margin_change": null,
+          "warning": null
+        },
+        "state": "risk",
+        "state_label": "利润风险",
+        "state_reason": "订单毛利率低于5%，优先检查消耗、售价与成本",
+        "phase": "观察期",
+        "timeline": [
+          {
+            "day": "2026-10-04",
+            "stock": "15",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-10-05",
+            "stock": "15",
+            "qty": "1",
+            "margin": "0.09794645737017524997312116977",
+            "role": "瘦狗",
+            "complete": true
+          },
+          {
+            "day": "2026-10-06",
+            "stock": "14",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-10-07",
+            "stock": "14",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          },
+          {
+            "day": "2026-10-08",
+            "stock": "14",
+            "qty": "0",
+            "margin": null,
+            "role": "不可判",
+            "complete": true
+          }
+        ],
+        "current_stock": "14",
+        "seller_name_new": "CHOOJEE",
+        "country_category": "欧洲站",
+        "msku": "CJ057b",
+        "as_of": "2026-10-08",
+        "event_id": "c9d121c38d76e27d3d69d4df9990ab080823b31e",
+        "dos": null,
+        "dos_note": "FBA可售除以同店铺国家类别MSKU近7天日销；其他共享库存成员关系仍待核",
+        "countries": [
+          {
+            "country": "德国",
+            "recent": {
+              "start": "2026-10-02",
+              "end": "2026-10-08",
+              "days": 7,
+              "complete": true,
+              "stocked": false,
+              "missing": [],
+              "stock_missing": [],
+              "zero_days": [
+                "2026-10-02",
+                "2026-10-03"
+              ],
+              "qty": "1",
+              "revenue": "93.01",
+              "profit": "4.92",
+              "daily": "0.1428571428571428571428571429",
+              "margin": "0.05289753789915062896462745941",
+              "sessions": "4",
+              "role": "瘦狗",
+              "selling_days": 1,
+              "sales_missing": [],
+              "sales_complete": true,
+              "financial_complete": true,
+              "finance_missing": [],
+              "inventory_complete": true,
+              "max_zero_stock_days": 2
+            },
+            "historical": {
+              "start": "2026-07-31",
+              "end": "2026-08-29",
+              "days": 30,
+              "complete": true,
+              "stocked": true,
+              "missing": [],
+              "stock_missing": [],
+              "zero_days": [],
+              "qty": "0",
+              "revenue": "0.00",
+              "profit": "-23.75",
+              "daily": "0",
+              "margin": null,
+              "sessions": "8",
+              "role": "不可判",
+              "selling_days": 0
+            },
+            "listing": {
+              "currency": ""
+            },
+            "ladder": {
+              "p10": null,
+              "p15": null,
+              "p20": null,
+              "p25": null,
+              "p30": null,
+              "p35": null
+            },
+            "ladder_date": null,
+            "budget": {},
+            "suggestions": [
+              {
+                "kind": "general",
+                "action": "hold",
+                "label": "保持",
+                "status": "hold",
+                "reason": "订单毛利率低于5%，优先检查消耗、售价与成本",
+                "target": null,
+                "checks": [],
+                "country": "德国"
+              }
+            ]
+          },
+          {
+            "country": "意大利",
+            "recent": {
+              "start": "2026-10-02",
+              "end": "2026-10-08",
+              "days": 7,
+              "complete": true,
+              "stocked": false,
+              "missing": [],
+              "stock_missing": [],
+              "zero_days": [
+                "2026-10-02",
+                "2026-10-03"
+              ],
+              "qty": "1",
+              "revenue": "155.07",
+              "profit": "35.95",
+              "daily": "0.1428571428571428571428571429",
+              "margin": "0.2318307860966015347907396660",
+              "sessions": "1",
+              "role": "瘦狗",
+              "selling_days": 1,
+              "sales_missing": [],
+              "sales_complete": true,
+              "financial_complete": true,
+              "finance_missing": [],
+              "inventory_complete": true,
+              "max_zero_stock_days": 2
+            },
+            "historical": {
+              "start": "2026-07-31",
+              "end": "2026-08-29",
+              "days": 30,
+              "complete": true,
+              "stocked": true,
+              "missing": [],
+              "stock_missing": [],
+              "zero_days": [],
+              "qty": "0",
+              "revenue": "0.00",
+              "profit": "-18.16",
+              "daily": "0",
+              "margin": null,
+              "sessions": "13",
+              "role": "不可判",
+              "selling_days": 0
+            },
+            "listing": {
+              "currency": ""
+            },
+            "ladder": {
+              "p10": null,
+              "p15": null,
+              "p20": null,
+              "p25": null,
+              "p30": null,
+              "p35": null
+            },
+            "ladder_date": null,
+            "budget": {},
+            "suggestions": [
+              {
+                "kind": "general",
+                "action": "hold",
+                "label": "保持",
+                "status": "hold",
+                "reason": "订单毛利率低于5%，优先检查消耗、售价与成本",
+                "target": null,
+                "checks": [],
+                "country": "意大利"
+              }
+            ]
+          },
+          {
+            "country": "法国",
+            "recent": {
+              "start": "2026-10-02",
+              "end": "2026-10-08",
+              "days": 7,
+              "complete": true,
+              "stocked": false,
+              "missing": [],
+              "stock_missing": [],
+              "zero_days": [
+                "2026-10-02",
+                "2026-10-03"
+              ],
+              "qty": "0",
+              "revenue": "0.00",
+              "profit": "-4.03",
+              "daily": "0",
+              "margin": null,
+              "sessions": "2",
+              "role": "不可判",
+              "selling_days": 0,
+              "sales_missing": [],
+              "sales_complete": true,
+              "financial_complete": true,
+              "finance_missing": [],
+              "inventory_complete": true,
+              "max_zero_stock_days": 2
+            },
+            "historical": {
+              "start": "2026-07-31",
+              "end": "2026-08-29",
+              "days": 30,
+              "complete": true,
+              "stocked": true,
+              "missing": [],
+              "stock_missing": [],
+              "zero_days": [],
+              "qty": "1",
+              "revenue": "140.12",
+              "profit": "-152.78",
+              "daily": "0.03333333333333333333333333333",
+              "margin": "-1.090351127604910077076791322",
+              "sessions": "14",
+              "role": "问题",
+              "selling_days": 1
+            },
+            "listing": {
+              "currency": ""
+            },
+            "ladder": {
+              "p10": null,
+              "p15": null,
+              "p20": null,
+              "p25": null,
+              "p30": null,
+              "p35": null
+            },
+            "ladder_date": null,
+            "budget": {},
+            "suggestions": [
+              {
+                "kind": "general",
+                "action": "hold",
+                "label": "保持",
+                "status": "hold",
+                "reason": "订单毛利率低于5%，优先检查消耗、售价与成本",
+                "target": null,
+                "checks": [],
+                "country": "法国"
+              }
+            ]
+          },
+          {
+            "country": "荷兰",
+            "recent": {
+              "start": "2026-10-02",
+              "end": "2026-10-08",
+              "days": 7,
+              "complete": true,
+              "stocked": false,
+              "missing": [],
+              "stock_missing": [],
+              "zero_days": [
+                "2026-10-02",
+                "2026-10-03"
+              ],
+              "qty": "0",
+              "revenue": "0.00",
+              "profit": "0.00",
+              "daily": "0",
+              "margin": null,
+              "sessions": "0",
+              "role": "不可判",
+              "selling_days": 0,
+              "sales_missing": [],
+              "sales_complete": true,
+              "financial_complete": true,
+              "finance_missing": [],
+              "inventory_complete": true,
+              "max_zero_stock_days": 2
+            },
+            "historical": {
+              "start": "2026-07-31",
+              "end": "2026-08-29",
+              "days": 30,
+              "complete": true,
+              "stocked": true,
+              "missing": [],
+              "stock_missing": [],
+              "zero_days": [],
+              "qty": "0",
+              "revenue": "0.00",
+              "profit": "0.00",
+              "daily": "0",
+              "margin": null,
+              "sessions": "2",
+              "role": "不可判",
+              "selling_days": 0
+            },
+            "listing": {
+              "currency": ""
+            },
+            "ladder": {
+              "p10": null,
+              "p15": null,
+              "p20": null,
+              "p25": null,
+              "p30": null,
+              "p35": null
+            },
+            "ladder_date": null,
+            "budget": {},
+            "suggestions": [
+              {
+                "kind": "general",
+                "action": "hold",
+                "label": "保持",
+                "status": "hold",
+                "reason": "订单毛利率低于5%，优先检查消耗、售价与成本",
+                "target": null,
+                "checks": [],
+                "country": "荷兰"
+              }
+            ]
+          },
+          {
+            "country": "西班牙",
+            "recent": {
+              "start": "2026-10-02",
+              "end": "2026-10-08",
+              "days": 7,
+              "complete": true,
+              "stocked": false,
+              "missing": [],
+              "stock_missing": [],
+              "zero_days": [
+                "2026-10-02",
+                "2026-10-03"
+              ],
+              "qty": "0",
+              "revenue": "0.00",
+              "profit": "0.00",
+              "daily": "0",
+              "margin": null,
+              "sessions": "2",
+              "role": "不可判",
+              "selling_days": 0,
+              "sales_missing": [],
+              "sales_complete": true,
+              "financial_complete": true,
+              "finance_missing": [],
+              "inventory_complete": true,
+              "max_zero_stock_days": 2
+            },
+            "historical": {
+              "start": "2026-07-31",
+              "end": "2026-08-29",
+              "days": 30,
+              "complete": true,
+              "stocked": true,
+              "missing": [],
+              "stock_missing": [],
+              "zero_days": [],
+              "qty": "0",
+              "revenue": "0.00",
+              "profit": "0.00",
+              "daily": "0",
+              "margin": null,
+              "sessions": "0",
+              "role": "不可判",
+              "selling_days": 0
+            },
+            "listing": {
+              "currency": ""
+            },
+            "ladder": {
+              "p10": null,
+              "p15": null,
+              "p20": null,
+              "p25": null,
+              "p30": null,
+              "p35": null
+            },
+            "ladder_date": null,
+            "budget": {},
+            "suggestions": [
+              {
+                "kind": "general",
+                "action": "hold",
+                "label": "保持",
+                "status": "hold",
+                "reason": "订单毛利率低于5%，优先检查消耗、售价与成本",
+                "target": null,
+                "checks": [],
+                "country": "西班牙"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

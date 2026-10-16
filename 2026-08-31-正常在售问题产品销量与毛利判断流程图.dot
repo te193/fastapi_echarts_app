@@ -1,0 +1,200 @@
+digraph G {
+  graph [
+    rankdir=TB,
+    bgcolor="#F8FAFC",
+    pad="0.35",
+    nodesep="0.38",
+    ranksep="0.58",
+    splines=ortho,
+    fontname="Microsoft YaHei",
+    label="正常在售问题产品｜销量与毛利判断流程图（暂行版）",
+    labelloc=t,
+    fontsize=22,
+    fontcolor="#0F172A"
+  ];
+
+  node [
+    shape=box,
+    style="rounded,filled",
+    fontname="Microsoft YaHei",
+    fontsize=11,
+    color="#CBD5E1",
+    fillcolor="#FFFFFF",
+    fontcolor="#0F172A",
+    margin="0.16,0.10"
+  ];
+
+  edge [
+    fontname="Microsoft YaHei",
+    fontsize=9,
+    color="#64748B",
+    fontcolor="#475569",
+    arrowsize=0.7,
+    penwidth=1.2
+  ];
+
+  start [shape=oval, fillcolor="#DBEAFE", color="#3B82F6", penwidth=1.8,
+         label="开始：国家站点＋MSKU\n运营状态＝正常在售\n30天站点销售角色＝问题产品"];
+  classify [shape=diamond, fillcolor="#E0F2FE", color="#0284C7", penwidth=1.6,
+            label="按30天站点日销\n与问题原因分类"];
+
+  start -> classify;
+
+  subgraph cluster_zero {
+    label="A｜零销量：日销＝0";
+    color="#FDBA74";
+    fillcolor="#FFF7ED";
+    style="rounded,filled";
+    fontname="Microsoft YaHei";
+    fontsize=14;
+    fontcolor="#9A3412";
+
+    z_price25 [shape=diamond, fillcolor="#FFEDD5", color="#F97316", label="当前售价＞P25？"];
+    z_down25 [fillcolor="#FFEDD5", color="#F97316", penwidth=1.5,
+              label="降价至P25\n观察7天"];
+    z_sales_after25 [shape=diamond, fillcolor="#FFF7ED", color="#F97316",
+                     label="观察期产生销量？"];
+    z_ad [shape=diamond, fillcolor="#FEF3C7", color="#D97706",
+          label="广告投入及花费状态"];
+    z_no_ad [fillcolor="#FEF3C7", color="#D97706",
+             label="广告花费＝0\n标签：零销量－未投入广告\n暂不自动降价"];
+    z_under_budget [fillcolor="#FEF3C7", color="#D97706",
+                    label="广告花费＞0但未达标\n标签：零销量－广告花费未达标\n暂不自动加预算或降价"];
+    z_price15 [shape=diamond, fillcolor="#FFEDD5", color="#F97316",
+               label="广告花费达标后\n当前售价＞P15？"];
+    z_down15 [fillcolor="#FFEDD5", color="#F97316", penwidth=1.5,
+              label="降价至P15\n保持现有广告投入\n观察7天"];
+    z_sales_after15 [shape=diamond, fillcolor="#FFF7ED", color="#F97316",
+                     label="P15观察期产生销量？"];
+    z_manual [fillcolor="#FEE2E2", color="#DC2626", penwidth=1.7,
+              label="广告花费达标且仍无销量\n停止自动调价和自动加预算\n标签：15%毛利价格测试无销量\n待人工判断"];
+
+    z_price25 -> z_down25 [label="是"];
+    z_down25 -> z_sales_after25;
+    z_sales_after25 -> z_ad [label="否"];
+    z_price25 -> z_ad [label="否：售价≤P25"];
+    z_ad -> z_no_ad [label="未投入"];
+    z_ad -> z_under_budget [label="已投入但未达标"];
+    z_ad -> z_price15 [label="花费达标"];
+    z_price15 -> z_down15 [label="是：P15＜售价≤P25"];
+    z_down15 -> z_sales_after15;
+    z_sales_after15 -> z_manual [label="否"];
+    z_price15 -> z_manual [label="否：售价≤P15且已观察满7天"];
+  }
+
+  subgraph cluster_high {
+    label="B｜较高日销：日销≥1 且毛利率＜5%";
+    color="#C4B5FD";
+    fillcolor="#F5F3FF";
+    style="rounded,filled";
+    fontname="Microsoft YaHei";
+    fontsize=14;
+    fontcolor="#6D28D9";
+
+    h_price [shape=diamond, fillcolor="#EDE9FE", color="#7C3AED",
+             label="当前售价所在档位"];
+    h_up20 [fillcolor="#EDE9FE", color="#7C3AED", penwidth=1.5,
+            label="售价＜P20\n提价至P20\n观察7天"];
+    h_up25 [fillcolor="#EDE9FE", color="#7C3AED", penwidth=1.5,
+            label="P20≤售价＜P25\n提价至P25\n观察7天"];
+    h_result [shape=diamond, fillcolor="#F5F3FF", color="#7C3AED",
+              label="观察结果"];
+    h_next25 [fillcolor="#EDE9FE", color="#7C3AED", penwidth=1.5,
+              label="仍有销量且毛利率＜5%\n进入下一档P25\n再观察7天"];
+
+    h_price -> h_up20 [label="售价＜P20"];
+    h_price -> h_up25 [label="P20≤售价＜P25"];
+    h_up20 -> h_result;
+    h_up25 -> h_result;
+    h_result -> h_next25 [label="P20后仍低毛利"];
+  }
+
+  subgraph cluster_low {
+    label="C｜较低日销：0＜日销＜1 且毛利率＜5%";
+    color="#93C5FD";
+    fillcolor="#EFF6FF";
+    style="rounded,filled";
+    fontname="Microsoft YaHei";
+    fontsize=14;
+    fontcolor="#1D4ED8";
+
+    l_price [shape=diamond, fillcolor="#DBEAFE", color="#2563EB",
+             label="当前售价所在档位"];
+    l_up15 [fillcolor="#DBEAFE", color="#2563EB", penwidth=1.5,
+            label="售价＜P15\n提价至P15"];
+    l_up20 [fillcolor="#DBEAFE", color="#2563EB", penwidth=1.5,
+            label="P15≤售价＜P20\n提价至P20"];
+    l_up25 [fillcolor="#DBEAFE", color="#2563EB", penwidth=1.5,
+            label="P20≤售价＜P25\n提价至P25"];
+    l_check7 [fillcolor="#E0F2FE", color="#0284C7",
+              label="第7天检查\n不立即判定零销量"];
+    l_sales7 [shape=diamond, fillcolor="#EFF6FF", color="#2563EB",
+              label="观察期仍有销量？"];
+    l_margin [shape=diamond, fillcolor="#EFF6FF", color="#2563EB",
+              label="毛利率达到5%？"];
+    l_wait14 [fillcolor="#E0F2FE", color="#0284C7",
+              label="保持当前价格\n继续观察至第14天"];
+    l_sales14 [shape=diamond, fillcolor="#EFF6FF", color="#2563EB",
+               label="连续14天仍无销量？"];
+    l_next [fillcolor="#DBEAFE", color="#2563EB",
+            label="仍有销量但毛利率＜5%\n进入下一价格档位"];
+
+    l_price -> l_up15 [label="售价＜P15"];
+    l_price -> l_up20 [label="P15≤售价＜P20"];
+    l_price -> l_up25 [label="P20≤售价＜P25"];
+    l_up15 -> l_check7;
+    l_up20 -> l_check7;
+    l_up25 -> l_check7;
+    l_check7 -> l_sales7;
+    l_sales7 -> l_margin [label="是"];
+    l_sales7 -> l_wait14 [label="否"];
+    l_margin -> l_next [label="否"];
+    l_wait14 -> l_sales14;
+  }
+
+  subgraph cluster_outputs {
+    label="结果与转向";
+    color="#A7F3D0";
+    fillcolor="#F0FDF4";
+    style="rounded,filled";
+    fontname="Microsoft YaHei";
+    fontsize=14;
+    fontcolor="#047857";
+
+    exit_role [fillcolor="#DCFCE7", color="#16A34A", penwidth=1.7,
+               label="毛利率≥5%\n停止当前策略\n重新计算销售角色"];
+    cost [fillcolor="#CCFBF1", color="#0F766E", penwidth=1.7,
+          label="售价达到或高于P25\n仍有销量且毛利率＜5%\n进入八项成本分析"];
+    cost_items [fillcolor="#F0FDFA", color="#0F766E",
+                label="采购｜头程｜FBA｜佣金\n税费｜广告｜退款｜仓储及其他调整"];
+    rank_pending [fillcolor="#E2E8F0", color="#64748B",
+                  label="日销＞0＋毛利率≥5%\n小类排名为空／0／99999\n暂不处理排名问题"];
+  }
+
+  classify -> z_price25 [label="日销＝0"];
+  classify -> h_price [label="日销≥1且毛利率＜5%"];
+  classify -> l_price [label="0＜日销＜1且毛利率＜5%"];
+  classify -> rank_pending [label="仅排名异常"];
+
+  z_sales_after25 -> h_price [label="是且日销≥1", color="#7C3AED"];
+  z_sales_after25 -> l_price [label="是且0＜日销＜1", color="#2563EB"];
+  z_sales_after15 -> h_price [label="是且日销≥1", color="#7C3AED"];
+  z_sales_after15 -> l_price [label="是且0＜日销＜1", color="#2563EB"];
+
+  h_price -> cost [label="售价≥P25"];
+  h_result -> exit_role [label="仍有销量且毛利率≥5%", color="#16A34A"];
+  h_result -> z_price25 [label="7天无销量", color="#F97316"];
+  h_next25 -> cost [label="P25后仍低毛利"];
+
+  l_price -> cost [label="售价≥P25"];
+  l_margin -> exit_role [label="是", color="#16A34A"];
+  l_next -> l_price [label="重新判断价格档位", color="#2563EB"];
+  l_sales14 -> z_price25 [label="是：转零销量流程", color="#F97316"];
+  l_sales14 -> l_margin [label="否：仍有销量", color="#2563EB"];
+
+  cost -> cost_items;
+
+  note [shape=note, fillcolor="#FFFFFF", color="#94A3B8", fontcolor="#475569",
+        label="规则边界\nP15＝自动降价最低价格\n有销量低毛利门槛＝毛利率＜5%\n日销≥1观察7天\n0＜日销＜1最长观察14天"];
+  start -> note [style=dashed, arrowhead=none, color="#94A3B8"];
+}

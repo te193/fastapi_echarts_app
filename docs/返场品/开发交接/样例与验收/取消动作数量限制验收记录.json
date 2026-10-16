@@ -1,0 +1,8 @@
+{
+  "rule_version": "return-v14-20261012-dynamic-price-visits",
+  "production_tests": "395 passed in 1.86s",
+  "portable_tests": "228 passed in 0.64s",
+  "business_database_writes": 0,
+  "advertising_platform_writes": 0,
+  "remote_recomputation": false
+}

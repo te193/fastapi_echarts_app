@@ -21,6 +21,7 @@ def db():
     conn.execute("attach database ':memory:' as etl_datasync_test")
     conn.executescript("""
         create table etl_datasync_test.dashboard_replenishment_disabled_store_sync (seller_name_new text);
+        create table etl_datasync_test.dashboard_replenishment_clearance_sync (msku text, store text);
         create table tmp_pur_plan_replenish_calc (
             country_category text, max_asin text, seller_name_new text, seller_sku_adj text,
             fllow_flag integer, followed_flag integer default 0, sales_status text default '在售中',
@@ -109,10 +110,49 @@ def test_all_follow_stores_disabled_have_no_target_and_keep_unassigned_need(db):
     assert {r["group_replenish_need_qty"] for r in rows} == {100}
 
 
+def test_clearance_appendix_restores_original_target_without_changing_actual_assignments(db):
+    add_link(db, 'A', msku='origin', follow=1)
+    add_link(db, 'B', msku='allowed', day='2026-10-06')
+    add_link(db, 'C', msku='clearance')
+    db.execute("insert into etl_datasync_test.dashboard_replenishment_clearance_sync values ('clearance','全部')")
+    assert select_targets(db)[0]['target_seller_name_new'] == 'B'
+    reference = [dict(row) for row in db.execute(update.clearance_reference_targets_sql())]
+    assert reference[0]['target_seller_name_new'] == 'C'
+    assert assigned_quantities(db) == {'A': 0, 'B': 100, 'C': 0}
+
+
+def test_clearance_appendix_preserves_disabled_store_protection(db):
+    add_link(db, 'B', msku='allowed', day='2026-10-06')
+    add_link(db, 'C', msku='clearance')
+    db.execute("insert into etl_datasync_test.dashboard_replenishment_clearance_sync values ('clearance','全部')")
+    select_targets(db, disabled=('C',))
+    reference = [dict(row) for row in db.execute(update.clearance_reference_targets_sql())]
+    assert reference[0]['target_seller_name_new'] == 'B'
+
+
 def test_allowed_stores_keep_existing_latest_date_priority(db):
     add_link(db, "B", day="2026-10-06")
     add_link(db, "C")
     assert select_targets(db)[0]["target_seller_name_new"] == "C"
+
+
+def test_clearance_link_cannot_receive_asin_merged_quantity_even_as_only_follow_store(db):
+    add_link(db, "A", msku="origin", follow=1)
+    add_link(db, "C", msku="clearance")
+    db.execute("insert into etl_datasync_test.dashboard_replenishment_clearance_sync values ('clearance','全部')")
+    assert select_targets(db) == []
+    assert assigned_quantities(db) == {"A":0,"C":0}
+
+
+def test_clearance_link_cannot_win_but_group_sales_and_inventory_are_preserved(db):
+    add_link(db,"A",msku="origin",follow=1)
+    add_link(db,"B",msku="normal",day="2026-10-06")
+    add_link(db,"C",msku="clearance")
+    db.execute("insert into etl_datasync_test.dashboard_replenishment_clearance_sync values ('clearance','c')")
+    assert select_targets(db)[0]["target_seller_name_new"] == "B"
+    assert assigned_quantities(db) == {"A":0,"B":100,"C":0}
+    group=db.execute('select group_sales_30,group_support_inventory_qty from tmp_asin_merge_group_daily_base').fetchone()
+    assert group['group_sales_30'] == 90 and group['group_support_inventory_qty'] == 30
 
 
 def test_follow_store_counts_are_separate_for_each_site(db):

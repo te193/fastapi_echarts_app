@@ -405,9 +405,9 @@ def test_lifecycle_receiving_evidence_uses_retained_history_without_future_start
 
 @pytest.fixture
 def local_store():
+    # Imported fixtures do not inherit the defining module skip marker.
     if os.environ.get("LABEL_LOCAL_MYSQL_TEST") != "1":
         pytest.skip("isolated local MySQL integration is opt-in")
-
     from etl.dashboard_daily_update import connect_target
     from etl.replenishment_update import apply_database_ini_env
 

@@ -8,8 +8,13 @@ from decimal import Decimal
 from typing import Any
 
 import pymysql
+from .replenishment_capacity import CAPACITY_COLUMNS, ReplenishmentCapacityService
 
-from etl.replenishment_update import apply_database_ini_env
+from etl.replenishment_update import SELECT_CLEARANCE_SYNC_SQL, apply_database_ini_env
+from etl.replenishment_roles import (
+    ROLE_PERIODS, REVIEW_COLUMNS, country_key, expression_period, low_margin_review,
+    normalize_role_period, replenishment_source_sql, role_case,
+)
 
 
 LEVEL_ALL = "\u5168\u90e8"
@@ -25,7 +30,7 @@ LEVEL_UNKNOWN = "\u672a\u5206\u5c42"
 ASIN_MERGE_CONSOLIDATED_BLOCK = "\u540cASIN\u5df2\u5408\u5e76\u81f3\u4e3b\u94fe\u63a5"
 ASIN_MERGE_SUFFICIENT_BLOCK = "\u540cASIN\u5e93\u5b58\u5145\u8db3\u4e0d\u8865\u8d27"
 COUNTRY_METRIC_PERIODS = {7, 14, 30, 90}
-PRODUCT_CATEGORY_PERIODS = {7, 14, 30, 90, 180}
+PRODUCT_CATEGORY_PERIODS = ROLE_PERIODS
 MARGIN_PRICE_TARGETS = (35, 30, 25, 20, 15, 10, 5, 0)
 PRODUCT_CATEGORY_SALES_COLUMNS = {
     7: "final_sales_7d",
@@ -54,10 +59,9 @@ FLOW_LEVEL_ORDER = {
     LEVEL_UNKNOWN: 8,
     FLOW_ENTRY_LABEL: 99,
 }
-PRODUCT_CATEGORY_SQL_COLUMNS = set(PRODUCT_CATEGORY_SALES_COLUMNS.values()) | {
-    f"r_{period}d_salable_days" for period in PRODUCT_CATEGORY_PERIODS
-} | {
-    f"pprofit_ratio_{period}d" for period in PRODUCT_CATEGORY_PERIODS
+PRODUCT_CATEGORY_SQL_COLUMNS = {
+    f"role_{metric}_{period}d"
+    for metric in ("daily_sales", "margin_rate") for period in ROLE_PERIODS
 }
 
 REPLENISHMENT_COLUMN_LABELS = {
@@ -401,9 +405,11 @@ class ReplenishmentDataService:
             )
             self._attach_level_flow_summary(level_summary, flow_summary)
             items, total = self._items(conn, filters, params, sort_field, sort_dir, page, page_size, period_metrics)
+            capacity_demand = self._capacity_demand_items(conn, selected_date) if items else []
             meta = self._meta(conn)
 
         self._attach_product_tags(items, "sku")
+        ReplenishmentCapacityService(self.connect_source).enrich(items, selected_date, demand_rows=capacity_demand)
         safe_page_size = max(10, min(100, int(page_size or 20)))
         total_pages = max(1, math.ceil(total / safe_page_size))
         safe_page = min(max(1, int(page or 1)), total_pages)
@@ -523,6 +529,7 @@ class ReplenishmentDataService:
                 dict.fromkeys(
                     [col["name"] for col in columns]
                     + list(REPLENISHMENT_EXPORT_HIDDEN_HIGHLIGHT_COLUMNS)
+                    + ["role_daily_sales", "role_margin_rate", "cur_date", "country_category", "seller_name_new", "seller_sku_adj", "abcd_category"]
                 )
             )
             rows = self._export_items(
@@ -534,13 +541,85 @@ class ReplenishmentDataService:
                 selected_columns,
                 period_metrics=period_metrics,
             )
+            self._attach_low_margin_reviews(conn, rows, safe_category_period_days)
+            columns.extend(dict(column) for column in REVIEW_COLUMNS)
             self._attach_product_tags(rows, "max_sku")
+            ReplenishmentCapacityService(self.connect_source).enrich(rows, selected_date,
+                demand_rows=self._capacity_demand_items(conn, selected_date) if rows else [])
             tag_index = next(
                 (index + 1 for index, column in enumerate(columns) if column["name"] == "global_tags"),
                 len(columns),
             )
             columns.insert(tag_index, {"name": "product_tags", "label": "产品标签"})
-            return {"columns": columns, "rows": rows, "snapshot_date": format_day(selected_date)}
+            columns.extend(dict(column) for column in CAPACITY_COLUMNS)
+            clearance_rows = self._clearance_export_items(conn, selected_date, site, store, keyword)
+            return {"columns": columns, "rows": rows, "snapshot_date": format_day(selected_date),
+                    "clearance_rows": clearance_rows}
+
+    def _clearance_export_items(self, conn, selected_date: date, site: str, store: str,
+                                keyword: str) -> list[dict[str, Any]]:
+        """Small appendix, scoped by identity only; never recompute replenishment during export."""
+        params: dict[str, Any] = {"snapshot_date": selected_date}
+        identity_filters = []
+        if site and site != "all":
+            identity_filters.append("country_category = %(site)s")
+            params["site"] = site
+        if store and store != "all":
+            identity_filters.append("seller_name_new = %(store)s")
+            params["store"] = store
+        if keyword.strip():
+            identity_filters.append("seller_sku_adj like %(keyword)s")
+            params["keyword"] = f"%{keyword.strip()}%"
+        identity_where = "".join(f" and {part}" for part in identity_filters)
+        with conn.cursor() as cursor:
+            try:
+                cursor.execute(f"""select country_category, seller_name_new, seller_sku_adj,
+                    reference_qty, '清货名单，禁止补货' as block_reason
+                    from dashboard_replenishment_clearance_audit
+                    where snapshot_date = %(snapshot_date)s and reference_qty > 0 {identity_where}
+                    order by country_category, seller_name_new, seller_sku_adj""", params)
+                saved = cursor.fetchall()
+                if saved:
+                    return saved
+            except pymysql.err.ProgrammingError as exc:
+                if exc.args[0] != 1146:
+                    raise
+
+        # Existing snapshots have no saved exclusion evidence. Show current list
+        # matches explicitly as pending regeneration, using the real UI quantity.
+        with self.connect_source() as source, source.cursor() as cursor:
+            cursor.execute(SELECT_CLEARANCE_SYNC_SQL)
+            entries = cursor.fetchall()
+        if not entries:
+            return []
+        matches = []
+        global_mskus = []
+        for index, entry in enumerate(entries):
+            msku_param = f"clearance_msku_{index}"
+            params[msku_param] = entry["msku"]
+            if entry["store"] == "全部":
+                global_mskus.append(f"%({msku_param})s")
+            else:
+                store_param = f"clearance_store_{index}"
+                params[store_param] = entry["store"]
+                matches.append(f"(trim(r.seller_sku_adj) = %({msku_param})s and "
+                               f"lower(trim(r.seller_name_new)) = %({store_param})s)")
+        if global_mskus:
+            matches.append(f"trim(r.seller_sku_adj) in ({', '.join(global_mskus)})")
+        quantity = self._display_replenish_qty_expr("r")
+        with conn.cursor() as cursor:
+            cursor.execute(f"""select * from (
+                select r.country_category, r.seller_name_new, r.seller_sku_adj,
+                    {quantity} as reference_qty
+                from dashboard_pur_plan_replenish_data r
+                where r.cur_date=%(snapshot_date)s and ({' or '.join(matches)})
+                ) matched where reference_qty > 0 {identity_where}
+                order by country_category, seller_name_new, seller_sku_adj""",
+                self._with_display_level_params(params))
+            rows = cursor.fetchall()
+        for row in rows:
+            row["block_reason"] = "命中清货名单，待重新生成（旧快照未修改）"
+        return rows
 
     def _attach_product_tags(self, rows: list[dict[str, Any]], sku_field: str) -> None:
         """Enrich existing results with current product tags, without multiplying rows."""
@@ -807,6 +886,7 @@ class ReplenishmentDataService:
                 "or country_category like %(keyword)s or coalesce(max_sku, '') like %(keyword)s)"
             )
             params["keyword"] = f"%{keyword.strip()}%"
+        params["role_period_days"] = expression_period(category_expr or "")
         if moq_status in {"below_minimum", "unconfigured", "met", "not_applicable"}:
             clauses.append("moq_status = %(moq_status)s")
             params["moq_status"] = moq_status
@@ -848,7 +928,7 @@ class ReplenishmentDataService:
                     sum(case when {display_level_expr} = %(level_history_recovery)s then 1 else 0 end) as history_recovery_count,
                     sum(case when moq_status = 'below_minimum' then 1 else 0 end) as moq_warning_count,
                     sum(case when moq_status = 'below_minimum' then calculated_replenish_qty else 0 end) as moq_warning_calculated_qty
-                from dashboard_pur_plan_replenish_data
+                from {self._role_source(params)} role_rows
                 where {filters}
                 """,
                 query_params,
@@ -893,7 +973,7 @@ class ReplenishmentDataService:
                     sum({display_replenish_qty_expr}) as replenish_qty,
                     sum({display_replenish_cost_expr}) as replenish_cost,
                     avg(inventory_support_days) as avg_support_days
-                from dashboard_pur_plan_replenish_data
+                from {self._role_source(params)} role_rows
                 where {filters}
                 group by display_level_sort, display_level
                 order by display_level_sort
@@ -907,7 +987,7 @@ class ReplenishmentDataService:
                     support_replenish_level_sort,
                     coalesce(abcd_category, '未分类') as abcd_category,
                     count(*) as sku_count
-                from dashboard_pur_plan_replenish_data
+                from {self._role_source(params)} role_rows
                 where {filters}
                 group by support_replenish_level_sort, coalesce(abcd_category, '未分类')
                 order by support_replenish_level_sort, sku_count desc, abcd_category
@@ -921,7 +1001,7 @@ class ReplenishmentDataService:
                     support_replenish_level_sort,
                     coalesce({category_expr}, '未分类') as abcd_category,
                     count(*) as sku_count
-                from dashboard_pur_plan_replenish_data
+                from {self._role_source(params)} role_rows
                 where {filters}
                 group by support_replenish_level_sort, coalesce({category_expr}, '未分类')
                 order by support_replenish_level_sort, sku_count desc, abcd_category
@@ -935,7 +1015,7 @@ class ReplenishmentDataService:
                     {display_level_sort_expr} as display_level_sort,
                     coalesce({category_expr}, '未分类') as abcd_category,
                     count(*) as sku_count
-                from dashboard_pur_plan_replenish_data
+                from {self._role_source(params)} role_rows
                 where {filters}
                 group by display_level_sort, coalesce({category_expr}, '未分类')
                 order by display_level_sort, sku_count desc, abcd_category
@@ -1030,8 +1110,23 @@ class ReplenishmentDataService:
     def _qualify_product_category_expr(self, expr: str, alias: str) -> str:
         qualified = expr
         for column in sorted(PRODUCT_CATEGORY_SQL_COLUMNS, key=len, reverse=True):
-            qualified = re.sub(rf"\b{re.escape(column)}\b", f"{alias}.{column}", qualified)
+            qualified = re.sub(rf"(?<![\w.]){re.escape(column)}\b", f"{alias}.{column}", qualified)
         return qualified
+
+    def _role_source(self, params: dict[str, Any], period: int | None = None) -> str:
+        dates = [name for name in ("snapshot_date", "prev_date") if name in params]
+        return replenishment_source_sql(period or params.get("role_period_days", 30), dates)
+
+    def _capacity_demand_items(self, conn, selected_date: date) -> list[dict[str, Any]]:
+        """All positive displayed demands; UI filters cannot change shared capacity totals."""
+        quantity = self._display_replenish_qty_expr("r")
+        params = self._with_display_level_params({"snapshot_date": selected_date})
+        with conn.cursor() as cursor:
+            cursor.execute(f"""select r.country_category, r.seller_name_new, r.seller_sku_adj,
+                r.max_sku, {quantity} as replenish_qty
+                from dashboard_pur_plan_replenish_data r
+                where r.cur_date=%(snapshot_date)s and ({quantity})>0""", params)
+            return cursor.fetchall()
 
     def _history_recovery_display_condition(self, alias: str = "") -> str:
         prefix = f"{alias}." if alias else ""
@@ -1202,18 +1297,8 @@ class ReplenishmentDataService:
         )
 
     def _display_product_daily_sales_expr(self, period_metrics: dict[str, str], alias: str = "") -> str:
-        prefix = f"{alias}." if alias else ""
         daily_sales_expr = self._qualify_product_category_expr(period_metrics["daily_sales_expr"], alias) if alias else period_metrics["daily_sales_expr"]
-        group_daily_sales_expr = self._qualify_product_category_expr(period_metrics["daily_sales_expr"], "grp")
-        return (
-            f"case when coalesce({prefix}asin_merge_flag, 0) = 1 then coalesce(("
-            f"select max({group_daily_sales_expr}) "
-            f"from dashboard_pur_plan_replenish_data grp "
-            f"where grp.cur_date = {prefix}cur_date "
-            f"and grp.country_category <=> {prefix}country_category "
-            f"and grp.max_asin <=> {prefix}max_asin"
-            f"), {daily_sales_expr}) else {daily_sales_expr} end"
-        )
+        return daily_sales_expr
 
     def _with_display_level_params(self, params: dict[str, Any]) -> dict[str, Any]:
         return {
@@ -1240,6 +1325,7 @@ class ReplenishmentDataService:
         flow_type: str,
     ) -> list[dict[str, Any]]:
         filters, params = self._level_flow_filters(selected_date, prev_date, category, site, store, keyword)
+        params["role_period_days"] = expression_period(category_expr)
         prev_category_expr = self._qualify_product_category_expr(category_expr, "p")
         cur_category_expr = self._qualify_product_category_expr(category_expr, "c")
         prev_level_expr = self._display_level_expr("p")
@@ -1283,8 +1369,8 @@ class ReplenishmentDataService:
                         c.final_sales_30d as cur_sales_30d,
                         case when p.seller_sku_adj is null then null else {prev_category_expr} end as prev_category,
                         {cur_category_expr} as cur_category
-                    from dashboard_pur_plan_replenish_data c
-                    left join dashboard_pur_plan_replenish_data p
+                    from {self._role_source(params)} c
+                    left join {self._role_source(params)} p
                            on p.cur_date = %(prev_date)s
                           and c.country_category = p.country_category
                           and c.seller_name_new = p.seller_name_new
@@ -1322,8 +1408,8 @@ class ReplenishmentDataService:
                         null as cur_sales_30d,
                         {prev_category_expr} as prev_category,
                         null as cur_category
-                    from dashboard_pur_plan_replenish_data p
-                    left join dashboard_pur_plan_replenish_data c
+                    from {self._role_source(params)} p
+                    left join {self._role_source(params)} c
                            on c.cur_date = %(snapshot_date)s
                           and c.country_category = p.country_category
                           and c.seller_name_new = p.seller_name_new
@@ -1705,7 +1791,7 @@ class ReplenishmentDataService:
         query_params = self._with_display_level_params(params)
         query_params.update({"limit": safe_page_size, "offset": offset})
         with conn.cursor() as cursor:
-            cursor.execute(f"select count(*) as total from dashboard_pur_plan_replenish_data where {filters}", params)
+            cursor.execute(f"select count(*) as total from {self._role_source(params, int(period_metrics['period_days']))} role_rows where {filters}", params)
             total = to_int((cursor.fetchone() or {}).get("total"))
             cursor.execute(
                 f"""
@@ -1754,7 +1840,7 @@ class ReplenishmentDataService:
                     {display_asin_merge_reason_expr} as asin_merge_reason,
                     {period_metrics["category_expr"]} as abcd_category,
                     {period_metrics["margin_range_expr"]} as gp_margin_range
-                from dashboard_pur_plan_replenish_data r
+                from {self._role_source(params, int(period_metrics['period_days']))} r
                 where {filters}
                 order by {sort_column} {direction}, replenish_qty desc, seller_sku_adj
                 limit %(limit)s offset %(offset)s
@@ -1818,7 +1904,7 @@ class ReplenishmentDataService:
                 f"""
                 select
                     {select_columns}
-                from dashboard_pur_plan_replenish_data
+                from {self._role_source(params, int(period_metrics['period_days']))} role_rows
                 where {filters}
                 order by {sort_column} {direction}, replenish_qty desc, seller_sku_adj
                 """,
@@ -1837,6 +1923,10 @@ class ReplenishmentDataService:
         return rows
 
     def _export_select_expression(self, column: str, period_metrics: dict[str, str]) -> str:
+        if column == "role_daily_sales":
+            return f"{period_metrics['daily_sales_expr']} as role_daily_sales"
+        if column == "role_margin_rate":
+            return f"{period_metrics['margin_col']} as role_margin_rate"
         if column == "abcd_category":
             return f"{period_metrics['category_expr']} as {self._quote_identifier(column)}"
         if column == "gp_margin_range":
@@ -1881,6 +1971,33 @@ class ReplenishmentDataService:
 
     def _quote_identifier(self, value: str) -> str:
         return "`" + value.replace("`", "``") + "`"
+
+    def _attach_low_margin_reviews(self, conn, rows: list[dict[str, Any]], period: int) -> None:
+        # One query per bounded key batch, never one query per exported row.
+        candidates = [row for row in rows if row.get("abcd_category") in {"瘦狗产品", "问题产品"}
+                      and row.get("role_daily_sales") is not None
+                      and row.get("role_margin_rate") is not None
+                      and row["role_daily_sales"] > 1 and row["role_margin_rate"] < Decimal("0.05")]
+        countries: dict[tuple, list[dict[str, Any]]] = {}
+        for offset in range(0, len(candidates), 200):
+            params: dict[str, Any] = {"period": period}
+            predicates = []
+            for index, row in enumerate(candidates[offset:offset + 200]):
+                fields = (("snapshot_date", "cur_date"), ("country_category", "country_category"),
+                          ("seller_name_new", "seller_name_new"), ("seller_sku_adj", "seller_sku_adj"))
+                predicates.append("(" + " and ".join(f"{column} = %({column}_{index})s" for column, _ in fields) + ")")
+                params.update({f"{column}_{index}": row.get(field) for column, field in fields})
+            with conn.cursor() as cursor:
+                cursor.execute(f"""select snapshot_date, period_days, country_category, country,
+                    seller_name_new, seller_sku_adj, sales_qty, sales_amount, order_gross_profit
+                    from dashboard_replenishment_country_metrics
+                    where period_days = %(period)s and ({' or '.join(predicates)})""", params)
+                for item in cursor.fetchall():
+                    countries.setdefault(country_key(item, "snapshot_date"), []).append(item)
+        for row in rows:
+            review = low_margin_review(row, countries.get(country_key(row, "cur_date"), []), period)
+            row["low_margin_review_status"] = review.pop("status")
+            row.update(review)
 
     def _attach_country_summaries(self, cursor, rows: list[dict[str, Any]]) -> None:
         if not rows:
@@ -1947,34 +2064,16 @@ class ReplenishmentDataService:
             row["top_countries"] = summary.get("top_countries")
 
     def _normalize_product_category_period_days(self, value: int | str | None) -> int:
-        try:
-            period_days = int(value or 30)
-        except (TypeError, ValueError):
-            period_days = 30
-        return period_days if period_days in PRODUCT_CATEGORY_PERIODS else 30
+        return normalize_role_period(value)
 
     def _product_category_metric_sql(self, period_days: int) -> dict[str, str]:
         safe_period_days = self._normalize_product_category_period_days(period_days)
-        sales_col = PRODUCT_CATEGORY_SALES_COLUMNS[safe_period_days]
-        salable_col = f"r_{safe_period_days}d_salable_days"
-        margin_col = f"pprofit_ratio_{safe_period_days}d"
-        salable_floor_days = math.ceil(safe_period_days / 2)
-        effective_salable_days_expr = f"greatest({salable_col}, {salable_floor_days})"
-        daily_sales_expr = f"case when {salable_col} > 0 then {sales_col} / {effective_salable_days_expr} else 0 end"
-        category_expr = f"""
-            case
-                when ({daily_sales_expr}) >= 5 and {margin_col} >= 0.15 then '明星产品'
-                when ({daily_sales_expr}) >= 1 and ({daily_sales_expr}) < 5 and {margin_col} >= 0.25 then '明星产品'
-                when ({daily_sales_expr}) >= 5 and {margin_col} >= 0.05 and {margin_col} < 0.15 then '潜力产品'
-                when ({daily_sales_expr}) >= 1 and ({daily_sales_expr}) < 5 and {margin_col} >= 0.10 and {margin_col} < 0.25 then '潜力产品'
-                when ({daily_sales_expr}) >= 1 and ({daily_sales_expr}) < 5 and {margin_col} >= 0.05 and {margin_col} < 0.10 then '瘦狗产品'
-                when ({daily_sales_expr}) < 1 and {margin_col} >= 0.05 then '瘦狗产品'
-                when ({daily_sales_expr}) = 0 or (({daily_sales_expr}) > 1 and {margin_col} < 0.05) then '问题产品'
-                else '问题产品'
-            end
-        """.strip()
+        daily_sales_expr = f"role_daily_sales_{safe_period_days}d"
+        margin_col = f"role_margin_rate_{safe_period_days}d"
+        category_expr = role_case(daily_sales_expr, margin_col)
         margin_range_expr = f"""
             case
+                when {margin_col} is null then '数据不足'
                 when {margin_col} >= 0.15 then '>=15%%'
                 when {margin_col} >= 0.10 then '10%%-15%%'
                 when {margin_col} >= 0.05 then '5%%-10%%'
@@ -2058,8 +2157,8 @@ class ReplenishmentDataService:
             "msku": row.get("seller_sku_adj"),
             "sku": row.get("max_sku"),
             "daily_sales": round(to_float(row.get("daily_avg_sales")), 4),
-            "category_daily_sales_30d": round(to_float(row.get("category_daily_sales_30d")), 4),
-            "profit_rate_30d": round(to_float(row.get("pprofit_ratio_30d")), 6),
+            "category_daily_sales_30d": round(to_float(row["category_daily_sales_30d"]), 4) if row.get("category_daily_sales_30d") is not None else None,
+            "profit_rate_30d": round(to_float(row["pprofit_ratio_30d"]), 6) if row.get("pprofit_ratio_30d") is not None else None,
             "support_days": (
                 round(to_float(row.get("inventory_support_days")), 2)
                 if row.get("inventory_support_days") is not None

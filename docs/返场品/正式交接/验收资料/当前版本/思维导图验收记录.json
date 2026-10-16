@@ -1,0 +1,24 @@
+{
+  "date": "2026-10-12",
+  "rule_version": "return-v14-20261012-dynamic-price-visits",
+  "format": "XMind JSON archive",
+  "sheets": 4,
+  "topics": 326,
+  "utf8_and_outline_readback": "passed",
+  "unique_ids_and_manifest": "passed",
+  "document_links": 63,
+  "original_unchanged": true,
+  "original_sha256": "3a7037ecbbbd3d94f33544ae356d7f88f9bb6ddefc5b82bd533bc9f087c8fc47",
+  "xmind_sha256": "ffcf0515a115a0ae09116b23703cee7df34337ab56cca2e04dd01156b5b64695",
+  "desktop_open_verification": "not_run",
+  "business_database_writes": 0,
+  "source_documents": [
+    "01-当前运营决策与进入退出规则.md",
+    "03-广告与调价决策代码对照.md",
+    "06-数据表交付与落库验收要求.md",
+    "07-固定ACOS分档与广告调整规则.md",
+    "09-取消动作数量限制与涨降互斥规则.md",
+    "11-零单广告点击分档简化规则.md",
+    "12-降价动态访问门槛与对应窗口规则.md"
+  ]
+}

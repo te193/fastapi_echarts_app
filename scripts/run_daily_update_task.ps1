@@ -115,6 +115,9 @@ $ReplenishmentTrackingArgs = @(Select-DashboardTaskArguments -SourceArgs $args `
 $ReturnGoodsArgs = @(Select-DashboardTaskArguments -SourceArgs $args `
     -ValueOptions @("--snapshot-date", "--lookback-days", "--batch-size") `
     -SwitchOptions @("--dry-run"))
+$ReturnStrategyArgs = @(Select-DashboardTaskArguments -SourceArgs $args `
+    -ValueOptions @("--biz-date") `
+    -SwitchOptions @("--dry-run") | ForEach-Object { $_.Replace("--biz-date", "--snapshot-date") })
 
 $PreflightStdoutLog = Join-Path $LogDir "etl_source_preflight_run_$RunStamp.log"
 $PreflightStderrLog = Join-Path $LogDir "etl_source_preflight_run_$RunStamp.err.log"
@@ -136,6 +139,10 @@ $ReturnGoodsStdoutLog = Join-Path $LogDir "etl_return_goods_run_$RunStamp.log"
 $ReturnGoodsStderrLog = Join-Path $LogDir "etl_return_goods_run_$RunStamp.err.log"
 $PricingStdoutLog = Join-Path $LogDir "etl_pricing_run_$RunStamp.log"
 $PricingStderrLog = Join-Path $LogDir "etl_pricing_run_$RunStamp.err.log"
+$ReturnStrategyStdoutLog = Join-Path $LogDir "etl_return_strategy_run_$RunStamp.log"
+$ReturnStrategyStderrLog = Join-Path $LogDir "etl_return_strategy_run_$RunStamp.err.log"
+$LabelAnalysisStdoutLog = Join-Path $LogDir "etl_label_analysis_run_$RunStamp.log"
+$LabelAnalysisStderrLog = Join-Path $LogDir "etl_label_analysis_run_$RunStamp.err.log"
 $DingTalkNotifyScript = Join-Path $ProjectRoot "scripts\notify_daily_task_dingtalk.py"
 $DingTalkStdoutLog = Join-Path $LogDir "dingtalk_notify_run_$RunStamp.log"
 $DingTalkStderrLog = Join-Path $LogDir "dingtalk_notify_run_$RunStamp.err.log"
@@ -184,7 +191,11 @@ function Send-DashboardDingTalkNotification {
         "--stockout-stdout", $StockoutHistoricalStdoutLog,
         "--stockout-stderr", $StockoutHistoricalStderrLog,
         "--pricing-stdout", $PricingStdoutLog,
-        "--pricing-stderr", $PricingStderrLog
+        "--pricing-stderr", $PricingStderrLog,
+        "--return-strategy-stdout", $ReturnStrategyStdoutLog,
+        "--return-strategy-stderr", $ReturnStrategyStderrLog,
+        "--label-analysis-stdout", $LabelAnalysisStdoutLog,
+        "--label-analysis-stderr", $LabelAnalysisStderrLog
     )
 
     if ($ErrorMessage) {
@@ -381,5 +392,31 @@ if ($StockoutHistoricalExitCode -ne 0) {
 }
 
 Write-Host "Stockout historical operating ETL finished at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+Write-Host "Return goods strategy snapshot started. Suggestions only; no price or advertising execution."
+$PreviousErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+& $PythonExe -m etl.return_goods_strategy_update @ReturnStrategyArgs > $ReturnStrategyStdoutLog 2> $ReturnStrategyStderrLog
+$ReturnStrategyExitCode = $LASTEXITCODE
+$ErrorActionPreference = $PreviousErrorActionPreference
+if ($ReturnStrategyExitCode -ne 0) {
+    Send-DashboardDingTalkNotification -Status "failed" -Stage "return_strategy" -ExitCode $ReturnStrategyExitCode -ErrorMessage "Return strategy snapshot failed. See $ReturnStrategyStdoutLog and $ReturnStrategyStderrLog."
+    Write-Error "Return strategy snapshot failed; previous successful snapshot retained. See $ReturnStrategyStdoutLog and $ReturnStrategyStderrLog." -ErrorAction Continue
+    exit $ReturnStrategyExitCode
+}
+Write-Host "Return goods strategy snapshot finished at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+Write-Host "Label analysis preparation started; serving results from the intranet database."
+$PreviousErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+$LabelAnalysisArgs = @()
+if ($IsDryRun) { $LabelAnalysisArgs += "--dry-run" }
+& $PythonExe -m etl.label_analysis_refresh @LabelAnalysisArgs > $LabelAnalysisStdoutLog 2> $LabelAnalysisStderrLog
+$LabelAnalysisExitCode = $LASTEXITCODE
+$ErrorActionPreference = $PreviousErrorActionPreference
+if ($LabelAnalysisExitCode -ne 0) {
+    Send-DashboardDingTalkNotification -Status "failed" -Stage "label_analysis" -ExitCode $LabelAnalysisExitCode -ErrorMessage "Label analysis preparation failed. See $LabelAnalysisStdoutLog and $LabelAnalysisStderrLog."
+    Write-Error "Label analysis preparation failed; previous published batch retained. See $LabelAnalysisStdoutLog and $LabelAnalysisStderrLog." -ErrorAction Continue
+    exit $LabelAnalysisExitCode
+}
+Write-Host "Label analysis preparation finished at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 Write-Host "Data update strategy includes rolling product refresh, current snapshots, preset period summaries, sales role snapshots, label change evidence, stockout historical operating snapshots, matrix summaries, replenishment results, replenishment tracking summary, and return goods."
 Send-DashboardDingTalkNotification -Status "success" -Stage "all" -ExitCode 0

@@ -1,6 +1,89 @@
 import json
 
+import pytest
+
 from scripts.notify_daily_task_dingtalk import build_markdown
+
+
+@pytest.mark.parametrize(
+    "stage,stage_label",
+    [
+        ("return_strategy", "返场品运营策略预计算"),
+        ("label_analysis", "标签综合分析预计算"),
+    ],
+)
+def test_new_stage_without_logs_uses_fallback_instead_of_dashboard(tmp_path, stage, stage_label):
+    dashboard_err = tmp_path / "dashboard.err.log"
+    dashboard_err.write_text("stale dashboard warning", encoding="utf-8")
+
+    payload = build_markdown(
+        status="failed", stage=stage, exit_code=9,
+        run_stamp="20261016_080000", project_root=tmp_path,
+        dashboard_stdout=tmp_path / "dashboard.log", dashboard_stderr=dashboard_err,
+        replenishment_stdout=tmp_path / "replenishment.log",
+        replenishment_stderr=tmp_path / "replenishment.err.log",
+        error_message="new stage failed without an error log",
+    )
+    text = json.loads(payload)["markdown"]["text"]
+
+    assert "new stage failed without an error log" in text
+    assert "stale dashboard warning" not in text
+    assert f"失败阶段：{stage_label}" in text
+    assert "退出码：9" in text
+
+
+@pytest.mark.parametrize(
+    "stage,stage_label",
+    [
+        ("return_strategy", "返场品运营策略预计算"),
+        ("label_analysis", "标签综合分析预计算"),
+    ],
+)
+@pytest.mark.parametrize("encoding", ["utf-8", "utf-16"])
+def test_new_stage_failure_markdown_reads_its_own_exception(
+    tmp_path, stage, stage_label, encoding,
+):
+    dashboard_err = tmp_path / "dashboard.err.log"
+    dashboard_err.write_text("stale dashboard warning", encoding="utf-8")
+    strategy_err = tmp_path / "return-strategy.err.log"
+    analysis_err = tmp_path / "label-analysis.err.log"
+    strategy_err.write_text(
+        "Traceback (most recent call last):\nRuntimeError: strategy evaluation failed\n",
+        encoding=encoding,
+    )
+    analysis_err.write_text(
+        "Traceback (most recent call last):\nRuntimeError: analysis publication failed\n",
+        encoding=encoding,
+    )
+    repl = tmp_path / "replenishment.log"
+    repl.write_text(
+        "[success] replenishment_business_result: snapshot_date=2026-10-16 rows=80\n",
+        encoding="utf-8",
+    )
+
+    payload = build_markdown(
+        status="failed", stage=stage, exit_code=9,
+        run_stamp="20261016_080000", project_root=tmp_path,
+        dashboard_stdout=tmp_path / "dashboard.log", dashboard_stderr=dashboard_err,
+        replenishment_stdout=repl, replenishment_stderr=tmp_path / "replenishment.err.log",
+        return_strategy_stderr=strategy_err, label_analysis_stderr=analysis_err,
+        error_message="generic failure fallback",
+    )
+    text = json.loads(payload)["markdown"]["text"]
+
+    expected, other = (
+        ("strategy evaluation failed", "analysis publication failed")
+        if stage == "return_strategy"
+        else ("analysis publication failed", "strategy evaluation failed")
+    )
+    assert expected in text
+    assert other not in text
+    assert "stale dashboard warning" not in text
+    assert "generic failure fallback" not in text
+    assert "Traceback" not in text
+    assert f"失败阶段：{stage_label}" in text
+    assert "退出码：9" in text
+    assert "补货结果：已生成" in text
 
 
 def test_failure_markdown_summarizes_traceback_noise_to_business_reason(tmp_path):

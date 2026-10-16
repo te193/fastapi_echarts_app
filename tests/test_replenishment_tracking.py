@@ -31,18 +31,17 @@ def test_tracking_category_expression_uses_requested_period_columns():
     service = ReplenishmentTrackingService()
 
     expr_7 = service._product_category_expr(7)
-    assert "p.final_sales_7d" in expr_7
-    assert "p.r_7d_salable_days" in expr_7
-    assert "p.pprofit_ratio_7d" in expr_7
-    assert "s.product_category" in expr_7
+    assert "p.role_daily_sales_7d" in expr_7
+    assert "p.role_margin_rate_7d" in expr_7
+    assert "salable_days" not in expr_7
+    assert "s.product_category" not in expr_7
 
     expr_90 = service._product_category_expr("90")
-    assert "p.sales_90d" in expr_90
-    assert "p.r_90d_salable_days" in expr_90
-    assert "p.pprofit_ratio_90d" in expr_90
+    assert "p.role_daily_sales_90d" in expr_90
+    assert "p.role_margin_rate_90d" in expr_90
 
     expr_invalid = service._product_category_expr("180")
-    assert "p.final_sales_30d" in expr_invalid
+    assert "p.role_daily_sales_30d" in expr_invalid
 
 
 def test_empty_tracking_payload_includes_category_period_days():

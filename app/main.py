@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from openpyxl import Workbook
 from openpyxl.comments import Comment
-from openpyxl.styles import Border, PatternFill, Side
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from pydantic import BaseModel, Field
 
@@ -37,6 +37,7 @@ from .services.replenishment_data import replenishment_service
 from .services.replenishment_tracking_data import replenishment_tracking_service
 from .services.replenishment_tracking_summary_data import replenishment_tracking_summary_service
 from .services.return_goods_data import return_goods_service
+from .services.return_goods_strategy_data import return_goods_strategy_service
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -68,6 +69,7 @@ REPLENISHMENT_EXPORT_HEADER_COMMENTS = {
         "本地质检 = 配对SKU的待检待上架量（汇总SKU无绑定FNSKU数量与SKU+FNSKU数量）"
     ),
     "local_quantity": "本地库存 = 本地可用+采购在途+采购计划+本地质检",
+    "export_annotations": "逐项列出本行实际触发的提醒；颜色、边框及触发条件详见最后的“颜色与标注说明”Sheet。标注不修改补货数量。",
     "final_sales_3d": (
         "黄色提醒包括：1. 当前3天销量集中；2. 最新完整销售日疑似单日爆单；"
         "3. 近30天内已确认爆单后恢复正常，但异常销量仍影响当前补货日销。"
@@ -240,6 +242,9 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="产品分层看板", version="1.0.0", lifespan=lifespan)
+
+from .label_analysis_routes import router as label_analysis_router
+app.include_router(label_analysis_router)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
@@ -377,11 +382,83 @@ def is_follow_replenishment_with_qty(row: dict) -> bool:
         return False
 
 
+def add_replenishment_export_legend(workbook: Workbook) -> None:
+    sheet = workbook.create_sheet("颜色与标注说明")
+    sheet.append(["补货导出 · 颜色与标注说明"])
+    sheet.merge_cells("A1:E1")
+    sheet["A1"].font = Font(name="微软雅黑", size=16, bold=True, color="1F4E78")
+    sheet.row_dimensions[1].height = 32
+    sheet.append(["所有颜色和标注仅供复核，不调整补货数量、箱数或货值；无提醒不代表审核通过。"])
+    sheet.merge_cells("A2:E2")
+    sheet.row_dimensions[2].height = 30
+    sheet.append(["样式示例", "标注名称", "出现位置", "含义与触发条件", "阅读与处理建议"])
+    entries = [
+        ("黄色底色", "销量异常，请复核", "补货计划整行", "紧急/建议/计划补货且数量＞0；近7天销量≥10且近3天占比≥70%，或命中系统单日爆单提醒。", "复核销量集中或爆单对日销的影响；黄色不代表已确认销量造假。", REPLENISHMENT_SALES_CONCENTRATION_FILL, None),
+        ("红色底色", "禁补店铺仍有补货量", "补货计划整行", "店铺配置为不补货，但本次导出补货数量＞0。", "核对店铺补货资格及承接链接；导出提示不自行清零。", REPLENISHMENT_DISABLED_STORE_FILL, None),
+        ("橙色底色", "销量异常＋禁补店铺", "补货计划整行", "同时触发黄色与红色条件，整行使用橙色。", "两项原因均需复核，不是另一个独立等级。", REPLENISHMENT_COMBINED_WARNING_FILL, None),
+        ("浅蓝底色", "跟卖补货", "补货计划整行", "该行是跟卖链接且补货数量＞0，未触发上述黄/红/橙预警。", "识别实际跟卖补货对象；同时有其他预警时保留预警底色。", REPLENISHMENT_FOLLOW_FILL, None),
+        ("深蓝粗边框", "跟卖补货", "补货计划整行外框", "该行是跟卖链接且补货数量＞0，始终叠加深蓝框。", "蓝框表示跟卖属性，可与黄/红/橙底色同时出现。", None, None),
+        ("绿色文字", "低毛利，有满足条件的国家", "低毛利核查两列", "总角色为问题或瘦狗，且总日均销量＞1件/天、总毛利率＜5%；当前类别存在国家日均销量＞1件/天且毛利率＞5%。", "查看国家列的具体日销和毛利率；绿色不表示产品整体健康或审核通过。", None, "375623"),
+        ("红色文字", "低毛利，无满足条件的国家", "低毛利核查两列", "满足同一总维度核查前提，但当前类别没有国家同时满足日均销量＞1件/天且毛利率＞5%。", "结合具体国家利润复核；没有国家记录按未经营跳过，不提示缺失国家。", None, "9C0006"),
+        ("换行文字", "导出标注", "补货计划最后一列", "逐项列出本行实际触发的销量异常、禁补店铺、跟卖及低毛利说明，可同时存在。", "先读文字原因，再看底色或边框；此列始终保留，不受业务列选择影响。", None, None),
+        ("空白", "未触发该项提醒", "导出标注/低毛利核查", "仅表示本行未触发对应提醒；明星、潜力及其他未满足低毛利前提的行，低毛利两列留空。", "无底色或标注不等于审核通过，也不等于数据完整。", None, None),
+        ("深蓝表头", "栏目标题", "各Sheet的表头", "仅用于区分列标题，不具有业务预警含义。", "可筛选补货计划表头；首行与前两列已冻结。", PatternFill(fill_type="solid", fgColor="1F4E78"), "FFFFFF"),
+        ("文字提示", "库容已超占用/无剩余", "库容预警状态及说明", "直接读取店铺sid对应的当月仓储类型额度：来源剩余＜0为已超占用，剩余＝0为无剩余。四种销售角色均参与，不受低毛利核查前提限制。", "只提示，不清零、不压减、不拦截；商品类型仅为历史参考时单独说明，不隐藏已读取的店铺额度。", None, None),
+        ("独立明细", "清货名单，禁止补货", "清货拦截明细（仅有正数需求时出现）", "仅列当前快照、国家类别、店铺及MSKU关键词范围内有正数参考需求的清货对象，不受角色、分层及MOQ筛选影响；不计入主表。参考需求量沿用清货限制前的ASIN承接、跟卖及MOQ口径；其他链接可能承接需求，不代表整组补货净减少量。", "旧快照只读列出当前名单命中量，并注明待重新生成；主表旧数据尚未剔除。无正数记录不生成此Sheet，不加新颜色。", None, None),
+        ("文字提示", "本行补货超库容", "本行库容核查/本行预计超出", "本行体积＝补货件数×单件m³；本行体积＞所选类型有效剩余库容时预警，超出量＝max(0，本行体积－剩余)。相等不判超额。", "实际类型优先取FBA库存明细.仓储类型；缺失时按月仓储费分类估算并注明来源。尺寸优先最新Listing，其次月费表，最后SKU包装尺寸。只预警，不修改数量。", None, None),
+        ("文字提示", "本行未超，店铺合计超库容", "店铺同类型合计核查/店铺合计预计超出", "本行未超，但同账号、国家类别、仓储类型的完整补货需求合计体积＞剩余库容。合计覆盖所选日期所有有效补货对象，不受当前分页、角色周期或筛选影响。", "不同国家额度不相加；没有有效代表站点且各站点额度有差异时，按当前类别最小有效剩余值估算，完整站点值保留。", None, None),
+        ("文字提示", "本次补货未超库容", "库容预警状态/体积核查说明", "本行和店铺同类型补货需求合计均≤有效剩余库容，且对应需求的类型、尺寸和额度数据完整。默认补货当月开始发货流程。", "这是本次需求全部新增发货的体积预警估算，不是发货许可；平台剩余已扣在库与开放货件，本次不再重复扣除。", None, None),
+        ("文字提示", "本行未超，合计数据不足/无法核算", "库容预警状态/体积核查说明", "能计算本行但其他正数补货对象缺类型或体积时，不宣称整组放得下；已知体积已超额度则仍预警。确实缺类型、体积、额度或来源日期不符时，具体说明缺项。", "不再统一要求手动确认商品类型；缺失不写成零。数量为0时显示本行无需补货，新增体积为0。", None, None),
+        ("文字提示", "来源有剩余库容", "库容预警状态", "合法确定额度、采集日期符合所选月份的读取规则，来源剩余＞0。没有共享组记录、商品尺寸或类型未确认，都不影响展示已有额度。", "仅描述来源额度有剩余，不表示本次补货放得下；是否可以比较体积，见补货体积核查说明。", None, None),
+        ("文字提示", "已读取库容（站点有差异）", "店铺站点库容明细/匹配依据", "同店铺当前类别多个站点额度有差异，且没有可用的Standard共享组代表站点关联。逐站显示额度，不求和，不任意选择一个站点作为共享额度。", "单一剩余量留空；同值站点仅合并显示，不据此认定共享关系。其他店铺或加拿大、墨西哥额度不会混入。", None, None),
+        ("文字提示", "商品类型未对应/店铺当月额度未提供", "店铺站点库容明细/补货体积核查说明", "商品类型未对应时仍列出已读取的各类型店铺额度；对应sid、月份或类型确实无记录时才说明额度未提供。", "标准件、大件、服装、鞋靴额度分开，不能混用或把缺失写成零。", None, None),
+        ("文字提示", "预计库容不足", "库容预警状态及说明", "默认生成补货当月开始发货流程；整组新增需求体积完整且已核对平台占用时，将同期新增需求与剩余额度比较；需求＞剩余为不足。", "剩余额度已扣在库和开放货件，不能再次扣全部在途；确认发货月份不代表已核对整组需求和占用。", None, None),
+        ("文字提示", "同期需求未超额", "库容预警状态及说明", "满足同一比较前提，整组同期新增需求≤剩余额度；恰好相等不判不足。", "仅指本次估算未超额，不表示平台许可或补货审核通过。", None, None),
+        ("文字提示", "库容待核", "库容预警状态及说明", "当前月读取该月最新DWD版本，接受当天或前一天采集；历史月读取该月月末归档。采集日期和平台更新时间分别展示。采集异常、额度“－”或单位未知时说明具体来源问题。", "当前月只保存最新版本，历史月按月底归档，都不能宣称复原所选历史日的实时库容。默认生成补货当月发货；商品类型、尺寸、整组需求与货件去重问题单独列在体积核查说明。", None, None),
+    ]
+    for index, (sample, label, location, meaning, action, fill, color) in enumerate(entries, start=4):
+        sheet.append([sample, label, location, meaning, action])
+        sheet.row_dimensions[index].height = 64
+        if fill:
+            sheet.cell(index, 1).fill = fill
+        if color:
+            sheet.cell(index, 1).font = Font(name="微软雅黑", size=11, bold=True, color=color)
+        if sample == "深蓝粗边框":
+            sheet.cell(index, 1).border = Border(left=REPLENISHMENT_FOLLOW_BORDER_SIDE, right=REPLENISHMENT_FOLLOW_BORDER_SIDE,
+                                               top=REPLENISHMENT_FOLLOW_BORDER_SIDE, bottom=REPLENISHMENT_FOLLOW_BORDER_SIDE)
+    sheet.append(["国家核查范围：欧洲查德国、法国、意大利、西班牙、荷兰；英国查英国；北美查美国。同快照、同周期、同店铺＋MSKU，不跨国家类别。日销＝周期销量÷固定周期天数，毛利率＝毛利润合计÷销售额合计；日销恰好1或毛利率恰好5%不满足国家条件。"])
+    sheet.merge_cells(start_row=sheet.max_row, start_column=1, end_row=sheet.max_row, end_column=5)
+    sheet.row_dimensions[sheet.max_row].height = 58
+    for row in sheet:
+        for cell in row:
+            cell.alignment = Alignment(wrap_text=True, vertical="center")
+    for cell in sheet[3]:
+        cell.fill = PatternFill(fill_type="solid", fgColor="1F4E78")
+        cell.font = Font(name="微软雅黑", size=11, bold=True, color="FFFFFF")
+    for letter, width in zip("ABCDE", (18, 26, 25, 70, 48)):
+        sheet.column_dimensions[letter].width = width
+    sheet.freeze_panes = "A4"
+    sheet.sheet_view.showGridLines = False
+
+
 def build_replenishment_xlsx(payload: dict, disabled_stores: set[str] | None = None) -> bytes:
     workbook = Workbook()
     worksheet = workbook.active
     worksheet.title = "补货计划"
-    columns = payload["columns"]
+    columns = [*payload["columns"], {"name": "export_annotations", "label": "导出标注"}]
+    review_colors = {"qualified": "375623", "none": "9C0006", "insufficient": "666666"}
+    normal_alignment = Alignment(vertical="center", wrap_text=False)
+    annotation_alignment = Alignment(vertical="center", wrap_text=True)
+    detail_alignment = Alignment(wrap_text=True, vertical="top")
+    review_fonts = {status: Font(name="微软雅黑", size=11, bold=True, color=color)
+                    for status, color in review_colors.items()}
+    follow_borders = {
+        column_index: Border(
+            left=REPLENISHMENT_FOLLOW_BORDER_SIDE if column_index == 1 else Side(),
+            right=REPLENISHMENT_FOLLOW_BORDER_SIDE if column_index == len(columns) else Side(),
+            top=REPLENISHMENT_FOLLOW_BORDER_SIDE, bottom=REPLENISHMENT_FOLLOW_BORDER_SIDE,
+        ) for column_index in range(1, len(columns) + 1)
+    }
     normalized_disabled_stores = {
         str(store).strip().casefold()
         for store in (disabled_stores or set())
@@ -390,6 +467,21 @@ def build_replenishment_xlsx(payload: dict, disabled_stores: set[str] | None = N
 
     for column_index, column in enumerate(columns, start=1):
         cell = worksheet.cell(row=1, column=column_index, value=column["label"])
+        cell.fill = PatternFill(fill_type="solid", fgColor="1F4E78")
+        cell.font = Font(name="微软雅黑", size=11, bold=True, color="FFFFFF")
+        cell.alignment = Alignment(wrap_text=True, vertical="center")
+        width = 16
+        if column["name"] in {"seller_sku_adj", "max_sku", "max_asin", "seller_name_new"}:
+            width = 24
+        elif column["name"] in {"low_margin_review_note", "qualifying_country_metrics", "export_annotations"}:
+            width = 55 if column["name"] != "export_annotations" else 42
+        elif column["name"] in {"capacity_note", "capacity_quota_summary", "capacity_product_note", "capacity_match_basis"}:
+            width = 70
+        elif column["name"] in {"capacity_group", "capacity_storage_type", "capacity_source_time", "capacity_measurement_source", "capacity_status_label"}:
+            width = 32
+        elif column["name"].startswith("capacity_"):
+            width = 24
+        worksheet.column_dimensions[get_column_letter(column_index)].width = width
         if column["name"] in REPLENISHMENT_EXPORT_HIDDEN_COLUMNS:
             worksheet.column_dimensions[get_column_letter(column_index)].hidden = True
         comment_text = REPLENISHMENT_EXPORT_HEADER_COMMENTS.get(column["name"])
@@ -403,6 +495,24 @@ def build_replenishment_xlsx(payload: dict, disabled_stores: set[str] | None = N
             normalized_disabled_stores,
         )
         follow_replenishment_row = is_follow_replenishment_with_qty(row)
+        annotations = []
+        if highlight_row:
+            annotations.append("销量异常，请复核")
+        if disabled_store_row:
+            annotations.append("禁补店铺仍有补货量")
+        if follow_replenishment_row:
+            annotations.append("跟卖补货（深蓝框）")
+        if row.get("low_margin_review_status") in {"qualified", "none"}:
+            country_state = "有国家" if row["low_margin_review_status"] == "qualified" else "无国家"
+            annotations.append(f"总维度低毛利；{country_state}日均销量＞1件/天且毛利率＞5%")
+        if row.get("capacity_status_label"):
+            annotations.append(str(row["capacity_status_label"]) + "（见库容说明）")
+        annotation_text = "\n".join(annotations)
+        worksheet.row_dimensions[row_index].height = max(24, sum(max(1, (len(item) + 20) // 21) for item in annotations) * 16)
+        if row.get("low_margin_review_status"):
+            review_texts = [str(row.get(name) or "") for name in ("low_margin_review_note", "qualifying_country_metrics")]
+            wrapped_lines = max((sum(max(1, (len(part) + 27) // 28) for part in value.splitlines()) for value in review_texts if value), default=1)
+            worksheet.row_dimensions[row_index].height = max(worksheet.row_dimensions[row_index].height, wrapped_lines * 16)
         row_fill = None
         if highlight_row and disabled_store_row:
             row_fill = REPLENISHMENT_COMBINED_WARNING_FILL
@@ -413,30 +523,71 @@ def build_replenishment_xlsx(payload: dict, disabled_stores: set[str] | None = N
         elif follow_replenishment_row:
             row_fill = REPLENISHMENT_FOLLOW_FILL
         for column_index, column in enumerate(columns, start=1):
+            value = annotation_text if column["name"] == "export_annotations" else xlsx_cell_value(row.get(column["name"]), column["name"])
+            if column["name"] == "low_margin_review_note" and isinstance(value, str):
+                value = value.replace("；", "；\n").replace("站点日均销量", "站点\n日均销量").replace("同时满足：", "同时满足：\n")
+            elif column["name"] == "capacity_note" and isinstance(value, str):
+                value = value.replace("；", "；\n")
             cell = worksheet.cell(
                 row=row_index,
                 column=column_index,
-                value=xlsx_cell_value(row.get(column["name"]), column["name"]),
+                value=value,
             )
+            cell.alignment = annotation_alignment if column["name"] == "export_annotations" else normal_alignment
             if column["name"] in TWO_DECIMAL_EXPORT_COLUMNS and cell.value != "":
                 cell.number_format = "0.00"
             if row_fill:
                 cell.fill = row_fill
+            if column["name"].startswith("capacity_"):
+                if column["name"].endswith("_m3"):
+                    cell.number_format = "0.00000000" if column["name"] == "capacity_unit_volume_m3" else "0.000000"
+                else:
+                    cell.alignment = detail_alignment
+                    if value:
+                        chars = max(1, int(worksheet.column_dimensions[get_column_letter(column_index)].width / 2))
+                        lines = sum(max(1, (len(part) + chars - 1) // chars) for part in str(value).splitlines())
+                        worksheet.row_dimensions[row_index].height = max(worksheet.row_dimensions[row_index].height, lines * 16 + 8)
+            if column["name"] in {"low_margin_review_note", "qualifying_country_metrics"}:
+                review_color = review_colors.get(row.get("low_margin_review_status"))
+                if review_color:
+                    cell.font = review_fonts[row["low_margin_review_status"]]
+                cell.alignment = detail_alignment
+                worksheet.column_dimensions[get_column_letter(column_index)].width = 55
+                if value:
+                    lines = sum(max(1, (len(part) + 27) // 28) for part in str(value).splitlines())
+                    worksheet.row_dimensions[row_index].height = max(worksheet.row_dimensions[row_index].height, lines * 18 + 8)
             if follow_replenishment_row:
-                cell.border = Border(
-                    left=REPLENISHMENT_FOLLOW_BORDER_SIDE if column_index == 1 else Side(),
-                    right=(
-                        REPLENISHMENT_FOLLOW_BORDER_SIDE
-                        if column_index == len(columns)
-                        else Side()
-                    ),
-                    top=REPLENISHMENT_FOLLOW_BORDER_SIDE,
-                    bottom=REPLENISHMENT_FOLLOW_BORDER_SIDE,
-                )
+                cell.border = follow_borders[column_index]
 
+    worksheet.row_dimensions[1].height = 44
+    worksheet.freeze_panes = "C2" if len(columns) > 2 else "A2"
+    worksheet.auto_filter.ref = worksheet.dimensions
+    add_replenishment_clearance_sheet(workbook, payload.get("clearance_rows", []))
+    add_replenishment_export_legend(workbook)
     output = io.BytesIO()
     workbook.save(output)
     return output.getvalue()
+
+
+def add_replenishment_clearance_sheet(workbook: Workbook, rows: list[dict]) -> None:
+    """A five-column appendix only for positive demand; keep the main sheet untouched."""
+    positive = [row for row in rows if Decimal(str(row.get("reference_qty") or 0)) > 0]
+    if not positive:
+        return
+    sheet = workbook.create_sheet("清货拦截明细")
+    fields = ("country_category", "seller_name_new", "seller_sku_adj", "reference_qty", "block_reason")
+    sheet.append(["国家类别", "店铺", "MSKU", "参考需求量（件）", "拦截原因"])
+    header_fill = PatternFill(fill_type="solid", fgColor="1F4E78")
+    header_font = Font(name="微软雅黑", size=11, bold=True, color="FFFFFF")
+    for cell in sheet[1]:
+        cell.fill, cell.font = header_fill, header_font
+    sheet["D1"].comment = Comment("参考需求量沿用清货限制前的ASIN承接、跟卖及MOQ口径；其他链接可能承接需求，不代表整组补货净减少量。旧快照的待重新生成记录使用该快照页面补货量。", "补货规则")
+    for row in positive:
+        sheet.append([xlsx_cell_value(row.get(field), field) for field in fields])
+    for column, width in zip("ABCDE", (14, 20, 24, 22, 55)):
+        sheet.column_dimensions[column].width = width
+    sheet.freeze_panes = "D2"
+    sheet.auto_filter.ref = sheet.dimensions
 
 
 def build_filters(
@@ -821,6 +972,41 @@ def return_goods_page(request: Request) -> HTMLResponse:
         "return_goods.html",
         {"page": "return_goods", "title": "返场品"},
     )
+
+
+@app.get("/return-goods-strategy", response_class=HTMLResponse)
+def return_goods_strategy_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(request, "return_goods_strategy.html",
+                                      {"page": "return_goods_strategy", "title": "返场品运营策略"})
+
+
+@app.get("/api/return-goods-strategy")
+def api_return_goods_strategy(
+    snapshot_date: str = "", country_category: str = "all", seller_name_new: str = "all",
+    keyword: str = "", exit_status: str = "tracking", state: str = "all", action: str = "all",
+    recommendation: str = "all", stage: str = "all", age_band: str = "all",
+    focus: str = "all", all_rows: bool = False,
+    page: int = Query(1, ge=1), page_size: int = Query(50, ge=10, le=200),
+):
+    try:
+        if snapshot_date:
+            from datetime import date as strategy_date
+            strategy_date.fromisoformat(snapshot_date)
+        return return_goods_strategy_service.get_payload(
+            snapshot_date=snapshot_date, country_category=country_category, seller_name_new=seller_name_new,
+            keyword=keyword, exit_status=exit_status, state=state, action=action,
+            recommendation=recommendation, stage=stage, age_band=age_band, focus=focus, all_rows=all_rows,
+            page=page, page_size=page_size)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="日期或筛选参数无效") from exc
+
+
+@app.get("/api/return-goods-strategy/detail")
+def api_return_goods_strategy_detail(event_id: str, batch_id: int = Query(..., ge=1)):
+    detail = return_goods_strategy_service.get_detail(event_id=event_id, batch_id=batch_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="本批次没有该返场事件")
+    return detail
 
 
 @app.get("/label-hub", response_class=HTMLResponse)

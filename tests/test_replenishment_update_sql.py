@@ -921,12 +921,12 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("tmp_replenishment_country_listing_price", replenishment_update.UPDATE_COUNTRY_METRICS_LISTING_PRICE_SQL)
         self.assertIn("set m.listing_price = lp.price", replenishment_update.UPDATE_COUNTRY_METRICS_LISTING_PRICE_SQL)
 
-    def test_replenishment_category_uses_30d_margin_and_salable_day_daily_sales(self):
+    def test_replenishment_category_uses_own_fixed_30d_daily_sales(self):
         sql = replenishment_update.REPLENISHMENT_RESULT_SQL
 
         self.assertIn("coalesce(m.sales_30, 0) / ks.r_30d_salable_days", sql)
-        self.assertIn("adjusted_daily_sales_30d >= 5 and pprofit_ratio_30 >= 0.15", sql)
-        self.assertIn("adjusted_daily_sales_30d >= 1 and adjusted_daily_sales_30d < 5 and pprofit_ratio_30 >= 0.25", sql)
+        self.assertIn("when (role_sales_30 / 30.0) > 5 and (pprofit_ratio_30) > 0.15", sql)
+        self.assertIn("when (role_sales_30 / 30.0) between 1 and 5 and (pprofit_ratio_30) > 0.25", sql)
         self.assertIn("'明星产品'", sql)
         self.assertIn("'潜力产品'", sql)
         self.assertIn("'瘦狗产品'", sql)

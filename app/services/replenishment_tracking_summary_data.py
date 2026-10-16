@@ -9,6 +9,7 @@ from typing import Any
 import pymysql
 
 from etl.replenishment_update import apply_database_ini_env
+from etl.replenishment_roles import normalize_role_period, tracking_summary_source_sql
 
 
 TRACKING_WINDOW_DAYS = 30
@@ -889,7 +890,7 @@ class ReplenishmentTrackingSummaryService:
 
     def _where(self, cutoff_date, entry_batch_days, level, purchase_status, fba_status, summary_stage, history_level, product_category, site, store, keyword, category_column, order_keyword="", detail_stage=""):
         clauses = ["s.cutoff_date = %(cutoff_date)s"]
-        params: dict[str, Any] = {"cutoff_date": cutoff_date}
+        params: dict[str, Any] = {"cutoff_date": cutoff_date, "role_period_days": normalize_role_period(category_column.split("_")[-1].rstrip("d"))}
         try:
             batch_days = 90 if entry_batch_days in (None, "") else int(entry_batch_days)
         except (TypeError, ValueError):
@@ -967,7 +968,7 @@ class ReplenishmentTrackingSummaryService:
             params["history_level"] = history_level
         self._append_detail_stage_filter(clauses, detail_stage, history_level)
         if product_category and product_category != "all":
-            clauses.append(f"coalesce(s.{category_column}, s.product_category, '未分类') = %(product_category)s")
+            clauses.append(f"coalesce(s.current_role_category, '未分类') = %(product_category)s")
             params["product_category"] = product_category
         if site and site != "all":
             clauses.append("s.country_category = %(site)s")
@@ -1032,7 +1033,7 @@ class ReplenishmentTrackingSummaryService:
                     sum(case when coalesce(historical_fba_in_transit_count, 0) > 0 then 1 else 0 end) as historical_fba_in_transit_count,
                     sum(coalesce(historical_fba_in_transit_qty, 0)) as historical_fba_in_transit_qty,
                     sum(case when coalesce(historical_fba_completed_count, 0) > 0 then 1 else 0 end) as historical_fba_completed_count
-                from dashboard_replenishment_tracking_summary s
+                from {tracking_summary_source_sql(params.get('role_period_days', 30))} s
                 where {filters}
                 """,
                 params,
@@ -1076,7 +1077,7 @@ class ReplenishmentTrackingSummaryService:
                     sum(case when s.fba_shipped_flag = 1 then 1 else 0 end) as fba_shipped_count,
                     sum(case when s.fba_receiving_flag = 1 then 1 else 0 end) as fba_receiving_count,
                     sum(case when s.fba_closed_flag = 1 then 1 else 0 end) as fba_closed_count
-                from dashboard_replenishment_tracking_summary s
+                from {tracking_summary_source_sql(params.get('role_period_days', 30))} s
                 join dashboard_replenishment_tracking_summary_level_history h
                   on h.cutoff_date = s.cutoff_date
                  and h.country_category = s.country_category
@@ -1112,16 +1113,16 @@ class ReplenishmentTrackingSummaryService:
                 f"""
                 select
                     h.historical_replenishment_level as level,
-                    coalesce(s.{category_column}, s.product_category, '未分类') as category,
+                    coalesce(s.current_role_category, '未分类') as category,
                     count(*) as msku_count
-                from dashboard_replenishment_tracking_summary s
+                from {tracking_summary_source_sql(params.get('role_period_days', 30))} s
                 join dashboard_replenishment_tracking_summary_level_history h
                   on h.cutoff_date = s.cutoff_date
                  and h.country_category = s.country_category
                  and h.seller_name_new = s.seller_name_new
                  and h.seller_sku_adj = s.seller_sku_adj
                 where {filters}
-                group by h.historical_replenishment_level, coalesce(s.{category_column}, s.product_category, '未分类')
+                group by h.historical_replenishment_level, coalesce(s.current_role_category, '未分类')
                 order by
                     case h.historical_replenishment_level
                         when '紧急补货' then 1
@@ -1144,7 +1145,7 @@ class ReplenishmentTrackingSummaryService:
 
     def _total(self, conn, filters, params) -> int:
         with conn.cursor() as cursor:
-            cursor.execute(f"select count(*) as total from dashboard_replenishment_tracking_summary s where {filters}", params)
+            cursor.execute(f"select count(*) as total from {tracking_summary_source_sql(params.get('role_period_days', 30))} s where {filters}", params)
             row = cursor.fetchone() or {}
         return to_int(row.get("total"))
 
@@ -1154,8 +1155,8 @@ class ReplenishmentTrackingSummaryService:
         with conn.cursor() as cursor:
             cursor.execute(
                 f"""
-                select s.*, coalesce(s.{category_column}, s.product_category, '未分类') as selected_product_category
-                from dashboard_replenishment_tracking_summary s
+                select s.*, coalesce(s.current_role_category, '未分类') as selected_product_category
+                from {tracking_summary_source_sql(params.get('role_period_days', 30))} s
                 where {filters}
                 order by current_replenishment_level_sort, appearance_days desc, latest_replenishment_qty desc, seller_sku_adj
                 limit %(limit)s offset %(offset)s

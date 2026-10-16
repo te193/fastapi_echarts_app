@@ -1,0 +1,19 @@
+{
+  "return_goods_data/connection.py": "8882406cfc85e589a7e49d968ffb2d39fb51d86877976a041fc99bd230747ba4",
+  "return_goods_data/enrichment.py": "d440ad99621d2bf8d2f474408dc9767ba3d704d696fcd213f1f6a03dcd4da8cd",
+  "return_goods_data/keys.py": "5c8c07f31f17ed6fbbc9de38adaaa85b3628cfade7540c67a3da74901779593b",
+  "return_goods_data/presentation.py": "196755ce9b36805f4e1989ba720a579d8fa7e7738c8808b6170f22cdbc208f4c",
+  "return_goods_data/remote_sources.py": "830b3b9efa88728f14dd941e05801f7284cade413c9f8e15552937e92a88d251",
+  "return_goods_data/rules.py": "522b1ece2759fc9e31a7fef2a1f8af13960d4142ca7a98bdf4c98e181d5bb775",
+  "return_goods_data/__init__.py": "734d3b16c912ca967a93066e3d82f738362f6cd9c2e3d7cc0b4cdc16f31cb058",
+  "tests/test_return_goods_dynamic_price_visits.py": "d8ebfe0e123113c5858d9a454d90f2f6ed9480a0596196e0741257579565a447",
+  "tests/test_return_goods_fixed_acos.py": "bb4b2fb359421a9f3cc98f4b61862dffe75dbc3b532ccef438bb874a6ac1ea78",
+  "tests/test_return_goods_no_action_quota.py": "8479fba294e7a77defccb18530cf34239f4981503001b76e2bd1797fd56d62e7",
+  "tests/test_return_goods_price_history_sample.py": "e461693c93faeb5d35208d9fe6ea1e233a620feeda033ceb2ff5e3a222717835",
+  "tests/test_return_goods_remote_decision.py": "ffd666b58824ac852b5e0179403057b85bfe63c38e6939b6414fdf3a6f5ab8da",
+  "tests/test_return_goods_sales_repair.py": "da104a6092f9a76d95e43ee4f9c5d8d9de8fb760758c77b89ac85495ff8563a5",
+  "tests/test_return_goods_strategy_data.py": "e61c6b72708f208575910a7edb57a2340dabbe0cf9ae6fd2230ad37d1ae57d1d",
+  "tests/test_return_goods_strategy_rules.py": "f59c9cf5d61d90c4d026bf16feebe3166cbb52504b6f2688ffea6facff2a0442",
+  "tests/test_return_goods_zero_order_budget.py": "771d0004056e24012422611c8eab37afa79315846134954c8422ee785ae5e150",
+  "tests/test_return_goods_zero_order_clicks.py": "ac9c6522f720c7121d4a351a75933e1e75708d8a9244298920c439e5e0f5c44c"
+}

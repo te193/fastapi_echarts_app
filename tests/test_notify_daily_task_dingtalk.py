@@ -1,10 +1,66 @@
 import json
 import os
 from pathlib import Path
+import sys
 from urllib.error import URLError
 from unittest.mock import Mock, patch
 
+import pytest
+
+from scripts import notify_daily_task_dingtalk as notifier
 from scripts.notify_daily_task_dingtalk import build_markdown, build_signed_webhook, send_markdown
+
+
+@pytest.mark.parametrize(
+    "stage,stage_label,reason",
+    [
+        ("return_strategy", "返场品运营策略预计算", "strategy CLI failure"),
+        ("label_analysis", "标签综合分析预计算", "analysis CLI failure"),
+    ],
+)
+@pytest.mark.parametrize("include_stage_logs", [True, False])
+def test_new_stage_cli_dry_run_renders_the_correct_failure(
+    tmp_path, monkeypatch, capsys, stage, stage_label, reason, include_stage_logs,
+):
+    strategy_out = tmp_path / "return-strategy.log"
+    strategy_err = tmp_path / "return-strategy.err.log"
+    analysis_out = tmp_path / "label-analysis.log"
+    analysis_err = tmp_path / "label-analysis.err.log"
+    strategy_out.write_text("strategy stdout is not an exception", encoding="utf-8")
+    analysis_out.write_text("analysis stdout is not an exception", encoding="utf-8")
+    strategy_err.write_text("RuntimeError: strategy CLI failure", encoding="utf-8")
+    analysis_err.write_text("RuntimeError: analysis CLI failure", encoding="utf-8")
+    argv = [
+        "notify_daily_task_dingtalk.py",
+        "--status", "failed", "--stage", stage, "--exit-code", "7",
+        "--run-stamp", "20261016_080000", "--project-root", str(tmp_path),
+        "--dashboard-stdout", str(tmp_path / "dashboard.log"),
+        "--dashboard-stderr", str(tmp_path / "dashboard.err.log"),
+        "--replenishment-stdout", str(tmp_path / "replenishment.log"),
+        "--replenishment-stderr", str(tmp_path / "replenishment.err.log"),
+        "--error-message", "stage log unavailable",
+        "--dry-run",
+    ]
+    if include_stage_logs:
+        argv.extend([
+            "--return-strategy-stdout", str(strategy_out),
+            "--return-strategy-stderr", str(strategy_err),
+            "--label-analysis-stdout", str(analysis_out),
+            "--label-analysis-stderr", str(analysis_err),
+        ])
+    monkeypatch.setattr(sys, "argv", argv)
+    monkeypatch.setenv("DASHBOARD_DINGTALK_WEBHOOK", "https://example.invalid/never-send")
+    monkeypatch.setattr(notifier, "send_markdown", lambda *a, **kw: pytest.fail("unexpected send"))
+
+    assert notifier.main() == 0
+    text = json.loads(capsys.readouterr().out)["markdown"]["text"]
+
+    assert f"失败阶段：{stage_label}" in text
+    assert (reason if include_stage_logs else "stage log unavailable") in text
+    assert "退出码：7" in text
+    assert "stdout is not an exception" not in text
+    other = "analysis CLI failure" if stage == "return_strategy" else "strategy CLI failure"
+    assert other not in text
 
 
 def test_replenishment_milestone_does_not_claim_all_modules_finished(tmp_path):
