@@ -80,9 +80,67 @@ def validate_local_dictionary(conn, schema: str) -> None:
         validate_dictionary(cursor.fetchall())
 
 
+def validate_history_input_versions(
+    conn, schema: str, input_schema: str, restored_dates: list[date]
+) -> None:
+    """Do not carry frozen facts or a comparison day across projection changes."""
+    from etl.label_fba_source import NORMALIZATION_VERSION
+    from etl.label_local_store import table
+
+    if not restored_dates:
+        return
+    placeholders = ",".join(["%s"] * len(restored_dates))
+    with conn.cursor() as cursor:
+        cursor.execute(
+            "select d.data_date, json_unquote(json_extract(b.contract_json,"
+            "'$.normalization_version')) as normalization_version "
+            f"from {table(schema,'dashboard_label_local_days')} d "
+            f"left join {table(input_schema,'dashboard_label_local_source_batch')} b "
+            "on b.batch_id=d.input_batch and b.local_name='dashboard_label_source_fba' "
+            f"where d.data_date in ({placeholders})", restored_dates,
+        )
+        for row in cursor.fetchall():
+            if row["normalization_version"] != NORMALIZATION_VERSION:
+                raise RuntimeError(
+                    f"archive {row['data_date']} uses incompatible FBA normalization; "
+                    "replay affected history in a separate schema before publication"
+                )
+
+
 def validate_inventory_dates(conn, schema: str, dates: list[date]) -> None:
     from etl.label_local_store import table
 
+    fba = table(schema, "dashboard_label_source_fba")
+    raw_fba = table(schema, "dashboard_label_source_raw_fba")
+    with conn.cursor() as cursor:
+        # Check historical fallback rows as well as the requested business days:
+        # V47 can use an item's older latest snapshot when today's is absent.
+        cursor.execute(
+            f"select create_time from {fba} "
+            "where create_time<>cast(date(create_time) as datetime) limit 1"
+        )
+        if cursor.fetchone():
+            raise RuntimeError("FBA daily normalization invalid; rebuild label inputs")
+        cursor.execute(f"select date(max(create_time)) as d from {raw_fba}")
+        clearance_date = cursor.fetchone()["d"]
+        if clearance_date is None:
+            raise RuntimeError("clearance raw FBA snapshot is empty or has no valid date")
+        bounds = (clearance_date, clearance_date + timedelta(days=1))
+        counts = []
+        for source in (raw_fba, fba):
+            cursor.execute(
+                f"select count(*) as n from {source} "
+                "where create_time>=%s and create_time<%s", bounds,
+            )
+            counts.append(int(cursor.fetchone()["n"]))
+        # The label projection preserves one row per raw warehouse/SKU record.
+        # Merely having a business-day snapshot cannot prove that latest-day
+        # clearance mappings exist or that their row set is complete.
+        if counts[0] != counts[1]:
+            raise RuntimeError(
+                f"clearance FBA mapping snapshot {clearance_date} row count mismatch: "
+                f"raw={counts[0]}, projected={counts[1]}; refresh complete label inputs"
+            )
     for name in ("dashboard_label_source_fba", "dashboard_label_source_restock"):
         with conn.cursor() as cursor:
             cursor.execute(

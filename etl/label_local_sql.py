@@ -1,6 +1,6 @@
 """Compile the archived V47 rules for a strictly local MySQL namespace.
 
-Only dependencies, inventory lineage and the advisory lock change. Rule strings
+Only dependencies, inventory lineage, the advisory lock and index construction change. Rule strings
 (including JSON paths and label names) retain their original bytes.
 """
 
@@ -155,12 +155,39 @@ def baseline_sql(path: Path = BASELINE_PATH, *, check_hash: bool = True) -> str:
     return raw.decode("utf-8-sig")
 
 
+def merge_performance_indexes(sql: str) -> str:
+    """Build the same three indexes once, before filtering the loaded history."""
+    changes = list(re.finditer(r"alter\s+table\s+tmp_perf_scoped\b[^;]*;", sql))
+    expected = (
+        "alter table tmp_perf_scoped "
+        "add index idx_tmp_perf_scoped_date_key (stat_date, country_category, perf_store, perf_msku), "
+        "add index idx_tmp_perf_scoped_key_date (country_category, perf_store, perf_msku, stat_date);",
+        "alter table tmp_perf_scoped "
+        "add index idx_tmp_perf_scoped_station_date "
+        "(country_category, source_country, perf_store, perf_msku, stat_date);",
+    )
+
+    def significant_tokens(text: str):
+        return [(k, v) for k, v in sql_tokens(text) if k not in {"space", "comment"}]
+
+    if len(changes) != 2 or any(
+        significant_tokens(change.group()) != significant_tokens(statement)
+        for change, statement in zip(changes, expected)
+    ):
+        raise ValueError("V47 scoped performance index layout changed; optimization blocked")
+    first, second = changes
+    station_index = re.sub(r"^alter\s+table\s+tmp_perf_scoped\s+", "", second.group())
+    merged = first.group()[:-1].rstrip() + ",\n                    " + station_index
+    return sql[:first.start()] + merged + sql[first.end():second.start()] + sql[second.end():]
+
+
 def compile_procedure(
     schema: str,
     *,
     input_schema: str | None = None,
     path: Path = BASELINE_PATH,
     check_hash: bool = True,
+    optimize_indexes: bool = True,
 ) -> str:
     schema = checked_schema(schema)
     input_schema = checked_schema(input_schema or schema)
@@ -206,6 +233,8 @@ def compile_procedure(
         result.append(value.lower() if kind == "word" else value)
         i += 1
     compiled = "".join(result)
+    if optimize_indexes:
+        compiled = merge_performance_indexes(compiled)
     allowed = {
         (input_schema if ref in SOURCE_TABLES else schema, name)
         for ref, name in TABLE_MAP.items()

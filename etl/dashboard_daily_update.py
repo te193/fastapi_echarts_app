@@ -314,7 +314,7 @@ create table if not exists etl_datasync.dashboard_ad_budget_snapshot (
 
 DELETE_AD_BUDGET_SNAPSHOT_SQL = """
 delete from etl_datasync.dashboard_ad_budget_snapshot
-where biz_date >= %(budget_start_date)s;
+where biz_date = %(budget_snapshot_date)s;
 """
 
 SELECT_AD_BUDGET_SNAPSHOT_SQL = """
@@ -3775,12 +3775,26 @@ def execute_source_load_step(
                     )
             else:
                 with source_conn.cursor() as source_cursor, target_conn.cursor() as target_cursor:
-                    target_cursor.execute(render_sql(step.delete_statement, schemas), params)
+                    if step.name != "ad_budget_snapshot":
+                        target_cursor.execute(render_sql(step.delete_statement, schemas), params)
                     source_cursor.execute(source_sql, params)
+                    refreshed_budget_dates = set()
                     while True:
                         rows = source_cursor.fetchmany(batch_size)
                         if not rows:
                             break
+                        if step.name == "ad_budget_snapshot":
+                            # The source can retain only its newest day. Replace
+                            # returned partitions once; keep absent local days.
+                            days = {row["biz_date"] for row in rows}
+                            if any(type(day) is not date for day in days):
+                                raise RuntimeError("ad_budget_snapshot returned an invalid business date")
+                            for day in sorted(days - refreshed_budget_dates):
+                                target_cursor.execute(
+                                    render_sql(step.delete_statement, schemas),
+                                    {**params, "budget_snapshot_date": day},
+                                )
+                            refreshed_budget_dates.update(days)
                         target_cursor.executemany(target_insert_sql, rows)
                         affected_rows += len(rows)
 

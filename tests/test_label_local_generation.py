@@ -151,6 +151,36 @@ def test_changed_input_batch_blocks_after_baseline_acceptance_before_any_work(
     )
 
 
+@pytest.mark.parametrize("version", ["dwd_fba_label_projection_20261012", None])
+def test_reuse_inputs_rejects_old_projection_before_any_generation_ddl(monkeypatch, version):
+    import json
+    from etl import label_local_generation as generation
+    from etl.label_incremental_sources import manifest_hash
+    from etl.label_local_sources import source_specs
+
+    items = [{"source": s.reference, "local_name": s.local_name}
+             for s in source_specs()]
+    fba = next(i for i in items if i["local_name"] == "dashboard_label_source_fba")
+    if version is not None:
+        fba["normalization_version"] = version
+    manifest = {"batch_id": "old", "sources": items,
+                "input_hash": manifest_hash(items)}
+
+    class Connection(FakeConnection):
+        def execute(self, sql, params=None):
+            super().execute(sql, params)
+            if "select manifest_json" in sql:
+                self.rows = [{"manifest_json": json.dumps(manifest)}]
+            assert not sql.startswith(("create ", "drop ", "insert ", "delete ", "call "))
+
+    conn = Connection()
+    monkeypatch.setattr(generation, "apply_database_ini_env", lambda: None)
+    monkeypatch.setattr(generation, "connect_target", lambda: conn)
+    with pytest.raises(RuntimeError, match="FBA normalization changed"):
+        generation.run_generation(sync=False, schema="label_test")
+    assert conn.closed
+
+
 def test_history_gap_fails_before_calculation_or_publication(monkeypatch):
     conn = FakeConnection([date(2026, 10, 5), date(2026, 10, 7)])
     generation = fake_runtime(monkeypatch, conn)

@@ -91,8 +91,8 @@ def _extract_failure_reason_lines(
 
     if "Lost connection to MySQL server during query" in combined or "(2013," in combined:
         return [
-            "- 远端数据库连接中断，标签证据只完成了部分读取，本次没有继续执行后续补货。",
-            "- 建议：等待远端标签表稳定并确认目标日期数据已生成后，再重新执行标签证据和后续 ETL。",
+            "- 数据库连接中断，本地标签生成未成功，已停止依赖标签的后续分析。",
+            "- 建议：检查业务源同步和本地标签生成日志，恢复连接后重新生成并发布本地标签。",
         ]
 
     mismatch_match = re.search(
@@ -104,7 +104,7 @@ def _extract_failure_reason_lines(
         label_date, performance_date, inventory_date = mismatch_match.groups()
         return [
             f"- 远端数据日期不一致：标签证据到 {label_date}，商品表现到 {performance_date}，库存到 {inventory_date}。",
-            f"- 建议：先等待标签证据补齐到 {performance_date}，再重跑标签证据和步骤八之后的 ETL。",
+            f"- 建议：先确认本地标签生成并发布到 {performance_date}，再重跑断货前历史经营结果。",
         ]
 
     missing_match = re.search(
@@ -623,7 +623,7 @@ def _format_enriched_business_result_summary(
     status_heading = "#### \u72b6\u6001"
     if status_heading in lines:
         status_index = lines.index(status_heading)
-        lines[status_index + 1 :] = ["- 7/7 \u4e2a\u6bcf\u65e5\u66f4\u65b0\u6a21\u5757\u6267\u884c\u6210\u529f"]
+        lines[status_index + 1 :] = ["- 9/9 个每日更新模块执行成功，全部完成"]
     return lines
 
 
@@ -631,9 +631,10 @@ def _stage_label(stage: str) -> str:
     labels = {
         "source_preflight": "远端数据预检",
         "dashboard": "总 ETL",
+        "pricing": "定价及依赖分析 ETL",
         "sales_role": "销售角色 ETL",
         "label_evidence": "标签证据 ETL",
-        "stockout_historical_operating": "步骤八：缺货历史运营 ETL",
+        "stockout_historical_operating": "断货前历史经营结果 ETL",
         "replenishment": "补货 ETL",
         "replenishment_tracking": "补货追踪 ETL",
         "return_goods": "返厂品 ETL",
@@ -685,6 +686,11 @@ def _format_failure_summary(
                 "- 补货追踪：未确认生成完成",
             ]
         )
+    elif _business_result_count(replenishment_detail, "replenishment_business_result") > 0:
+        completed_lines.extend([
+            "- 库存 / 补货快照：已完成",
+            "- 补货结果：已生成，可以继续使用补货页面。",
+        ])
     else:
         completed_lines.extend(
             [
@@ -789,6 +795,8 @@ def build_markdown(
     label_evidence_stderr: Path | None = None,
     stockout_stdout: Path | None = None,
     stockout_stderr: Path | None = None,
+    pricing_stdout: Path | None = None,
+    pricing_stderr: Path | None = None,
     error_message: str = "",
 ) -> str:
     preflight_stdout = preflight_stdout or project_root / "logs" / "source-preflight-not-created.log"
@@ -803,11 +811,19 @@ def build_markdown(
     label_evidence_stderr = label_evidence_stderr or project_root / "logs" / "label-evidence-not-created.err.log"
     stockout_stdout = stockout_stdout or project_root / "logs" / "stockout-historical-not-created.log"
     stockout_stderr = stockout_stderr or project_root / "logs" / "stockout-historical-not-created.err.log"
+    pricing_stdout = pricing_stdout or project_root / "logs" / "pricing-not-created.log"
+    pricing_stderr = pricing_stderr or project_root / "logs" / "pricing-not-created.err.log"
     is_success = status == "success"
-    title = "看板定时任务执行成功" if is_success else "看板定时任务执行失败"
+    replenishment_ready = is_success and stage == "replenishment"
+    title = ("补货数据已跑完" if replenishment_ready else
+             "看板定时任务执行成功" if is_success else "看板定时任务执行失败")
     icon = "✅" if is_success else "❌"
     preflight_detail = _parse_log(preflight_stdout)
     dashboard_detail = _parse_log(dashboard_stdout)
+    if pricing_stdout is not None:
+        pricing_detail = _parse_log(pricing_stdout)
+        dashboard_detail['result_lines'] = [*dashboard_detail.get('result_lines', []),
+                                            *pricing_detail.get('result_lines', [])]
     replenishment_detail = _parse_log(replenishment_stdout)
     tracking_detail = _parse_log(tracking_stdout)
     biz_date = _first_present(
@@ -819,7 +835,17 @@ def build_markdown(
 
     lines = [f"### {icon} {title}", "", f"- 运行批次：{run_stamp}"]
 
-    if is_success:
+    if replenishment_ready:
+        result_count = _business_result_count(replenishment_detail, 'replenishment_business_result')
+        lines.extend([
+            "", f"- 业务日期：{biz_date or '见补货页面'}",
+            f"- 快照日期：{snapshot_date or '见补货页面'}",
+            f"- 补货结果：{_format_number(result_count)} 条" if result_count else "- 补货结果：已完成，条数见补货页面。",
+            "- 国家维度补货明细：已完成。",
+            "- 补货主数据已更新，可以查看和导出。",
+            "- 补货追踪、标签及其他后续步骤继续执行，全部结束后另行通知。",
+        ])
+    elif is_success:
         lines.extend(
             [
                 "",
@@ -845,9 +871,15 @@ def build_markdown(
                 ),
             ]
         )
+        # Labels and their dependent analysis now finish after return goods.
+        total_seconds = _duration_seconds(preflight_stderr, stockout_stdout)
+        if total_seconds is not None:
+            lines = [f"- 总耗时：{_format_duration(total_seconds)}"
+                     if line.startswith("- 总耗时：") else line for line in lines]
     else:
         failed_stderr = {
             "source_preflight": preflight_stderr,
+            "pricing": pricing_stderr,
             "sales_role": sales_role_stderr,
             "label_evidence": label_evidence_stderr,
             "stockout_historical_operating": stockout_stderr,
@@ -990,6 +1022,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--label-evidence-stderr", type=Path)
     parser.add_argument("--stockout-stdout", type=Path)
     parser.add_argument("--stockout-stderr", type=Path)
+    parser.add_argument("--pricing-stdout", type=Path)
+    parser.add_argument("--pricing-stderr", type=Path)
     parser.add_argument("--error-message", default="")
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
@@ -1019,6 +1053,8 @@ def main() -> int:
         label_evidence_stderr=args.label_evidence_stderr,
         stockout_stdout=args.stockout_stdout,
         stockout_stderr=args.stockout_stderr,
+        pricing_stdout=args.pricing_stdout,
+        pricing_stderr=args.pricing_stderr,
         error_message=args.error_message,
     )
 

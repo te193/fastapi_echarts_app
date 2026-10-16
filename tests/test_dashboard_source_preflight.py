@@ -38,7 +38,6 @@ def test_source_preflight_returns_counts_when_all_required_sources_are_ready():
 
     assert [result.name for result in results] == [
         "product_performance_daily_source",
-        "label_evidence_source",
         "restock_snapshot_source",
         "inventory_snapshot_source",
         "listing_price_snapshot_source",
@@ -46,6 +45,20 @@ def test_source_preflight_returns_counts_when_all_required_sources_are_ready():
     ]
     assert results[0].row_count == 18527
     assert all(call["params"]["biz_date"] == date(2026, 6, 26) for call in conn.calls)
+
+
+def test_missing_remote_labels_do_not_block_local_label_generation():
+    conn = FakePreflightConnection({
+        "product_performance_daily_source": 10,
+        "label_evidence_source": 0,
+        "restock_snapshot_source": 10,
+        "inventory_snapshot_source": 10,
+        "listing_price_snapshot_source": 10,
+        "limit_price_source_current": 10,
+    })
+    results = check_source_readiness(conn, schema_config(), preflight_params())
+    assert len(results) == 5
+    assert all("dws_标签表" not in call["sql"] for call in conn.calls)
 
 
 def schema_config():

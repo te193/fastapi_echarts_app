@@ -12,6 +12,8 @@ import threading
 import time
 from typing import Callable, Iterable, Sequence
 
+from etl.daily_pricing_update import EARLY_DASHBOARD_STEPS
+
 
 Emit = Callable[[str], None]
 StepExecutor = Callable[[Sequence[str], Path, Path, Emit], int]
@@ -73,6 +75,7 @@ class RunResult:
     logs: DailyLogPaths
 
 
+# Dashboard snapshots feed replenishment; stockout analysis consumes fresh local labels.
 DEFAULT_STEPS = (
     EtlStep(
         "source_preflight",
@@ -89,35 +92,6 @@ DEFAULT_STEPS = (
         "dashboard",
     ),
     EtlStep(
-        "product_history",
-        "产品表现历史同步",
-        "etl.product_performance_history_sync",
-        "etl_product_history_run",
-        "product_history",
-    ),
-    EtlStep(
-        "sales_role",
-        "销售角色 / 生命周期 ETL",
-        "etl.sales_role_snapshot_update",
-        "etl_sales_role_run",
-        "sales_role",
-    ),
-    EtlStep(
-        "label_evidence",
-        "标签规则证据 ETL",
-        "etl.label_rule_evidence_snapshot_update",
-        "etl_label_rule_evidence_run",
-        "label_evidence",
-        continue_on_failure=True,
-    ),
-    EtlStep(
-        "stockout_historical_operating",
-        "断货前历史经营结果 ETL",
-        "etl.stockout_historical_operating_update",
-        "etl_stockout_historical_operating_run",
-        "stockout_historical_operating",
-    ),
-    EtlStep(
         "replenishment",
         "补货 ETL",
         "etl.replenishment_update",
@@ -132,11 +106,46 @@ DEFAULT_STEPS = (
         "replenishment_tracking",
     ),
     EtlStep(
+        "product_history",
+        "产品表现历史同步",
+        "etl.product_performance_history_sync",
+        "etl_product_history_run",
+        "product_history",
+    ),
+    EtlStep(
+        "sales_role",
+        "销售角色 / 生命周期 ETL",
+        "etl.sales_role_snapshot_update",
+        "etl_sales_role_run",
+        "sales_role",
+    ),
+    EtlStep(
         "return_goods",
         "返厂品 ETL",
         "etl.return_goods_update",
         "etl_return_goods_run",
         "return_goods",
+    ),
+    EtlStep(
+        "pricing",
+        "定价及依赖分析 ETL",
+        "etl.daily_pricing_update",
+        "etl_pricing_run",
+        "pricing",
+    ),
+    EtlStep(
+        "label_evidence",
+        "标签规则证据 ETL",
+        "etl.label_rule_evidence_snapshot_update",
+        "etl_label_rule_evidence_run",
+        "label_evidence",
+    ),
+    EtlStep(
+        "stockout_historical_operating",
+        "断货前历史经营结果 ETL",
+        "etl.stockout_historical_operating_update",
+        "etl_stockout_historical_operating_run",
+        "stockout_historical_operating",
     ),
 )
 
@@ -279,6 +288,8 @@ def build_notification_command(
     replenishment = logs.get("replenishment")
     tracking = logs.get("replenishment_tracking")
     return_goods = logs.get("return_goods")
+    stockout = logs.get("stockout_historical_operating")
+    pricing = logs.get("pricing")
     command = [
         python_executable,
         str(project_root / "scripts" / "notify_daily_task_dingtalk.py"),
@@ -320,6 +331,14 @@ def build_notification_command(
         str(return_goods.stdout),
         "--return-goods-stderr",
         str(return_goods.stderr),
+        "--stockout-stdout",
+        str(stockout.stdout),
+        "--stockout-stderr",
+        str(stockout.stderr),
+        "--pricing-stdout",
+        str(pricing.stdout),
+        "--pricing-stderr",
+        str(pricing.stderr),
     ]
     if request.error_message:
         command.extend(("--error-message", request.error_message))
@@ -428,6 +447,8 @@ def run_daily_update(
     for index, step in enumerate(selected_steps, start=1):
         step_logs = logs.get(step.key)
         command = [python_executable, "-m", step.module, *etl_args]
+        if step.key == "dashboard":
+            command.extend(("--steps", EARLY_DASHBOARD_STEPS))
         step_started = monotonic()
         emit("")
         emit(f"[{index}/{len(selected_steps)}] {step.label}")
@@ -475,6 +496,12 @@ def run_daily_update(
                 logs=step_logs,
             )
         )
+
+        if exit_code == 0 and step.key == "replenishment":
+            notify(NotificationRequest(
+                status="success", stage="replenishment", exit_code=0,
+                run_stamp=run_stamp,
+            ))
 
         if exit_code != 0:
             error_message = (

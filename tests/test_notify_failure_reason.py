@@ -116,9 +116,9 @@ def test_failure_markdown_explains_label_date_mismatch(tmp_path):
     )
     text = json.loads(payload)["markdown"]["text"]
 
-    assert "步骤八：缺货历史运营 ETL" in text
+    assert "断货前历史经营结果 ETL" in text
     assert "标签证据到 2026-09-16" in text
-    assert "先等待标签证据补齐到 2026-09-17" in text
+    assert "先确认本地标签生成并发布到 2026-09-17" in text
     assert "Traceback" not in text
     assert "```text" not in text
 
@@ -153,6 +153,20 @@ def test_failure_markdown_explains_remote_connection_loss(tmp_path):
     )
     text = json.loads(payload)["markdown"]["text"]
 
-    assert "远端数据库连接中断" in text
-    assert "等待远端标签表稳定" in text
+    assert "数据库连接中断" in text
+    assert "检查业务源同步和本地标签生成日志" in text
+    assert "等待远端标签表" not in text
     assert "AttributeError" not in text
+
+
+def test_late_failure_keeps_successful_replenishment_in_report(tmp_path):
+    repl = tmp_path / 'replenishment.log'
+    repl.write_text('[success] replenishment_business_result: snapshot_date=2026-10-14 rows=80\n', encoding='utf-8')
+    payload = build_markdown(status='failed', stage='pricing', exit_code=1,
+        run_stamp='20261014_080000', project_root=tmp_path,
+        dashboard_stdout=tmp_path/'dashboard.log', dashboard_stderr=tmp_path/'dashboard.err',
+        replenishment_stdout=repl, replenishment_stderr=tmp_path/'replenishment.err',
+        error_message='pricing sources not ready')
+    text = json.loads(payload)['markdown']['text']
+    assert '补货结果：已生成' in text
+    assert '补货结果：未生成' not in text

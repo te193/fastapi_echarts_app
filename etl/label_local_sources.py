@@ -267,7 +267,7 @@ def validate_staged_resume(
             raise RuntimeError("completed stage row count mismatch; resume blocked")
 
 
-def sync_sources(
+def _sync_full_sources(
     source_conn,
     target_conn,
     schema: str,
@@ -454,7 +454,9 @@ def sync_sources(
             "sources": manifests,
         }
         result["input_consistency"] = (
-            "resumed_across_transactions" if resumed else "single_read_transaction"
+            "resumed_across_transactions" if resumed
+            else "fba_refreshed_with_retained_inputs" if previous is not None
+            else "single_read_transaction"
         )
         if previous is not None:
             result["reused_input_batch"] = previous["batch_id"]
@@ -521,3 +523,66 @@ def sync_sources(
     finally:
         with suppress(Exception):
             source_conn.autocommit(True)
+
+
+def sync_sources(
+    source_conn,
+    target_conn,
+    schema: str,
+    batch_id: str,
+    *,
+    progress: Callable[[dict], None] = print,
+    refresh_inventory_only: bool = False,
+    resume_staged_sources: list[dict] | None = None,
+    force_full: bool = False,
+) -> dict:
+    """Bootstrap once; reconcile only changed partitions on subsequent runs."""
+    schema = checked_schema(schema)
+    lock = f"label_local_generation:{schema}"
+    with target_conn.cursor() as cursor:
+        cursor.execute("select get_lock(%s,0) as acquired", (lock,))
+        if cursor.fetchone()["acquired"] != 1:
+            raise RuntimeError("local label input sync is already running")
+    try:
+        if force_full or refresh_inventory_only or resume_staged_sources:
+            progress({"stage": "input_sync_mode", "mode": "full",
+                      "reason": "explicit_or_recovery"})
+            return _sync_full_sources(
+                source_conn, target_conn, schema, batch_id, progress=progress,
+                refresh_inventory_only=refresh_inventory_only,
+                resume_staged_sources=resume_staged_sources,
+            )
+        previous = None
+        with target_conn.cursor() as cursor:
+            cursor.execute(
+                "select count(*) as n from information_schema.tables "
+                "where table_schema=%s and table_name='dashboard_label_local_input'",
+                (schema,),
+            )
+            if cursor.fetchone()["n"]:
+                cursor.execute(
+                    f"select manifest_json from {quote(schema)}."
+                    "dashboard_label_local_input where singleton=1"
+                )
+                row = cursor.fetchone()
+                if not row:
+                    raise RuntimeError("local input marker is empty; use explicit full sync")
+                previous = json.loads(row["manifest_json"])
+        if previous is None:
+            progress({"stage": "input_sync_mode", "mode": "full",
+                      "reason": "bootstrap"})
+            return _sync_full_sources(
+                source_conn, target_conn, schema, batch_id, progress=progress,
+                refresh_inventory_only=refresh_inventory_only,
+                resume_staged_sources=resume_staged_sources,
+            )
+        from etl.label_incremental_sources import sync_incremental_sources
+
+        progress({"stage": "input_sync_mode", "mode": "incremental"})
+        return sync_incremental_sources(
+            source_conn, target_conn, schema, batch_id, previous, progress=progress
+        )
+    finally:
+        with suppress(Exception):
+            with target_conn.cursor() as cursor:
+                cursor.execute("select release_lock(%s)", (lock,))

@@ -11,13 +11,14 @@ from etl import daily_update_runner as runner
 EXPECTED_MODULES = [
     "etl.dashboard_source_preflight",
     "etl.dashboard_daily_update",
-    "etl.product_performance_history_sync",
-    "etl.sales_role_snapshot_update",
-    "etl.label_rule_evidence_snapshot_update",
-    "etl.stockout_historical_operating_update",
     "etl.replenishment_update",
     "etl.replenishment_tracking_summary_update",
+    "etl.product_performance_history_sync",
+    "etl.sales_role_snapshot_update",
     "etl.return_goods_update",
+    "etl.daily_pricing_update",
+    "etl.label_rule_evidence_snapshot_update",
+    "etl.stockout_historical_operating_update",
 ]
 
 
@@ -37,12 +38,7 @@ def _fake_executor(exit_codes=None, commands=None):
 
 def test_default_steps_match_daily_chain():
     assert [step.module for step in runner.DEFAULT_STEPS] == EXPECTED_MODULES
-    assert runner.DEFAULT_STEPS[4].continue_on_failure is True
-    assert all(
-        not step.continue_on_failure
-        for index, step in enumerate(runner.DEFAULT_STEPS)
-        if index != 4
-    )
+    assert all(not step.continue_on_failure for step in runner.DEFAULT_STEPS)
 
 
 def test_parse_args_keeps_all_etl_arguments():
@@ -97,9 +93,11 @@ def test_success_runs_every_step_with_current_python_and_sends_success(tmp_path)
     assert result.exit_code == 0
     assert [command[2] for command in commands] == EXPECTED_MODULES
     assert all(command[:2] == (sys.executable, "-m") for command in commands)
-    assert all(command[3:] == ("--biz-date", "2026-08-03") for command in commands)
-    assert [item.status for item in notifications] == ["success"]
-    assert notifications[0].stage == "all"
+    assert all(command[3:5] == ("--biz-date", "2026-08-03") for command in commands)
+    assert commands[1][5:7] == ("--steps", runner.EARLY_DASHBOARD_STEPS)
+    assert [(item.status, item.stage) for item in notifications] == [
+        ("success", "replenishment"), ("success", "all")
+    ]
     assert notifications[0].run_stamp == "20260804_090000"
 
 
@@ -128,7 +126,7 @@ def test_required_step_failure_stops_chain_and_returns_original_exit_code(tmp_pa
     assert notifications[0].exit_code == 7
 
 
-def test_label_evidence_failure_warns_and_continues_to_final_success(tmp_path):
+def test_label_failure_preserves_replenishment_notice_but_stops_dependent_step_and_all_success(tmp_path):
     commands = []
     notifications = []
 
@@ -144,13 +142,13 @@ def test_label_evidence_failure_warns_and_continues_to_final_success(tmp_path):
         emit=lambda message: None,
     )
 
-    assert result.exit_code == 0
-    assert [command[2] for command in commands] == EXPECTED_MODULES
+    assert result.exit_code == 3
+    assert [command[2] for command in commands] == EXPECTED_MODULES[:-1]
     assert [(item.status, item.stage) for item in notifications] == [
+        ("success", "replenishment"),
         ("failed", "label_evidence"),
-        ("success", "all"),
     ]
-    assert result.step_results[4].status == "warning"
+    assert result.step_results[-1].status == "failed"
 
 
 def test_dry_run_passes_argument_and_skips_all_notifications(tmp_path):
@@ -169,8 +167,22 @@ def test_dry_run_passes_argument_and_skips_all_notifications(tmp_path):
     )
 
     assert result.exit_code == 0
-    assert all(command[-1] == "--dry-run" for command in commands)
+    assert all("--dry-run" in command[3:] for command in commands)
     assert notifications == []
+
+
+def test_replenishment_notice_is_sent_before_tracking_and_slow_analyses(tmp_path):
+    commands = []
+    observed = []
+    runner.run_daily_update(
+        project_root=tmp_path, step_executor=_fake_executor(commands=commands),
+        notifier=lambda notice: observed.append((notice.stage, commands[-1][2])),
+        emit=lambda message: None,
+    )
+    assert observed == [
+        ("replenishment", "etl.replenishment_update"),
+        ("all", "etl.stockout_historical_operating_update"),
+    ]
 
 
 def test_notification_failure_does_not_replace_successful_etl_result(tmp_path):
@@ -206,7 +218,7 @@ def test_progress_output_contains_step_numbers_status_and_summary(tmp_path):
 
     text = "\n".join(output)
     assert result.exit_code == 0
-    assert "[1/9]" in text
+    assert "[1/10]" in text
     assert "远端数据完整性预检" in text
     assert "成功" in text
     assert "总耗时" in text

@@ -183,6 +183,57 @@ def test_retained_archive_survives_source_changes_but_rejects_work_changes(local
         validate_coverage(conn, schema, day, check_source_evidence=False)
 
 
+def test_retained_archive_accepts_restored_decimal_format_but_rejects_value_changes(local_store):
+    from etl.label_lifecycle_completion import VERSION
+    from etl.label_local_store import validate_retained_archive
+
+    conn, schema = local_store
+    day = date(2026, 10, 7)
+    with conn.cursor() as q:
+        q.execute(
+            f"insert into {table(schema,'dashboard_label_local_work')} "
+            "(data_date,country_category,store,msku,label_id,label_period,evidence_json) "
+            "values (%s,'欧洲站','shop','decimal',101,'30d',"
+            "json_object('ratio',cast('1.2300' as decimal(10,4))))", (day,)
+        )
+    archive_day(conn, schema, day, str(uuid4()),
+                {"batch_id":str(uuid4()),"input_hash":"decimal-input"}, day,
+                {"fact_rows":1,"evidence_rows":1}, rule_version=VERSION)
+    restore_work(conn, schema, [day])
+    validate_retained_archive(conn, schema, schema, day, VERSION)
+    with conn.cursor() as q:
+        q.execute(
+            f"update {table(schema,'dashboard_label_local_work')} "
+            "set evidence_json=json_object('ratio',cast('1.2300000000000002' as decimal(30,16)))"
+        )
+    with pytest.raises(RuntimeError, match="differs"):
+        validate_retained_archive(conn, schema, schema, day, VERSION)
+
+
+def test_retained_archive_rejects_json_boolean_number_type_changes(local_store):
+    from etl.label_lifecycle_completion import VERSION
+    from etl.label_local_store import validate_retained_archive
+
+    conn, schema = local_store
+    day = date(2026, 10, 7)
+    with conn.cursor() as q:
+        q.execute(
+            f"insert into {table(schema,'dashboard_label_local_work')} "
+            "(data_date,country_category,store,msku,label_id,label_period,evidence_json) "
+            "values (%s,'欧洲站','shop','boolean',101,'30d',"
+            "json_object('flag',json_extract('false','$')))", (day,)
+        )
+    archive_day(conn, schema, day, str(uuid4()),
+                {"batch_id":str(uuid4()),"input_hash":"boolean-input"}, day,
+                {"fact_rows":1,"evidence_rows":1}, rule_version=VERSION)
+    restore_work(conn, schema, [day])
+    validate_retained_archive(conn, schema, schema, day, VERSION)
+    with conn.cursor() as q:
+        q.execute(f"update {table(schema,'dashboard_label_local_work')} set evidence_json=json_object('flag',0)")
+    with pytest.raises(RuntimeError, match="differs"):
+        validate_retained_archive(conn, schema, schema, day, VERSION)
+
+
 def test_publish_retained_day_with_its_original_evidence(local_store):
     from etl.label_lifecycle_completion import complete_day, VERSION
 
@@ -497,7 +548,7 @@ def test_dwd_fba_label_projection_handles_shared_warehouse_and_special_msku(
             row["country_category"],
             row["seller_sku_adj"],
         ) == (store, prefix, region, normalized_sku)
-        assert row["create_time"].strftime("%Y-%m-%d %H:%M:%S") == "2026-10-01 05:05:06"
+        assert row["create_time"].strftime("%Y-%m-%d %H:%M:%S") == "2026-10-01 00:00:00"
         assert (row["total"], row["afn_fulfillable_quantity"], row["stock_up_num"]) == (
             9,
             0,
@@ -628,6 +679,7 @@ def test_dwd_inventory_refresh_keeps_other_inputs_and_two_projections_in_ledger(
         result["reused_input_batch"] == previous["batch_id"]
         and load_inputs(conn, schema) == result
     )
+    assert result["input_consistency"] == "fba_refreshed_with_retained_inputs"
     assert [
         r for r in result["sources"] if r["local_name"] != "dashboard_label_source_fba"
     ] == [

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 import hashlib
 import json
 import zlib
@@ -28,12 +29,40 @@ FACT_COLUMNS = (
     "evidence_json",
 )
 
+# UNCOMPRESS returns NULL for damaged data. NULL must be rejected explicitly,
+# otherwise SUM/WHERE silently omit that invalid compressed evidence.
+INVALID_EVIDENCE_SQL = (
+    "coalesce(json_valid(cast(uncompress(evidence_blob) "
+    "as char character set utf8mb4)),0)<>1"
+)
+
 
 def table(schema: str, name: str) -> str:
     checked_schema(schema)
     if not name.startswith("dashboard_label_"):
         raise ValueError("not a local label table")
     return f"{quote(schema)}.{quote(name)}"
+
+
+def lock_publication_tables(
+    conn, live_schema: str, stage_schema: str, outputs: tuple[str, ...],
+    read_tables: tuple[tuple[str, str], ...],
+) -> None:
+    """Freeze actual writers while rechecking and atomically renaming outputs.
+
+    A generation advisory lock alone does not stop core/stockout ETL writers.
+    The caller must explicitly UNLOCK TABLES in finally; LOCK TABLES commits
+    the caller's current transaction, so acquire this only at final promotion.
+    MySQL 8.0.13+ retains WRITE locks across a multi-table RENAME.
+    """
+    writes = {(checked_schema(s), name) for s in (live_schema, stage_schema) for name in outputs}
+    reads = {(checked_schema(s), name) for s, name in read_tables} - writes
+    clauses = [f"{quote(s)}.{quote(name)} WRITE" for s, name in sorted(writes)]
+    clauses += [f"{quote(s)}.{quote(name)} READ" for s, name in sorted(reads)]
+    if not clauses:
+        raise ValueError("publication table lock set is empty")
+    with conn.cursor() as q:
+        q.execute("lock tables " + ", ".join(clauses))
 
 
 def encode_history_chunk(rows: list) -> tuple[bytes, str]:
@@ -282,10 +311,34 @@ def archive_day(
             raise
 
 
+def history_rows_match(actual: list, archived: list) -> bool:
+    """Compare facts and exact JSON values despite MySQL formatting changes."""
+    if len(actual) != len(archived):
+        return False
+
+    def json_number(value: str):
+        # Tag numbers so JSON false and zero cannot compare equal in Python.
+        return ("number", Decimal(value))
+
+    for current, accepted in zip(actual, archived):
+        header = json.loads(json.dumps(current[:-1], default=str))
+        if header != accepted[:-1]:
+            return False
+        if current[-1] == accepted[-1]:
+            continue
+        if current[-1] is None or accepted[-1] is None:
+            return False
+        current_json = json.loads(current[-1], parse_int=json_number, parse_float=json_number)
+        accepted_json = json.loads(accepted[-1], parse_int=json_number, parse_float=json_number)
+        if current_json != accepted_json:
+            return False
+    return True
+
+
 def validate_retained_archive(
     conn, work_schema: str, history_schema: str, day: date, rule_version: str
 ) -> None:
-    """Prove retained work is byte-for-byte the already validated archive."""
+    """Prove retained work has the same facts and exact JSON values as its archive."""
     with conn.cursor() as q:
         q.execute(
             f"select rule_version,baseline_sha256,fact_rows from {table(history_schema,'dashboard_label_local_days')} where data_date=%s",
@@ -318,7 +371,7 @@ def validate_retained_archive(
             )
             rows = q.fetchall()
             actual = [[row[name] for name in FACT_COLUMNS] for row in rows]
-            if encode_history_chunk(actual)[1] != archived["checksum"]:
+            if not history_rows_match(actual, records):
                 raise RuntimeError("retained work differs from validated archive")
             last_id = rows[-1]["id"]
             chunk = archived["chunk_no"]

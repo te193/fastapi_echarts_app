@@ -83,8 +83,8 @@ def test_operational_inventory_reads_remote_dwd_without_using_shared_etl_table()
     )
     assert "from `dwd_datasync`.`lx_storage_fba_warehouse_detail`" in sql
     assert "etl_dispose" not in sql and "where" not in sql and params == ()
-    assert "regexp_replace" in sql and "`create_time` as `create_time`" in sql
-    assert "cast(date(" not in sql
+    assert "regexp_replace" in sql
+    assert "cast(date(`create_time`) as datetime) as `create_time`" in sql
 
 
 def test_fba_contract_preserves_required_index_and_rejects_missing_raw_fields():
@@ -212,6 +212,9 @@ def test_disconnect_cleanup_does_not_mask_original_sync_failure(monkeypatch):
 
         def fetchall(self):
             return [{"column_name": "batch_id"}, {"column_name": "local_name"}]
+
+        def fetchone(self):
+            return {"acquired": 1, "n": 0}
 
         def commit(self):
             pass

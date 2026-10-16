@@ -15,7 +15,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy_windows.ps1
 - 加载 `scripts\dashboard_env.ps1` 中的数据库与服务配置
 - 测试本地写入库和远程只读源库连接
 - 创建 Windows 定时任务 `DashboardDailyUpdate`
-- 定时任务每天 `10:00` 执行 `scripts\run_daily_update_task.ps1`
+- 定时任务每天上海时间 `08:00` 执行 `scripts\run_daily_update_task.ps1`
 
 ## 常用命令
 
@@ -49,9 +49,12 @@ python -m etl.daily_update_runner
 python -m etl.daily_update_runner --dry-run
 ```
 
-Python 调度器不执行 PowerShell 脚本，会独立加载看板环境配置，依次运行
-远端预检、总 ETL、产品表现历史、销售角色、标签证据、补货、补货追踪汇总
-和返厂品，并为每一步生成独立日志。
+Python 调度器不执行 PowerShell 脚本，会独立加载看板环境配置。当前顺序为：
+业务源预检、补货必需输入、补货、补货追踪、产品表现历史、销售角色、返厂品、
+晚到的定价及其他分析、本地标签、断货前历史经营结果，并为每一步生成独立日志。
+补货成功立即通知钉钉；全部步骤成功后再通知全部完成。远端标签结果不再作为预检条件。
+定价后段会等待当天源任务成功，09:30 仍未就绪则失败通知。
+依赖核对、08:00 的选择依据及验证记录见[每日任务补货优先与分阶段通知](2026-10-14-每日任务补货优先与分阶段通知.md)。
 
 启动局域网看板服务：
 

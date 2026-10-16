@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 from datetime import date, datetime, timedelta
-import hashlib
 import json
 from time import monotonic
 from uuid import uuid4
@@ -29,11 +28,13 @@ from etl.label_local_sql import (
 )
 from etl.label_operation_completion import complete_operations
 from etl.label_receiving_status import apply_receiving_status
-from etl.label_local_sources import source_specs, sync_sources
+from etl.label_local_sources import sync_sources
+from etl.label_incremental_sources import validate_manifest
 from etl.label_local_contracts import (
     HISTORY_START,
     preflight_remote_history,
     validate_history_coverage,
+    validate_history_input_versions,
     validate_inventory_dates,
     validate_local_dictionary,
 )
@@ -84,15 +85,8 @@ def load_inputs(conn, schema: str) -> dict:
     if not row:
         raise RuntimeError("no complete local input batch; sync business sources first")
     inputs = json.loads(row["manifest_json"])
-    expected = {(s.reference, s.local_name) for s in source_specs()}
-    actual = {(s["source"], s["local_name"]) for s in inputs["sources"]}
-    if actual != expected or len(inputs["sources"]) != len(expected):
-        raise RuntimeError("local input manifest has an incomplete source contract")
-    digest = hashlib.sha256(
-        json.dumps(inputs["sources"], sort_keys=True, ensure_ascii=False).encode()
-    ).hexdigest()
-    if digest != inputs["input_hash"]:
-        raise RuntimeError("local input manifest checksum mismatch")
+    # Reusing inputs must enforce the same semantic contract as a remote sync.
+    validate_manifest(inputs)
     return inputs
 
 
@@ -119,6 +113,7 @@ def run_generation(
     *,
     publish: bool = True,
     sync: bool = True,
+    force_full_sync: bool = False,
     schema: str | None = None,
     input_schema: str | None = None,
     complete_lifecycle: bool | None = None,
@@ -156,7 +151,8 @@ def run_generation(
                     source, conn, schema, biz_date, bootstrap_start
                 )
             inputs = sync_sources(
-                source, conn, input_schema, str(uuid4()), progress=progress
+                source, conn, input_schema, str(uuid4()), progress=progress,
+                **({"force_full": True} if force_full_sync else {}),
             )
             source.close()
             source = None
@@ -236,6 +232,8 @@ def run_generation(
         if complete_lifecycle:
             validate_extension_ids(conn, input_schema)
         validate_inventory_dates(conn, input_schema, dates)
+        restored_dates = [dates[0] - timedelta(days=1), dates[0]]
+        validate_history_input_versions(conn, schema, input_schema, restored_dates)
         with conn.cursor() as cursor:
             cursor.execute(f"drop procedure if exists {table(schema,PROCEDURE_NAME)}")
             cursor.execute(compile_procedure(schema, input_schema=input_schema))
@@ -249,7 +247,7 @@ def run_generation(
                 "business_date": biz_date,
             }
         )
-        restore_work(conn, schema, [dates[0] - timedelta(days=1), dates[0]])
+        restore_work(conn, schema, restored_dates)
         last_summary = {}
         for day in dates:
             day_start = monotonic()
@@ -374,7 +372,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--date", type=date.fromisoformat)
     parser.add_argument("--bootstrap-start", type=date.fromisoformat)
-    parser.add_argument("--reuse-inputs", action="store_true")
+    sync_options = parser.add_mutually_exclusive_group()
+    sync_options.add_argument("--reuse-inputs", action="store_true")
+    sync_options.add_argument("--full-sync", action="store_true",
+                              help="Explicitly rebuild all business input history.")
     parser.add_argument("--no-publish", action="store_true")
     parser.add_argument(
         "--baseline-only",
@@ -407,6 +408,7 @@ def main() -> None:
             args.bootstrap_start,
             publish=not args.no_publish,
             sync=not args.reuse_inputs,
+            force_full_sync=args.full_sync,
             schema=args.schema,
             input_schema=args.input_schema,
             complete_lifecycle=policy,

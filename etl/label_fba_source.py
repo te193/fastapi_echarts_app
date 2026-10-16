@@ -18,7 +18,7 @@ DERIVED_COLUMNS = (
     "seller_name_new",
     "country_category",
 )
-NORMALIZATION_VERSION = "dwd_fba_label_projection_20261012"
+NORMALIZATION_VERSION = "dwd_fba_label_projection_20261015"
 
 
 def fba_columns(metadata: list[dict]) -> list[dict]:
@@ -71,6 +71,11 @@ def fba_select_sql(columns: list[str]) -> str:
     store = "regexp_replace(`name`, '[一-龥]', '')"
     expressions.update(
         {
+            # V47 sums every country/warehouse at MAX(create_time) per item.
+            # The processed source's timestamp represents a daily snapshot;
+            # raw collection seconds must not exclude other countries that day.
+            # Keep DATETIME (rather than DATE) for source/local fingerprint parity.
+            "create_time": "cast(date(`create_time`) as datetime)",
             "seller_name": store,
             "seller_name_new": f"substring_index({store}, '-', 1)",
             "seller_sku_adj": "if(length(`seller_sku`)>16, replace(substring_index(`seller_sku`, '-', 1), 'amzn.gr.', ''), `seller_sku`)",

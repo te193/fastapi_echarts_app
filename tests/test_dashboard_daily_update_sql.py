@@ -320,7 +320,7 @@ class DashboardDailyUpdateSqlTests(unittest.TestCase):
         self.assertEqual(40, len(AD_BUDGET_COLUMNS))
         self.assertIn("primary key (biz_date, country_category, country, seller_name_new, seller_sku_adj)", CREATE_AD_BUDGET_SNAPSHOT_SQL)
         self.assertIn("where biz_date >= %(budget_start_date)s", SELECT_AD_BUDGET_SNAPSHOT_SQL)
-        self.assertIn("where biz_date >= %(budget_start_date)s", DELETE_AD_BUDGET_SNAPSHOT_SQL)
+        self.assertIn("where biz_date = %(budget_snapshot_date)s", DELETE_AD_BUDGET_SNAPSHOT_SQL)
 
     def test_source_load_reconnects_and_retries_after_source_timeout(self):
         step = SourceLoadStep(

@@ -7,6 +7,39 @@ from unittest.mock import Mock, patch
 from scripts.notify_daily_task_dingtalk import build_markdown, build_signed_webhook, send_markdown
 
 
+def test_replenishment_milestone_does_not_claim_all_modules_finished(tmp_path):
+    repl = tmp_path / "replenishment.log"
+    repl.write_text("  snapshot_date : 2026-10-14\n[success] replenishment_business_result: snapshot_date=2026-10-14 rows=80\n[success] replenishment_result: affected_rows=123\n[success] country_metrics: affected_rows=456\n", encoding="utf-8")
+    payload = json.loads(build_markdown(
+        status="success", stage="replenishment", exit_code=0,
+        run_stamp="20261014_080000", project_root=tmp_path,
+        dashboard_stdout=tmp_path / "dashboard.log", dashboard_stderr=tmp_path / "dashboard.err",
+        replenishment_stdout=repl, replenishment_stderr=tmp_path / "replenishment.err",
+    ))
+    assert payload["markdown"]["title"] == "补货数据已跑完"
+    text = payload["markdown"]["text"]
+    assert "2026-10-14" in text and "80" in text
+    assert "123" not in text and "456" not in text
+    assert "后续" in text
+    assert "全部完成" not in text and "7/7" not in text
+
+
+def test_final_report_duration_includes_labels_and_their_last_consumer(tmp_path):
+    start = tmp_path / "preflight.err"
+    last = tmp_path / "stockout.log"
+    start.touch()
+    last.touch()
+    os.utime(start, (1_000_000_000, 1_000_000_000))
+    os.utime(last, (1_000_005_400, 1_000_005_400))
+    payload = json.loads(build_markdown(
+        status="success", stage="all", exit_code=0, run_stamp="20261014_080000",
+        project_root=tmp_path, preflight_stderr=start, stockout_stdout=last,
+        dashboard_stdout=tmp_path / "dashboard.log", dashboard_stderr=tmp_path / "dashboard.err",
+        replenishment_stdout=tmp_path / "replenishment.log", replenishment_stderr=tmp_path / "replenishment.err",
+    ))
+    assert "总耗时：约 90 分钟" in payload["markdown"]["text"]
+
+
 def test_build_signed_webhook_adds_timestamp_and_signature():
     url = build_signed_webhook(
         "https://oapi.dingtalk.com/robot/send?access_token=abc",
@@ -233,7 +266,7 @@ def test_success_markdown_uses_validated_business_results_and_tracking_log(tmp_p
     assert "商品表现：已更新到 6月26日，当日约 1.9 万条" in text
     assert "补货结果：已重新计算，约 3,200 个补货 SKU" in text
     assert "补货追踪：7/14/30 天窗口各 182 个 MSKU" in text
-    assert "7/7 个每日更新模块执行成功" in text
+    assert "9/9 个每日更新模块执行成功，全部完成" in text
 
 
 def test_success_markdown_reports_tracking_summary_result(tmp_path):
@@ -263,7 +296,7 @@ def test_success_markdown_reports_tracking_summary_result(tmp_path):
     text = json.loads(payload)["markdown"]["text"]
 
     assert "补货追踪汇总：截至 7月10日，719 个 MSKU；历史分层 1,021 条" in text
-    assert "7/7 个每日更新模块执行成功" in text
+    assert "9/9 个每日更新模块执行成功，全部完成" in text
 
 
 def test_success_markdown_reads_current_tracking_summary_log_format(tmp_path):

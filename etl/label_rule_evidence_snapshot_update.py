@@ -758,16 +758,21 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--date", type=date.fromisoformat)
     parser.add_argument("--bootstrap-start", type=date.fromisoformat)
-    parser.add_argument("--reuse-inputs", action="store_true")
+    sync_options = parser.add_mutually_exclusive_group()
+    sync_options.add_argument("--reuse-inputs", action="store_true")
+    sync_options.add_argument("--full-sync", action="store_true",
+                              help="Explicitly rebuild all business input history.")
     parser.add_argument("--no-publish", action="store_true")
     args, _ = parser.parse_known_args()
     periods = parse_periods(args.periods)
     if args.dry_run:
         print("Local V47 plan: business sources -> local generation -> verified history -> atomic publication; retain_dates=2")
+        print(f"  input_sync: {'full' if args.full_sync else ('reuse' if args.reuse_inputs else 'bootstrap once, then incremental')}")
         return
 
     result = run_update(periods, biz_date=args.date, bootstrap_start=args.bootstrap_start,
-                        publish=not args.no_publish, sync=not args.reuse_inputs)
+                        publish=not args.no_publish, sync=not args.reuse_inputs,
+                        force_full_sync=args.full_sync)
     print("Local label snapshots and rule evidence updated")
     print(f"  label_dates : {', '.join(result['label_dates'])}")
     print(f"  label_facts : {result['fact_rows']:,}")

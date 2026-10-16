@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 import pytest
 
@@ -64,3 +65,35 @@ def test_isolated_preview_uses_real_input_indexes_and_separate_work_tables():
     assert ("label_preview", "dashboard_label_local_work") in refs
     assert all(schema in {"label_preview", "label_inputs"} for schema, _ in refs)
     assert "force index (`idx_osp_performance_date_sync`)" in sql
+
+
+def test_index_optimization_builds_scoped_performance_indexes_in_one_pass():
+    sql = compile_procedure("label_preview")
+    alterations = re.findall(r"alter\s+table\s+tmp_perf_scoped\b[^;]*;", sql)
+    assert len(alterations) == 1
+    assert alterations[0].count("add index") == 3
+    assert "idx_tmp_perf_scoped_station_date" in alterations[0]
+    assert sql.index(alterations[0]) < sql.index("'tmp_perf_scoped_exact_filter'")
+
+
+def test_index_optimization_preserves_all_non_index_sql_tokens():
+    baseline = compile_procedure("label_preview", optimize_indexes=False)
+    optimized = compile_procedure("label_preview", optimize_indexes=True)
+
+    def without_scoped_indexes(sql):
+        stripped = re.sub(r"alter\s+table\s+tmp_perf_scoped\b[^;]*;", "", sql)
+        return [(k, v) for k, v in sql_tokens(stripped) if k not in {"space", "comment"}]
+
+    assert without_scoped_indexes(optimized) == without_scoped_indexes(baseline)
+
+
+def test_index_optimization_rejects_unrecognized_index_layout(tmp_path):
+    from etl.label_local_sql import BASELINE_PATH
+
+    source = BASELINE_PATH.read_text(encoding="utf-8-sig").replace(
+        "idx_tmp_perf_scoped_station_date", "unexpected_station_index"
+    )
+    path = tmp_path / "changed-index.sql"
+    path.write_text(source, encoding="utf-8")
+    with pytest.raises(ValueError, match="index layout changed"):
+        compile_procedure("label_preview", path=path, check_hash=False, optimize_indexes=True)
