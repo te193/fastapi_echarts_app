@@ -611,9 +611,11 @@ def _format_enriched_business_result_summary(
     core_index = lines.index(core_heading)
     extra_durations = [
         f"- \u9500\u552e\u89d2\u8272 ETL\uff1a{_format_duration(_duration_seconds(sales_role_stderr, sales_role_stdout))}",
-        f"- \u6807\u7b7e\u8bc1\u636e ETL\uff1a{_format_duration(_duration_seconds(label_evidence_stderr, label_evidence_stdout))}",
         f"- \u8fd4\u5382\u54c1 ETL\uff1a{_format_duration(_duration_seconds(return_goods_stderr, return_goods_stdout))}",
     ]
+    if label_evidence_stdout.is_file():
+        extra_durations.insert(1,
+            f"- 标签证据 ETL：{_format_duration(_duration_seconds(label_evidence_stderr, label_evidence_stdout))}")
     if duration_heading in lines:
         insert_at = core_index
         while insert_at > 0 and lines[insert_at - 1] == "":
@@ -849,7 +851,7 @@ def build_markdown(
             f"- 补货结果：{_format_number(result_count)} 条" if result_count else "- 补货结果：已完成，条数见补货页面。",
             "- 国家维度补货明细：已完成。",
             "- 补货主数据已更新，可以查看和导出。",
-            "- 补货追踪、标签及其他后续步骤继续执行，全部结束后另行通知。",
+            "- 补货追踪及其他启用的后续步骤继续执行，全部结束后另行通知。",
         ])
     elif is_success:
         lines.extend(
@@ -877,8 +879,10 @@ def build_markdown(
                 ),
             ]
         )
-        # Labels and their dependent analysis now finish after return goods.
-        total_seconds = _duration_seconds(preflight_stderr, stockout_stdout)
+        # The nine-step flow ends with return strategy. Accept historical
+        # stockout logs when rendering an older run without that final log.
+        final_log = return_strategy_stdout if return_strategy_stdout and return_strategy_stdout.is_file() else stockout_stdout
+        total_seconds = _duration_seconds(preflight_stderr, final_log)
         if total_seconds is not None:
             lines = [f"- 总耗时：{_format_duration(total_seconds)}"
                      if line.startswith("- 总耗时：") else line for line in lines]

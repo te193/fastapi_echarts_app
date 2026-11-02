@@ -195,15 +195,26 @@ def sync_history(
         PRODUCT_DAILY_COLUMNS,
     )
 
-    with connect_target() as target_conn, connect_source() as source_conn:
+    from etl.shared_product_inputs import product_reader
+    with connect_target() as target_conn, product_reader(schemas) as source_conn:
         ensure_tables(target_conn, schemas)
         last_success = latest_success_at(target_conn, schemas)
         history_start = required_history_start(biz_date, history_days)
         rolling_start = biz_date - timedelta(days=rolling_days - 1)
         history_end = rolling_start - timedelta(days=1)
 
+        from etl import product_consumer_contract as contract
+        item = getattr(source_conn, 'shared_product_item', None)
+        consumer_plan = None
+        if isinstance(item, dict) and 'partitions' in item and history_start <= history_end:
+            consumer_params = range_params(biz_date=biz_date, snapshot_date=snapshot_date,
+                range_start=history_start, range_end=history_end)
+            consumer_plan = contract.plan(target_conn, source_conn, schemas,
+                history_step.source_select_statement, render_sql(history_step.target_table, schemas),
+                consumer_params, item)
+
         changed_dates: list[date] = []
-        if last_success is not None and history_start <= history_end:
+        if consumer_plan is None and last_success is not None and history_start <= history_end:
             changed_dates = fetch_changed_dates(
                 source_conn,
                 schemas,
@@ -212,7 +223,19 @@ def sync_history(
                 changed_since=last_success - timedelta(hours=watermark_overlap_hours),
             )
 
-        ranges = transaction_ranges(
+        from etl.shared_product_inputs import run_id, read_shared_item
+        if consumer_plan is None and run_id():
+            item = read_shared_item(target_conn, schemas.target_schema)
+            for key in item.get('shared_acquisition', {}).get('changed_partitions', ()):
+                try:
+                    day = date.fromisoformat(key)
+                except (ValueError, TypeError):
+                    continue
+                if history_start <= day <= history_end:
+                    changed_dates.append(day)
+
+        ranges = (split_ranges(coalesce_dates(consumer_plan.candidates), max_days=history_batch_days)
+                  if consumer_plan is not None else transaction_ranges(
             changed_history_ranges(
                 biz_date=biz_date,
                 history_days=history_days,
@@ -222,7 +245,16 @@ def sync_history(
             ),
             first_run=last_success is None,
             max_days=history_batch_days,
-        )
+        ))
+        if consumer_plan is not None:
+            # Observation-only updates are safe independently of candidate fact
+            # transactions; changed dependencies remain unapplied until their batch.
+            unchanged = contract.Plan((), {day: state for day, state in consumer_plan.states.items()
+                                          if day not in consumer_plan.candidates},
+                                      consumer_plan.rule, consumer_plan.item)
+            contract.persist(target_conn, schemas.target_schema, unchanged,
+                             render_sql(history_step.target_table, schemas), consumer_params)
+            target_conn.commit()
         if not ranges:
             params = range_params(
                 biz_date=biz_date,
@@ -249,8 +281,10 @@ def sync_history(
                 range_start=range_start,
                 range_end=range_end,
             )
-            print(f"[info] {TASK_NAME}: refreshing {range_start} to {range_end}")
-            execute_source_load_step(
+            if consumer_plan is not None:
+                params['_product_consumer_plan'] = consumer_plan
+            print(f"[info] {TASK_NAME}: checking {range_start} to {range_end}")
+            affected_rows += execute_source_load_step(
                 target_conn,
                 source_conn,
                 schemas,
@@ -258,19 +292,6 @@ def sync_history(
                 params,
                 batch_size,
             )
-            with target_conn.cursor() as cursor:
-                cursor.execute(
-                    render_sql(
-                        """
-                        select count(*) as row_count
-                        from etl_datasync_test.dashboard_product_performance_daily
-                        where dt_date between %(product_start_date)s and %(product_end_date)s
-                        """,
-                        schemas,
-                    ),
-                    params,
-                )
-                affected_rows += int((cursor.fetchone() or {}).get("row_count") or 0)
         completed_params = range_params(
             biz_date=biz_date,
             snapshot_date=snapshot_date,

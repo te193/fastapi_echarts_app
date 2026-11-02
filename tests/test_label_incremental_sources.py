@@ -207,6 +207,11 @@ def test_sync_dispatches_bootstrap_incremental_and_explicit_full(
 def test_both_cli_entrypoints_forward_explicit_full_sync(monkeypatch, module_name):
     from importlib import import_module
     import sys
+    from app import label_update_policy
+
+    # Test CLI argument contracts with updates enabled; production freeze is
+    # independently checked against both real entrypoints.
+    monkeypatch.setattr(label_update_policy, 'LABEL_UPDATES_FROZEN', False)
 
     module = import_module(module_name)
     called = []
@@ -228,3 +233,57 @@ def test_both_cli_entrypoints_forward_explicit_full_sync(monkeypatch, module_nam
     monkeypatch.setattr(sys, "argv", ["label", "--full-sync", "--reuse-inputs"])
     with pytest.raises(SystemExit):
         module.main()
+
+
+def test_remote_and_local_fingerprints_overlap_without_sharing_connections(monkeypatch):
+    from threading import Barrier
+
+    api = incremental_api()
+    source, target = object(), object()
+    spec = sources.SourceSpec("remote", "orders", "dashboard_label_source_orders")
+    both_reading = Barrier(2)
+
+    def read(conn, current_spec, names, sql, params=()):
+        assert current_spec is spec and names == ["id"]
+        if conn is source:
+            assert sql == "select id from remote.orders where id > %s" and params == (5,)
+            result = {"1": {"rows": 2}}
+        else:
+            assert conn is target and sql == "select * from `local`.`orders`"
+            result = {"1": {"rows": 1}}
+        # A sequential implementation times out here. Each connection must have
+        # its own reader, and both must finish before staging starts.
+        both_reading.wait(timeout=2)
+        return result
+
+    monkeypatch.setattr(api, "read_fingerprints", read)
+    remote, local, remote_seconds, local_seconds = api.read_fingerprint_pair(
+        source, target, spec, ["id"],
+        "select id from remote.orders where id > %s", (5,), "`local`.`orders`",
+    )
+    assert remote == {"1": {"rows": 2}}
+    assert local == {"1": {"rows": 1}}
+    assert remote_seconds >= 0 and local_seconds >= 0
+
+
+def test_local_fingerprint_failure_waits_for_remote_reader_before_rollback(monkeypatch):
+    from threading import Event
+
+    api = incremental_api()
+    source, target = object(), object()
+    remote_started, local_failed, remote_finished = Event(), Event(), Event()
+
+    def read(conn, *args):
+        if conn is source:
+            remote_started.set()
+            assert local_failed.wait(timeout=2)
+            remote_finished.set()
+            return {}
+        assert remote_started.wait(timeout=2)
+        local_failed.set()
+        raise RuntimeError("local fingerprint failed")
+
+    monkeypatch.setattr(api, "read_fingerprints", read)
+    with pytest.raises(RuntimeError, match="local fingerprint failed"):
+        api.read_fingerprint_pair(source, target, sources.source_specs()[0], [], "select 1", (), "live")
+    assert remote_finished.is_set()

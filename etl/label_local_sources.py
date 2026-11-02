@@ -82,6 +82,9 @@ def project_columns(
     if reference == "dws_datasync.dws_标签详情表":
         return columns
     names = set(_rule_identifiers())
+    if reference == "dwd_datasync.lx_statistics_product_performance":
+        from etl.shared_product_inputs import PRODUCT_COLUMNS
+        names.update(PRODUCT_COLUMNS)
     # Preserve columns used by mandatory FORCE INDEX clauses and source primary keys.
     forced = {
         "primary",

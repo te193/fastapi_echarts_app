@@ -96,7 +96,7 @@ def test_price_review_scroll_layout_assets_have_fresh_cache_versions():
     assert "price_review_role_detail_chart.js') }}?v=20260818roledetailsplit2" in page_template
     assert "price_review_role_copy.js') }}?v=20260818rolecopyhover1" in page_template
     assert "price_review_role_grid.js') }}?v=20260818rolegrid2" in page_template
-    assert "price_review_role.js') }}?v=20260818rolegrid2" in page_template
+    assert "price_review_role.js') }}?v=20261020localrole1" in page_template
 
 
 def test_price_review_has_performance_and_station_role_views():
@@ -131,6 +131,12 @@ def test_station_role_view_loads_api_and_renders_paginated_ag_grid():
     assert 'window.kanbanGrid.makeGrid("roleMigrationGrid"' in script
     assert "PriceReviewRoleGrid.buildPaginationModel" in script
     assert ".price-review-role-grid" in styles
+
+
+def test_station_role_status_explains_local_calculation():
+    script = (ROOT / "app" / "static" / "js" / "price_review_role.js").read_text(encoding="utf-8")
+    assert 'status.calculation_mode === "local"' in script
+    assert "角色来源：本地计算" in script
 
 
 def test_station_role_detail_uses_a_right_diagnostic_drawer():

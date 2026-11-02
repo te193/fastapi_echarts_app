@@ -16,6 +16,8 @@ for key,metric in METRICS.items():
     domain='traffic' if metric.group=='流量' else 'stockout' if metric.group=='缺货' else 'inventory' if metric.group in ('库存','覆盖与补货') else 'business'
     DOMAIN_FIELDS[domain].add(key)
 DOMAIN_FIELDS['stockout'].update(('current_stockout_lower_bound','max_stockout_lower_bound'))
+COMPACT_STORAGE = 'analysis-read-model-v3-compact'
+
 RAW_FIELDS={'daily','traffic_daily','inventory','inventory_cost_daily','replenishment_history','replenishment','region_key','all_labels','evidence_all'}
 
 
@@ -93,8 +95,8 @@ class MaterializedAnalysisRepository:
             windows=unpack(batch['available_windows'])
             if dict(date=end.isoformat(),period=period,view=view) not in windows:raise ValueError('该日期、周期或视角尚未完成预计算；页面不会现场生成')
             with conn.cursor(SSDictCursor) as stream:
-                current=self._rows(stream,batch['batch_id'],end,period,view,'current')
-                previous=self._rows(stream,batch['batch_id'],end,period,view,'previous')
+                current=self._rows(stream,batch['batch_id'],end,period,view,'current',storage=batch.get('schema_version',''))
+                previous=self._rows(stream,batch['batch_id'],end,period,view,'previous',storage=batch.get('schema_version',''))
             manifest=unpack(batch['source_manifest'])
             expected=manifest['counts'][f'{view}:{period}']
             if len(current)!=expected or len(previous)!=expected:raise ValueError('发布批次的分域周期结果不完整')
@@ -112,7 +114,18 @@ class MaterializedAnalysisRepository:
                     tag_summaries=summaries,categories=unpack(batch['label_dictionary'])+([history_category(view)] if history else []),sources={**context['sources'],'storage':'intranet_precomputed','role_history':history},warnings=context['warnings'])
 
     @staticmethod
-    def _rows(cur,batch,end,period,view,phase):
+    def _rows(cur,batch,end,period,view,phase,storage=''):
+        if storage == COMPACT_STORAGE:
+            cur.execute('''select payload,checksum from dashboard_analysis_compact_period
+                where batch_id=%s and analysis_date=%s and period_days=%s
+                  and view_kind=%s and phase=%s order by object_id''',
+                (batch,end,period,view,phase))
+            result=[]
+            while True:
+                chunk=cur.fetchmany(40)
+                if not chunk:break
+                result.extend(decode_history(row['payload'],row['checksum']) for row in chunk)
+            return result
         # Start with the exact date/view/period/phase range in the context primary
         # key. A domain-first plan scans other windows and sorts large JSON rows.
         cur.execute('''select straight_join c.context_json,b.result_json as business,t.result_json as traffic,

@@ -2401,6 +2401,15 @@ from (
         calc.seller_name_new,
         calc.seller_sku_adj,
         row_number() over (partition by calc.country_category, calc.max_asin order by
+            -- Prefer an allowed follow link, otherwise return to its origin.
+            case when coalesce(calc.fllow_flag, 1) = 0 then 0 else 1 end,
+            case
+                when coalesce(calc.fllow_flag, 1) = 0 then 0
+                when (calc.support_replenish_level_sort in (1, 2, 3)
+                      and coalesce(calc.normal_replenish_need_qty, 0) > 0)
+                  or coalesce(calc.history_recovery_flag, 0) = 1 then 0
+                else 1
+            end,
             coalesce(perf.max_perf_date, date('1900-01-01')) desc,
             case when coalesce(calc.followed_flag, 0) = 0 then 0 else 1 end,
             case when calc.sales_status <> '停售中' then 0 else 1 end,
@@ -2423,7 +2432,14 @@ from (
            on calc.country_category = perf.country_category
           and calc.seller_name_new = perf.seller_name_new
           and calc.seller_sku_adj = perf.seller_sku_adj
-    where coalesce(calc.fllow_flag, 1) = 0
+    where (
+        coalesce(calc.fllow_flag, 1) = 0
+        or (
+            grp.follow_store_count = 1
+            and coalesce(calc.fllow_flag, 1) = 1
+            and coalesce(calc.followed_flag, 0) = 1
+        )
+    )
       and not exists (
           select 1
           from etl_datasync_test.dashboard_replenishment_clearance_sync clearance
@@ -2431,14 +2447,10 @@ from (
             and (clearance.store = '全部' or clearance.store = lower(trim(calc.seller_name_new)))
       )
       and grp.eligible_target_link_count > 0
-      -- 单跟卖店铺沿用原逻辑，多店铺才排除明确不补货的店铺。
-      and (
-          grp.follow_store_count <= 1
-          or not exists (
-              select 1
-              from etl_datasync_test.dashboard_replenishment_disabled_store_sync disabled
-              where disabled.seller_name_new = lower(trim(calc.seller_name_new))
-          )
+      and not exists (
+          select 1
+          from etl_datasync_test.dashboard_replenishment_disabled_store_sync disabled
+          where disabled.seller_name_new = lower(trim(calc.seller_name_new))
       )
 ) ranked
 where ranked.rn = 1;
@@ -2450,15 +2462,29 @@ select
     calc.seller_name_new,
     calc.seller_sku_adj,
     calc.max_asin,
-    1 as asin_merge_flag,
+    -- A returned origin uses its own stock and demand, not the disabled
+    -- follower's merged stock. Keep the selected target to prevent double orders.
+    case
+        when grp.follow_store_count = 1
+         and coalesce(calc.fllow_flag, 1) = 1
+         and coalesce(calc.followed_flag, 0) = 1
+         and calc.seller_name_new = target.target_seller_name_new
+         and calc.seller_sku_adj = target.target_seller_sku_adj then 0
+        else 1
+    end as asin_merge_flag,
     target.asin_merge_target,
     case
+        when grp.follow_store_count = 1
+         and coalesce(calc.fllow_flag, 1) = 1
+         and coalesce(calc.followed_flag, 0) = 1
+         and calc.seller_name_new = target.target_seller_name_new
+         and calc.seller_sku_adj = target.target_seller_sku_adj
+            then '跟卖不补货回退原链接'
         when grp.eligible_target_link_count = 0 then '同ASIN库存充足不补货'
         when grp.group_replenish_need_qty <= 0
           or grp.group_support_replenish_level_sort not in (1, 2, 3)
             then '同ASIN库存充足不补货'
-        when grp.follow_store_count > 1 and target.asin_merge_target is null then '无可承接补货店铺'
-        when target.asin_merge_target is null then '同ASIN库存充足不补货'
+        when target.asin_merge_target is null then '无可承接补货店铺'
         when calc.seller_name_new = target.target_seller_name_new
          and calc.seller_sku_adj = target.target_seller_sku_adj
             then '产品组补货目标链接'
@@ -2687,7 +2713,9 @@ select
     sales_change_rate_adj,
     sales_adj_factor,
     final_profit_rate,
-    case when coalesce(followed_flag, 0) = 1 then 0
+    case when coalesce(followed_flag, 0) = 1
+              and not (coalesce(asin_merge_flag, 0) = 0
+                       and coalesce(asin_merge_target_flag, 0) = 1) then 0
         when coalesce(asin_merge_flag, 0) = 1 and coalesce(asin_merge_target_flag, 0) = 0 then 0
         when coalesce(asin_merge_flag, 0) = 1 and asin_merge_reason = '同ASIN库存充足不补货' then 0
         when coalesce(asin_merge_flag, 0) = 1
@@ -2712,7 +2740,9 @@ select
             then greatest(round(normal_replenish_need_qty * sales_adj_factor, 0), 50)
         else 0
     end as replenish_qty,
-    case when coalesce(followed_flag, 0) = 1 then 0
+    case when coalesce(followed_flag, 0) = 1
+              and not (coalesce(asin_merge_flag, 0) = 0
+                       and coalesce(asin_merge_target_flag, 0) = 1) then 0
         when coalesce(asin_merge_flag, 0) = 1 and coalesce(asin_merge_target_flag, 0) = 0 then 0
         when coalesce(asin_merge_flag, 0) = 1 and asin_merge_reason = '同ASIN库存充足不补货' then 0
         when coalesce(asin_merge_flag, 0) = 1
@@ -2737,7 +2767,9 @@ select
             then 0
         else null
     end as replenish_box_qty,
-    case when coalesce(followed_flag, 0) = 1 then 0
+    case when coalesce(followed_flag, 0) = 1
+              and not (coalesce(asin_merge_flag, 0) = 0
+                       and coalesce(asin_merge_target_flag, 0) = 1) then 0
         when coalesce(asin_merge_flag, 0) = 1 and coalesce(asin_merge_target_flag, 0) = 0 then 0
         when coalesce(asin_merge_flag, 0) = 1 and asin_merge_reason = '同ASIN库存充足不补货' then 0
         when coalesce(asin_merge_flag, 0) = 1
@@ -2775,8 +2807,11 @@ select
     followed_by_links,
     follow_origin_link,
     case
-        when coalesce(followed_flag, 0) = 1 then '被跟卖点不补货'
-        when coalesce(asin_merge_flag, 0) = 1 then asin_merge_reason
+        when coalesce(followed_flag, 0) = 1
+         and not (coalesce(asin_merge_flag, 0) = 0
+                  and coalesce(asin_merge_target_flag, 0) = 1) then '被跟卖点不补货'
+        when coalesce(asin_merge_flag, 0) = 1
+          or coalesce(asin_merge_target_flag, 0) = 1 then asin_merge_reason
         else null
     end as replenish_block_reason,
     coalesce(asin_merge_flag, 0) as asin_merge_flag,
@@ -2808,16 +2843,19 @@ from (
         end as final_inventory_support_days,
         case
             when coalesce(assign.asin_merge_target_flag, 0) = 1
+             and coalesce(assign.asin_merge_flag, 0) = 1
                 then coalesce(purchase.effective_max_cg_box_pcs, max_cg_box_pcs)
             else max_cg_box_pcs
         end as effective_max_cg_box_pcs,
         case
             when coalesce(assign.asin_merge_target_flag, 0) = 1
+             and coalesce(assign.asin_merge_flag, 0) = 1
                 then coalesce(purchase.effective_max_cg_price, max_cg_price)
             else max_cg_price
         end as effective_max_cg_price,
         case
             when coalesce(assign.asin_merge_target_flag, 0) = 1
+             and coalesce(assign.asin_merge_flag, 0) = 1
                 then coalesce(purchase.effective_max_cg_transport_costs, max_cg_transport_costs)
             else max_cg_transport_costs
         end as effective_max_cg_transport_costs,

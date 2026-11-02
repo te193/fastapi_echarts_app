@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', path='css/page_usage.css') }}?v=20261026b">
+{% endblock %}
+{% block content %}
+<header class="hero hero-compact">
+  <div class="hero-copy">
+  <p class="section-kicker">使用情况</p>
+  <h1>页面使用统计</h1>
+  <p>先观察一个月，用访问数据找出低频页面，供后续排查使用。</p>
+  </div>
+</header>
+<section class="panel usage-panel" aria-label="访问统计">
+  <div class="usage-toolbar">
+    <label class="filter-control"><span>统计范围</span>
+      <select id="usageEnvironment"><option value="production">正式访问</option><option value="test">测试访问</option><option value="all">全部访问</option></select>
+    </label>
+    <label class="filter-control"><span>查找页面</span><input id="usageSearch" type="search" placeholder="页面名称或路径"></label>
+    <label class="usage-checkbox"><input id="usageZeroOnly" type="checkbox">仅看近30天零访问</label>
+    <button id="usageRefresh" class="ghost-button" type="button">刷新统计</button>
+  </div>
+  <p id="usageObservation" class="usage-observation" aria-live="polite">正在读取观察周期…</p>
+  <div class="usage-kpis" aria-label="近30天概况">
+    <div><span>统计页面</span><strong id="usagePages">—</strong></div>
+    <div><span>近30天访问量</span><strong id="usageViews">—</strong></div>
+    <div><span>近30天访问浏览器</span><strong id="usageBrowsers">—</strong></div>
+    <div><span>近30天零访问页面</span><strong id="usageZeroPages">—</strong></div>
+  </div>
+  <p id="usageStatus" role="status" aria-live="polite">正在加载…</p>
+  <div class="usage-table-wrap" tabindex="0" aria-label="页面访问明细，可横向滚动">
+    <table class="usage-table">
+      <thead><tr><th scope="col">页面</th><th scope="col">分组</th><th scope="col">近7天访问量</th><th scope="col">近30天访问量</th><th scope="col">近30天浏览器数</th><th scope="col">近30天活跃天数</th><th scope="col">最近访问时间</th></tr></thead>
+      <tbody id="usageRows"></tbody>
+    </table>
+  </div>
+  <p class="usage-footnote">按近30天访问量从少到多排列。日期按北京时间，包含今天；最近访问时间按所选范围显示全部历史中的最后一次访问。浏览器数按匿名编号去重，不等于真实人数；同一浏览器30秒内重复打开同一页面只计一次。测试访问默认排除，页面内筛选和数据自动刷新不增加访问量。</p>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', path='js/page_usage_stats.js') }}?v=20261026a"></script>
+{% endblock %}

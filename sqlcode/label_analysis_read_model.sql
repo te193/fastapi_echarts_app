@@ -327,3 +327,18 @@ create table if not exists etl_datasync_test.dashboard_analysis_scope (
     updated_at datetime(6) not null default current_timestamp(6),
     primary key(batch_id,scope_key)
 ) engine=innodb default charset=utf8mb4 comment='有界商品块的完成记录，来源版本相同才允许断点续跑';
+
+
+-- Versioned lossless representation for new batches. Prior JSON tables remain readable.
+create table if not exists dashboard_analysis_compact_period (
+    batch_id varchar(36) not null,
+    analysis_date date not null,
+    cutoff_date date not null,
+    period_days smallint not null,
+    view_kind varchar(20) not null,
+    phase varchar(12) not null,
+    object_id bigint not null,
+    payload longblob not null,
+    checksum char(64) not null,
+    primary key(batch_id,analysis_date,period_days,view_kind,phase,object_id)
+) engine=InnoDB default charset=utf8mb4;

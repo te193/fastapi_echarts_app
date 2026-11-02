@@ -753,6 +753,9 @@ def run_update(periods: tuple[int, ...] = DEFAULT_PERIODS, **generation_options)
 
 
 def main() -> None:
+    from app.label_update_policy import skip_frozen_label_update
+    if skip_frozen_label_update():
+        return
     parser = argparse.ArgumentParser(description="Generate labels and evidence locally using V47 business sources.")
     parser.add_argument("--periods", default=",".join(f"{days}d" for days in DEFAULT_PERIODS))
     parser.add_argument("--dry-run", action="store_true")

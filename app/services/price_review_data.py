@@ -1585,27 +1585,25 @@ class PriceReviewService:
         return {margin: finance_row.get(f"margin_price_{margin}") for margin in range(0, 36, 5)}
 
     def _load_role_cache_status(self) -> dict[str, Any]:
+        # Preserve the response key for existing clients; role calculations now
+        # use local performance data and have no remote-label cache dependency.
+        result: dict[str, Any] = {"calculation_mode": "local"}
         try:
             with self.connect() as conn, conn.cursor() as cursor:
                 cursor.execute(
                     """
-                    select min(data_date) as earliest_data_date,
-                           max(data_date) as latest_data_date,
-                           max(synced_at) as synced_at,
-                           count(distinct data_date) as cached_dates
-                    from station_sales_role_recent_cache
+                    select min(dt_date) as earliest_data_date,
+                           max(dt_date) as latest_data_date
+                    from dashboard_product_performance_daily
                     """
                 )
                 row = cursor.fetchone() or {}
         except pymysql.MySQLError:
-            return {}
+            return result
 
-        result: dict[str, Any] = {"cached_dates": safe_int(row.get("cached_dates"))}
         for field in ("earliest_data_date", "latest_data_date"):
             value = row.get(field)
             result[field] = value.isoformat() if isinstance(value, (date, datetime)) else safe_str(value)
-        synced_at = row.get("synced_at")
-        result["synced_at"] = synced_at.isoformat(timespec="seconds") if isinstance(synced_at, datetime) else safe_str(synced_at)
         return result
 
     def _latest_role_migration_adjust_date(self, pre_days: int, post_days: int) -> date | None:

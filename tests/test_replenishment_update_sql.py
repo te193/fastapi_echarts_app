@@ -681,7 +681,12 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         self.assertIn("follower.max_asin = origin.asin", sql)
         self.assertIn("follower.seller_sku", sql)
         self.assertIn("case when followed_by_count > 0 then 1 else 0 end as followed_flag", sql)
-        self.assertIn("case when coalesce(followed_flag, 0) = 1 then 0", sql)
+        self.assertIn(
+            "case when coalesce(followed_flag, 0) = 1 "
+            "and not (coalesce(asin_merge_flag, 0) = 0 "
+            "and coalesce(asin_merge_target_flag, 0) = 1) then 0",
+            " ".join(sql.split()),
+        )
         self.assertIn("then '被跟卖点不补货'", sql)
         self.assertIn("replenish_block_reason", sql)
 
@@ -751,7 +756,11 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
             "as eligible_target_link_count",
             normalized_sql,
         )
-        self.assertIn("where coalesce(calc.fllow_flag, 1) = 0", normalized_sql)
+        self.assertIn(
+            "where ( coalesce(calc.fllow_flag, 1) = 0 or ( grp.follow_store_count = 1 "
+            "and coalesce(calc.fllow_flag, 1) = 1 and coalesce(calc.followed_flag, 0) = 1 ) )",
+            normalized_sql,
+        )
         self.assertNotIn("where coalesce(calc.followed_flag, 0) = 0", normalized_sql)
         self.assertIn("case when calc.sales_status <> '停售中' then 0 else 1 end", sql)
         self.assertNotIn("calc.sales_status <> '停售中'\n      and grp.", sql)
@@ -887,7 +896,9 @@ class ReplenishmentUpdateSqlTests(unittest.TestCase):
         final_sql = sql.split("from ( select calc.*", 1)[0]
 
         self.assertGreaterEqual(
-            final_sql.count("when coalesce(followed_flag, 0) = 1 then 0"),
+            final_sql.count("when coalesce(followed_flag, 0) = 1 "
+                            "and not (coalesce(asin_merge_flag, 0) = 0 "
+                            "and coalesce(asin_merge_target_flag, 0) = 1) then 0"),
             3,
         )
         self.assertGreaterEqual(

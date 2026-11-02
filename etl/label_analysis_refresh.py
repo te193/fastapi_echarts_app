@@ -12,7 +12,7 @@ from app.services.dashboard_db import dashboard_service as db
 from app.services.label_analysis_repository import AnalysisRepository,identity,COUNTRY_PARENTS
 from app.services.label_analysis_engine import prepare_rows,aggregate,select_cohorts
 from app.services.label_analysis_metrics import VERSION
-from app.services.label_analysis_materialized import dumps,split_row,encode_history,decode_history
+from app.services.label_analysis_materialized import dumps,split_row,encode_history,decode_history,COMPACT_STORAGE
 from .label_analysis_inputs import PreparedTrafficInputs,PreparedCostInputs
 
 PERIODS=(7,14,30,60,90,180)
@@ -31,8 +31,8 @@ def ensure_schema(database=db):
 
 
 class ResultWriter:
-    def __init__(self,conn,batch,end):
-        self.conn=conn;self.batch=batch;self.end=end;self.ids={};self.archived=set();self.history_mappings={}
+    def __init__(self,conn,batch,end,storage=''):
+        self.storage=storage;self.conn=conn;self.batch=batch;self.end=end;self.ids={};self.archived=set();self.history_mappings={}
 
     def register(self,rows,view):
         if not rows:return
@@ -88,6 +88,20 @@ class ResultWriter:
 
     def period(self,rows,view,period,phase):
         cutoff=self.end if phase=='current' else self.end-timedelta(days=period)
+        if self.storage == COMPACT_STORAGE:
+            records=[]
+            for row in rows:
+                oid=self.ids[view,row['key']]
+                context,domains=split_row(row)
+                context.update(_object_id=oid,_batch_id=self.batch)
+                # Serialize exactly the same public prepared row as the legacy
+                # five-table join; raw calendars remain in the history archive.
+                from app.services.label_analysis_materialized import join_row
+                blob,checksum=encode_history(join_row(context,domains))
+                records.append((self.batch,self.end,cutoff,period,view,phase,oid,blob,checksum))
+            self.insert('dashboard_analysis_compact_period',
+                ['batch_id','analysis_date','cutoff_date','period_days','view_kind','phase','object_id','payload','checksum'],records)
+            return
         common=['batch_id','cutoff_date','period_days','object_id']
         contexts=[];business=[];traffic=[];stockout=[];inventory=[]
         business_fields=['sales_qty','sales_amount','sales_amount_ex_tax','order_gross_profit','settlement_gross_profit','net_amount','positive_profit','loss_amount','ad_spend','ad_sales','ad_orders','ad_clicks','ad_impressions','return_count','return_amount','zero_order_spend']
@@ -234,6 +248,9 @@ def refresh(end=None,periods=PERIODS,views=('business_unit','country'),traffic_r
 
 
 if __name__=='__main__':
+    from app.label_update_policy import skip_frozen_label_update
+    if skip_frozen_label_update():
+        raise SystemExit(0)
     parser=argparse.ArgumentParser(description='Prepare intranet label analysis, without updating label facts')
     parser.add_argument('--date',type=date.fromisoformat)
     parser.add_argument('--biz-date',help='Daily runner business date; this consumer still prepares the latest published label day')

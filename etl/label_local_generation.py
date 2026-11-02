@@ -27,8 +27,9 @@ from etl.label_local_sql import (
     compile_procedure,
 )
 from etl.label_operation_completion import complete_operations
-from etl.label_receiving_status import apply_receiving_status
+from etl.label_receiving_status import apply_receiving_status, validate_extension_id
 from etl.label_local_sources import sync_sources
+from etl.label_calculation_session import calculation_session
 from etl.label_incremental_sources import validate_manifest
 from etl.label_local_contracts import (
     HISTORY_START,
@@ -165,6 +166,7 @@ def run_generation(
             raise RuntimeError(
                 "input batch changed after baseline acceptance; publication blocked"
             )
+        validate_extension_id(conn, input_schema)
         prepare_tables(conn, schema)
         prepared = True
         with conn.cursor() as cursor:
@@ -247,19 +249,31 @@ def run_generation(
                 "business_date": biz_date,
             }
         )
+        restore_started = monotonic()
         restore_work(conn, schema, restored_dates)
+        progress({"stage": "work_restore_complete", "phase": "before_calculation",
+                  "seconds": round(monotonic() - restore_started, 3)})
         last_summary = {}
         for day in dates:
             day_start = monotonic()
             progress({"stage": "calculate_start", "date": day})
-            with conn.cursor() as cursor:
-                cursor.execute(f"call {table(schema,PROCEDURE_NAME)}(%s)", (day,))
-                while cursor.nextset():
-                    pass
-            complete_operations(conn, schema, day, input_schema=input_schema)
-            apply_receiving_status(conn, schema, day, input_schema=input_schema)
+            with calculation_session(conn) as limits:
+                progress({"stage": "calculation_resources", "date": day, **limits})
+                with conn.cursor() as cursor:
+                    cursor.execute(f"call {table(schema,PROCEDURE_NAME)}(%s)", (day,))
+                    while cursor.nextset():
+                        pass
+            progress({"stage": "calculate_step_complete", "date": day, "step": "v47_rules",
+                      "seconds": round(monotonic() - day_start, 3)})
+            completions = [("operations", complete_operations), ("receiving", apply_receiving_status)]
             if complete_lifecycle:
-                complete_day(conn, schema, day, input_schema=input_schema)
+                completions.append(("lifecycle", complete_day))
+            for step, calculate in completions:
+                step_started = monotonic()
+                calculate(conn, schema, day, input_schema=input_schema)
+                progress({"stage": "calculate_step_complete", "date": day, "step": step,
+                          "seconds": round(monotonic() - step_started, 3)})
+            step_started = monotonic()
             last_summary = validate_day(
                 conn,
                 schema,
@@ -267,6 +281,9 @@ def run_generation(
                 input_schema=input_schema,
                 complete_lifecycle=complete_lifecycle,
             )
+            progress({"stage": "calculate_step_complete", "date": day, "step": "validation",
+                      "seconds": round(monotonic() - step_started, 3)})
+            step_started = monotonic()
             archive_day(
                 conn,
                 schema,
@@ -277,6 +294,8 @@ def run_generation(
                 last_summary,
                 rule_version=rule_version,
             )
+            progress({"stage": "calculate_step_complete", "date": day, "step": "archive",
+                      "seconds": round(monotonic() - step_started, 3)})
             progress(
                 {
                     "stage": "calculate_complete",
@@ -322,7 +341,10 @@ def run_generation(
                 raise RuntimeError(
                     "publication requires two consecutive locally generated dates"
                 )
+            restore_started = monotonic()
             restore_work(conn, schema, published_dates)
+            progress({"stage": "work_restore_complete", "phase": "before_publication",
+                      "seconds": round(monotonic() - restore_started, 3)})
             summary.update(
                 publish_days(
                     conn,
@@ -369,6 +391,9 @@ def run_generation(
 
 
 def main() -> None:
+    from app.label_update_policy import skip_frozen_label_update
+    if skip_frozen_label_update():
+        return
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--date", type=date.fromisoformat)
     parser.add_argument("--bootstrap-start", type=date.fromisoformat)

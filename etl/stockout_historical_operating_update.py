@@ -551,6 +551,9 @@ def resolve_target_date(data_date_value: str, biz_date_value: str, latest_label_
 
 
 def main() -> None:
+    from app.label_update_policy import skip_frozen_label_update
+    if skip_frozen_label_update():
+        return
     parser = argparse.ArgumentParser(description="Update current-stockout historical operating snapshots.")
     parser.add_argument("--data-date", help="Snapshot date, default: latest common source date.")
     parser.add_argument("--biz-date", help="Daily runner business date; used when --data-date is absent.")

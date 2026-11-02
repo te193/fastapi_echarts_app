@@ -105,80 +105,15 @@ def test_station_role_period_pairs_cover_all_independent_choices_without_28_days
     assert all(pre in {3, 7, 14, 30, 90} and post in {3, 7, 14, 30, 90} for pre, post in pairs)
 
 
-def test_cached_role_sql_only_joins_exact_adjustment_products_and_anchor_dates():
-    sql = " ".join(price_review_update._station_role_cached_roles_sql("etl_datasync_test").split())
-
-    assert "station_sales_role_recent_cache" in sql
-    assert "c.country = a.country" in sql
-    assert "c.station_store = coalesce(a.seller_name_new, substring_index(a.store, '-', 1))" in sql
-    assert "c.msku = a.msku" in sql
-    assert "c.data_date = a.adjust_date" in sql
-    assert "c.data_date = date_add(a.adjust_date, interval %(post_days)s day)" in sql
-
-
-def test_all_cached_roles_are_loaded_in_one_query_with_each_cache_period_as_anchor():
-    sql = " ".join(price_review_update._station_role_all_cached_roles_sql("etl_datasync_test").split())
-
-    assert sql.count("station_sales_role_recent_cache") == 2
-    assert "c.data_date = a.adjust_date" in sql
-    assert "c.data_date = date_add(a.adjust_date, interval c.period_days day)" in sql
-    assert "%(pre_days)s" not in sql
-    assert "%(post_days)s" not in sql
-
-
-def test_complete_solidified_rows_only_refresh_while_remote_source_is_in_recent_cache():
-    recent_dates = {date(2026, 8, 15), date(2026, 8, 16)}
-
-    assert not price_review_update._should_refresh_station_role_tracking(
-        {
-            "data_status": "complete",
-            "pre_role_source": "local_recomputed",
-            "post_role_source": "local_recomputed",
-            "pre_source_data_date": date(2026, 8, 9),
-            "post_source_data_date": date(2026, 8, 12),
-        },
-        recent_dates,
-    )
-    assert price_review_update._should_refresh_station_role_tracking(
-        {
-            "data_status": "complete",
-            "pre_role_source": "remote_dws",
-            "post_role_source": "local_recomputed",
-            "pre_source_data_date": date(2026, 8, 16),
-            "post_source_data_date": date(2026, 8, 19),
-        },
-        recent_dates,
-        pre_days=7,
-        post_days=7,
-    )
-    assert not price_review_update._should_refresh_station_role_tracking(
-        {
-            "data_status": "complete",
-            "pre_role_source": "local_recomputed",
-            "post_role_source": "local_recomputed",
-            "pre_source_data_date": date(2026, 8, 16),
-            "post_source_data_date": date(2026, 8, 16),
-        },
-        recent_dates,
-        pre_days=3,
-        post_days=3,
-    )
-    assert price_review_update._should_refresh_station_role_tracking(
-        {
-            "data_status": "complete",
-            "pre_role_source": "local_recomputed",
-            "post_role_source": "local_recomputed",
-            "pre_source_data_date": date(2026, 8, 16),
-            "post_source_data_date": date(2026, 8, 19),
-        },
-        recent_dates,
-        pre_days=7,
-        post_days=7,
-    )
-    assert price_review_update._should_refresh_station_role_tracking(
-        {"data_status": "pending"},
-        recent_dates,
-    )
+def test_complete_local_results_remain_solidified():
+    assert not price_review_update._should_refresh_station_role_tracking({
+        "adjust_date": date(2026, 8, 10),
+        "pre_period_end": date(2026, 8, 10),
+        "data_status": "complete",
+        "pre_role_source": "local_recomputed",
+        "post_role_source": "local_recomputed",
+    })
+    assert price_review_update._should_refresh_station_role_tracking({"data_status": "pending"})
 
 
 def test_existing_rows_with_old_pre_window_are_refreshed_for_adjustment_day_migration():
@@ -192,9 +127,6 @@ def test_existing_rows_with_old_pre_window_are_refreshed_for_adjustment_day_migr
             "pre_source_data_date": date(2026, 8, 9),
             "post_source_data_date": date(2026, 8, 17),
         },
-        set(),
-        pre_days=7,
-        post_days=7,
     )
 
 
@@ -235,7 +167,7 @@ class RecordingConnection:
         self.commits += 1
 
 
-def test_price_review_source_load_refreshes_recent_station_role_cache(monkeypatch):
+def test_price_review_source_load_does_not_read_remote_station_role_cache(monkeypatch):
     target = RecordingConnection()
     source = RecordingConnection()
     sync_calls = []
@@ -258,7 +190,89 @@ def test_price_review_source_load_refreshes_recent_station_role_cache(monkeypatc
         batch_size=1000,
     )
 
-    assert sync_calls == [((source, target, "etl_datasync_test"), {"batch_size": 1000})]
+    assert sync_calls == []
+
+
+def test_complete_remote_role_is_recomputed_even_when_no_longer_in_recent_cache():
+    assert price_review_update._should_refresh_station_role_tracking(
+        {
+            "adjust_date": date(2026, 8, 10),
+            "pre_period_end": date(2026, 8, 10),
+            "data_status": "complete",
+            "pre_role_source": "local_recomputed",
+            "post_role_source": "remote_dws",
+            "post_source_data_date": date(2026, 8, 17),
+        },
+    )
+
+
+def test_tracking_step_never_runs_remote_label_drift_check(monkeypatch):
+    def reject_remote(*args, **kwargs):
+        raise AssertionError("price review must not read remote labels")
+
+    class RemoteConnection:
+        cursor = reject_remote
+
+    target = RecordingConnection()
+    drift_calls = []
+    monkeypatch.setattr(price_review_update, "execute_price_review_tracking", lambda *args: 25)
+    monkeypatch.setattr(
+        price_review_update,
+        "run_station_sales_role_drift_check",
+        lambda *args, **kwargs: drift_calls.append(True) or reject_remote(),
+        raising=False,
+    )
+    logged = []
+    price_review_update.execute_price_review_step(
+        target, RemoteConnection(), "etl_datasync_test",
+        price_review_update.PriceReviewStep("price_review_tracking"),
+        {"biz_date": date(2026, 10, 19)}, 1000,
+        lambda *args: logged.append(args),
+    )
+    assert not drift_calls
+    assert logged[0][3:5] == ("success", 25)
+
+
+def test_station_role_tracking_uses_only_local_metrics_and_migrates_old_remote_results(monkeypatch):
+    day = date(2026, 8, 10)
+    raw = {
+        "adjust_date": day, "country": "德国", "station_store": "StoreA",
+        "store": "StoreA-DE", "msku": "A1",
+        "pre_seen_days_7": 7, "post_seen_days_7": 7,
+        "pre_sales_qty_7": 7, "post_sales_qty_7": 28,
+        "pre_sales_amount_7": 70, "post_sales_amount_7": 280,
+        "pre_order_profit_7": 7, "post_order_profit_7": 56,
+        "pre_small_rank_7": 120, "post_small_rank_7": 40,
+    }
+
+    class LocalCursor(RecordingCursor):
+        def execute(self, sql, params=None):
+            assert "station_sales_role_recent_cache" not in sql
+            super().execute(sql, params)
+            if "left join" in sql:
+                self.result = [raw]
+            else:
+                self.result = [{
+                    "adjust_date": day, "pre_period_days": 7, "post_period_days": 7,
+                    "country": "德国", "station_store": "StoreA", "msku": "A1",
+                    "data_status": "complete", "pre_period_end": day,
+                    "pre_role_source": "local_recomputed", "post_role_source": "remote_dws",
+                }]
+
+    target = RecordingConnection()
+    target.cursor_instance = LocalCursor()
+    monkeypatch.setattr(price_review_update, "_load_station_role_finance", lambda *args: {})
+    monkeypatch.setattr(price_review_update, "_station_role_period_pairs", lambda: ((7, 7),))
+    affected = price_review_update._execute_station_role_tracking(
+        target, "etl_datasync_test", day, day, date(2026, 10, 19),
+    )
+    assert affected == 1
+    row = target.cursor_instance.executemany_calls[0][1][0]
+    assert row["pre_role_source"] == row["post_role_source"] == "local_recomputed"
+    assert row["role_before_code"] == "dog"
+    assert row["role_after_code"] == "star"
+    assert row["post_daily_sales"] == 4
+    assert row["data_status"] == "complete"
 
 
 def _source_fingerprint(
@@ -304,6 +318,7 @@ def _prepare_incremental_source_load(monkeypatch, source_fingerprints, local_fin
         price_review_update,
         "sync_recent_station_role_cache",
         lambda *args, **kwargs: CacheSyncResult((), 0, "batch"),
+        raising=False,
     )
 
 

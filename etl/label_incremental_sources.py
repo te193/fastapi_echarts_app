@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import hashlib
 from itertools import groupby
 import json
-from time import sleep
+from time import monotonic, sleep
 
 from pymysql.err import OperationalError
 
@@ -74,6 +75,22 @@ def read_fingerprints(conn, spec, names, select_sql, params=()) -> dict:
         }
 
 
+def read_fingerprint_pair(source, target, spec, names, select_sql, params, live):
+    def timed_read(conn, sql, bound=()):
+        started = monotonic()
+        result = read_fingerprints(conn, spec, names, sql, bound)
+        return result, monotonic() - started
+
+    # One reader per connection; the remote snapshot remains open throughout.
+    # The context also joins a remote reader if the local scan fails, so the
+    # caller can safely roll back/reconnect without racing an active cursor.
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix="label-fingerprint") as pool:
+        remote_read = pool.submit(timed_read, source, select_sql, params)
+        local, local_seconds = timed_read(target, f"select * from {live}")
+        remote, remote_seconds = remote_read.result()
+    return remote, local, remote_seconds, local_seconds
+
+
 def changed_partitions(previous: dict, current: dict) -> tuple[str, ...]:
     return tuple(
         key
@@ -82,15 +99,59 @@ def changed_partitions(previous: dict, current: dict) -> tuple[str, ...]:
     )
 
 
-def delta_select_sql(spec, names, keys, *, raw_fba_date):
+def partition_filter(spec, keys, columns=()):
+    """Use index ranges only where metadata proves the partition semantics.
+
+    Text dates may contain non-ISO values, and NULL/zero dates still need the
+    original MySQL expression. Keep fingerprint identities unchanged.
+    """
+    column = DATE_COLUMNS.get(spec.local_name)
+    if spec.local_name == "dashboard_label_source_orders":
+        column = "id"
+    kind = next(
+        (c["column_type"].lower().split("(")[0].split()[0]
+         for c in columns if c["column_name"] == column), ""
+    )
+    temporal = kind in {"date", "datetime", "timestamp"}
+    integral = column == "id" and kind in {
+        "tinyint", "smallint", "mediumint", "int", "bigint",
+    }
+    clauses, params, fallback = [], [], []
+    for key in keys:
+        try:
+            if temporal:
+                start = date.fromisoformat(key)
+                end = start + timedelta(days=1)
+                if key != start.isoformat():
+                    raise ValueError("noncanonical date")
+            elif integral:
+                bucket = int(key)
+                if key != str(bucket):
+                    raise ValueError("noncanonical bucket")
+                start, end = bucket * 50000, (bucket + 1) * 50000
+            else:
+                fallback.append(key)
+                continue
+        except (ValueError, OverflowError):
+            fallback.append(key)
+            continue
+        clauses.append(f"({quote(column)} >= %s and {quote(column)} < %s)")
+        params.extend((start, end))
+    if fallback:
+        placeholders = ",".join("%s" for _ in fallback)
+        clauses.append(f"{partition_expression(spec.local_name)} in ({placeholders})")
+        params.extend(fallback)
+    return "(" + " or ".join(clauses) + ")" if clauses else "0=1", tuple(params)
+
+
+def delta_select_sql(spec, names, keys, *, raw_fba_date, columns=()):
     sql, params = source_select_sql(spec, names, raw_fba_date=raw_fba_date)
     if not params:
         sql = sql.replace("%", "%%")
-    placeholders = ",".join("%s" for _ in keys)
+    predicate, partition_params = partition_filter(spec, keys, columns)
     return (
-        f"select * from ({sql}) projected where "
-        f"{partition_expression(spec.local_name)} in ({placeholders})",
-        (*params, *keys),
+        f"select * from ({sql}) projected where {predicate}",
+        (*params, *partition_params),
     )
 
 
@@ -234,7 +295,9 @@ def stage_delta(source, target, schema, spec, columns, keys, remote, raw_date, p
     target.commit()
     count = 0
     if any(key in remote for key in keys):
-        sql, params = delta_select_sql(spec, names, keys, raw_fba_date=raw_date)
+        sql, params = delta_select_sql(
+            spec, names, keys, raw_fba_date=raw_date, columns=columns
+        )
         insert = (
             f"insert into {stage} ({','.join(quote(n) for n in names)}) "
             f"values ({','.join('%s' for _ in names)})"
@@ -265,12 +328,11 @@ def publish_incremental(target, schema, previous, result, replacements) -> None:
             current = json.loads(cursor.fetchone()["manifest_json"])
             if current.get("input_hash") != previous["input_hash"]:
                 raise RuntimeError("input batch changed during incremental sync")
-            for spec, names, keys, stage in replacements:
+            for spec, names, keys, stage, columns in replacements:
                 live = f"{quote(schema)}.{quote(spec.local_name)}"
-                placeholders = ",".join("%s" for _ in keys)
+                predicate, params = partition_filter(spec, keys, columns)
                 cursor.execute(
-                    f"delete from {live} where "
-                    f"{partition_expression(spec.local_name)} in ({placeholders})", keys,
+                    f"delete from {live} where {predicate}", params,
                 )
                 fields = ",".join(quote(n) for n in names)
                 cursor.execute(f"insert into {live} ({fields}) select {fields} from {stage}")
@@ -295,7 +357,8 @@ def publish_incremental(target, schema, previous, result, replacements) -> None:
         raise
 
 
-def stage_source(source, target, schema, spec, old, raw_date, progress):
+def stage_source(source, target, schema, spec, old, raw_date, progress, *, allow_shared=True):
+    started = monotonic()
     metadata, indexes = read_metadata(source, spec)
     if spec.local_name == "dashboard_label_source_fba":
         columns, indexes = fba_columns(metadata), fba_indexes()
@@ -304,12 +367,26 @@ def stage_source(source, target, schema, spec, old, raw_date, progress):
     names = [row["column_name"] for row in columns]
     validate_source_contract(spec, old, names)
     validate_local_table(target, schema, spec, columns, indexes, old)
+    if spec.local_name == "dashboard_label_source_performance":
+        from etl.shared_product_inputs import run_id, can_reuse, read_shared_item
+        if run_id() and allow_shared:
+            current = read_shared_item(target, schema)
+            if not can_reuse(old) or current['sha256'] != old['sha256']:
+                raise RuntimeError("shared product input changed before label consumption")
+            return old, None, 0, False, {
+                "stage": "source_shared_reused", "source": spec.reference,
+                "local_name": spec.local_name, "rows": old['rows'],
+                "transferred_rows": 0, "seconds": round(monotonic() - started, 3),
+            }
     progress({
         "stage": "source_partition_check", "source": spec.reference,
         "local_name": spec.local_name,
     })
     sql, params = source_select_sql(spec, names, raw_fba_date=raw_date)
-    remote = read_fingerprints(source, spec, names, sql, params)
+    live = f"{quote(schema)}.{quote(spec.local_name)}"
+    remote, local, remote_seconds, local_seconds = read_fingerprint_pair(
+        source, target, spec, names, sql, params, live
+    )
     total = sum(p["rows"] for p in remote.values())
     validate_source_count(spec.local_name, total)
     adopted = old.get("fingerprint_version") != FINGERPRINT_VERSION
@@ -318,8 +395,6 @@ def stage_source(source, target, schema, spec, old, raw_date, progress):
             raise RuntimeError("partition contract changed; use explicit full sync")
     else:
         progress({"stage": "source_adopt_local", "local_name": spec.local_name})
-    live = f"{quote(schema)}.{quote(spec.local_name)}"
-    local = read_fingerprints(target, spec, names, f"select * from {live}")
     keys = changed_partitions(local, remote)
     progress({
         "stage": "source_partition_plan", "local_name": spec.local_name,
@@ -331,7 +406,7 @@ def stage_source(source, target, schema, spec, old, raw_date, progress):
         stage, count = stage_delta(
             source, target, schema, spec, columns, keys, remote, raw_date, progress
         )
-        replacement = (spec, names, keys, stage)
+        replacement = (spec, names, keys, stage, columns)
     item = {
         **old, "rows": total, "partitions": remote,
         "fingerprint_version": FINGERPRINT_VERSION,
@@ -346,6 +421,9 @@ def stage_source(source, target, schema, spec, old, raw_date, progress):
         "local_name": spec.local_name, "rows": total,
         "transferred_rows": count, "changed_partitions": len(keys),
         "retained_rows": sum(p["rows"] for k, p in local.items() if k not in keys),
+        "seconds": round(monotonic() - started, 3),
+        "remote_fingerprint_seconds": round(remote_seconds, 3),
+        "local_fingerprint_seconds": round(local_seconds, 3),
     }
     return item, replacement, count, adopted, complete
 
@@ -371,8 +449,20 @@ def sync_incremental_sources(source, target, schema, batch_id, previous, *, prog
         # and normalized projections together so they describe the same input.
         for reference, grouped in groupby(source_specs(), key=lambda s: s.reference):
             specs = tuple(grouped)
+            reconnect_source = False
             for attempt in range(1, 4):
                 try:
+                    if reconnect_source:
+                        # Reconnect only between complete source attempts. The
+                        # lost snapshot and partial delta must never be reused.
+                        source.ping(reconnect=True)
+                        source.autocommit(True)
+                        with source.cursor() as cursor:
+                            cursor.execute("set session transaction isolation level repeatable read")
+                            cursor.execute("set session time_zone='+08:00'")
+                        configure_source_keepalive(source)
+                        source.autocommit(False)
+                        reconnect_source = False
                     source.rollback()
                     for spec in specs:
                         if spec.local_name == "dashboard_label_source_raw_fba":
@@ -392,18 +482,27 @@ def sync_incremental_sources(source, target, schema, batch_id, previous, *, prog
                     source.commit()
                     break
                 except OperationalError as exc:
-                    if not exc.args or exc.args[0] != 1412:
+                    code = exc.args[0] if exc.args else None
+                    disconnected = code in {2006, 2013} and not source.open
+                    if code != 1412 and not disconnected:
                         raise
-                    source.rollback()
+                    if disconnected:
+                        # Losing the target session also loses our publication
+                        # lock. Never reconnect it or continue under a new lock.
+                        target.ping(reconnect=False)
+                        reconnect_source = True
+                    with suppress(Exception):
+                        source.rollback()
                     target.rollback()
                     if attempt == 3:
+                        reason = "connection lost" if disconnected else "table definition changed"
                         raise OperationalError(
-                            1412, f"source {reference}: table definition changed "
+                            code, f"source {reference}: {reason} "
                             f"after {attempt} attempts; inputs unchanged",
                         ) from exc
                     progress({
                         "stage": "source_transaction_retry", "source": reference,
-                        "attempt": attempt, "max_attempts": 3, "error_code": 1412,
+                        "attempt": attempt, "max_attempts": 3, "error_code": code,
                         "error": str(exc),
                     })
                     sleep(attempt)
@@ -429,7 +528,7 @@ def sync_incremental_sources(source, target, schema, batch_id, previous, *, prog
             "synced_at": datetime.now(timezone.utc).isoformat(),
         }
         publish_incremental(target, schema, previous, result, replacements)
-        for _, _, _, stage in replacements:
+        for _, _, _, stage, _ in replacements:
             try:
                 with target.cursor() as cursor:
                     cursor.execute(f"drop table {stage}")

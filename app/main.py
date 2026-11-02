@@ -245,8 +245,12 @@ app = FastAPI(title="产品分层看板", version="1.0.0", lifespan=lifespan)
 
 from .label_analysis_routes import router as label_analysis_router
 app.include_router(label_analysis_router)
+from .page_usage_routes import router as page_usage_router
+app.include_router(page_usage_router)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+from . import label_update_policy
+templates.env.globals['label_update_policy'] = label_update_policy
 
 
 class AdjustmentDayNotePayload(BaseModel):
@@ -1038,6 +1042,8 @@ def api_label_hub_meta() -> dict:
 def api_label_hub_refresh() -> dict:
     try:
         return label_hub_service.force_source_refresh()
+    except label_update_policy.LabelUpdatesFrozenError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except LabelHubRefreshBusyError as exc:
         raise HTTPException(status_code=409, detail="标签数据正在刷新，请稍后") from exc
     except Exception as exc:

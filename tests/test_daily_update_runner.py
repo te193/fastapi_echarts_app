@@ -4,8 +4,11 @@ from datetime import datetime
 import os
 from pathlib import Path
 import sys
+import pytest
 
 from etl import daily_update_runner as runner
+
+
 
 
 EXPECTED_MODULES = [
@@ -17,10 +20,7 @@ EXPECTED_MODULES = [
     "etl.sales_role_snapshot_update",
     "etl.return_goods_update",
     "etl.daily_pricing_update",
-    "etl.label_rule_evidence_snapshot_update",
-    "etl.stockout_historical_operating_update",
     "etl.return_goods_strategy_update",
-    "etl.label_analysis_refresh",
 ]
 
 
@@ -95,9 +95,14 @@ def test_success_runs_every_step_with_current_python_and_sends_success(tmp_path)
     assert result.exit_code == 0
     assert [command[2] for command in commands] == EXPECTED_MODULES
     assert all(command[:2] == (sys.executable, "-m") for command in commands)
-    assert all(command[3:5] == ("--biz-date", "2026-08-03")
-               for command in commands if command[2] not in (
-                   "etl.return_goods_strategy_update", "etl.label_analysis_refresh"))
+    args_by_module = {command[2]: command[3:] for command in commands}
+    for module in ('etl.dashboard_source_preflight', 'etl.dashboard_daily_update',
+                   'etl.replenishment_update', 'etl.product_performance_history_sync',
+                   'etl.daily_pricing_update'):
+        assert args_by_module[module][:2] == ('--biz-date', '2026-08-03')
+    for module in ('etl.sales_role_snapshot_update', 'etl.replenishment_tracking_summary_update',
+                   'etl.return_goods_update'):
+        assert args_by_module[module] == ()
     assert next(command for command in commands if command[2] == "etl.return_goods_strategy_update")[3:] == (
         "--snapshot-date", "2026-08-03")
     assert commands[1][5:7] == ("--steps", runner.EARLY_DASHBOARD_STEPS)
@@ -156,7 +161,7 @@ def test_new_consumers_do_not_treat_source_snapshot_day_as_business_day(tmp_path
         step_executor=_fake_executor(commands=commands),
         emit=lambda message: None,
     )
-    for module in ("etl.return_goods_strategy_update", "etl.label_analysis_refresh"):
+    for module in ("etl.return_goods_strategy_update",):
         command = next(c for c in commands if c[2] == module)
         assert command[3:] == ("--dry-run",)
 
@@ -177,31 +182,6 @@ def test_return_strategy_failure_stops_analysis_and_final_success(tmp_path):
     ]
 
 
-def test_label_failure_preserves_replenishment_notice_but_stops_dependent_step_and_all_success(tmp_path):
-    commands = []
-    notifications = []
-
-    result = runner.run_daily_update(
-        project_root=tmp_path,
-        step_executor=_fake_executor(
-            {"etl.label_rule_evidence_snapshot_update": 3},
-            commands,
-        ),
-        notifier=lambda request: notifications.append(request),
-        now=lambda: datetime(2026, 8, 4, 9, 0, 0),
-        monotonic=_incrementing_clock(),
-        emit=lambda message: None,
-    )
-
-    assert result.exit_code == 3
-    assert [command[2] for command in commands] == EXPECTED_MODULES[
-        : EXPECTED_MODULES.index("etl.label_rule_evidence_snapshot_update") + 1
-    ]
-    assert [(item.status, item.stage) for item in notifications] == [
-        ("success", "replenishment"),
-        ("failed", "label_evidence"),
-    ]
-    assert result.step_results[-1].status == "failed"
 
 
 def test_dry_run_passes_argument_and_skips_all_notifications(tmp_path):
@@ -234,7 +214,7 @@ def test_replenishment_notice_is_sent_before_tracking_and_slow_analyses(tmp_path
     )
     assert observed == [
         ("replenishment", "etl.replenishment_update"),
-        ("all", "etl.label_analysis_refresh"),
+        ("all", "etl.return_goods_strategy_update"),
     ]
 
 
@@ -304,8 +284,6 @@ def test_notification_command_contains_all_daily_log_paths(tmp_path):
         "--dashboard-stderr",
         "--sales-role-stdout",
         "--sales-role-stderr",
-        "--label-evidence-stdout",
-        "--label-evidence-stderr",
         "--replenishment-stdout",
         "--replenishment-stderr",
         "--tracking-stdout",
@@ -314,8 +292,6 @@ def test_notification_command_contains_all_daily_log_paths(tmp_path):
         "--return-goods-stderr",
         "--return-strategy-stdout",
         "--return-strategy-stderr",
-        "--label-analysis-stdout",
-        "--label-analysis-stderr",
     ):
         assert option in command
     assert "etl_replenishment_tracking_summary_run_20260804_090000.err.log" in command_text

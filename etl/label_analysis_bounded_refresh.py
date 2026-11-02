@@ -6,7 +6,7 @@ import gc,hashlib,json,os,subprocess,sys,time,uuid
 import pymysql
 from app.services.dashboard_db import dashboard_service as db
 from app.services.label_analysis_repository import AnalysisRepository
-from app.services.label_analysis_materialized import MaterializedAnalysisRepository,dumps,unpack,split_row,join_row
+from app.services.label_analysis_materialized import MaterializedAnalysisRepository,dumps,unpack,split_row,join_row,COMPACT_STORAGE
 from app.services.label_analysis_engine import prepare_rows,aggregate
 from app.services.label_analysis_metrics import VERSION
 from .label_analysis_inputs import PreparedTrafficInputs,PreparedCostInputs
@@ -18,7 +18,7 @@ def code_hash():
     paths=['etl/label_analysis_bounded_refresh.py','etl/label_analysis_refresh.py','etl/label_analysis_inputs.py',
            'app/services/label_analysis_repository.py','app/services/label_analysis_engine.py','app/services/label_analysis_metrics.py',
            'app/services/label_analysis_materialized.py','app/services/label_analysis_inventory.py','app/services/label_analysis_traffic.py',
-           'app/services/label_analysis_role_history.py','etl/label_analysis_role_history.py','sqlcode/label_analysis_role_history.sql']
+           'app/services/label_analysis_role_history.py','etl/label_analysis_role_history.py','sqlcode/label_analysis_role_history.sql','etl/shared_product_inputs.py','etl/daily_update_guard.py','sqlcode/label_analysis_read_model.sql']
     digest=hashlib.sha256()
     for path in paths:digest.update(path.encode());digest.update((ROOT/path).read_bytes())
     return digest.hexdigest()
@@ -45,7 +45,7 @@ def worker(spec):
     if dumps(repository.revision(end))!=dumps(spec['source_revision']):raise RuntimeError('分块输入版本已变化')
     results={};counts={};categories=[]
     with db.connect() as conn:
-        writer=ResultWriter(conn,batch,end)
+        writer=ResultWriter(conn,batch,end,storage=spec.get('storage',''))
         for view in ('business_unit','country'):
             for period in sorted(PERIODS,reverse=True):
                 data=repository.load(end,period,view,scope=scope)
@@ -76,6 +76,8 @@ def worker(spec):
         with conn.cursor() as cur:
             cur.execute('update dashboard_analysis_scope set state=%s,result_json=%s,updated_at=current_timestamp(6) where batch_id=%s and scope_key=%s',
                         ('ready',dumps(report),batch,key))
+        from etl.daily_update_guard import assert_daily_lock
+        assert_daily_lock(conn)
         conn.commit()
     return report
 
@@ -122,7 +124,7 @@ def summary_worker(spec):
     batch=spec['batch'];end=date.fromisoformat(spec['date']);period=spec['period'];view=spec['view']
     db.source_connect=forbid_source
     with db.connect() as conn,conn.cursor(pymysql.cursors.SSDictCursor) as cur:
-        rows=MaterializedAnalysisRepository._rows(cur,batch,end,period,view,'current')
+        rows=MaterializedAnalysisRepository._rows(cur,batch,end,period,view,'current',storage=spec.get('storage',''))
     if len(rows)!=spec['count']:raise RuntimeError('商品周期行数不完整')
     with db.connect() as conn:
         with conn.cursor() as cur:
@@ -175,19 +177,19 @@ def refresh_bounded(end=None,periods=PERIODS,views=('business_unit','country'),t
             repository=prepared_repository(end);revision=repository.revision(end)
             scopes=repository.scopes(end,chunk_size);signature=code_hash()
             if not scopes:raise RuntimeError('没有可准备商品')
-            manifest={'source_revision':revision,'code_hash':signature,'scopes':scopes,'workers':workers,'chunk_size':chunk_size,'date':end}
+            manifest={'source_revision':revision,'code_hash':signature,'scopes':scopes,'workers':workers,'chunk_size':chunk_size,'date':end,'storage':COMPACT_STORAGE}
             with db.connect() as conn,conn.cursor() as cur:
                 if resume:
                     cur.execute('select * from dashboard_analysis_batch where batch_id=%s',(batch,));old=cur.fetchone()
                     frozen=unpack(old['source_manifest']) if old else {}
                     if not old or old['state'] not in ('building','failed') or old['formula_version']!=VERSION:
                         raise ValueError('该批次不能续跑')
-                    if any(canonical(frozen.get(key))!=canonical(manifest[key]) for key in ('source_revision','code_hash','scopes','date')):
+                    if any(canonical(frozen.get(key))!=canonical(manifest[key]) for key in ('source_revision','code_hash','scopes','date','storage')):
                         raise ValueError('代码或来源已变化，不能混合旧块续跑')
                     cur.execute('update dashboard_analysis_batch set state=%s where batch_id=%s',('building',batch))
                 else:
                     cur.execute('insert into dashboard_analysis_batch(batch_id,formula_version,schema_version,source_manifest,available_windows,label_dictionary) values(%s,%s,%s,%s,%s,%s)',
-                        (batch,VERSION,'analysis-read-model-v2-bounded',dumps(manifest),'[]','[]'))
+                        (batch,VERSION,COMPACT_STORAGE,dumps(manifest),'[]','[]'))
                     cur.executemany('insert into dashboard_analysis_scope(batch_id,scope_key,scope_json) values(%s,%s,%s)',
                         [(batch,scoped_key(scope),dumps(scope)) for scope in scopes])
                 cur.execute('select scope_key from dashboard_analysis_scope where batch_id=%s and state=%s',(batch,'ready'))
@@ -200,9 +202,11 @@ def refresh_bounded(end=None,periods=PERIODS,views=('business_unit','country'),t
             with ThreadPoolExecutor(max_workers=workers) as executor:
                 active={}
                 def submit_next():
+                    from etl.daily_update_guard import check_stage_disk
+                    check_stage_disk()
                     scope=next(iterator,None)
                     if scope is None:return
-                    spec={'date':end.isoformat(),'batch':batch,'scope':scope,'source_revision':revision,'code_hash':signature}
+                    spec={'date':end.isoformat(),'batch':batch,'scope':scope,'source_revision':revision,'code_hash':signature,'storage':COMPACT_STORAGE}
                     active[executor.submit(launch_with_retry,spec,folder,memory_mb)]=scope
                 for _ in range(workers):submit_next()
                 while active:
@@ -225,7 +229,7 @@ def refresh_bounded(end=None,periods=PERIODS,views=('business_unit','country'),t
             # never by summing scope medians or partial shared-pool totals.
             for view in views:
                 for period in periods:
-                    spec={'kind':'summary','date':end.isoformat(),'batch':batch,'view':view,'period':period,'count':counts[f'{view}:{period}'],'code_hash':signature}
+                    spec={'kind':'summary','date':end.isoformat(),'batch':batch,'view':view,'period':period,'count':counts[f'{view}:{period}'],'code_hash':signature,'storage':COMPACT_STORAGE}
                     _,rss,_=launch_scope(spec,folder,memory_mb=1024,timeout=300)
                     peak=max(peak,rss)
                     log({'stage':'summary_ready','view':view,'period':period})
@@ -235,12 +239,14 @@ def refresh_bounded(end=None,periods=PERIODS,views=('business_unit','country'),t
                 cur.execute('select max(data_date) as d from dashboard_label_fact_snapshot')
                 if cur.fetchone()['d']!=end:raise RuntimeError('标签最新日期已变化')
                 expected=sum(counts.values())*2
-                for table in ['object_period','business_period','traffic_period','stockout_period','inventory_object_period']:
+                for table in ['compact_period']:
                     cur.execute('select count(*) as n from dashboard_analysis_'+table+' where batch_id=%s',(batch,))
                     if cur.fetchone()['n']!=expected:raise RuntimeError('分域结果不完整：'+table)
                 manifest.update(counts=counts,datasets=datasets,prepared_seconds=time.monotonic()-started,peak_worker_mb=round(peak/1024**2,1))
                 cur.execute('update dashboard_analysis_batch set state=%s,source_manifest=%s,available_windows=%s,label_dictionary=%s,quality_report=%s,completed_at=current_timestamp(6) where batch_id=%s',
                     ('ready',dumps(manifest),dumps(windows),dumps(categories),dumps({'rows':expected,'reconciliation':'passed','label_date':end,'scopes':len(scopes),'workers':workers}),batch))
+                from etl.daily_update_guard import assert_daily_lock
+                assert_daily_lock(conn)
                 cur.execute('insert into dashboard_analysis_publication(singleton,batch_id) values(1,%s) on duplicate key update batch_id=values(batch_id),published_at=current_timestamp(6)',(batch,));conn.commit()
             log({'stage':'published','batch':batch,'date':end,'seconds':time.monotonic()-started,'counts':counts,'peak_worker_mb':round(peak/1024**2,1)})
             return batch

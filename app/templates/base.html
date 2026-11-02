@@ -9,8 +9,17 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community/styles/ag-theme-quartz.css">
   <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}?v=20260818rolegrid1">
   {% block extra_head %}{% endblock %}
+  {% if label_update_policy.LABEL_UPDATES_FROZEN and page in ['label_hub', 'country_label_hub', 'label_analysis'] %}
+  <style>
+    .label-freeze-notice { position: relative; z-index: 32; margin: 0 0 20px; padding: 16px 20px; border: 1px solid #d9b86c; border-left: 4px solid #b58121; border-radius: 10px; background: #fff8e8; color: #694b15; line-height: 1.65; }
+    .label-freeze-notice strong { display: block; font-size: 17px; }
+    .label-freeze-notice p { margin: 4px 0 0; }
+    .label-hub-refresh-action:disabled { opacity: .6; cursor: not-allowed; }
+  </style>
+  {% endif %}
 </head>
 <body data-page="{{ page }}">
+  <script async src="{{ url_for('static', path='js/page_usage.js') }}?v=20261026b"></script>
   <div class="app-shell">
     <aside class="side-nav">
       <div class="nav-v2">
@@ -123,6 +132,10 @@
           </section>
         </nav>
 
+        <a class="nav-v2-link {% if page == 'page_usage' %}active{% endif %}" href="/page-usage">
+          <span class="nav-v2-icon">访</span>
+          <span><strong>页面使用统计</strong><small>页面访问 / 使用情况</small></span>
+        </a>
         <p class="nav-v2-empty" hidden>没有匹配的页面</p>
         <p class="nav-v2-note">页面较多时可搜索定位</p>
       </div>
@@ -130,6 +143,12 @@
 
     <main class="main-content{% if page in ['label_hub', 'country_label_hub'] %} page-loading{% endif %}"{% if page in ['label_hub', 'country_label_hub'] %} aria-busy="true"{% endif %}>
       <div class="page-shell">
+        {% if label_update_policy.LABEL_UPDATES_FROZEN and page in ['label_hub', 'country_label_hub', 'label_analysis'] %}
+        <aside class="label-freeze-notice" role="status" aria-label="标签数据更新状态">
+          <strong>已冻结 · 停止更新</strong>
+          <p>自 {{ label_update_policy.FROZEN_SINCE }} 起，标签相关数据不再更新。当前保留已发布的历史结果，数据日期以各页面显示为准。</p>
+        </aside>
+        {% endif %}
         {% block content %}{% endblock %}
       </div>
     </main>
@@ -137,10 +156,14 @@
 
   {% block overlay %}{% endblock %}
 
+  {% if page != 'page_usage' %}
   <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/ag-grid-community/dist/ag-grid-community.min.js"></script>
+  {% endif %}
   <script src="{{ url_for('static', path='js/common.js') }}?v=20260818labeltimeout1"></script>
+  {% if page != 'page_usage' %}
   <script src="{{ url_for('static', path='js/ag_grid_helper.js') }}?v=20260604a"></script>
+  {% endif %}
   {% block scripts %}{% endblock %}
 </body>
 </html>

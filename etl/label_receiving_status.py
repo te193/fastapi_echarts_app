@@ -16,20 +16,31 @@ def receiving_classification(shipment_count, has_prior_sellable, first_receiving
 
 
 def validate_extension_id(conn, schema):
+    """Allow upstream adoption of this exact state; reject unrelated ownership."""
     with conn.cursor() as q:
         q.execute(
-            f"select sub_label_id from {table(schema,'dashboard_label_source_dictionary')} where sub_label_id=308"
+            f"select label_id,sub_label_name,status,tagging_method "
+            f"from {table(schema,'dashboard_label_source_dictionary')} where sub_label_id=308"
         )
-        if q.fetchone():
-            raise RuntimeError(
-                "local operating ID 308 is occupied by source dictionary; publication blocked"
-            )
+        rows = q.fetchall()
+    if not rows:
+        return False
+    if (len(rows) == 1 and rows[0]['label_id'] == 3
+            and rows[0]['sub_label_name'] == '入库接收中'
+            and rows[0]['status'] in (None, '', '启用')
+            and rows[0]['tagging_method'] in (None, '', 'auto_sql')):
+        return True
+    raise RuntimeError(
+        "local operating ID 308 is occupied by source dictionary; publication blocked"
+    )
 
 
 def extension_details(conn, schema):
     from etl.label_lifecycle_completion import DETAIL_COLUMNS
 
-    validate_extension_id(conn, schema)
+    if validate_extension_id(conn, schema):
+        # The official source row is already copied during publication.
+        return []
     with conn.cursor() as q:
         q.execute(
             f"select {','.join(DETAIL_COLUMNS)} from {table(schema,'dashboard_label_source_dictionary')} where sub_label_id=304"

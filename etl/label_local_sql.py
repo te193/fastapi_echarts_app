@@ -1,6 +1,6 @@
 """Compile the archived V47 rules for a strictly local MySQL namespace.
 
-Only dependencies, inventory lineage, the advisory lock and index construction change. Rule strings
+Only dependencies, inventory lineage, the advisory lock and physical access paths change. Rule strings
 (including JSON paths and label names) retain their original bytes.
 """
 
@@ -181,6 +181,33 @@ def merge_performance_indexes(sql: str) -> str:
     return sql[:first.start()] + merged + sql[first.end():second.start()] + sql[second.end():]
 
 
+def add_fba_lookup_predicates(sql: str) -> str:
+    """Expose the normalized VARCHAR SKU index while retaining every rule.
+
+    The local FBA contract fixes seller_sku_adj as VARCHAR with the same
+    utf8mb4_0900_ai_ci collation as listing keys. The extra equality is therefore
+    redundant; the original CAST, store normalization and date filters remain.
+    """
+    for name, alias in (("tmp_op_fba_latest_key", "k"), ("tmp_op_fba", "x")):
+        statements = list(re.finditer(r"create temporary table " + name + r"\b[^;]*;", sql))
+        if len(statements) != 1:
+            raise ValueError("V47 FBA lookup layout changed; optimization blocked")
+        statement = statements[0]
+        before = statement.group()
+        predicate = re.compile(
+            r"\band\s+" + alias + r"\.msku\s*=\s*cast\(f\.`seller_sku_adj`\s+as\s+char\)"
+            r"(?=\s+(?:and|where)\b)"
+        )
+        if len(predicate.findall(before)) != 1 or ".`dashboard_label_source_fba` f" not in before:
+            raise ValueError("V47 FBA lookup layout changed; optimization blocked")
+        after = predicate.sub(
+            lambda m: m.group() + f"\n                 and f.`seller_sku_adj` = {alias}.msku collate utf8mb4_0900_ai_ci",
+            before,
+        )
+        sql = sql[:statement.start()] + after + sql[statement.end():]
+    return sql
+
+
 def compile_procedure(
     schema: str,
     *,
@@ -188,6 +215,7 @@ def compile_procedure(
     path: Path = BASELINE_PATH,
     check_hash: bool = True,
     optimize_indexes: bool = True,
+    optimize_calculation: bool = True,
 ) -> str:
     schema = checked_schema(schema)
     input_schema = checked_schema(input_schema or schema)
@@ -235,6 +263,8 @@ def compile_procedure(
     compiled = "".join(result)
     if optimize_indexes:
         compiled = merge_performance_indexes(compiled)
+    if optimize_calculation:
+        compiled = add_fba_lookup_predicates(compiled)
     allowed = {
         (input_schema if ref in SOURCE_TABLES else schema, name)
         for ref, name in TABLE_MAP.items()

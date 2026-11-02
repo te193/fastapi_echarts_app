@@ -9,6 +9,8 @@ from .services.label_analysis_service import AnalysisQuery, StaleAnalysis, label
 
 router=APIRouter()
 templates=Jinja2Templates(directory=str(Path(__file__).parent/'templates'))
+from . import label_update_policy
+templates.env.globals['label_update_policy'] = label_update_policy
 logger=logging.getLogger(__name__)
 
 

@@ -573,6 +573,13 @@
   }
 
   function renderCacheStatus(status) {
+    if (status.calculation_mode === "local") {
+      elements.roleCacheStatusMeta.textContent = "角色来源：本地计算";
+      elements.roleCacheStatusMeta.title = status.latest_data_date
+        ? "按本地产品表现计算，数据截至 " + status.latest_data_date
+        : "等待本地产品表现数据";
+      return;
+    }
     var dates = status.earliest_data_date && status.latest_data_date
       ? status.earliest_data_date + " 至 " + status.latest_data_date
       : "等待同步";

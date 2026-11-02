@@ -1,6 +1,6 @@
 import json
 from datetime import date
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from app import main
 from app.services.price_review_data import PriceReviewService
@@ -13,6 +13,24 @@ class FakeRoleMigrationService:
     def get_role_migration_payload(self, **kwargs):
         self.calls.append(kwargs)
         return {"ok": True, "summary": {"total": 1}}
+
+
+def test_role_source_status_reads_local_performance_instead_of_remote_label_cache():
+    service = PriceReviewService()
+    connection = MagicMock()
+    cursor = connection.__enter__.return_value.cursor.return_value.__enter__.return_value
+    cursor.fetchone.return_value = {
+        "earliest_data_date": date(2026, 1, 1),
+        "latest_data_date": date(2026, 10, 19),
+    }
+    with patch.object(service, "connect", return_value=connection):
+        result = service._load_role_cache_status()
+
+    assert result["calculation_mode"] == "local"
+    assert result["latest_data_date"] == "2026-10-19"
+    queries = " ".join(call.args[0] for call in cursor.execute.call_args_list)
+    assert "dashboard_product_performance_daily" in queries
+    assert "station_sales_role_recent_cache" not in queries
 
 
 class FixtureRoleMigrationService(PriceReviewService):

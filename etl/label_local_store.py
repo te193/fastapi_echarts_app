@@ -144,8 +144,51 @@ def prepare_tables(conn, schema: str) -> None:
     conn.commit()
 
 
+def _work_matches_history(conn, schema: str, dates: list[date]) -> bool:
+    """Verify complete payloads and facts before avoiding a destructive reload."""
+    work = table(schema, WORK_TABLE)
+    history = table(schema, "dashboard_label_local_history")
+    with conn.cursor() as q:
+        q.execute(f"select data_date,count(*) as n from {work} group by data_date")
+        counts = {r["data_date"]: int(r["n"]) for r in q.fetchall()}
+        if set(counts) - set(dates):
+            return False
+        for day in dates:
+            last_id, chunk, total = 0, -1, 0
+            while True:
+                q.execute(
+                    f"select chunk_no,row_count,payload,checksum from {history} "
+                    "where data_date=%s and chunk_no>%s order by chunk_no limit 1",
+                    (day, chunk),
+                )
+                archived = q.fetchone()
+                if not archived:
+                    break
+                records = decode_history_chunk(archived["payload"], archived["checksum"])
+                if len(records) != archived["row_count"]:
+                    raise ValueError("local history row count mismatch")
+                q.execute(
+                    f"select id,{','.join(FACT_COLUMNS)} from {work} "
+                    "where data_date=%s and id>%s order by id limit %s",
+                    (day, last_id, len(records)),
+                )
+                rows = q.fetchall()
+                if not history_rows_match([[r[name] for name in FACT_COLUMNS] for r in rows], records):
+                    return False
+                if rows:
+                    last_id = rows[-1]["id"]
+                chunk = archived["chunk_no"]
+                total += len(records)
+            if total != counts.get(day, 0):
+                return False
+    return True
+
+
 def restore_work(conn, schema: str, dates: list[date]) -> None:
-    """Discard possibly half-committed work, restoring only verified local history."""
+    """Reuse exactly verified work, otherwise restore all requested archives."""
+    if _work_matches_history(conn, schema, dates):
+        conn.commit()
+        return
     work = table(schema, WORK_TABLE)
     history = table(schema, "dashboard_label_local_history")
     placeholders = ",".join(["%s"] * len(FACT_COLUMNS))

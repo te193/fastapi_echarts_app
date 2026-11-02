@@ -74,7 +74,10 @@ class PreparedTrafficInputs:
         return instance
 
     def __init__(self,db,end,max_period=180,refresh_days=30,progress=print):
-        self.db=db;self.schema=db.database;self.original=ProductTrafficRepository(db)
+        self.db=db;self.schema=db.database
+        from etl.shared_product_inputs import run_id, SharedTrafficRepository
+        self.original=SharedTrafficRepository(db) if run_id() else ProductTrafficRepository(db)
+        self.source_connect=self.original.source_connect if run_id() else db.source_connect
         self.source_revision=self.original.revision()
         if self.source_revision==('unavailable',):raise RuntimeError('产品表现来源不可用，未发布新结果')
         start=end-timedelta(days=max_period*2-1)
@@ -93,7 +96,7 @@ class PreparedTrafficInputs:
                 cur.execute('''alter table dashboard_analysis_traffic_input add index
                     idx_analysis_traffic_scope(country_category,store,msku,data_date,country)''')
             cur.execute('select * from dashboard_analysis_input_state where domain=%s',('traffic',));state=cur.fetchone()
-        with db.source_connect() as conn,conn.cursor() as cur:
+        with self.source_connect() as conn,conn.cursor() as cur:
             cur.execute(f'select min(start_date) as first_day from {self.original.schema}.{self.original.table}')
             first=cur.fetchone()['first_day']
         if not first:raise RuntimeError('产品表现来源没有有效日期')
@@ -103,6 +106,13 @@ class PreparedTrafficInputs:
             and str(state['coverage_start'])[:10]==self.coverage_start)
         if not reuse:
             load_start=traffic_sync_start(state,start,end,refresh_days,self.source_revision,self.coverage_start)
+            ranges=[(load_start,end)]
+            if run_id():
+                from etl.shared_product_inputs import shared_traffic_ranges
+                shared_ranges=shared_traffic_ranges(state,start,end,self.source_revision,self.coverage_start,self.original.item)
+                if shared_ranges is not None:
+                    ranges=shared_ranges
+                    load_start=min((a for a,_ in ranges),default=end)
             progress({'stage':'traffic_sync','start':load_start.isoformat(),'end':end.isoformat(),'mode':'incremental' if load_start>start else 'initial'})
             # Invalidate the completeness marker before committing any replacement block.
             # A failed refresh may leave input blocks, but can never publish them as complete.
@@ -110,7 +120,8 @@ class PreparedTrafficInputs:
                 cur.execute('update dashboard_analysis_input_state set source_revision=%s where domain=%s',
                     (dumps(['syncing',*self.source_revision]),'traffic'))
                 conn.commit()
-            for block_start,block_end in date_blocks(load_start,end):
+            blocks=[block for range_start,range_end in ranges for block in date_blocks(range_start,range_end)]
+            for block_start,block_end in blocks:
                 packed=self._fetch(block_start,block_end)
                 self._store_block(block_start,block_end,packed)
                 progress({'stage':'traffic_block','start':block_start.isoformat(),'end':block_end.isoformat(),'objects':len(packed)})
@@ -143,9 +154,10 @@ class PreparedTrafficInputs:
     def _fetch(self,start,end):
         # Aggregate raw records directly by object, without a large intermediate daily GROUP BY.
         columns=','.join(column for _,column in PRODUCT_TRAFFIC_FIELDS.values())
-        with self.db.source_connect(autocommit=False) as conn,conn.cursor() as cur:
-            cur.execute('set transaction isolation level repeatable read')
-            cur.execute('start transaction with consistent snapshot, read only')
+        with self.source_connect(autocommit=False) as conn,conn.cursor() as cur:
+            if not getattr(conn, 'shared_product', False):
+                cur.execute('set transaction isolation level repeatable read')
+                cur.execute('start transaction with consistent snapshot, read only')
             cur.execute(f'''select country_category,country,seller_name_new,seller_sku_adj,
                 compress(cast(json_arrayagg(json_array(dt_date,sessions_total,volume,{columns})) as char character set utf8mb4)) as points_blob from
                 (select start_date as dt_date,country,

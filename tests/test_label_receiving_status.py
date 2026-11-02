@@ -23,8 +23,9 @@ def test_first_wave_receiving_is_separate_from_old_stockout():
     "prior_stock,second_shipment,expected",
     [(False, False, 308), (True, False, 304), (False, True, 304)],
 )
+@pytest.mark.parametrize('source_has_extension', [False, True])
 def test_receiving_classification_database_and_repeat(
-    local_store, prior_stock, second_shipment, expected
+    local_store, prior_stock, second_shipment, expected, source_has_extension
 ):
     from etl.label_operation_completion import complete_operations
     from etl.label_receiving_status import apply_receiving_status
@@ -33,6 +34,11 @@ def test_receiving_classification_database_and_repeat(
     seed(conn, schema)
     with conn.cursor() as q:
         q.execute(f"delete from {table(schema,'dashboard_label_source_dictionary')}")
+        if source_has_extension:
+            q.execute(
+                f"insert into {table(schema,'dashboard_label_source_dictionary')} "
+                "(label_id,sub_label_id,sub_label_name,create_time) values(3,308,'入库接收中',now())"
+            )
         q.execute(
             f"alter table {table(schema,'dashboard_label_source_shipment')} add receiving_time varchar(64)"
         )
@@ -60,14 +66,35 @@ def test_receiving_classification_database_and_repeat(
         assert q.fetchone()["evidence_json"] == '{"original": 1}'
 
 
-def test_source_id_conflict_blocks_before_reclassification(local_store):
+@pytest.mark.parametrize('family,name,status,method', [
+    (3, 'occupied', None, None), (4, '入库接收中', None, None),
+    (3, '入库接收中', '停用', 'auto_sql'), (3, '入库接收中', '启用', 'manual'),
+])
+def test_source_id_conflict_blocks_before_reclassification(local_store, family, name, status, method):
     from etl.label_receiving_status import apply_receiving_status
 
     conn, schema = local_store
     with conn.cursor() as q:
         q.execute(f"delete from {table(schema,'dashboard_label_source_dictionary')}")
         q.execute(
-            f"insert into {table(schema,'dashboard_label_source_dictionary')} (label_id,sub_label_id,sub_label_name,create_time) values(3,308,'occupied',now())"
+            f"insert into {table(schema,'dashboard_label_source_dictionary')} "
+            "(label_id,sub_label_id,sub_label_name,status,tagging_method,create_time) values(%s,308,%s,%s,%s,now())",
+            (family, name, status, method),
         )
     with pytest.raises(RuntimeError, match="occupied"):
         apply_receiving_status(conn, schema, date(2026, 10, 7))
+
+
+def test_official_receiving_dictionary_entry_is_published_once(local_store):
+    from etl.label_receiving_status import extension_details
+    conn, schema = local_store
+    dictionary = table(schema, 'dashboard_label_source_dictionary')
+    with conn.cursor() as q:
+        q.execute(f"insert into {dictionary} (label_id,sub_label_id,sub_label_name,create_time) "
+                  "values(3,304,'断货中',now())")
+    assert [r['sub_label_id'] for r in extension_details(conn, schema)] == [308]
+    with conn.cursor() as q:
+        q.execute(f"insert into {dictionary} "
+                  "(label_id,sub_label_id,sub_label_name,status,tagging_method,create_time) "
+                  "values(3,308,'入库接收中','启用','auto_sql',now())")
+    assert extension_details(conn, schema) == []

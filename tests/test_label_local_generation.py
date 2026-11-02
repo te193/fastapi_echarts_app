@@ -66,6 +66,7 @@ class FakeConnection:
         self.closed = False
         self.calls = []
         self.rows = []
+        self.calculation_limits = (262144, 16777216)
 
     def cursor(self):
         return self
@@ -82,6 +83,11 @@ class FakeConnection:
             self.rows = [{"acquired": 0 if self.locked else 1}]
         elif "distinct date(start_date)" in sql:
             self.rows = [{"d": day} for day in self.available]
+        elif "@@session.sort_buffer_size" in sql:
+            self.rows = [{"sort_bytes": self.calculation_limits[0], "temp_bytes": self.calculation_limits[1]}]
+        elif sql.startswith("set session sort_buffer_size="):
+            self.calculation_limits = tuple(params)
+            self.rows = []
         else:
             self.rows = []
 
@@ -149,6 +155,23 @@ def test_changed_input_batch_blocks_after_baseline_acceptance_before_any_work(
     assert not any(
         "publication" in sql or sql.startswith("call ") for sql in conn.calls
     )
+
+
+def test_receiving_dictionary_conflict_is_checked_before_expensive_generation(monkeypatch):
+    from etl import label_receiving_status
+    conn = FakeConnection()
+    generation = fake_runtime(monkeypatch, conn)
+    def conflict(*args):
+        raise RuntimeError('operating ID is occupied')
+    monkeypatch.setattr(label_receiving_status, 'validate_extension_id', conflict)
+    if hasattr(generation, 'validate_extension_id'):
+        monkeypatch.setattr(generation, 'validate_extension_id', conflict)
+    monkeypatch.setattr(generation, 'prepare_tables',
+                        lambda *args: pytest.fail('conflict must fail before generation DDL'))
+    with pytest.raises(RuntimeError, match='occupied'):
+        generation.run_generation(sync=False, schema='label_test')
+    assert not any(sql.startswith('call ') for sql in conn.calls)
+    assert conn.closed
 
 
 @pytest.mark.parametrize("version", ["dwd_fba_label_projection_20261012", None])

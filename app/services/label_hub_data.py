@@ -730,6 +730,8 @@ class LabelHubDataService:
         ).start()
 
     def force_source_refresh(self) -> dict[str, Any]:
+        from app.label_update_policy import require_label_updates_enabled
+        require_label_updates_enabled()
         if not self._manual_refresh_lock.acquire(blocking=False):
             raise LabelHubRefreshBusyError("label snapshot refresh is already running")
         try:

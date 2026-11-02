@@ -11,10 +11,6 @@ import pytest
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "run_daily_update_task.ps1"
 
 
-def test_label_analysis_prepares_after_inputs_before_daily_success():
-    script=SCRIPT.read_text(encoding='utf-8')
-    assert script.index('-m etl.return_goods_strategy_update')<script.index('-m etl.label_analysis_refresh')<script.index('Send-DashboardDingTalkNotification -Status "success" -Stage "all"')
-    assert 'exit $LabelAnalysisExitCode' in script
 
 
 def test_return_strategy_runs_after_daily_inputs_and_before_success_notification():
@@ -24,14 +20,13 @@ def test_return_strategy_runs_after_daily_inputs_and_before_success_notification
     assert 'exit $ReturnStrategyExitCode' in script
 
 
-def test_daily_update_task_prioritizes_replenishment_and_keeps_label_consumers_after_inputs():
+def test_daily_update_task_prioritizes_replenishment_and_keeps_nine_active_jobs():
     script = SCRIPT.read_text(encoding="utf-8")
 
     assert "-m etl.dashboard_source_preflight" in script
     assert "-m etl.dashboard_daily_update" in script
     assert "-m etl.product_performance_history_sync" in script
     assert "-m etl.sales_role_snapshot_update" in script
-    assert "-m etl.stockout_historical_operating_update" in script
     assert "-m etl.replenishment_update" in script
     assert "-m etl.replenishment_tracking_summary_update" in script
     assert "-m etl.replenishment_tracking_update" not in script
@@ -45,8 +40,6 @@ def test_daily_update_task_prioritizes_replenishment_and_keeps_label_consumers_a
         < script.index("-m etl.sales_role_snapshot_update")
         < script.index("-m etl.return_goods_update")
         < script.index("-m etl.daily_pricing_update")
-        < script.index("-m etl.label_rule_evidence_snapshot_update")
-        < script.index("-m etl.stockout_historical_operating_update")
     )
     assert "Replenishment tracking ETL is temporarily skipped." not in script
 
@@ -60,8 +53,6 @@ def test_daily_update_task_writes_separate_tracking_summary_logs():
     assert "etl_replenishment_run_$RunStamp.err.log" in script
     assert "etl_sales_role_run_$RunStamp.log" in script
     assert "etl_sales_role_run_$RunStamp.err.log" in script
-    assert "etl_stockout_historical_operating_run_$RunStamp.log" in script
-    assert "etl_stockout_historical_operating_run_$RunStamp.err.log" in script
     assert "etl_replenishment_tracking_summary_run_$RunStamp.log" in script
     assert "etl_replenishment_tracking_summary_run_$RunStamp.err.log" in script
     assert "etl_return_goods_run_$RunStamp.log" in script
@@ -76,7 +67,6 @@ def test_daily_update_task_sends_dingtalk_notifications():
     assert 'Send-DashboardDingTalkNotification -Status "failed"' in script
     assert '-Stage "source_preflight"' in script
     assert '-Stage "dashboard"' in script
-    assert '-Stage "stockout_historical_operating"' in script
     assert '-Stage "replenishment"' in script
     assert '-Stage "replenishment_tracking"' in script
     assert '-Stage "return_goods"' in script
@@ -88,8 +78,6 @@ def test_daily_update_task_sends_dingtalk_notifications():
     assert '"--return-goods-stderr", $ReturnGoodsStderrLog' in script
     assert '"--sales-role-stdout", $SalesRoleStdoutLog' in script
     assert '"--sales-role-stderr", $SalesRoleStderrLog' in script
-    assert '"--label-evidence-stdout", $LabelEvidenceStdoutLog' in script
-    assert '"--label-evidence-stderr", $LabelEvidenceStderrLog' in script
 
 
 def test_daily_update_task_keeps_dingtalk_notification_logs():
@@ -122,58 +110,23 @@ def test_daily_update_filters_arguments_for_each_downstream_stage():
 
     assert "function Select-DashboardTaskArguments" in script
     assert "& $PythonExe -m etl.sales_role_snapshot_update @SalesRoleArgs" in script
-    assert "& $PythonExe -m etl.label_rule_evidence_snapshot_update @LabelEvidenceArgs" in script
-    assert "& $PythonExe -m etl.stockout_historical_operating_update @StockoutHistoricalArgs" in script
     assert "& $PythonExe -m etl.replenishment_update @ReplenishmentArgs" in script
     assert "& $PythonExe -m etl.replenishment_tracking_summary_update @ReplenishmentTrackingArgs" in script
     assert "& $PythonExe -m etl.return_goods_update @ReturnGoodsArgs" in script
     assert '-ValueOptions @("--snapshot-date", "--period-end", "--periods")' in script
-    assert '-ValueOptions @("--biz-date", "--data-date")' in script
     assert '-ValueOptions @("--cutoff-date")' in script
 
 
-def test_daily_update_runs_label_evidence_after_return_goods_before_its_consumer():
-    script = SCRIPT.read_text(encoding="utf-8")
-
-    assert "-m etl.label_rule_evidence_snapshot_update" in script
-    assert (
-        script.index("-m etl.return_goods_update")
-        < script.index("-m etl.label_rule_evidence_snapshot_update")
-        < script.index("-m etl.stockout_historical_operating_update")
-    )
 
 
-def test_daily_update_uses_dedicated_label_evidence_logs_and_stage():
-    script = SCRIPT.read_text(encoding="utf-8")
-
-    assert "etl_label_rule_evidence_run_$RunStamp.log" in script
-    assert "etl_label_rule_evidence_run_$RunStamp.err.log" in script
-    assert '-Stage "label_evidence"' in script
-    assert "LabelEvidenceStdoutLog" in script
-    assert "LabelEvidenceStderrLog" in script
 
 
-def test_label_evidence_failure_stops_dependent_daily_stage():
-    script = SCRIPT.read_text(encoding="utf-8")
-    failure_block = script.split("if ($LabelEvidenceExitCode -ne 0) {", 1)[1].split("} else {", 1)[0]
-
-    assert "Write-Error" in failure_block
-    assert '-Status "failed" -Stage "label_evidence"' in failure_block
-    assert "exit $LabelEvidenceExitCode" in failure_block
-    assert script.index(failure_block) < script.index("-m etl.stockout_historical_operating_update")
 
 
-def test_stockout_historical_failure_notifies_and_stops_daily_chain():
-    script = SCRIPT.read_text(encoding="utf-8")
-    failure_block = script.split("if ($StockoutHistoricalExitCode -ne 0) {", 1)[1].split("}", 1)[0]
-
-    assert '-Status "failed" -Stage "stockout_historical_operating"' in failure_block
-    assert "exit $StockoutHistoricalExitCode" in failure_block
-    assert script.index("exit $StockoutHistoricalExitCode") > script.index("-m etl.replenishment_update")
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows task entry")
-@pytest.mark.parametrize("failed_module", ["", "etl.label_rule_evidence_snapshot_update", "etl.replenishment_update", "etl.daily_pricing_update", "etl.return_goods_strategy_update", "etl.label_analysis_refresh"])
+@pytest.mark.parametrize("failed_module", ["", "etl.replenishment_update", "etl.daily_pricing_update", "etl.return_goods_strategy_update"])
 def test_powershell_task_notifies_at_publication_boundaries_and_stops_on_failure(tmp_path, failed_module):
     scripts = tmp_path / "scripts"
     scripts.mkdir()
@@ -190,8 +143,8 @@ def test_powershell_task_notifies_at_publication_boundaries_and_stops_on_failure
         "sys.exit(7 if event.get('module')==os.environ['TASK_TEST_FAIL'] else 0)\n",
         encoding="utf-8",
     )
-    launcher = scripts / "task_python.cmd"
-    launcher.write_text(f'@"{sys.executable}" "{stub}" %*\n', encoding="utf-8")
+    launcher = scripts / "task_python.ps1"
+    launcher.write_text(f"& '{sys.executable}' '{stub}' @args\nexit $LASTEXITCODE\n", encoding='utf-8-sig')
     (scripts / "notify_daily_task_dingtalk.py").touch()
     (scripts / "dashboard_env.ps1").write_text(
         f"function Get-DashboardProjectRoot {{ '{str(tmp_path).replace(chr(39), chr(39)*2)}' }}\n"
@@ -201,24 +154,21 @@ def test_powershell_task_notifies_at_publication_boundaries_and_stops_on_failure
     env = os.environ.copy()
     env.update(TASK_TEST_TRACE=str(trace), TASK_TEST_FAIL=failed_module)
     result = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(task),
-                             "--snapshot-date", "2026-10-16", "--biz-date", "2026-10-15"],
+                             "--serial", "--snapshot-date", "2026-10-16", "--biz-date", "2026-10-15"],
                             env=env, capture_output=True, timeout=30)
     events = [json.loads(line) for line in trace.read_text(encoding="utf-8").splitlines()]
     modules = [e['module'] for e in events if 'module' in e]
     notices = [(e['status'],e['stage']) for e in events if 'stage' in e]
     expected = ["etl.dashboard_source_preflight", "etl.dashboard_daily_update", "etl.replenishment_update",
                 "etl.replenishment_tracking_summary_update", "etl.product_performance_history_sync",
-                "etl.sales_role_snapshot_update", "etl.return_goods_update", "etl.daily_pricing_update", "etl.label_rule_evidence_snapshot_update",
-                "etl.stockout_historical_operating_update", "etl.return_goods_strategy_update",
-                "etl.label_analysis_refresh"]
+                "etl.sales_role_snapshot_update", "etl.return_goods_update", "etl.daily_pricing_update",
+                "etl.return_goods_strategy_update"]
     if failed_module:
         assert result.returncode == 7
         assert modules == expected[:expected.index(failed_module)+1]
         assert notices == ([("success", "replenishment")] if failed_module != "etl.replenishment_update" else []) + [
-            ("failed", {"etl.label_rule_evidence_snapshot_update":"label_evidence",
-                        "etl.daily_pricing_update":"pricing",
-                        "etl.return_goods_strategy_update":"return_strategy",
-                        "etl.label_analysis_refresh":"label_analysis"}.get(failed_module,"replenishment"))]
+            ("failed", {"etl.daily_pricing_update":"pricing",
+                        "etl.return_goods_strategy_update":"return_strategy"}.get(failed_module,"replenishment"))]
     else:
         assert result.returncode == 0, result.stderr.decode(errors="replace")
         assert modules == expected
@@ -228,8 +178,6 @@ def test_powershell_task_notifies_at_publication_boundaries_and_stops_on_failure
         assert events[notice_index+1]['module'] == 'etl.replenishment_tracking_summary_update'
         strategy = next(e for e in events if e.get('module') == 'etl.return_goods_strategy_update')
         assert strategy['args'] == ['--snapshot-date', '2026-10-15']
-        analysis = next(e for e in events if e.get('module') == 'etl.label_analysis_refresh')
-        assert analysis['args'] == []
 
 
 def test_source_preflight_failure_notifies_and_exits_before_dashboard_etl():
@@ -239,3 +187,29 @@ def test_source_preflight_failure_notifies_and_exits_before_dashboard_etl():
     assert '-Status "failed" -Stage "source_preflight"' in failure_block
     assert "exit $PreflightExitCode" in failure_block
     assert script.index("exit $PreflightExitCode") < script.index("-m etl.dashboard_daily_update")
+
+
+@pytest.mark.skipif(os.name != 'nt', reason='Windows task entry')
+@pytest.mark.parametrize('exit_code', [0, 7])
+def test_scheduled_task_defaults_to_parallel_runner_and_preserves_exit_code(tmp_path, exit_code):
+    scripts = tmp_path / 'scripts'
+    scripts.mkdir()
+    task = scripts / SCRIPT.name
+    shutil.copyfile(SCRIPT, task)
+    trace = tmp_path / 'args.json'
+    stub = scripts / 'entry.py'
+    stub.write_text('import json,sys\nfrom pathlib import Path\n'
+                    f'Path({str(trace)!r}).write_text(json.dumps(sys.argv[1:]))\n'
+                    f'sys.exit({exit_code})\n', encoding='utf-8')
+    launcher = scripts / 'python.ps1'
+    launcher.write_text(f"& '{sys.executable}' '{stub}' @args\nexit $LASTEXITCODE\n", encoding='utf-8-sig')
+    (scripts / 'dashboard_env.ps1').write_text(
+        f"function Get-DashboardProjectRoot {{ '{str(tmp_path).replace(chr(39), chr(39)*2)}' }}\n"
+        f"function Get-DashboardPython {{ '{str(launcher).replace(chr(39), chr(39)*2)}' }}\n",
+        encoding='utf-8-sig')
+    result = subprocess.run(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+                             '-File', str(task), '--snapshot-date', '2026-10-16', '--dry-run'],
+                            capture_output=True, timeout=30)
+    assert result.returncode == exit_code
+    assert json.loads(trace.read_text()) == [
+        '-u', '-m', 'etl.daily_update_runner', '--snapshot-date', '2026-10-16', '--dry-run']

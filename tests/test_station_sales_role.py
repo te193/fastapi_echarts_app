@@ -192,7 +192,7 @@ def test_tracking_row_marks_mature_but_incomplete_source_data(valid_ladder):
     assert row["role_change"] == "unavailable"
 
 
-def test_tracking_row_prefers_remote_pre_role_and_recomputes_three_day_post(valid_ladder):
+def test_tracking_row_calculates_both_sides_from_local_metrics(valid_ladder):
     raw = {
         "adjust_date": date(2026, 8, 10),
         "pre_seen_days": 14,
@@ -227,17 +227,21 @@ def test_tracking_row_prefers_remote_pre_role_and_recomputes_three_day_post(vali
         }
     )
 
+    with pytest.raises(TypeError):
+        build_station_role_tracking_row(
+            raw, 14, 3, date(2026, 8, 13), pre_snapshot=remote_pre,
+        )
+
     row = build_station_role_tracking_row(
         raw,
         14,
         3,
         date(2026, 8, 13),
-        pre_snapshot=remote_pre,
     )
 
-    assert row["role_before_code"] == "potential"
-    assert row["pre_daily_sales"] == Decimal("2")
-    assert row["pre_role_source"] == "remote_dws"
+    assert row["role_before_code"] == "dog"
+    assert row["pre_daily_sales"] == Decimal("1")
+    assert row["pre_role_source"] == "local_recomputed"
     assert row["role_after_code"] == "star"
     assert row["post_role_source"] == "local_recomputed"
     assert row["role_change"] == "up"

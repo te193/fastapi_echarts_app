@@ -269,7 +269,7 @@ create table if not exists etl_datasync.dashboard_ad_budget_snapshot (
     country_category varchar(32) not null,
     country varchar(32) not null,
     seller_name_new varchar(64) not null,
-    seller_sku_adj varchar(100) not null,
+    seller_sku_adj varchar(100) character set utf8mb4 collate utf8mb4_bin not null,
     max_brand_name varchar(255) null,
     receiving_cnt bigint unsigned null,
     product_type varchar(10) not null,
@@ -2933,12 +2933,9 @@ STEPS = {
         "inventory_weekly_snapshot",
         (DELETE_INVENTORY_WEEKLY_SNAPSHOT_SQL, INSERT_INVENTORY_WEEKLY_SNAPSHOT_SQL),
     ),
-    "inventory_weekly_remote_snapshot": SourceLoadStep(
-        "inventory_weekly_remote_snapshot",
-        DELETE_INVENTORY_WEEKLY_REMOTE_SQL,
-        SELECT_INVENTORY_WEEKLY_REMOTE_SQL,
-        "etl_datasync_test.dashboard_inventory_weekly_snapshot",
-        INVENTORY_WEEKLY_COLUMNS,
+    # Keep the CLI step name for existing task profiles; acquisition is local.
+    "inventory_weekly_remote_snapshot": SqlStep(
+        "inventory_weekly_remote_snapshot", (),
     ),
     "restock_snapshot": SourceLoadStep(
         "restock_snapshot",
@@ -3023,9 +3020,32 @@ def ensure_tables(conn, schemas: SchemaConfig) -> None:
     with conn.cursor() as cursor:
         for sql in DDL_STATEMENTS:
             cursor.execute(with_mysql_comments(render_sql(sql, schemas)))
+        ensure_ad_budget_msku_collation(cursor, schemas)
         ensure_inventory_weekly_columns(cursor, schemas)
         ensure_product_daily_replenishment_index(cursor, schemas)
     conn.commit()
+
+
+def ensure_ad_budget_msku_collation(cursor, schemas: SchemaConfig) -> None:
+    # Match the source key: CJ016A and CJ016a are separate budget records.
+    cursor.execute(
+        """select collation_name as collation_name, column_comment as column_comment
+        from information_schema.columns
+        where table_schema=%(schema)s and table_name='dashboard_ad_budget_snapshot'
+          and column_name='seller_sku_adj'""",
+        {"schema": schemas.target_schema},
+    )
+    column = cursor.fetchone()
+    if column is None:
+        raise RuntimeError("ad budget snapshot MSKU column is missing")
+    if column["collation_name"] == "utf8mb4_bin":
+        return
+    comment = escape_sql_comment(column["column_comment"] or "")
+    cursor.execute(
+        f"alter table `{schemas.target_schema}`.`dashboard_ad_budget_snapshot` "
+        "modify column `seller_sku_adj` varchar(100) character set utf8mb4 "
+        f"collate utf8mb4_bin not null comment '{comment}'"
+    )
 
 
 def ensure_product_daily_replenishment_index(cursor, schemas: SchemaConfig) -> None:
@@ -3157,11 +3177,16 @@ def execute_target_step(conn, schemas: SchemaConfig, step: SqlStep, params: dict
     started_at = datetime.now()
     affected_rows = 0
     try:
-        with conn.cursor() as cursor:
-            for statement in step.statements:
-                cursor.execute(render_sql(statement, schemas), params)
-                if statement.lstrip().lower().startswith("insert"):
-                    affected_rows += max(cursor.rowcount, 0)
+        if step.name in {"inventory_weekly_snapshot", "inventory_weekly_remote_snapshot"}:
+            from etl.shared_inventory_weekly import refresh
+            affected_rows = refresh(conn, schemas, params,
+                                    current=step.name == "inventory_weekly_remote_snapshot")
+        else:
+            with conn.cursor() as cursor:
+                for statement in step.statements:
+                    cursor.execute(render_sql(statement, schemas), params)
+                    if statement.lstrip().lower().startswith("insert"):
+                        affected_rows += max(cursor.rowcount, 0)
         conn.commit()
         log_task(conn, schemas, step.name, params, "success", affected_rows, started_at)
         print(f"[success] {step.name}: affected_rows={affected_rows}")
@@ -3645,8 +3670,8 @@ def _load_product_local_fingerprints(
 
 
 def _product_changed_dates(
-    source_fingerprints: dict[date, tuple[int, int, int]],
-    local_fingerprints: dict[date, tuple[int, int, int]],
+    source_fingerprints: dict[date, tuple[int, ...]],
+    local_fingerprints: dict[date, tuple[int, ...]],
     start_date: date,
     end_date: date,
 ) -> tuple[date, ...]:
@@ -3696,11 +3721,38 @@ def _execute_incremental_product_source_load(
     batch_size: int,
 ) -> tuple[int, tuple[date, ...]]:
     target_table_name = render_sql(step.target_table, schemas)
+    item = getattr(source_conn, 'shared_product_item', None)
+    if isinstance(item, dict) and 'partitions' in item and not params.get('_product_dependency_checked'):
+        from etl import product_consumer_contract as contract
+        current = params.get('_product_consumer_plan')
+        if current is None:
+            current = contract.plan(target_conn, source_conn, schemas,
+                                    step.source_select_statement, target_table_name, params, item)
+        current = current.subset(params['product_start_date'], params['product_end_date'])
+        affected, refreshed = 0, []
+        for start, end in _contiguous_date_ranges(current.candidates):
+            count, days = _execute_incremental_product_source_load(
+                target_conn, source_conn, schemas, step, source_sql, target_insert_sql,
+                {**params, 'product_start_date': start, 'product_end_date': end,
+                 'next_product_end_date': end + timedelta(days=1), '_product_dependency_checked': True},
+                batch_size)
+            affected += count
+            refreshed.extend(days)
+        contract.persist(target_conn, schemas.target_schema, current, target_table_name, params)
+        return affected, tuple(refreshed)
+    history = step.name == "product_performance_history_sync_batch" or params.get('_product_dependency_checked')
     fingerprint_started = time.perf_counter()
-    source_fingerprints = _load_product_source_fingerprints(source_conn, source_sql, params)
+    if history:
+        from etl.product_history_fingerprints import load_fingerprints, local_rows_sql
+        source_fingerprints = load_fingerprints(source_conn, source_sql, params)
+    else:
+        source_fingerprints = _load_product_source_fingerprints(source_conn, source_sql, params)
     source_fingerprint_seconds = time.perf_counter() - fingerprint_started
     local_started = time.perf_counter()
-    local_fingerprints = _load_product_local_fingerprints(target_conn, target_table_name, params)
+    if history:
+        local_fingerprints = load_fingerprints(target_conn, local_rows_sql(target_table_name), params)
+    else:
+        local_fingerprints = _load_product_local_fingerprints(target_conn, target_table_name, params)
     local_fingerprint_seconds = time.perf_counter() - local_started
     changed_dates = _product_changed_dates(
         source_fingerprints,
@@ -3709,7 +3761,7 @@ def _execute_incremental_product_source_load(
         params["product_end_date"],
     )
     print(
-        "[info] product_performance_daily fingerprint: "
+        f"[info] {step.name} fingerprint: "
         f"source={source_fingerprint_seconds:.2f}s "
         f"local={local_fingerprint_seconds:.2f}s "
         f"changed_dates={len(changed_dates)}"
@@ -3746,7 +3798,12 @@ def execute_source_load_step(
     step: SourceLoadStep,
     params: dict[str, object],
     batch_size: int,
-) -> None:
+) -> int:
+    from etl.shared_product_inputs import run_id, product_reader
+    if (run_id() and step.name in {"product_performance_daily", "product_performance_history_sync_batch"}
+            and not getattr(source_conn, "shared_product", False)):
+        with product_reader(schemas) as shared_reader:
+            return execute_source_load_step(target_conn, shared_reader, schemas, step, params, batch_size)
     started_at = datetime.now()
     attempts = source_load_retry_attempts()
     last_error = ""
@@ -3757,7 +3814,7 @@ def execute_source_load_step(
             assert_source_select_only(source_sql)
             target_insert_sql = build_target_insert_sql(step.target_table, step.target_columns, schemas)
 
-            if step.name == "product_performance_daily" and not params["product_full_load"]:
+            if step.name in {"product_performance_daily", "product_performance_history_sync_batch"} and not params["product_full_load"]:
                 affected_rows, changed_dates = _execute_incremental_product_source_load(
                     target_conn,
                     source_conn,
@@ -3770,7 +3827,7 @@ def execute_source_load_step(
                 )
                 if changed_dates:
                     print(
-                        "[info] product_performance_daily refreshed dates: "
+                        f"[info] {step.name} refreshed dates: "
                         + _format_date_ranges(changed_dates)
                     )
             else:
@@ -3802,10 +3859,15 @@ def execute_source_load_step(
                 validate_product_performance_result(target_conn, schemas, params)
             if step.name == "ad_budget_snapshot" and affected_rows == 0:
                 raise RuntimeError("ad_budget_snapshot source returned 0 rows; preserving the last successful snapshot")
+            if step.name in {"product_performance_daily", "product_performance_history_sync_batch"}:
+                item = getattr(source_conn, 'shared_product_item', None)
+                if params['product_full_load'] or not isinstance(item, dict) or 'partitions' not in item:
+                    from etl.product_consumer_contract import invalidate
+                    invalidate(target_conn, schemas.target_schema, params)
             target_conn.commit()
             log_task(target_conn, schemas, step.name, params, "success", affected_rows, started_at)
             print(f"[success] {step.name}: affected_rows={affected_rows}")
-            return
+            return affected_rows
         except Exception:
             target_conn.rollback()
             last_error = traceback.format_exc()
@@ -4033,6 +4095,11 @@ def main() -> None:
     try:
         if not args.skip_ddl:
             ensure_tables(target_conn, schemas)
+        if "product_performance_daily" in step_names:
+            from etl.shared_product_inputs import run_id, prepare_shared_product
+            if run_id():
+                prepare_shared_product(source_conn, target_conn, schemas,
+                                       progress=lambda row: print(row, flush=True))
         resolve_product_load_mode(
             target_conn,
             schemas,

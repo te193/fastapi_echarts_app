@@ -655,3 +655,178 @@ def test_source_failure_preserves_published_inputs_and_stops_at_retry_limit(
     with target.cursor() as q:
         q.execute(f"select volume from `{schema}`.`{specs[0].local_name}` where id=1")
         assert q.fetchone()["volume"] == 10
+
+
+@pytest.mark.parametrize("column,kind,local_name,keys,expected", [
+    ("create_time", "datetime", "fba", ("2026-10-15",), [2, 3]),
+    ("create_time", "date", "restock", ("2026-10-15",), [2, 3]),
+    ("id", "bigint", "orders", ("1",), [50000, 99999]),
+])
+def test_partition_filter_uses_index_ranges_and_preserves_boundaries(
+    local_store, column, kind, local_name, keys, expected
+):
+    conn, schema = local_store
+    spec = sources.SourceSpec(schema, "range_source", "dashboard_label_source_" + local_name)
+    with conn.cursor() as q:
+        if column == "id":
+            q.execute(f"create table `{schema}`.range_source (id bigint primary key)")
+            q.execute(f"insert into `{schema}`.range_source values (49999),(50000),(99999),(100000)")
+        else:
+            q.execute(
+                f"create table `{schema}`.range_source "
+                f"(id int primary key,create_time {kind},key by_date(create_time))"
+            )
+            q.execute(
+                f"insert into `{schema}`.range_source values "
+                "(1,'2026-10-14'),(2,'2026-10-15'),"
+                "(3,%s),(4,'2026-10-16'),(5,null)",
+                ("2026-10-15 23:59:59" if kind == "datetime" else "2026-10-15",),
+            )
+    conn.commit()
+    columns, _ = sources.read_metadata(conn, spec)
+    predicate, params = incremental.partition_filter(spec, keys, columns)
+    sql = f"select * from `{schema}`.range_source where {predicate}"
+    with conn.cursor() as q:
+        q.execute(sql + " order by id", params)
+        assert [r["id"] for r in q.fetchall()] == expected
+        # FORCE INDEX keeps the tiny fixture's cost estimate from preferring a
+        # table scan; a function-wrapped condition still cannot produce a range.
+        indexed_sql = sql.replace(".range_source", ".range_source force index (" +
+                                  ("PRIMARY" if column == "id" else "by_date") + ")")
+        q.execute("explain " + indexed_sql, params)
+        assert q.fetchone()["type"] == "range"
+
+
+@pytest.mark.parametrize("failure_point", ["between_sources", "partial_copy"])
+def test_source_disconnect_restarts_only_current_source_and_preserves_snapshot(inputs, failure_point):
+    from pymysql.cursors import SSDictCursor
+
+    source, target, schema, specs = inputs
+    source.cursorclass = SSDictCursor
+    first = refresh(inputs)
+    with target.cursor() as q:
+        q.execute(f"update `{schema}`.`{specs[1].table}` set volume=66 where id=1")
+        if failure_point == "partial_copy":
+            q.executemany(
+                f"insert into `{schema}`.`{specs[1].table}` values (%s,'2026-01-01',66,null)",
+                [(key,) for key in range(2, 6003)],
+            )
+    target.commit()
+    with source.cursor() as q:
+        q.execute("select connection_id() as id")
+        connection_id = q.fetchone()["id"]
+    killed = False
+    progress = []
+
+    def record(event):
+        nonlocal killed
+        progress.append(event)
+        should_kill = (
+            failure_point == "between_sources" and event["stage"] == "source_incremental_complete"
+        ) or (
+            failure_point == "partial_copy" and event["stage"] == "source_delta_copy"
+        )
+        if should_kill and not killed:
+            with target.cursor() as q:
+                q.execute(f"kill connection {int(connection_id)}")
+            target.commit()
+            killed = True
+
+    result = sources.sync_sources(source, target, schema, str(uuid4()), progress=record)
+    assert killed
+    assert result["reused_input_batch"] == first["batch_id"]
+    assert result["transferred_rows"] == (6002 if failure_point == "partial_copy" else 1)
+    assert read_marker(target, schema) == result
+    with target.cursor() as q:
+        q.execute(f"select volume from `{schema}`.`{specs[1].local_name}` where id=1")
+        assert q.fetchone()["volume"] == 66
+    assert len([e for e in progress if e["stage"] == "source_transaction_retry"]) == 1
+    assert len([e for e in progress if e["stage"] == "source_incremental_complete"
+                and e["local_name"] == specs[0].local_name]) == 1
+    with source.cursor() as q:
+        q.execute("select @@transaction_isolation as isolation_level,@@time_zone as tz")
+        assert q.fetchone() == {"isolation_level": "REPEATABLE-READ", "tz": "+08:00"}
+
+
+@pytest.mark.parametrize("keys,expected", [
+    (("2026-10-15",), [1, 2, 3]),
+    (("__NULL__",), [4, 5]),
+    (("2026-10-15", "__NULL__"), [1, 2, 3, 4, 5]),
+    ((), []),
+])
+def test_text_dates_keep_mysql_conversion_and_null_semantics(local_store, keys, expected):
+    conn, schema = local_store
+    spec = sources.SourceSpec(schema, "text_dates", "dashboard_label_source_performance")
+    with conn.cursor() as q:
+        q.execute(f"create table `{schema}`.text_dates (id int,start_date varchar(100))")
+        q.execute(
+            f"insert into `{schema}`.text_dates values "
+            "(1,'2026-10-15'),(2,'2026/10/15'),(3,'2026-10-15 12:00:00'),"
+            "(4,'invalid'),(5,null),(6,'2026-10-16')"
+        )
+    columns, _ = sources.read_metadata(conn, spec)
+    predicate, params = incremental.partition_filter(spec, keys, columns)
+    with conn.cursor() as q:
+        q.execute(f"select id from `{schema}`.text_dates where {predicate} order by id", params)
+        assert [r["id"] for r in q.fetchall()] == expected
+
+
+def test_repeated_source_disconnect_keeps_old_inputs_and_stops_after_three_attempts(inputs, monkeypatch):
+    source, target, schema, specs = inputs
+    first = refresh(inputs)
+    with target.cursor() as q:
+        q.execute(f"update `{schema}`.`{specs[0].table}` set volume=77 where id=1")
+    target.commit()
+    real_stage = incremental.stage_source
+    attempts = []
+
+    def stage(src, dest, db, spec, *args):
+        if spec is specs[1]:
+            attempts.append(spec)
+            with src.cursor() as q:
+                q.execute("select connection_id() as id")
+                connection_id = q.fetchone()["id"]
+            with target.cursor() as q:
+                q.execute(f"kill connection {int(connection_id)}")
+            target.commit()
+        return real_stage(src, dest, db, spec, *args)
+
+    monkeypatch.setattr(incremental, "stage_source", stage)
+    from pymysql.err import OperationalError
+    with pytest.raises(OperationalError, match="after 3 attempts; inputs unchanged"):
+        refresh(inputs)
+    assert len(attempts) == 3
+    assert read_marker(target, schema) == first
+    with target.cursor() as q:
+        q.execute(f"select volume from `{schema}`.`{specs[0].local_name}` where id=1")
+        assert q.fetchone()["volume"] == 10
+
+
+def test_target_disconnect_is_not_reconnected_or_retried(inputs):
+    source, target, schema, specs = inputs
+    first = refresh(inputs)
+    killed = False
+    retries = []
+
+    def record(event):
+        nonlocal killed
+        if event["stage"] == "source_transaction_retry":
+            retries.append(event)
+        if event["stage"] == "source_incremental_complete" and not killed:
+            with target.cursor() as q:
+                q.execute("select connection_id() as id")
+                connection_id = q.fetchone()["id"]
+            with source.cursor() as q:
+                q.execute(f"kill connection {int(connection_id)}")
+            killed = True
+
+    from pymysql.err import OperationalError
+    try:
+        with pytest.raises(OperationalError):
+            sources.sync_sources(source, target, schema, str(uuid4()), progress=record)
+        assert killed and not retries
+    finally:
+        # Only the test reconnects for assertion and fixture cleanup; sync must
+        # fail because its target-session publication lock was lost.
+        target.ping(reconnect=True)
+    assert read_marker(target, schema) == first

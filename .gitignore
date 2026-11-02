@@ -33,6 +33,7 @@ country-profile-*.png
 .codegraph/
 .codegraph-*/
 config/database.ini
+data/page_usage.sqlite3*
 
 scripts/dashboard_env.ps1
 scripts/dashboard_env.local.ps1

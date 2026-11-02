@@ -49,6 +49,23 @@ Disable-CurrentConsoleQuickEdit
 
 $ProjectRoot = Get-DashboardProjectRoot
 $PythonExe = Get-DashboardPython
+
+# The scheduled entry uses the bounded Python scheduler by default. Keep the
+# original serial chain available for recovery and comparison with --serial.
+if ($args -notcontains "--serial") {
+    Set-Location $ProjectRoot
+    $PreviousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $PythonExe -u -m etl.daily_update_runner @args
+        $RunnerExitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $PreviousErrorActionPreference
+    }
+    exit $RunnerExitCode
+}
+$args = @($args | Where-Object { $_ -ne "--serial" })
+
 $LogDir = Join-Path $ProjectRoot "logs"
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
@@ -97,12 +114,6 @@ $DashboardEarlySteps = "product_performance_daily,restock_snapshot,inventory_sna
 $SalesRoleArgs = @(Select-DashboardTaskArguments -SourceArgs $args `
     -ValueOptions @("--snapshot-date", "--period-end", "--periods") `
     -SwitchOptions @("--skip-ddl", "--dry-run"))
-$LabelEvidenceArgs = @(Select-DashboardTaskArguments -SourceArgs $args `
-    -ValueOptions @("--periods") `
-    -SwitchOptions @("--dry-run"))
-$StockoutHistoricalArgs = @(Select-DashboardTaskArguments -SourceArgs $args `
-    -ValueOptions @("--biz-date", "--data-date") `
-    -SwitchOptions @("--allow-source-max-mismatch", "--dry-run"))
 $ReplenishmentArgs = @(Select-DashboardTaskArguments -SourceArgs $args `
     -ValueOptions @(
         "--biz-date", "--snapshot-date", "--candidate-days",
@@ -127,10 +138,6 @@ $ProductHistoryStdoutLog = Join-Path $LogDir "etl_product_history_run_$RunStamp.
 $ProductHistoryStderrLog = Join-Path $LogDir "etl_product_history_run_$RunStamp.err.log"
 $SalesRoleStdoutLog = Join-Path $LogDir "etl_sales_role_run_$RunStamp.log"
 $SalesRoleStderrLog = Join-Path $LogDir "etl_sales_role_run_$RunStamp.err.log"
-$LabelEvidenceStdoutLog = Join-Path $LogDir "etl_label_rule_evidence_run_$RunStamp.log"
-$LabelEvidenceStderrLog = Join-Path $LogDir "etl_label_rule_evidence_run_$RunStamp.err.log"
-$StockoutHistoricalStdoutLog = Join-Path $LogDir "etl_stockout_historical_operating_run_$RunStamp.log"
-$StockoutHistoricalStderrLog = Join-Path $LogDir "etl_stockout_historical_operating_run_$RunStamp.err.log"
 $ReplenishmentStdoutLog = Join-Path $LogDir "etl_replenishment_run_$RunStamp.log"
 $ReplenishmentStderrLog = Join-Path $LogDir "etl_replenishment_run_$RunStamp.err.log"
 $ReplenishmentTrackingStdoutLog = Join-Path $LogDir "etl_replenishment_tracking_summary_run_$RunStamp.log"
@@ -141,8 +148,6 @@ $PricingStdoutLog = Join-Path $LogDir "etl_pricing_run_$RunStamp.log"
 $PricingStderrLog = Join-Path $LogDir "etl_pricing_run_$RunStamp.err.log"
 $ReturnStrategyStdoutLog = Join-Path $LogDir "etl_return_strategy_run_$RunStamp.log"
 $ReturnStrategyStderrLog = Join-Path $LogDir "etl_return_strategy_run_$RunStamp.err.log"
-$LabelAnalysisStdoutLog = Join-Path $LogDir "etl_label_analysis_run_$RunStamp.log"
-$LabelAnalysisStderrLog = Join-Path $LogDir "etl_label_analysis_run_$RunStamp.err.log"
 $DingTalkNotifyScript = Join-Path $ProjectRoot "scripts\notify_daily_task_dingtalk.py"
 $DingTalkStdoutLog = Join-Path $LogDir "dingtalk_notify_run_$RunStamp.log"
 $DingTalkStderrLog = Join-Path $LogDir "dingtalk_notify_run_$RunStamp.err.log"
@@ -180,22 +185,16 @@ function Send-DashboardDingTalkNotification {
         "--dashboard-stderr", $StderrLog,
         "--sales-role-stdout", $SalesRoleStdoutLog,
         "--sales-role-stderr", $SalesRoleStderrLog,
-        "--label-evidence-stdout", $LabelEvidenceStdoutLog,
-        "--label-evidence-stderr", $LabelEvidenceStderrLog,
         "--replenishment-stdout", $ReplenishmentStdoutLog,
         "--replenishment-stderr", $ReplenishmentStderrLog,
         "--tracking-stdout", $ReplenishmentTrackingStdoutLog,
         "--tracking-stderr", $ReplenishmentTrackingStderrLog,
         "--return-goods-stdout", $ReturnGoodsStdoutLog,
         "--return-goods-stderr", $ReturnGoodsStderrLog,
-        "--stockout-stdout", $StockoutHistoricalStdoutLog,
-        "--stockout-stderr", $StockoutHistoricalStderrLog,
         "--pricing-stdout", $PricingStdoutLog,
         "--pricing-stderr", $PricingStderrLog,
         "--return-strategy-stdout", $ReturnStrategyStdoutLog,
-        "--return-strategy-stderr", $ReturnStrategyStderrLog,
-        "--label-analysis-stdout", $LabelAnalysisStdoutLog,
-        "--label-analysis-stderr", $LabelAnalysisStderrLog
+        "--return-strategy-stderr", $ReturnStrategyStderrLog
     )
 
     if ($ErrorMessage) {
@@ -357,41 +356,6 @@ if ($PricingExitCode -ne 0) {
 }
 Write-Host "Pricing and dependent analysis ETL finished at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 
-Write-Host "Label change evidence ETL started at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-Write-Host "Label evidence stdout log : $LabelEvidenceStdoutLog"
-Write-Host "Label evidence stderr log : $LabelEvidenceStderrLog"
-
-$PreviousErrorActionPreference = $ErrorActionPreference
-$ErrorActionPreference = "Continue"
-& $PythonExe -m etl.label_rule_evidence_snapshot_update @LabelEvidenceArgs > $LabelEvidenceStdoutLog 2> $LabelEvidenceStderrLog
-$LabelEvidenceExitCode = $LASTEXITCODE
-$ErrorActionPreference = $PreviousErrorActionPreference
-
-if ($LabelEvidenceExitCode -ne 0) {
-    Send-DashboardDingTalkNotification -Status "failed" -Stage "label_evidence" -ExitCode $LabelEvidenceExitCode -ErrorMessage "Local label generation failed with exit code $LabelEvidenceExitCode; dependent stockout analysis will not run."
-    Write-Error "Local label generation failed with exit code $LabelEvidenceExitCode. Dependent stockout analysis cannot run. See $LabelEvidenceStdoutLog and $LabelEvidenceStderrLog." -ErrorAction Continue
-    exit $LabelEvidenceExitCode
-} else {
-    Write-Host "Label change evidence ETL finished at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-}
-
-Write-Host "Stockout historical operating ETL started at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-Write-Host "Stockout historical stdout log : $StockoutHistoricalStdoutLog"
-Write-Host "Stockout historical stderr log : $StockoutHistoricalStderrLog"
-
-$PreviousErrorActionPreference = $ErrorActionPreference
-$ErrorActionPreference = "Continue"
-& $PythonExe -m etl.stockout_historical_operating_update @StockoutHistoricalArgs > $StockoutHistoricalStdoutLog 2> $StockoutHistoricalStderrLog
-$StockoutHistoricalExitCode = $LASTEXITCODE
-$ErrorActionPreference = $PreviousErrorActionPreference
-
-if ($StockoutHistoricalExitCode -ne 0) {
-    Send-DashboardDingTalkNotification -Status "failed" -Stage "stockout_historical_operating" -ExitCode $StockoutHistoricalExitCode -ErrorMessage "Stockout historical operating ETL failed with exit code $StockoutHistoricalExitCode. See $StockoutHistoricalStdoutLog and $StockoutHistoricalStderrLog."
-    Write-Error "Stockout historical operating ETL failed with exit code $StockoutHistoricalExitCode. See $StockoutHistoricalStdoutLog and $StockoutHistoricalStderrLog." -ErrorAction Continue
-    exit $StockoutHistoricalExitCode
-}
-
-Write-Host "Stockout historical operating ETL finished at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 Write-Host "Return goods strategy snapshot started. Suggestions only; no price or advertising execution."
 $PreviousErrorActionPreference = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
@@ -404,19 +368,5 @@ if ($ReturnStrategyExitCode -ne 0) {
     exit $ReturnStrategyExitCode
 }
 Write-Host "Return goods strategy snapshot finished at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-Write-Host "Label analysis preparation started; serving results from the intranet database."
-$PreviousErrorActionPreference = $ErrorActionPreference
-$ErrorActionPreference = "Continue"
-$LabelAnalysisArgs = @()
-if ($IsDryRun) { $LabelAnalysisArgs += "--dry-run" }
-& $PythonExe -m etl.label_analysis_refresh @LabelAnalysisArgs > $LabelAnalysisStdoutLog 2> $LabelAnalysisStderrLog
-$LabelAnalysisExitCode = $LASTEXITCODE
-$ErrorActionPreference = $PreviousErrorActionPreference
-if ($LabelAnalysisExitCode -ne 0) {
-    Send-DashboardDingTalkNotification -Status "failed" -Stage "label_analysis" -ExitCode $LabelAnalysisExitCode -ErrorMessage "Label analysis preparation failed. See $LabelAnalysisStdoutLog and $LabelAnalysisStderrLog."
-    Write-Error "Label analysis preparation failed; previous published batch retained. See $LabelAnalysisStdoutLog and $LabelAnalysisStderrLog." -ErrorAction Continue
-    exit $LabelAnalysisExitCode
-}
-Write-Host "Label analysis preparation finished at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-Write-Host "Data update strategy includes rolling product refresh, current snapshots, preset period summaries, sales role snapshots, label change evidence, stockout historical operating snapshots, matrix summaries, replenishment results, replenishment tracking summary, and return goods."
+Write-Host "Daily update finished: 9 active steps; retired label jobs are excluded."
 Send-DashboardDingTalkNotification -Status "success" -Stage "all" -ExitCode 0
